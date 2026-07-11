@@ -11,7 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
         gameOver: false,
         winner: null,
         rollHistory: [],
-        turnOverMessage: ""
+        turnOverMessage: "",
+        turnTransitioning: false
     };
 
     let chartInstance = null;
@@ -71,6 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.gameOver = false;
         state.winner = null;
         state.turnOverMessage = "";
+        state.turnTransitioning = false;
         
         // rollHistory is retained across games if not empty (as per python code: if 'roll_history' not in st.session_state)
         // Actually, Python code preserves it. Let's just keep it as is.
@@ -101,17 +103,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (roll === 1) {
             state.pendingScore = 0;
+            state.turnTransitioning = true;
             state.turnOverMessage = "앗! 1이 나왔습니다. 점수를 모두 잃고 턴이 넘어갑니다.";
-            updateUI(); // Update UI to show '1' before changing turn
-            
-            // disable buttons temporarily
-            btnRoll.disabled = true;
-            btnHold.disabled = true;
+            updateUI();
 
             setTimeout(() => {
+                state.turnTransitioning = false;
                 nextTurn();
-                btnRoll.disabled = false;
-                btnHold.disabled = false;
             }, 1500);
         } else {
             state.pendingScore += roll;
@@ -140,16 +138,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             }
         } else {
+            state.turnTransitioning = true;
             updateUI();
-            btnRoll.disabled = true;
-            btnHold.disabled = true;
 
             setTimeout(() => {
+                state.turnTransitioning = false;
                 nextTurn();
-                btnRoll.disabled = false;
-                btnHold.disabled = false;
             }, 1000);
         }
+    }
+
+    function setActionButtonsEnabled(enabled) {
+        btnRoll.disabled = !enabled;
+        btnHold.disabled = !enabled;
     }
 
     // --- UI Update ---
@@ -164,8 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         pendingScoreDisplay.innerText = `${state.pendingScore} 점`;
         
-        btnRoll.disabled = state.gameOver;
-        btnHold.disabled = state.gameOver;
+        setActionButtonsEnabled(!state.gameOver && !state.turnTransitioning);
 
         if(state.gameOver) {
             gameOverMsg.classList.remove("d-none");
