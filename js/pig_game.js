@@ -22,12 +22,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const elNumPlayersVal = document.getElementById("numPlayersVal");
     const elWinningScore = document.getElementById("winningScore");
     const btnStartGame = document.getElementById("btnStartGame");
-    
+
     const preGameMsg = document.getElementById("preGameMsg");
     const gameArea = document.getElementById("gameArea");
     const gameOverMsg = document.getElementById("gameOverMsg");
     const turnOverMsg = document.getElementById("turnOverMsg");
-    
+
     const setupAccordionCollapse = document.getElementById("setupCollapse");
 
     const diceDisplay = document.getElementById("diceDisplay");
@@ -73,10 +73,10 @@ document.addEventListener("DOMContentLoaded", () => {
         state.winner = null;
         state.turnOverMessage = "";
         state.turnTransitioning = false;
-        
+
         // rollHistory is retained across games if not empty (as per python code: if 'roll_history' not in st.session_state)
         // Actually, Python code preserves it. Let's just keep it as is.
-        
+
         preGameMsg.classList.add("d-none");
         gameOverMsg.classList.add("d-none");
         gameArea.classList.remove("d-none");
@@ -128,9 +128,9 @@ document.addEventListener("DOMContentLoaded", () => {
             state.gameOver = true;
             state.winner = state.playerNames[state.currentPlayer];
             updateUI();
-            
+
             // Confetti effect
-            if(window.confetti){
+            if (window.confetti) {
                 confetti({
                     particleCount: 150,
                     spread: 70,
@@ -157,24 +157,24 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateUI() {
         // Left Column Updates
         diceDisplay.innerText = state.lastRoll;
-        
+
         // Add pop animation
         diceDisplay.classList.remove("animate-pop");
         void diceDisplay.offsetWidth; // trigger reflow
         diceDisplay.classList.add("animate-pop");
 
         pendingScoreDisplay.innerText = `${state.pendingScore} 점`;
-        
+
         setActionButtonsEnabled(!state.gameOver && !state.turnTransitioning);
 
-        if(state.gameOver) {
+        if (state.gameOver) {
             gameOverMsg.classList.remove("d-none");
             document.getElementById("winnerName").innerText = state.winner;
         } else {
             gameOverMsg.classList.add("d-none");
         }
 
-        if(state.turnOverMessage) {
+        if (state.turnOverMessage) {
             turnOverMsg.innerText = state.turnOverMessage;
             turnOverMsg.classList.remove("d-none");
             if (state.turnOverMessage.includes("앗!")) {
@@ -189,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Right Column (Scoreboard) Updates
         const activePlayerName = state.playerNames[state.currentPlayer];
         scoreboardTitle.innerHTML = `scoreboard - 현재 <strong>${activePlayerName}</strong>`;
-        
+
         scoreboardContainer.innerHTML = "";
 
         for (let i = 0; i < state.numPlayers; i++) {
@@ -198,11 +198,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const headerText = isCurrentPlayer ? `👑 ${playerName}` : playerName;
             const playerScore = state.playerScores[i];
             const deltaScore = (isCurrentPlayer && !state.gameOver) ? state.pendingScore : 0;
-            
+
             const col = document.createElement("div");
             col.className = "flex-fill mb-3";
             col.style.minWidth = "120px";
-            
+
             col.innerHTML = `
                 <div class="player-score-card">
                     <div class="player-name">${headerText}</div>
@@ -226,7 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
         statsData.classList.remove("d-none");
 
         // Calculate frequencies and ratios
-        const counts = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+        const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
         state.rollHistory.forEach(r => { counts[r]++; });
         const totalRolls = state.rollHistory.length;
 
@@ -273,9 +273,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Update Table
-        for(let i=1; i<=6; i++) {
+        for (let i = 1; i <= 6; i++) {
             document.getElementById(`freq${i}`).innerText = counts[i];
-            document.getElementById(`ratio${i}`).innerText = (counts[i] / totalRolls).toFixed(3);
+            document.getElementById(`ratio${i}`).innerText = (counts[i] / totalRolls).toFixed(2);
         }
     }
 });
