@@ -3,8 +3,24 @@
  * 중학 수학 페이지 공통 네비게이션 바 모듈
  */
 (function () {
-    const basePath = '../';
-    const rootPath = '../../../';
+    // 현재 실행 중인 HTML 파일의 경로를 기반으로 상대 경로 자동 계산
+    const pathSegments = window.location.pathname.split('/');
+    pathSegments.pop(); // 파일명 제거
+    
+    const pagesIndex = pathSegments.indexOf('pages');
+    let rootPath = '';
+    let basePath = '';
+
+    if (pagesIndex !== -1) {
+        // 'pages' 폴더가 경로에 존재하는 경우 (하위 페이지)
+        const depth = pathSegments.length - pagesIndex;
+        rootPath = '../'.repeat(depth);
+        basePath = rootPath + 'pages/middleschool/';
+    } else {
+        // 루트 페이지인 경우 (예: index.html)
+        rootPath = './';
+        basePath = './pages/middleschool/';
+    }
 
     const navbarHtml = `
     <!-- 상단 네비게이션 바 (공통 모듈) -->
