@@ -6,7 +6,7 @@
     // 현재 실행 중인 HTML 파일의 경로를 기반으로 상대 경로 자동 계산
     const pathSegments = window.location.pathname.split('/');
     pathSegments.pop(); // 파일명 제거
-    
+
     const pagesIndex = pathSegments.indexOf('pages');
     let rootPath = '';
     let basePath = '';
