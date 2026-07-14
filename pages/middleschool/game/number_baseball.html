@@ -5,8 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>숫자야구 - 보드게임</title>
+    <!-- Bootstrap 5 CSS CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 폭죽 효과 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <link rel="stylesheet" href="../../../css/navbar.css">
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
@@ -20,85 +23,409 @@
             padding: 0;
         }
 
-
-        /* ===== 메인 콘텐츠 영역 ===== */
+        /* ===== 메인 콘텐츠 영역 (너비 확장형) ===== */
         .main-content {
-            max-width: 960px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 2rem 1.5rem;
         }
 
         /* 페이지 제목 */
         .page-header h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #1e293b;
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #0f172a;
             margin-bottom: 0.5rem;
         }
 
         .page-header p {
             color: #64748b;
-            font-size: 1rem;
+            font-size: 1.1rem;
             margin-bottom: 2rem;
         }
 
-        /* ===== 콘텐츠 카드 스타일 ===== */
-        .content-card {
-            background-color: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
-            transition: box-shadow 0.2s;
+        /* ===== 플랫 레이아웃 스타일 (카드 형태 배제) ===== */
+        .game-section {
+            padding: 1rem 0;
         }
 
-        .content-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        /* 규칙 배너 */
+        .rule-banner {
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
         }
 
-        /* 준비 중 안내 메시지 */
-        .coming-soon {
+        /* 대형 실시간 숫자 디스플레이 */
+        .number-display {
+            font-size: 3.5rem;
+            font-weight: 800;
+            letter-spacing: 0.8rem;
             text-align: center;
-            padding: 4rem 2rem;
-            color: #94a3b8;
+            height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f8fafc;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 1.5rem;
+            transition: all 0.2s ease;
         }
 
-        .coming-soon i {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            display: block;
+        /* 가상 키패드 버튼 스타일 */
+        .keypad-btn {
+            font-size: 1.25rem;
+            font-weight: 700;
+            height: 52px;
+            border-radius: 10px;
+            transition: all 0.15s ease-in-out;
         }
 
-        .coming-soon h2 {
-            font-size: 1.5rem;
+        /* 결과 히스토리 스크롤 컨테이너 */
+        .history-container {
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .history-item {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.85rem 1.25rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1.1rem;
             font-weight: 600;
-            color: #64748b;
-            margin-bottom: 0.5rem;
         }
-
-        .coming-soon p {
-            font-size: 1rem;
-        }
-
     </style>
 </head>
 
 <body>
+    <!-- 상단 네비게이션 (기존 파일 유지) -->
     <script src="../../../js/navbar.js"></script>
 
     <div class="main-content">
-        <div class="page-header">
-            <h1>숫자야구</h1>
-            <p>상대방의 숫자를 추리하는 논리 게임입니다.</p>
+        <!-- 페이지 헤더 -->
+        <div class="page-header text-center text-md-start">
+            <h1>⚾ 숫자 야구</h1>
+            <p>상대방이 생각한 숫자를 자리와 숫자의 힌트를 조합해 추리해보세요!</p>
         </div>
-        <div class="coming-soon">
-            <i class="bi bi-123"></i>
-            <h2>콘텐츠 준비 중</h2>
-            <p>곧 숫자야구 게임이 추가될 예정입니다.</p>
+
+        <div class="game-section">
+            <!-- 1행: 상단 룰 가이드 배너 -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="alert alert-success rule-banner mb-0 shadow-sm d-flex align-items-center gap-2">
+                        <i class="bi bi-check-circle-fill fs-5"></i>
+                        <span>🟢 <strong>S (Strike)</strong> : 숫자와 <strong>위치</strong>가 모두 맞을 때</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="alert alert-warning rule-banner mb-0 shadow-sm d-flex align-items-center gap-2">
+                        <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                        <span>🟡 <strong>B (Ball)</strong> : 숫자는 맞지만, <strong>위치</strong>가 틀릴 때</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="alert alert-danger rule-banner mb-0 shadow-sm d-flex align-items-center gap-2">
+                        <i class="bi bi-x-circle-fill fs-5"></i>
+                        <span>🔴 <strong>O (Out)</strong> : 입력한 숫자가 정답에 <strong>없을 때</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2행: 게임 진행부 (2열 레이아웃) -->
+            <div class="row g-4">
+                <!-- 하단 왼쪽: 숫자 제어부 및 입력 장치 -->
+                <div class="col-md-5 col-lg-4">
+                    <h4 class="fw-bold mb-3 d-flex align-items-center gap-2 text-primary">
+                        <i class="bi bi-keyboard"></i> <span id="input-title">4자리 숫자 입력</span>
+                    </h4>
+
+                    <!-- 게임 설정 컨트롤 패널 -->
+                    <div class="p-3 bg-light rounded-3 border mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="fw-bold text-secondary">자릿수 설정</span>
+                            <div class="btn-group" role="group">
+                                <input type="radio" class="btn-check" name="digitLength" id="digit4" value="4" checked onchange="changeDigitLength(4)">
+                                <label class="btn btn-outline-secondary btn-sm" for="digit4">4자리</label>
+                                <input type="radio" class="btn-check" name="digitLength" id="digit5" value="5" onchange="changeDigitLength(5)">
+                                <label class="btn btn-outline-secondary btn-sm" for="digit5">5자리</label>
+                                <input type="radio" class="btn-check" name="digitLength" id="digit6" value="6" onchange="changeDigitLength(6)">
+                                <label class="btn btn-outline-secondary btn-sm" for="digit6">6자리</label>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary w-100 shadow-sm" onclick="startNewGame()">
+                            <i class="bi bi-arrow-clockwise"></i> 새 게임 시작
+                        </button>
+                    </div>
+
+                    <!-- 실시간 숫자 디스플레이 -->
+                    <div class="number-display" id="display-window">
+                        _ _ _ _
+                    </div>
+
+                    <!-- 가상 키패드 및 입력 장치 -->
+                    <div id="game-controls">
+                        <div class="row g-2 mb-3">
+                            <!-- 0~9 키패드 동적 비활성화를 위해 JS로 제어 -->
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('1')">1</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('2')">2</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('3')">3</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('4')">4</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('5')">5</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('6')">6</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('7')">7</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('8')">8</button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('9')">9</button></div>
+                            <div class="col-4"><button class="btn btn-outline-danger w-100 keypad-btn" onclick="pressBack()"><i class="bi bi-backspace"></i></button></div>
+                            <div class="col-4"><button class="btn btn-outline-secondary w-100 keypad-btn" onclick="pressNum('0')">0</button></div>
+                            <div class="col-4"><button class="btn btn-success w-100 keypad-btn text-white" onclick="submitGuess()"><i class="bi bi-check-circle"></i></button></div>
+                        </div>
+                    </div>
+
+                    <!-- 알림/에러 메시지 영역 -->
+                    <div id="error-message" class="alert alert-danger py-2 shadow-sm d-none"></div>
+                </div>
+
+                <!-- 하단 오른쪽: 입력 결과(히스토리) 리포트 영역 -->
+                <div class="col-md-7 col-lg-8 border-start-md ps-md-4">
+                    <h4 class="fw-bold mb-3 d-flex align-items-center gap-2 text-secondary">
+                        <i class="bi bi-journal-text"></i> 입력 결과 기록
+                    </h4>
+
+                    <div id="success-message" class="alert alert-success d-none mb-3 shadow-sm"></div>
+
+                    <div class="history-container" id="history-box">
+                        <p class="text-muted text-center py-5">아직 입력한 기록이 없습니다.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
+    <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- 숫자야구 코어 비즈니스 로직 -->
+    <script>
+        // 전역 게임 상태 정의
+        let targetNumber = "";
+        let digitLength = 4;
+        let currentGuess = [];
+        let history = [];
+        let isGameOver = false;
+
+        // 중복이 없는 무작위 정답 수 생성 (첫 자리는 0이 될 수 없음)
+        function generateTargetNumber(length) {
+            let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+            const firstDigitList = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+            
+            const firstDigit = firstDigitList[Math.floor(Math.random() * firstDigitList.length)];
+            digits.splice(digits.indexOf(firstDigit), 1);
+            
+            let result = firstDigit;
+            for (let i = 0; i < length - 1; i++) {
+                const randIndex = Math.floor(Math.random() * digits.length);
+                result += digits[randIndex];
+                digits.splice(randIndex, 1);
+            }
+            return result;
+        }
+
+        // 스트라이크, 볼, 아웃 판정 연산
+        function checkGuess(guess, target) {
+            let strikes = 0;
+            let balls = 0;
+            for (let i = 0; i < guess.length; i++) {
+                if (guess[i] === target[i]) {
+                    strikes++;
+                } else if (target.includes(guess[i])) {
+                    balls++;
+                }
+            }
+            const outs = target.length - strikes - balls;
+            return { strikes, balls, outs };
+        }
+
+        // 게임판 상태 완전히 리셋
+        function startNewGame() {
+            targetNumber = generateTargetNumber(digitLength);
+            currentGuess = [];
+            history = [];
+            isGameOver = false;
+
+            // UI 제어 상태 복구
+            document.getElementById("success-message").classList.add("d-none");
+            document.getElementById("error-message").classList.add("d-none");
+            
+            updateDisplay();
+            updateKeypadState();
+            renderHistory();
+        }
+
+        // 자릿수 선택 옵션 변경 시 처리
+        function changeDigitLength(length) {
+            digitLength = length;
+            document.getElementById("input-title").innerText = `${digitLength}자리 숫자 입력`;
+            startNewGame();
+        }
+
+        // 화면 렌더링 업데이트 (디스플레이 윈도우)
+        function updateDisplay() {
+            const displayWindow = document.getElementById("display-window");
+            if (isGameOver) {
+                displayWindow.innerHTML = `<span class="text-success">${targetNumber}</span>`;
+                return;
+            }
+
+            let text = "";
+            for (let i = 0; i < digitLength; i++) {
+                if (i < currentGuess.length) {
+                    text += currentGuess[i] + " ";
+                } else {
+                    text += "_ ";
+                }
+            }
+            displayWindow.innerText = text.trim();
+        }
+
+        // 키패드 활성/비활성 제어 (중복 입력 완전 차단)
+        function updateKeypadState() {
+            const buttons = document.querySelectorAll(".keypad-btn");
+            buttons.forEach(btn => {
+                const val = btn.innerText.trim();
+                // 숫자 패드 버튼인 경우에만 비활성화 연산 적용
+                if (!isNaN(val) && val !== "") {
+                    if (isGameOver) {
+                        btn.disabled = true;
+                    } else {
+                        btn.disabled = currentGuess.includes(val);
+                    }
+                } else {
+                    // Backspace, Submit 제어 버튼
+                    btn.disabled = isGameOver;
+                }
+            });
+        }
+
+        // 숫자 패드 터치 입력 처리
+        function pressNum(num) {
+            if (isGameOver) return;
+            if (currentGuess.length >= digitLength) return;
+            if (currentGuess.includes(num)) return; // 이중 방어
+
+            currentGuess.push(num);
+            hideError();
+            updateDisplay();
+            updateKeypadState();
+        }
+
+        // 한 글자 지우기 처리
+        function pressBack() {
+            if (isGameOver) return;
+            if (currentGuess.length === 0) return;
+
+            currentGuess.pop();
+            hideError();
+            updateDisplay();
+            updateKeypadState();
+        }
+
+        // 예측 값 제출 및 점검
+        function submitGuess() {
+            if (isGameOver) return;
+
+            const userGuess = currentGuess.join("");
+            if (userGuess.length !== digitLength) {
+                showError(`⚠️ ${digitLength}개의 숫자를 모두 선택해 주세요!`);
+                return;
+            }
+
+            hideError();
+            const { strikes, balls, outs } = checkGuess(userGuess, targetNumber);
+            history.push({ guess: userGuess, strikes, balls, outs });
+
+            if (strikes === digitLength) {
+                handleVictory();
+            }
+
+            currentGuess = []; // 입력 임시 저장소 비우기
+            updateDisplay();
+            updateKeypadState();
+            renderHistory();
+        }
+
+        // 정답 판정 시 세레머니 연출
+        function handleVictory() {
+            isGameOver = true;
+            
+            // 폭죽 효과 트리거
+            confetti({
+                particleCount: 150,
+                spread: 80,
+                origin: { y: 0.6 }
+            });
+
+            const successMsg = document.getElementById("success-message");
+            successMsg.innerHTML = `<h4 class="alert-heading fw-bold mb-1">🎉 정답을 맞췄습니다!</h4>
+                                    <p class="mb-0">🎊 <strong>${history.length}번</strong> 만에 정답 <strong>${targetNumber}</strong>을(를) 완벽히 맞추셨습니다!</p>`;
+            successMsg.classList.remove("d-none");
+        }
+
+        // 에러 표시 및 제거 컨트롤러
+        function showError(msg) {
+            const errBox = document.getElementById("error-message");
+            errBox.innerText = msg;
+            errBox.classList.remove("d-none");
+        }
+
+        function hideError() {
+            document.getElementById("error-message").classList.add("d-none");
+        }
+
+        // 히스토리 리스트 렌더링
+        function renderHistory() {
+            const container = document.getElementById("history-box");
+            if (history.length === 0) {
+                container.innerHTML = `<p class="text-muted text-center py-5">아직 입력한 기록이 없습니다.</p>`;
+                return;
+            }
+
+            let html = "";
+            // 가장 최신의 결과가 위로 오도록 역순 루프 수행
+            for (let i = history.length - 1; i >= 0; i--) {
+                const item = history[i];
+                let badges = "";
+
+                if (item.strikes > 0) badges += `<span class="badge bg-success py-2 px-3 me-1 fs-6">${item.strikes}S</span> `;
+                if (item.balls > 0) badges += `<span class="badge bg-warning text-dark py-2 px-3 me-1 fs-6">${item.balls}B</span> `;
+                if (item.outs > 0) badges += `<span class="badge bg-danger py-2 px-3 fs-6">${item.outs}O</span>`;
+
+                html += `
+                    <div class="history-item shadow-sm">
+                        <div>
+                            <span class="text-muted me-3 fs-6">${i + 1}번째 시도</span>
+                            <span class="fw-bold text-dark fs-5 tracking-wide">${item.guess}</span>
+                        </div>
+                        <div>
+                            ${badges}
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // 앱 초기 로드 시 자동 게임 론칭
+        document.addEventListener("DOMContentLoaded", () => {
+            startNewGame();
+        });
+    </script>
 </body>
 
 </html>
