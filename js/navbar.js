@@ -61,7 +61,7 @@
                             체험수학
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdown3">
-                            <li><a class="dropdown-item" href="${basePath}etc/voronoi.html">영역의 분할</a></li>
+                            <li><a class="dropdown-item" href="${basePath}etc/voronoi.html">보로노이 시뮬레이터</a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">
