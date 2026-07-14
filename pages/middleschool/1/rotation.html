@@ -124,12 +124,28 @@
                             <i class="bi bi-sliders"></i> 시뮬레이터 제어
                         </h5>
                         <p class="text-secondary small mb-4">
-                            회전축(빨간 점선) 오른쪽에 좌표를 클릭하여 다각형을 완성해보세요. 
-                            초록색 시작점을 다시 클릭하여 닫힌 도형이 되면 회전체를 완성할 수 있습니다.
+                            회전축(빨간 점선) 오른쪽에 좌표를 클릭하여 평면도형을 그립니다. 
+                            <strong>[선분]과 [원의 일부]를 선택하여 자유롭게 조합할 수 있습니다.</strong>
                         </p>
 
+                        <!-- 그리기 도구 선택 (선분 / 원의 일부) -->
+                        <div class="mb-4">
+                            <label class="fw-bold mb-2 text-secondary"><i class="bi bi-palette2"></i> 그리기 도구 선택</label>
+                            <div class="btn-group w-100" role="group" aria-label="그리기 모드">
+                                <input type="radio" class="btn-check" name="drawMode" id="modeLine" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary fw-bold" for="modeLine">
+                                    <i class="bi bi-slash-lg"></i> 선분 (직선)
+                                </label>
+
+                                <input type="radio" class="btn-check" name="drawMode" id="modeArc" autocomplete="off">
+                                <label class="btn btn-outline-primary fw-bold" for="modeArc">
+                                    <i class="bi bi-circle-half"></i> 원의 일부 (곡선)
+                                </label>
+                            </div>
+                        </div>
+
                         <!-- 버튼 컨트롤러 -->
-                        <div class="d-flex gap-2 mb-4">
+                        <div class="d-flex gap-2 mb-2">
                             <button id="revolveButton" class="btn btn-danger btn-lg flex-fill fw-bold shadow-sm" style="background-color: #ff4b4b; border-color: #ff4b4b;" disabled>
                                 <i class="bi bi-arrow-repeat"></i> 회전체 생성
                             </button>
@@ -186,8 +202,21 @@
         const clipOffRadio = document.getElementById('clipOff');
         const clipHorizontalSlider = document.getElementById('clipHorizontalSlider');
 
+        const modeLine = document.getElementById('modeLine');
+        const modeArc = document.getElementById('modeArc');
+
         let points = []; 
         let isShapeClosed = false; 
+        let closingType = 'line'; // 마지막 닫힘 연결 유형
+
+        // 실시간 호(Arc) 대기 및 하이라이트 감지 상태 변수
+        let isPendingArc = false;
+        let isClosingClick = false;
+        let pendingP1 = null;
+        let pendingP2 = null;
+        let currentMousePos = { x: 0, y: 0 };
+
+        let currentDrawMode = 'line'; // 현재 그리기 상태 ('line' 또는 'arc')
         let threeApp = null; 
         let animationFrameId = null; 
         let isGenerating = false; 
@@ -201,6 +230,10 @@
         const horizontalPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
         const verticalPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
         const globalClippingPlanes = []; 
+
+        // 그리기 도구 선택 리스너
+        modeLine.addEventListener('change', () => { currentDrawMode = 'line'; });
+        modeArc.addEventListener('change', () => { currentDrawMode = 'arc'; });
 
         function resizeCanvas() {
             const { width, height } = canvasWrapper.getBoundingClientRect();
@@ -247,6 +280,83 @@
             ctx.stroke();
             ctx.restore();
         }
+
+        // 특정 두 지점을 잇는 짧은 원(minor-arc) 또는 긴 원(major-arc) 경로 정점 산출 함수
+        function getArcPoints(p1, p2, arcType, numSegments = 16) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 0.001) return [];
+
+            const mx = (p1.x + p2.x) / 2;
+            const my = (p1.y + p2.y) / 2;
+
+            // 왼쪽을 가리키는 법선 벡터
+            const nlx = -dy / d;
+            const nly = dx / d;
+
+            // 현의 왼쪽에 가상의 원 중심 설정 (부풀어 오르는 면이 오른쪽이 되도록 처리)
+            const cx = mx + (d / 2) * nlx;
+            const cy = my + (d / 2) * nly;
+            const r = d / Math.sqrt(2);
+
+            const alpha1 = Math.atan2(p1.y - cy, p1.x - cx);
+            const alpha2 = Math.atan2(p2.y - cy, p2.x - cx);
+
+            let diff = alpha2 - alpha1;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+
+            const pts = [];
+            if (arcType === 'minor-arc') {
+                for (let j = 1; j <= numSegments; j++) {
+                    const t = j / numSegments;
+                    const angle = alpha1 + diff * t;
+                    pts.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+                }
+            } else {
+                const majorDiff = (diff > 0) ? (diff - Math.PI * 2) : (diff + Math.PI * 2);
+                for (let j = 1; j <= numSegments; j++) {
+                    const t = j / numSegments;
+                    const angle = alpha1 + majorDiff * t;
+                    pts.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+                }
+            }
+            return pts;
+        }
+
+        // 현재 마우스 각도에 따라 짧은 원(minor)인지 긴 원(major)인지 정밀 식별
+        function getSelectedArcType(p1, p2, mousePos) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 0.001) return 'minor-arc';
+
+            const mx = (p1.x + p2.x) / 2;
+            const my = (p1.y + p2.y) / 2;
+            const nlx = -dy / d;
+            const nly = dx / d;
+            const cx = mx + (d / 2) * nlx;
+            const cy = my + (d / 2) * nly;
+
+            const alpha1 = Math.atan2(p1.y - cy, p1.x - cx);
+            const alpha2 = Math.atan2(p2.y - cy, p2.x - cx);
+            const mouseAngle = Math.atan2(mousePos.y - cy, mousePos.x - cx);
+
+            let diff = alpha2 - alpha1;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+
+            let targetAngle = mouseAngle - alpha1;
+            while (targetAngle < -Math.PI) targetAngle += Math.PI * 2;
+            while (targetAngle > Math.PI) targetAngle -= Math.PI * 2;
+
+            const isMinor = (diff >= 0) 
+                ? (targetAngle >= 0 && targetAngle <= diff)
+                : (targetAngle <= 0 && targetAngle >= diff);
+
+            return isMinor ? 'minor-arc' : 'major-arc';
+        }
         
         function draw2DShape() {
             ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
@@ -256,14 +366,118 @@
             ctx.strokeStyle = '#007bff';
             ctx.lineWidth = 2;
             ctx.beginPath();
+            
+            // 첫 번째 좌표로 이동
             ctx.moveTo(points[0].x, points[0].y);
-            points.forEach(p => ctx.lineTo(p.x, p.y));
+            
+            // 등록된 정점 연결선 순차 드로잉
+            for (let i = 1; i < points.length; i++) {
+                const p1 = points[i - 1];
+                const p2 = points[i];
+                if (p2.type === 'minor-arc' || p2.type === 'major-arc') {
+                    const pts = getArcPoints(p1, p2, p2.type);
+                    pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                } else {
+                    ctx.lineTo(p2.x, p2.y);
+                }
+            }
+            
+            // 도형이 닫힌 경우 처리
             if (isShapeClosed) {
-                ctx.closePath();
+                const p1 = points[points.length - 1];
+                const p2 = points[0];
+                if (closingType === 'minor-arc' || closingType === 'major-arc') {
+                    const pts = getArcPoints(p1, p2, closingType);
+                    pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    ctx.closePath();
+                } else {
+                    ctx.closePath();
+                }
                 ctx.fillStyle = 'rgba(0,123,255,0.15)';
                 ctx.fill();
             }
             ctx.stroke();
+
+            // 가이드라인 및 선택 점선 실시간 렌더링
+            if (!isShapeClosed && points.length > 0) {
+                const lastPt = points[points.length - 1];
+
+                if (isPendingArc) {
+                    const p1 = pendingP1;
+                    const p2 = pendingP2;
+
+                    const minorPts = getArcPoints(p1, p2, 'minor-arc');
+                    const majorPts = getArcPoints(p1, p2, 'major-arc');
+                    const selectedType = getSelectedArcType(p1, p2, currentMousePos);
+
+                    // 1. 짧은 원 가이드
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    minorPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    if (selectedType === 'minor-arc') {
+                        ctx.strokeStyle = '#007bff';
+                        ctx.lineWidth = 3;
+                    } else {
+                        ctx.strokeStyle = '#94a3b8';
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([5, 5]);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // 2. 긴 원 가이드
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    majorPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    if (selectedType === 'major-arc') {
+                        ctx.strokeStyle = '#007bff';
+                        ctx.lineWidth = 3;
+                    } else {
+                        ctx.strokeStyle = '#94a3b8';
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([5, 5]);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // 3. 안내 텍스트 가이드
+                    ctx.save();
+                    ctx.fillStyle = '#2563eb';
+                    ctx.font = 'bold 13px Pretendard';
+                    ctx.fillText(selectedType === 'minor-arc' ? '짧은 원 (클릭하여 선택)' : '긴 원 (클릭하여 선택)', currentMousePos.x + 15, currentMousePos.y + 15);
+                    ctx.restore();
+                } else {
+                    // 마우스를 클릭하기 전 예비 가이드라인
+                    const mousePos = currentMousePos;
+                    const centerX = drawingCanvas.width / 2;
+                    const offsetX = mousePos.x - centerX;
+                    const snappedOffsetX = Math.round(offsetX / GRID_SIZE) * GRID_SIZE;
+                    const snappedX = centerX + snappedOffsetX;
+                    const snappedY = Math.round(mousePos.y / GRID_SIZE) * GRID_SIZE;
+
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(0, 123, 255, 0.4)';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([3, 3]);
+                    ctx.beginPath();
+                    ctx.moveTo(lastPt.x, lastPt.y);
+
+                    if (currentDrawMode === 'arc') {
+                        const p1 = lastPt;
+                        const p2 = { x: snappedX, y: snappedY };
+                        const minorPts = getArcPoints(p1, p2, 'minor-arc');
+                        minorPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    } else {
+                        ctx.lineTo(snappedX, snappedY);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+            
+            // 정점 마커 렌더링
             points.forEach((point, index) => {
                 ctx.beginPath();
                 ctx.fillStyle = (index === 0) ? '#28a745' : '#dc3545';
@@ -277,32 +491,97 @@
             const rect = drawingCanvas.getBoundingClientRect();
             const mouseX = event.clientX - rect.left;
             const mouseY = event.clientY - rect.top;
+            const pos = { x: mouseX, y: mouseY };
+
             const centerX = drawingCanvas.width / 2;
             const offsetX = mouseX - centerX;
             const snappedOffsetX = Math.round(offsetX / GRID_SIZE) * GRID_SIZE;
             const snappedX = centerX + snappedOffsetX;
             const snappedY = Math.round(mouseY / GRID_SIZE) * GRID_SIZE;
-            if (points.length >= 3) {
+
+            // 1. 대기상태(Pending)인 경우: 한 번 더 클릭하여 호 종류 결정
+            if (isPendingArc) {
+                const selectedType = getSelectedArcType(pendingP1, pendingP2, pos);
+                if (isClosingClick) {
+                    isShapeClosed = true;
+                    closingType = selectedType;
+                    revolveButton.disabled = false;
+                } else {
+                    points.push({ x: pendingP2.x, y: pendingP2.y, type: selectedType });
+                }
+                isPendingArc = false;
+                isClosingClick = false;
+                draw2DShape();
+                return;
+            }
+
+            // 2. 대기상태가 아닌 경우: 직선 또는 곡선 가이드 활성화
+            if (currentDrawMode === 'arc' && points.length > 0) {
                 const firstPoint = points[0];
                 const distance = Math.sqrt(Math.pow(snappedX - firstPoint.x, 2) + Math.pow(snappedY - firstPoint.y, 2));
-                if (distance < CLOSING_THRESHOLD) {
-                    isShapeClosed = true;
-                    revolveButton.disabled = false;
-                    draw2DShape();
-                    return;
+                isClosingClick = (points.length >= 3 && distance < CLOSING_THRESHOLD);
+
+                isPendingArc = true;
+                pendingP1 = points[points.length - 1];
+                pendingP2 = isClosingClick ? { x: firstPoint.x, y: firstPoint.y } : { x: snappedX, y: snappedY };
+                draw2DShape();
+            } else {
+                // 선분 그리기 혹은 최초 1점 클릭 로직
+                if (points.length >= 3) {
+                    const firstPoint = points[0];
+                    const distance = Math.sqrt(Math.pow(snappedX - firstPoint.x, 2) + Math.pow(snappedY - firstPoint.y, 2));
+                    if (distance < CLOSING_THRESHOLD) {
+                        isShapeClosed = true;
+                        closingType = 'line';
+                        revolveButton.disabled = false;
+                        draw2DShape();
+                        return;
+                    }
                 }
+                const type = (points.length === 0) ? 'start' : 'line';
+                points.push({ x: snappedX, y: snappedY, type: type });
+                draw2DShape();
             }
-            points.push({ x: snappedX, y: snappedY });
-            draw2DShape();
         }
 
+        // 3D 렌더링용 정점 조밀화 처리 (곡선 보간 알고리즘 내장)
         function preparePointsFor3D() {
             const centerX = drawingCanvas.width / 2, centerY = drawingCanvas.height / 2;
-            let finalPoints = [...points];
-            if (isShapeClosed && finalPoints.length > 0) {
-                finalPoints.push(finalPoints[0]);
+            let interpolatedPoints = [];
+            
+            if (points.length === 0) return [];
+            
+            // 최초 시작점 삽입
+            interpolatedPoints.push(new THREE.Vector2(points[0].x - centerX, -(points[0].y - centerY)));
+            
+            for (let i = 1; i < points.length; i++) {
+                const p1 = points[i - 1];
+                const p2 = points[i];
+                if (p2.type === 'minor-arc' || p2.type === 'major-arc') {
+                    const pts = getArcPoints(p1, p2, p2.type);
+                    pts.forEach(pt => {
+                        interpolatedPoints.push(new THREE.Vector2(pt.x - centerX, -(pt.y - centerY)));
+                    });
+                } else {
+                    interpolatedPoints.push(new THREE.Vector2(p2.x - centerX, -(p2.y - centerY)));
+                }
             }
-            return finalPoints.map(p => new THREE.Vector2(p.x - centerX, -(p.y - centerY)));
+            
+            // 닫히는 마지막 구간 보간 처리
+            if (isShapeClosed) {
+                const p1 = points[points.length - 1];
+                const p2 = points[0];
+                if (closingType === 'minor-arc' || closingType === 'major-arc') {
+                    const pts = getArcPoints(p1, p2, closingType);
+                    pts.forEach(pt => {
+                        interpolatedPoints.push(new THREE.Vector2(pt.x - centerX, -(pt.y - centerY)));
+                    });
+                } else {
+                    interpolatedPoints.push(new THREE.Vector2(p2.x - centerX, -(p2.y - centerY)));
+                }
+            }
+            
+            return interpolatedPoints;
         }
         
         function init3D() {
@@ -391,6 +670,11 @@
             resetButton.textContent = "초기화";
             isGenerating = true;
             currentAngle = 0.01;
+            
+            // 그리기 옵션 잠금
+            modeLine.disabled = true;
+            modeArc.disabled = true;
+
             drawingCanvas.style.display = 'none';
             threeCanvas.style.display = 'block';
             threeApp = init3D();
@@ -400,11 +684,19 @@
 
         resetButton.addEventListener('click', () => {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            points = []; isShapeClosed = false; threeApp = null; animationFrameId = null;
+            points = []; isShapeClosed = false; closingType = 'line'; threeApp = null; animationFrameId = null;
             isGenerating = false; currentAngle = 0;
+            isPendingArc = false; isClosingClick = false; pendingP1 = null; pendingP2 = null;
             threeCanvas.style.display = 'none';
             drawingCanvas.style.display = 'block';
             clippingControlsUI.style.display = 'none';
+            
+            // 그리기 모드 복구 및 활성화
+            modeLine.disabled = false;
+            modeArc.disabled = false;
+            modeLine.checked = true;
+            currentDrawMode = 'line';
+
             resizeCanvas();
             revolveButton.disabled = true;
             revolveButton.textContent = "회전체 생성";
@@ -417,6 +709,11 @@
         });
 
         drawingCanvas.addEventListener('click', handleCanvasClick);
+
+        drawingCanvas.addEventListener('mousemove', (e) => {
+            currentMousePos = getCanvasPos(e);
+            draw2DShape();
+        });
 
         clippingControlsUI.addEventListener('change', (e) => {
             if (!threeApp) return;
@@ -436,6 +733,17 @@
             }
             threeApp.controls.update();
         });
+
+        // 사용자의 마우스/터치 좌표 변환
+        function getCanvasPos(e) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            const scaleX = drawingCanvas.width / rect.width;
+            const scaleY = drawingCanvas.height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
 
         clipHorizontalSlider.addEventListener('input', (e) => {
             horizontalPlane.constant = parseFloat(e.target.value);
