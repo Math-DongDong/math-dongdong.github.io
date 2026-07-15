@@ -41,6 +41,7 @@
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdownAutomation">
                             <!-- 업무자동화 소속 파일 목록 -->
+                            <li><a class="dropdown-item" href="${basePath}appsheet.html">학생관리 시스템</a></li>
                             <li><a class="dropdown-item" href="${basePath}travel_expense_report.html">여비정산 신청서</a></li>
                             
                             <!-- 추후 파일이 추가되면 아래와 같이 한 줄씩 복사해서 넣으세요 -->
