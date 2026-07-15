@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>여비정산 신청서 자동 생성기</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            color: #212529;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .container-custom {
+            max-width: 900px;
+            background-color: #FFFFFF;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            padding: 2rem;
+            margin-top: 2rem;
+            margin-bottom: 2rem;
+        }
+        .section-title {
+            border-left: 4px solid #0d6efd;
+            padding-left: 10px;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+    </style>
+</head>
+<body>
+
+    <main class="container container-custom">
+        <div class="text-center mb-4">
+            <h1 class="fw-bold text-primary"><i class="bi bi-file-earmark-word-fill"></i> 여비정산 신청서 자동 생성기</h1>
+            <p class="text-muted">엑셀 파일에서 출장 내역을 불러와 HWPX 템플릿에 자동 입력합니다.</p>
+        </div>
+
+        <!-- 1. 파일 업로드 영역 -->
+        <div class="card mb-4 border-0 bg-light">
+            <div class="card-body">
+                <h5 class="fw-bold"><i class="bi bi-upload"></i> 1. 파일 업로드</h5>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">HWPX 템플릿 파일</label>
+                        <input class="form-control" type="file" id="hwpxFile" accept=".hwpx">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">NEIS 출장내역 엑셀 파일</label>
+                        <input class="form-control" type="file" id="excelFile" accept=".xlsx, .xls">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 대상자 선택 영역 -->
+        <div class="mb-4" id="selectorArea" style="display: none;">
+            <h5 class="section-title">2. 출장 내역 선택 (관외 출장 / 여비부지급 제외)</h5>
+            <select class="form-select form-select-lg border-primary" id="tripSelector">
+                <option value="" selected disabled>출장 내역을 선택해주세요.</option>
+            </select>
+        </div>
+
+        <!-- 3. 데이터 폼 영역 -->
+        <form id="hwpxForm">
+            <h5 class="section-title">3. 기본 정보</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">소속</label>
+                    <input type="text" class="form-control" id="소속" placeholder="예: 안남중학교">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">직급(직위)</label>
+                    <select class="form-select" id="직급">
+                        <option value="교사" selected>교사</option>
+                        <option value="교감">교감</option>
+                        <option value="교장">교장</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">성명</label>
+                    <input type="text" class="form-control" id="성명" placeholder="예: 홍길동">
+                </div>
+            </div>
+
+            <h5 class="section-title">4. 출장 정보</h5>
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <label class="form-label">일시</label>
+                    <input type="text" class="form-control" id="일시" placeholder="예: 2026.07.14 16:00 ~ 2026.07.14 20:00">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">출장지</label>
+                    <input type="text" class="form-control" id="출장지" placeholder="예: 창원교육지원청 진해센터">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">출장목적</label>
+                    <input type="text" class="form-control" id="출장목적" placeholder="예: 디지털 리터러시 연수">
+                </div>
+            </div>
+
+            <h5 class="section-title">5. 운임 정보</h5>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label text-primary">출발일</label>
+                    <input type="text" class="form-control" id="출발일" placeholder="예: 7/14">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-primary">교통편(출발)</label>
+                    <input type="text" class="form-control" id="출발교통편" placeholder="예: 자가용">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-primary">출발지</label>
+                    <input type="text" class="form-control" id="출발지" placeholder="예: 소속교">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-primary">도착지</label>
+                    <input type="text" class="form-control" id="도착지" placeholder="예: 출장지">
+                </div>
+            </div>
+
+            <div class="row g-3 mt-1">
+                <div class="col-md-3">
+                    <label class="form-label text-success">도착일</label>
+                    <input type="text" class="form-control" id="도착일" placeholder="예: 7/14">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-success">교통편(도착)</label>
+                    <input type="text" class="form-control" id="도착교통편" placeholder="예: 자가용">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-success">도착지(원 출발지)</label>
+                    <input type="text" class="form-control" id="복귀도착지" placeholder="예: 소속교">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-success">출발지(원 도착지)</label>
+                    <input type="text" class="form-control" id="복귀출발지" placeholder="예: 출장지">
+                </div>
+            </div>
+
+            <h5 class="section-title">6. 첨부 서류</h5>
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <select class="form-select" id="첨부">
+                        <option value="주유 영수증 1매." selected>주유 영수증 1매.</option>
+                        <option value="하이패스 영수증 1매.">하이패스 영수증 1매.</option>
+                        <option value="없음.">없음.</option>
+                    </select>
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <button type="button" class="btn btn-primary btn-lg w-100 fw-bold" onclick="generateHWPX()">
+                ✨ HWPX 신청서 생성 및 다운로드
+            </button>
+        </form>
+    </main>
+
+    <!-- 외부 라이브러리 (Excel 처리, Zip 조작, 파일 저장) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <script>
+        let filteredData = [];
+
+        // 엑셀 파일 업로드 이벤트
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // A, B, C 열 형식으로 데이터 읽기
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: "A", defval: "" });
+                
+                // 첫 행(헤더) 제외 및 조건 필터링
+                // 조건: D열(출장종류)에 '관외' 포함 AND F열(출장목적)에 '여비부지급' 미포함
+                filteredData = jsonData.slice(1).filter(row => {
+                    const type = row['D'] || "";
+                    const purpose = row['F'] || "";
+                    return type.includes('관외') && !purpose.includes('여비부지급');
+                });
+
+                renderSelector();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // 드롭다운 렌더링
+        function renderSelector() {
+            const selector = document.getElementById('tripSelector');
+            selector.innerHTML = '<option value="" selected disabled>출장 내역을 선택해주세요.</option>';
+            
+            if (filteredData.length === 0) {
+                alert("조건에 맞는 출장 내역이 없습니다.");
+                document.getElementById('selectorArea').style.display = 'none';
+                return;
+            }
+
+            filteredData.forEach((row, index) => {
+                const name = row['L'];
+                const date = row['H'];
+                const dest = row['E'];
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `[${name}] ${date} - ${dest}`;
+                selector.appendChild(option);
+            });
+
+            document.getElementById('selectorArea').style.display = 'block';
+        }
+
+        // 출장 선택 시 폼에 데이터 맵핑
+        document.getElementById('tripSelector').addEventListener('change', function() {
+            const index = this.value;
+            const row = filteredData[index];
+
+            document.getElementById('소속').value = row['B'];
+            document.getElementById('성명').value = row['L'];
+            document.getElementById('일시').value = row['H'];
+            document.getElementById('출장지').value = row['E'];
+            document.getElementById('출장목적').value = row['F'];
+
+            // 출장기간(H열) 파싱하여 출발/도착일 추출 시도 (예: 2026.07.14 16:00 ~ ...)
+            const dateStr = row['H'] || "";
+            const dates = dateStr.match(/\d{4}\.\d{2}\.\d{2}/g);
+            if (dates && dates.length >= 1) {
+                const startDate = dates[0].substring(5).replace('.', '/'); // 07/14 형태로 변환
+                document.getElementById('출발일').value = startDate;
+                document.getElementById('도착일').value = dates.length > 1 ? dates[1].substring(5).replace('.', '/') : startDate;
+            }
+        });
+
+        // HWPX 파일 생성 로직
+        async function generateHWPX() {
+            const hwpxInput = document.getElementById('hwpxFile');
+            if (!hwpxInput.files || hwpxInput.files.length === 0) {
+                alert("먼저 HWPX 템플릿 파일을 업로드해주세요.");
+                return;
+            }
+            if (!document.getElementById('성명').value) {
+                alert("성명을 입력해주세요.");
+                return;
+            }
+
+            const replaceDict = {
+                "소속": document.getElementById('소속').value,
+                "직급": document.getElementById('직급').value,
+                "성명": document.getElementById('성명').value,
+                "일시": document.getElementById('일시').value,
+                "출장지": document.getElementById('출장지').value,
+                "출장목적": document.getElementById('출장목적').value,
+                "출발일": document.getElementById('출발일').value,
+                "출발교통편": document.getElementById('출발교통편').value,
+                "출발지": document.getElementById('출발지').value,
+                "도착지": document.getElementById('도착지').value,
+                "도착일": document.getElementById('도착일').value,
+                "도착교통편": document.getElementById('도착교통편').value,
+                "첨부": document.getElementById('첨부').value
+            };
+
+            // 오늘 날짜 계산
+            const today = new Date();
+            replaceDict["년"] = today.getFullYear();
+            replaceDict["월"] = today.getMonth() + 1;
+            replaceDict["일"] = today.getDate();
+
+            try {
+                const file = hwpxInput.files[0];
+                const arrayBuffer = await file.arrayBuffer();
+                const zip = await JSZip.loadAsync(arrayBuffer);
+
+                // XML 파일들 순회하며 치환
+                for (const [filename, fileData] of Object.entries(zip.files)) {
+                    if (filename.startsWith("Contents/section") && filename.endsWith(".xml")) {
+                        let xmlText = await fileData.async("string");
+                        
+                        for (const [key, value] of Object.entries(replaceDict)) {
+                            // 정규식을 이용해 모든 {{키}}를 치환
+                            const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+                            xmlText = xmlText.replace(regex, value || "");
+                        }
+                        // 치환된 내용으로 덮어쓰기
+                        zip.file(filename, xmlText);
+                    }
+                }
+
+                // 새로운 HWPX 파일 생성 및 다운로드
+                const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+                saveAs(blob, `${replaceDict['성명']}_여비정산신청서_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.hwpx`);
+                
+            } catch (error) {
+                console.error(error);
+                alert("파일 생성 중 오류가 발생했습니다. 개발자 도구를 확인하세요.");
+            }
+        }
+    </script>
+</body>
+</html>
