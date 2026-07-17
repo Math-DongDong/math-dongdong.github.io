@@ -1,6 +1,5 @@
 /**
- * navbar_automation.js
- * 업무자동화(schoolautomation) 페이지 공통 네비게이션 바 모듈
+ * 인공지능 수학 페이지 공통 네비게이션 바 모듈
  */
 (function () {
     // 현재 실행 중인 HTML 파일의 경로를 기반으로 상대 경로 자동 계산
