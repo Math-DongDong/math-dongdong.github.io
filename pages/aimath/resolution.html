@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>이미지 해상도 - 이미지 데이터의 표현</title>
+  <!-- Bootstrap 5 CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #ffffff;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    }
+    .preview-canvas {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      image-rendering: -moz-crisp-edges;
+      image-rendering: -webkit-crisp-edges;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    .upload-area {
+      border: 2px dashed #0d6efd;
+      border-radius: 12px;
+      transition: background-color 0.2s ease-in-out;
+      cursor: pointer;
+    }
+    .upload-area:hover {
+      background-color: #f8f9fa;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 공통 네비게이션바 컨테이너 -->
+  <div id="navbar-container"></div>
+
+  <div class="container py-4">
+    <!-- 업로드 섹션 -->
+    <div class="card mb-4 border-0 shadow-sm bg-light">
+      <div class="card-body p-4">
+        <h5 class="card-title fw-bold mb-3">📂 이미지 업로드</h5>
+        <div class="upload-area p-5 text-center position-relative" id="drop-zone">
+          <input type="file" id="image-upload" accept="image/png, image/jpeg, image/jpg" class="position-absolute top-0 start-0 w-100 h-100 opacity-0 style-pointer">
+          <span class="fs-1">🖼️</span>
+          <p class="mb-0 mt-2 text-muted fw-semibold">이미지 파일을 드래그 앤 드롭하거나 클릭하여 업로드하세요. (png, jpg, jpeg)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 로딩 및 정보 알림 -->
+    <div id="info-alert" class="alert alert-info border-0 shadow-sm" role="alert">
+      👆 상단의 '이미지 업로드'를 열어 이미지 파일( png, jpg, jpeg )을 먼저 업로드해주세요.
+    </div>
+
+    <!-- 메인 이미지 에디터 섹션 (업로드 전에는 숨김) -->
+    <div id="editor-section" class="d-none">
+      <div class="row g-4">
+        <!-- [왼쪽] 설정 & 조절 단 -->
+        <div class="col-lg-3 col-md-12">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4 d-flex flex-col justify-content-between">
+              <div>
+                <h5 class="fw-bold mb-3 text-primary border-bottom pb-2">해상도 설정</h5>
+                
+                <div class="mb-3">
+                  <label for="input-width" class="form-label fw-semibold text-secondary">가로(Width) 픽셀</label>
+                  <div class="input-group">
+                    <input type="number" id="input-width" class="form-control" min="1" step="1">
+                    <span class="input-group-text">px</span>
+                  </div>
+                </div>
+
+                <div class="mb-4">
+                  <label for="input-height" class="form-label fw-semibold text-secondary">세로(Height) 픽셀</label>
+                  <div class="input-group">
+                    <input type="number" id="input-height" class="form-control" min="1" step="1">
+                    <span class="input-group-text">px</span>
+                  </div>
+                </div>
+
+                <div class="form-check form-switch mb-4">
+                  <input class="form-check-input" type="checkbox" role="switch" id="ratio-lock" checked>
+                  <label class="form-check-label text-muted small" for="ratio-lock">종횡비 유지</label>
+                </div>
+              </div>
+
+              <div>
+                <button id="download-btn" class="btn btn-primary w-100 fw-bold py-2 mb-3 shadow-sm d-flex align-items-center justify-content-center gap-2">
+                  <span>💾</span> 변환된 이미지 다운로드
+                </button>
+                
+                <div id="resized-warning" class="alert alert-warning border-0 small py-2 d-none" role="alert">
+                  <!-- warning message injected -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [중앙] 변환 이미지 프리뷰 -->
+        <div class="col-lg-4 col-md-6 col-12">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body p-4 text-center">
+              <h5 class="fw-bold mb-3 text-secondary text-start">변환 이미지</h5>
+              <div class="d-flex align-items-center justify-content-center" style="min-height: 300px;">
+                <canvas id="canvas-preview" class="preview-canvas"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [오른쪽] 원본/기준 이미지 -->
+        <div class="col-lg-5 col-md-6 col-12">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body p-4 text-center">
+              <h5 class="fw-bold mb-3 text-secondary text-start">원본 이미지</h5>
+              <div class="d-flex align-items-center justify-content-center" style="min-height: 300px;">
+                <img id="img-original" class="preview-canvas" alt="Original Image">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- 공통 네비게이션바 연동 스크립트 -->
+  <script src="../../js/navbar_aimath.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const fileInput = document.getElementById('image-upload');
+      const dropZone = document.getElementById('drop-zone');
+      const infoAlert = document.getElementById('info-alert');
+      const editorSection = document.getElementById('editor-section');
+      const inputWidth = document.getElementById('input-width');
+      const inputHeight = document.getElementById('input-height');
+      const ratioLock = document.getElementById('ratio-lock');
+      const downloadBtn = document.getElementById('download-btn');
+      const warningAlert = document.getElementById('resized-warning');
+      const imgOriginal = document.getElementById('img-original');
+      const canvasPreview = document.getElementById('canvas-preview');
+      const ctxPreview = canvasPreview.getContext('2d');
+
+      // 변환 및 다운로드를 위한 오프스크린 캔버스들
+      const canvasBase = document.createElement('canvas'); // 최대 1000px 기준 이미지 저장
+      const ctxBase = canvasBase.getContext('2d');
+      const canvasPixelated = document.createElement('canvas'); // 해상도가 변경된 상태
+      const ctxPixelated = canvasPixelated.getContext('2d');
+
+      let originalWidth = 0;
+      let originalHeight = 0;
+      let previewWidth = 0;
+      let previewHeight = 0;
+      let filename = 'image.png';
+      let imgType = 'image/png';
+      let isResized = false;
+      let currentImage = null;
+      let aspectRatio = 1;
+
+      // 파일 업로드 이벤트 핸들러
+      fileInput.addEventListener('change', handleFileSelect);
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('bg-light');
+      });
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('bg-light');
+      });
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-light');
+        if (e.dataTransfer.files.length > 0) {
+          fileInput.files = e.dataTransfer.files;
+          handleFileSelect();
+        }
+      });
+
+      function handleFileSelect() {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        filename = file.name;
+        imgType = file.type || 'image/png';
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            currentImage = img;
+            processLoadedImage(img);
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function processLoadedImage(img) {
+        originalWidth = img.naturalWidth || img.width;
+        originalHeight = img.naturalHeight || img.height;
+        aspectRatio = originalWidth / originalHeight;
+
+        const maxSide = Math.max(originalWidth, originalHeight);
+        isResized = false;
+        previewWidth = originalWidth;
+        previewHeight = originalHeight;
+
+        // 원본 이미지가 1000px 이상일 경우 축소 (LANCZOS 대용 브라우저 드로우)
+        if (maxSide > 1000) {
+          isResized = true;
+          const scale = 1000 / maxSide;
+          previewWidth = Math.max(1, Math.round(originalWidth * scale));
+          previewHeight = Math.max(1, Math.round(originalHeight * scale));
+        }
+
+        // 기준 캔버스 크기 지정 및 원본 렌더링
+        canvasBase.width = previewWidth;
+        canvasBase.height = previewHeight;
+        ctxBase.drawImage(img, 0, 0, previewWidth, previewHeight);
+
+        // 원본 뷰어 연결 (안전하게 DataURL로 연결하여 렌더링 지원)
+        imgOriginal.src = canvasBase.toDataURL(imgType);
+        
+        // 입력 폼 제어 및 최대값 바인딩
+        inputWidth.max = previewWidth;
+        inputHeight.max = previewHeight;
+        inputWidth.value = previewWidth;
+        inputHeight.value = previewHeight;
+
+        // 경고 메시지 표시 제어
+        if (isResized) {
+          warningAlert.innerHTML = `⚠️ 원본 이미지(${originalWidth}x${originalHeight})가 너무 커서 현재 ${previewWidth}x${previewHeight}로 축소되어 표시됩니다.`;
+          warningAlert.classList.remove('d-none');
+        } else {
+          warningAlert.classList.add('d-none');
+        }
+
+        // 섹션 가시성 제어
+        infoAlert.classList.add('d-none');
+        editorSection.classList.remove('d-none');
+
+        updatePixelation();
+      }
+
+      // 해상도 입력 변경 리스너
+      inputWidth.addEventListener('input', () => {
+        let val = parseInt(inputWidth.value);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > previewWidth) val = previewWidth;
+        inputWidth.value = val;
+
+        if (ratioLock.checked) {
+          const companionVal = Math.max(1, Math.round(val / aspectRatio));
+          inputHeight.value = companionVal;
+        }
+        updatePixelation();
+      });
+
+      inputHeight.addEventListener('input', () => {
+        let val = parseInt(inputHeight.value);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > previewHeight) val = previewHeight;
+        inputHeight.value = val;
+
+        if (ratioLock.checked) {
+          const companionVal = Math.max(1, Math.round(val * aspectRatio));
+          inputWidth.value = companionVal;
+        }
+        updatePixelation();
+      });
+
+      function updatePixelation() {
+        if (!currentImage) return;
+
+        const w = parseInt(inputWidth.value) || 1;
+        const h = parseInt(inputHeight.value) || 1;
+
+        // 1. 축소 캔버스 생성 (NEAREST 느낌을 내기 위해 저해상도로 렌더링)
+        canvasPixelated.width = w;
+        canvasPixelated.height = h;
+        ctxPixelated.drawImage(canvasBase, 0, 0, w, h);
+
+        // 2. 프리뷰 캔버스에 렌더링 (imageSmoothingEnabled를 끄고 확대 복사)
+        canvasPreview.width = previewWidth;
+        canvasPreview.height = previewHeight;
+
+        ctxPreview.imageSmoothingEnabled = false;
+        ctxPreview.mozImageSmoothingEnabled = false;
+        ctxPreview.webkitImageSmoothingEnabled = false;
+        ctxPreview.msImageSmoothingEnabled = false;
+
+        ctxPreview.drawImage(canvasPixelated, 0, 0, w, h, 0, 0, previewWidth, previewHeight);
+      }
+
+      // 다운로드 이벤트
+      downloadBtn.addEventListener('click', () => {
+        if (!currentImage) return;
+
+        const link = document.createElement('a');
+        link.download = `pixelated_${filename}`;
+        // 해상도가 저하된 캔버스(실제 픽셀화 크기)에서 데이터를 직접 추출
+        link.href = canvasPixelated.toDataURL(imgType);
+        link.click();
+      });
+    });
+  </script>
+</body>
+</html>
