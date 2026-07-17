@@ -4,10 +4,12 @@
  */
 (function () {
     // 현재 실행 중인 HTML 파일의 경로를 기반으로 상대 경로 자동 계산
-    const pathSegments = window.location.pathname.split('/');
+    // 윈도우 로컬 경로(백슬래시) 호환 및 디코딩 처리 적용
+    const normalizedPath = decodeURIComponent(window.location.pathname).replace(/\\/g, '/');
+    const pathSegments = normalizedPath.split('/');
     pathSegments.pop(); // 파일명 제거
 
-    const pagesIndex = pathSegments.indexOf('pages');
+    const pagesIndex = pathSegments.lastIndexOf('pages');
     let rootPath = '';
     let basePath = '';
 
@@ -92,11 +94,12 @@
 
     // 현재 페이지 활성화 표시 로직
     document.addEventListener('DOMContentLoaded', () => {
-        const currentPath = window.location.pathname;
+        const currentPath = decodeURIComponent(window.location.pathname).replace(/\\/g, '/');
         const currentFile = currentPath.split('/').pop();
 
         document.querySelectorAll('.dropdown-item').forEach(link => {
-            const linkFile = link.getAttribute('href').split('/').pop();
+            const linkHref = decodeURIComponent(link.getAttribute('href')).replace(/\\/g, '/');
+            const linkFile = linkHref.split('/').pop();
             if (linkFile && linkFile === currentFile) {
                 link.classList.add('active');
                 const parentDropdown = link.closest('.dropdown');
