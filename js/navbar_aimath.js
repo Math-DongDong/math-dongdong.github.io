@@ -42,9 +42,9 @@
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdownAiMath">
                             <!-- 인공지능 수학 소속 파일 목록 -->
-                            <li><a class="dropdown-item" href="${basePath}resolution.html">🖼️ 이미지 해상도</a></li>
-                            <li><a class="dropdown-item" href="${basePath}grayscale.html">⚫ 흑백 이미지</a></li>
-                            <li><a class="dropdown-item" href="${basePath}color.html">🎨 컬러 이미지</a></li>
+                            <li><a class="dropdown-item" href="${basePath}image/resolution.html">🖼️ 이미지 해상도</a></li>
+                            <li><a class="dropdown-item" href="${basePath}image/grayscale.html">⚫ 흑백 이미지</a></li>
+                            <li><a class="dropdown-item" href="${basePath}image/color.html">🎨 컬러 이미지</a></li>
                         </ul>
                     </li>
                 </ul>
