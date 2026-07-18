@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>밝기 조절</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', sans-serif;
+            background-color: #f8f9fa;
+            padding: 0;
+        }
+
+        .container-custom {
+            max-width: 1200px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+            margin: 0 auto;
+        }
+
+        .pixel-canvas {
+            max-width: 100%;
+            image-rendering: pixelated;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            max-height: 500px;
+            object-fit: contain;
+        }
+
+        .table-wrapper {
+            max-height: 500px;
+            overflow: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+
+        .table-matrix {
+            font-size: 0.75rem;
+            text-align: center;
+            margin-bottom: 0;
+            white-space: nowrap;
+        }
+
+        .table-matrix td {
+            padding: 0.2rem 0.4rem;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+
+<body>
+    <script src="../../../js/navbar_aimath.js"></script>
+
+    <main class="container container-custom">
+        <h2 class="fw-bold mb-4 text-center">💡 밝기 조절</h2>
+
+        <div class="card mb-4 bg-light border-0">
+            <div class="card-body">
+                <label class="form-label fw-bold"><i class="bi bi-file-earmark-excel"></i> 픽셀 데이터(Excel) 업로드</label>
+                <input class="form-control" type="file" id="upload-excel" accept=".xlsx">
+            </div>
+        </div>
+
+        <div id="info-alert" class="alert alert-info border-0 shadow-sm">
+            👆 엑셀 파일(.xlsx)을 업로드하여 행렬을 이미지로 변환해보세요.
+        </div>
+
+        <div id="content-area" class="d-none">
+            <div class="row g-3 align-items-end mb-4 bg-light p-3 rounded border">
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">연산 종류</label>
+                    <select id="op-type" class="form-select">
+                        <option value="add">➕ 덧셈</option>
+                        <option value="sub">➖ 뺄셈</option>
+                        <option value="mul">✖️ 곱셈</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">연산할 값</label>
+                    <input type="number" id="op-val" class="form-control" value="10.0" step="1">
+                </div>
+                <div class="col-md-6 d-flex gap-2">
+                    <button id="btn-reset" class="btn btn-secondary flex-fill fw-bold"><i
+                            class="bi bi-arrow-counterclockwise"></i> 원본 불러오기</button>
+                    <button id="btn-calc" class="btn btn-primary flex-fill fw-bold"><i class="bi bi-rocket-takeoff"></i>
+                        연산 실행</button>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6 text-center d-flex flex-column">
+                    <h5 class="fw-bold mb-1">변환된 이미지</h5>
+                    <p class="text-muted small mb-2">행렬을 기반으로 표현된 이미지입니다.</p>
+                    <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+                        <canvas id="canvas-preview" class="pixel-canvas"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6 text-center d-flex flex-column">
+                    <h5 class="fw-bold mb-1">행렬 데이터</h5>
+                    <p class="text-muted small mb-2" id="desc-matrix">적용된 행렬입니다.</p>
+                    <div class="table-wrapper flex-grow-1" id="matrix-preview"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- 공통 유틸리티 스크립트 불러오기 -->
+    <script src="../../js/utils_matrix.js"></script>
+
+    <script>
+        let origMatrix = null, currMatrix = null;
+
+        function updateUI() {
+            renderMatrixToCanvas(currMatrix, 'canvas-preview');
+            renderMatrixToTable(currMatrix, 'matrix-preview');
+        }
+
+        document.getElementById('upload-excel').addEventListener('change', async function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const matrix = await readExcel(file);
+                origMatrix = matrix.map(row => [...row]);
+                currMatrix = matrix.map(row => [...row]);
+                document.getElementById('desc-matrix').innerText = `해상도: ${matrix[0].length}x${matrix.length} px`;
+                updateUI();
+                document.getElementById('info-alert').classList.add('d-none');
+                document.getElementById('content-area').classList.remove('d-none');
+            } catch (err) { alert("오류가 발생했습니다."); }
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            if (!origMatrix) return;
+            currMatrix = origMatrix.map(row => [...row]);
+            updateUI();
+        });
+
+        document.getElementById('btn-calc').addEventListener('click', () => {
+            if (!currMatrix) return;
+            const opType = document.getElementById('op-type').value;
+            const opVal = parseFloat(document.getElementById('op-val').value) || 0;
+            for (let r = 0; r < currMatrix.length; r++) {
+                for (let c = 0; c < currMatrix[0].length; c++) {
+                    let v = currMatrix[r][c];
+                    if (opType === 'add') v += opVal;
+                    else if (opType === 'sub') v -= opVal;
+                    else if (opType === 'mul') v *= opVal;
+                    currMatrix[r][c] = Math.max(0, Math.min(255, Math.round(v)));
+                }
+            }
+            updateUI();
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

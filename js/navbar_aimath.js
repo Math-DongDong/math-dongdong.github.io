@@ -43,10 +43,23 @@
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdownAiMath">
                             <!-- 인공지능 수학 소속 파일 목록 -->
                             <li><a class="dropdown-item" href="${basePath}image/resolution.html">🖼️ 이미지 해상도</a></li>
-                            <li><a class="dropdown-item" href="${basePath}image/grayscale.html">⚫ 흑백 이미지</a></li>
+                            <li><a class="dropdown-item" href="${basePath}image/blackandwhite.html">⚫ 흑백 이미지</a></li>
                             <li><a class="dropdown-item" href="${basePath}image/color.html">🎨 컬러 이미지</a></li>
                         </ul>
                     </li>
+
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownAiMath" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            이미지 데이터의 변환
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="navbarDropdownAiMath">
+                            <!-- 인공지능 수학 소속 파일 목록 -->
+                            <li><a class="dropdown-item" href="${basePath}image/grayscale.html">🔘 그레이 필터</a></li>
+                            <li><a class="dropdown-item" href="${basePath}image/brightness_adjust.html">💡 밝기 조절</a></li>
+                            <li><a class="dropdown-item" href="${basePath}image/matrix_composite.html">➕ 이미지의 합성</a></li>
+                        </ul>
+                    </li>
+
                 </ul>
             </div>
         </div>
