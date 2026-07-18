@@ -38,7 +38,7 @@
                 <ul class="navbar-nav ms-lg-3">
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownAiMath" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            인공지능 수학
+                            이미지 데이터의 표현
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdownAiMath">
                             <!-- 인공지능 수학 소속 파일 목록 -->
