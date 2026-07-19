@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>디졸브 효과 탐구</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', sans-serif;
+            background-color: #ffffff;
+            padding: 0;
+        }
+
+        .upload-area {
+            border: 2px dashed #0d6efd;
+            border-radius: 12px;
+            transition: background-color 0.2s ease-in-out;
+            cursor: pointer;
+            padding: 2rem;
+        }
+
+        .upload-area:hover {
+            background-color: #f8f9fa;
+        }
+
+        /* 결과 캔버스 */
+        #result-canvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .source-img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+
+<body>
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container py-4">
+        <h2 class="fw-bold mb-4 text-center">✨ 디졸브 효과</h2>
+
+        <!-- 업로드 섹션 (아코디언) -->
+        <div class="accordion mb-4 shadow-sm" id="uploadAccordion">
+            <div class="accordion-item border-0">
+                <h2 class="accordion-header" id="headingUpload">
+                    <button class="accordion-button fw-bold text-primary bg-light" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#collapseUpload" aria-expanded="true"
+                        aria-controls="collapseUpload">
+                        📂 이미지 2개 업로드
+                    </button>
+                </h2>
+                <div id="collapseUpload" class="accordion-collapse collapse show" aria-labelledby="headingUpload"
+                    data-bs-parent="#uploadAccordion">
+                    <div class="accordion-body p-4 bg-white">
+                        <div class="upload-area">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label text-primary fw-semibold">첫 번째 이미지</label>
+                                    <input class="form-control border-primary" type="file" id="upload1" accept="image/png, image/jpeg, image/jpg">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-success fw-semibold">두 번째 이미지</label>
+                                    <input class="form-control border-success" type="file" id="upload2" accept="image/png, image/jpeg, image/jpg">
+                                </div>
+                            </div>
+                            <p class="mb-0 mt-3 text-muted fw-semibold text-center">이미지 파일(png, jpg, jpeg) 2개를 각각 업로드해주세요.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 안내 문구 -->
+        <div id="info-alert" class="alert alert-info border-0 shadow-sm">
+            👆 상단의 '이미지 2개 업로드'를 열어 이미지 파일 2개를 모두 업로드해주세요.
+        </div>
+
+        <!-- 메인 워크스페이스 (업로드 후 표시) -->
+        <div id="workspace" class="d-none">
+
+            <!-- 소스 이미지 미리보기 -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-6 text-center">
+                    <h5 class="fw-bold mb-2">🖼️ 이미지 1</h5>
+                    <img id="src-img1" class="source-img" src="" alt="이미지 1">
+                </div>
+                <div class="col-md-6 text-center">
+                    <h5 class="fw-bold mb-2">🖼️ 이미지 2</h5>
+                    <img id="src-img2" class="source-img" src="" alt="이미지 2">
+                </div>
+            </div>
+
+            <!-- 제어 패널 -->
+            <div class="row g-3 align-items-end mb-4 bg-light p-3 rounded border">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">가중치 (Alpha): <span id="alpha-val" class="text-primary">0.00</span></label>
+                    <input type="range" id="alpha-slider" min="0" max="1" step="0.01" value="0" class="form-range">
+                </div>
+                <div class="col-md-4 d-flex align-items-center gap-3">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="auto-mode" role="switch">
+                        <label class="form-check-label fw-semibold" for="auto-mode">자동 실행 모드</label>
+                    </div>
+                </div>
+                <div class="col-md-4" id="auto-ui" style="display:none!important">
+                    <button id="btn-play" class="btn btn-primary w-100 fw-bold">
+                        <i class="bi bi-play-fill"></i> 재생 / 일시정지
+                    </button>
+                </div>
+            </div>
+
+            <!-- 결과 캔버스 -->
+            <div class="text-center mb-4">
+                <h5 class="fw-bold mb-3">✨ 디졸브 결과</h5>
+                <canvas id="result-canvas"></canvas>
+            </div>
+
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const upload1 = document.getElementById('upload1');
+        const upload2 = document.getElementById('upload2');
+        const workspace = document.getElementById('workspace');
+        const infoAlert = document.getElementById('info-alert');
+        const srcImg1 = document.getElementById('src-img1');
+        const srcImg2 = document.getElementById('src-img2');
+        const canvas = document.getElementById('result-canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const alphaSlider = document.getElementById('alpha-slider');
+        const alphaValText = document.getElementById('alpha-val');
+        const autoModeToggle = document.getElementById('auto-mode');
+        const autoUi = document.getElementById('auto-ui');
+        const btnPlay = document.getElementById('btn-play');
+
+        let img1Ready = false, img2Ready = false;
+        let isPlaying = false;
+        let currentAlpha = 0.0;
+        let animationId = null;
+        let outputW = 0, outputH = 0;
+
+        function loadImage(input, imgEl, callback) {
+            input.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    imgEl.src = ev.target.result;
+                    imgEl.onload = () => callback();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        loadImage(upload1, srcImg1, () => { img1Ready = true; checkBoth(); });
+        loadImage(upload2, srcImg2, () => { img2Ready = true; checkBoth(); });
+
+        function checkBoth() {
+            if (!img1Ready || !img2Ready) return;
+
+            // 두 이미지 중 큰 쪽 기준으로 출력 크기 결정, 최소 800px
+            const maxW = Math.max(srcImg1.naturalWidth, srcImg2.naturalWidth);
+            const maxH = Math.max(srcImg1.naturalHeight, srcImg2.naturalHeight);
+            const scale = Math.max(800 / maxW, 600 / maxH, 1);
+            outputW = Math.round(maxW * scale);
+            outputH = Math.round(maxH * scale);
+
+            canvas.width = outputW;
+            canvas.height = outputH;
+
+            infoAlert.classList.add('d-none');
+            workspace.classList.remove('d-none');
+
+            renderCanvas();
+
+            // 업로드 완료 후 아코디언 자동 접기
+            const collapseEl = document.getElementById('collapseUpload');
+            const bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl, { toggle: false });
+            bsCollapse.hide();
+        }
+
+        function renderCanvas() {
+            if (!img1Ready || !img2Ready) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = 1.0;
+            ctx.drawImage(srcImg1, 0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = currentAlpha;
+            ctx.drawImage(srcImg2, 0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = 1.0;
+        }
+
+        alphaSlider.addEventListener('input', (e) => {
+            currentAlpha = parseFloat(e.target.value);
+            alphaValText.innerText = currentAlpha.toFixed(2);
+            renderCanvas();
+        });
+
+        autoModeToggle.addEventListener('change', () => {
+            if (autoModeToggle.checked) {
+                autoUi.style.removeProperty('display');
+                alphaSlider.closest('.col-md-4').style.pointerEvents = 'none';
+            } else {
+                autoUi.style.display = 'none !important';
+                alphaSlider.closest('.col-md-4').style.pointerEvents = '';
+                isPlaying = false;
+                cancelAnimationFrame(animationId);
+            }
+        });
+
+        function animate() {
+            if (!isPlaying) return;
+            currentAlpha += 0.0075;
+            if (currentAlpha >= 1.0) {
+                currentAlpha = 1.0;
+                isPlaying = false;
+            }
+            alphaSlider.value = currentAlpha;
+            alphaValText.innerText = currentAlpha.toFixed(2);
+            renderCanvas();
+            if (isPlaying) animationId = requestAnimationFrame(animate);
+        }
+
+        btnPlay.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            if (isPlaying && currentAlpha >= 1.0) currentAlpha = 0.0;
+            if (isPlaying) animate();
+            else cancelAnimationFrame(animationId);
+        });
+    </script>
+</body>
+</html>
