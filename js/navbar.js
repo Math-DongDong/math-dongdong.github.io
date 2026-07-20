@@ -106,8 +106,8 @@
     if (!navType) {
         if (normalizedPath.includes('/pages/aimath/')) {
             navType = 'aimath';
-        } else if (normalizedPath.includes('/pages/schoolautomation/')) {
-            navType = 'schoolautomation';
+        } else if (normalizedPath.includes('/pages/automation/')) {
+            navType = 'automation';
         } else {
             navType = 'middleschool'; // 기본값
         }
