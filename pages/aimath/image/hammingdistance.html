@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>손글씨 인식 게임 - 해밍거리</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', sans-serif;
+            background-color: #ffffff;
+            padding: 0;
+        }
+
+        .draw-canvas {
+            background: #000;
+            cursor: crosshair;
+            touch-action: none;
+            border: 2px solid #dee2e6 !important;
+            border-radius: 8px;
+            width: 250px;
+            max-width: 100%;
+            aspect-ratio: 1;
+        }
+
+        .pixel-preview {
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+
+        .target-display {
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: #0d6efd;
+            letter-spacing: 0.2rem;
+            line-height: 1;
+        }
+
+        .score-badge {
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+        }
+
+        /* 결과 비교 스타일 */
+    </style>
+</head>
+
+<body>
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container py-4">
+        <h2 class="fw-bold mb-4 text-center">✍️ 나의 손 글씨 실력은?</h2>
+
+        <!-- ==================== 로딩 섹션 ==================== -->
+        <div id="loading-section">
+            <div class="card shadow-sm border-0">
+                <div class="card-body text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="fw-bold mb-3">MNIST 데이터를 불러오는 중...</h5>
+                    <div class="progress mx-auto" style="max-width:400px; height:8px;">
+                        <div id="loading-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                            style="width:0%"></div>
+                    </div>
+                    <p id="loading-status" class="text-muted mt-3 small">이미지 데이터 다운로드 중...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 게임 섹션 ==================== -->
+        <div id="game-section" class="d-none">
+
+            <!-- 게임 정보 바 -->
+            <div class="d-flex justify-content-between align-items-center bg-white p-3 mb-4 border-0">
+                <span class="badge bg-primary score-badge" style="font-size: 1.1rem; padding: 0.6rem 1.2rem;">
+                    라운드 <span id="current-round">1</span> / 10
+                </span>
+                <span class="badge bg-warning text-dark score-badge" style="font-size: 1.1rem; padding: 0.6rem 1.2rem;">
+                    평균 점수: <span id="avg-score">-</span>점
+                </span>
+            </div>
+
+            <!-- 목표 숫자 및 상태 제어 바 -->
+            <div class="card border-0 mb-4 bg-white">
+                <div class="card-body d-flex flex-wrap align-items-center justify-content-between py-3 px-4 gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="fs-5 fw-bold text-muted">그려야 할 숫자:</span>
+                        <div id="target-number" class="target-display">00</div>
+                    </div>
+
+                    <!-- 피드백과 액션 버튼들 -->
+                    <div class="d-flex align-items-center gap-3">
+                        <div id="feedback-message" class="fs-4 fw-bold"></div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button id="btn-submit" class="btn btn-primary btn-lg fw-bold px-4">
+                                <i class="bi bi-check-lg"></i> 확인하기
+                            </button>
+                            <button id="btn-next" class="btn btn-success btn-lg fw-bold px-4 d-none">
+                                다음 라운드 <i class="bi bi-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 메인 콘텐츠 영역 (왼쪽: 그리기, 오른쪽: 결과 비교) -->
+            <div class="row g-4 align-items-stretch mb-4">
+                <!-- 왼쪽: 그리기 영역 (입력란) -->
+                <div class="col-lg-7">
+                    <div class="card h-100 border-0 bg-white p-3">
+                        <h5 class="fw-bold mb-3 text-center text-secondary">숫자 그리기</h5>
+                        <div class="row g-3 justify-content-center">
+                            <div class="col-12 col-sm-6 text-center">
+                                <h6 class="fw-bold text-muted mb-2">십의 자리</h6>
+                                <canvas id="canvas-tens" class="draw-canvas mx-auto" width="250" height="250"></canvas>
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-secondary" id="btn-clear-tens">
+                                        <i class="bi bi-eraser"></i> 지우기
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-12 col-sm-6 text-center">
+                                <h6 class="fw-bold text-muted mb-2">일의 자리</h6>
+                                <canvas id="canvas-ones" class="draw-canvas mx-auto" width="250" height="250"></canvas>
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-secondary" id="btn-clear-ones">
+                                        <i class="bi bi-eraser"></i> 지우기
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 오른쪽: 비교 결과 영역 -->
+                <div class="col-lg-5">
+                    <div class="card h-100 border-0 bg-white p-3">
+                        <h5 class="fw-bold mb-3 text-center text-secondary">인식 결과 비교</h5>
+                        <div id="result-area" class="row g-3 align-content-start overflow-auto"
+                            style="max-height: 560px;">
+                            <!-- 초기 플레이스홀더 -->
+                            <div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">
+                                <i class="bi bi-cpu fs-1 mb-2 d-block"></i>
+                                <p class="mb-0 px-3">숫자를 그린 후 상단의 <b>[확인하기]</b> 버튼을 누르면 비교 결과가 표시됩니다.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 최종 결과 ==================== -->
+        <div id="final-section" class="d-none">
+            <div class="card border-0 text-center bg-white">
+                <div class="card-body py-5">
+                    <h2 class="fw-bold mb-2">🎉 게임 완료!</h2>
+                    <div id="final-score" class="display-1 fw-bold text-primary my-3"></div>
+                    <p class="text-muted mb-3">10라운드 평균 점수</p>
+
+                    <p id="final-comment" class="fs-5 fw-semibold mb-4"></p>
+                    <button class="btn btn-primary btn-lg fw-bold" id="btn-restart">
+                        <i class="bi bi-arrow-clockwise"></i> 다시 도전하기
+                    </button>
+                </div>
+            </div>
+            <div id="final-history" class="mt-4"></div>
+        </div>
+    </main>
+
+    <script>
+        // ============================================================
+        //  상수 & 전역 상태
+        // ============================================================
+        const SPRITE_URL = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_images.png';
+        const LABELS_URL = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_labels_uint8';
+        const IMAGE_SIZE = 784;       // 28 × 28
+        const NUM_IMAGES = 10000;     // 사용할 MNIST 이미지 수
+        const TOTAL_ROUNDS = 10;
+        const MAX_ATTEMPTS = 5;
+        const CHUNK_SIZE = 5000;
+
+        let grayscaleData = null;     // Uint8Array(NUM_IMAGES * IMAGE_SIZE) — 시각화용
+        let binaryData = null;        // Uint8Array(NUM_IMAGES * IMAGE_SIZE) — 해밍거리용
+        let labelsData = null;        // Uint8Array(NUM_IMAGES)
+
+        let canvasTens, canvasOnes;
+
+        let gameState = {
+            round: 1,
+            targetNumber: 0,
+            targetTens: 0,
+            targetOnes: 0,
+            attempts: 0,
+            attemptsTens: 0,
+            attemptsOnes: 0,
+            tensSolved: false,
+            onesSolved: false,
+            scores: [],
+            roundHistory: [],
+            phase: 'loading',
+            digitStats: Array.from({ length: 10 }, () => ({ attemptsList: [] }))
+        };
+
+        // ============================================================
+        //  MNIST 데이터 로드
+        // ============================================================
+        async function loadMNIST() {
+            try {
+                setLoading('라벨 데이터 다운로드 중...', 5);
+
+                const labelsResp = await fetch(LABELS_URL);
+                if (!labelsResp.ok) throw new Error('라벨 데이터를 받아올 수 없습니다.');
+                const labelsBuf = await labelsResp.arrayBuffer();
+                const allLabels = new Uint8Array(labelsBuf);
+
+                // 원핫(10바이트) → 숫자 변환
+                labelsData = new Uint8Array(NUM_IMAGES);
+                for (let i = 0; i < NUM_IMAGES; i++) {
+                    for (let j = 0; j < 10; j++) {
+                        if (allLabels[i * 10 + j] === 1) { labelsData[i] = j; break; }
+                    }
+                }
+                setLoading('이미지 스프라이트 다운로드 중...', 20);
+
+                // 스프라이트(784 × 65000 PNG) 로드
+                const spriteImg = await loadImageAsync(SPRITE_URL);
+                if (spriteImg.naturalWidth !== IMAGE_SIZE) {
+                    throw new Error('예상치 못한 스프라이트 너비: ' + spriteImg.naturalWidth);
+                }
+                setLoading('이미지 데이터 처리 중...', 50);
+
+                grayscaleData = new Uint8Array(NUM_IMAGES * IMAGE_SIZE);
+                binaryData = new Uint8Array(NUM_IMAGES * IMAGE_SIZE);
+
+                const tmpCanvas = document.createElement('canvas');
+                const tmpCtx = tmpCanvas.getContext('2d', { willReadFrequently: true });
+                tmpCanvas.width = spriteImg.naturalWidth;
+                tmpCanvas.height = CHUNK_SIZE;
+
+                const numChunks = Math.ceil(NUM_IMAGES / CHUNK_SIZE);
+                for (let c = 0; c < numChunks; c++) {
+                    const rows = Math.min(CHUNK_SIZE, NUM_IMAGES - c * CHUNK_SIZE);
+                    tmpCtx.clearRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+                    tmpCtx.drawImage(spriteImg,
+                        0, c * CHUNK_SIZE, spriteImg.naturalWidth, rows,
+                        0, 0, spriteImg.naturalWidth, rows);
+                    const imgData = tmpCtx.getImageData(0, 0, spriteImg.naturalWidth, rows);
+                    const base = c * CHUNK_SIZE * IMAGE_SIZE;
+                    const pxCount = spriteImg.naturalWidth * rows;
+                    for (let j = 0; j < pxCount; j++) {
+                        const val = imgData.data[j * 4];
+                        grayscaleData[base + j] = val;
+                        binaryData[base + j] = val > 127 ? 1 : 0;
+                    }
+                    setLoading('이미지 데이터 처리 중...', 50 + ((c + 1) / numChunks) * 40);
+                }
+
+                setLoading('로드 완료!', 100);
+                return true;
+            } catch (err) {
+                console.error('MNIST 로드 오류:', err);
+                document.getElementById('loading-status').textContent = '❌ 오류: ' + err.message;
+                document.getElementById('loading-bar').classList.add('bg-danger');
+                return false;
+            }
+        }
+
+        function loadImageAsync(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('이미지 스프라이트 로드 실패 (네트워크를 확인하세요)'));
+                img.src = src;
+            });
+        }
+
+        function setLoading(text, pct) {
+            document.getElementById('loading-status').textContent = text;
+            document.getElementById('loading-bar').style.width = pct + '%';
+        }
+
+        // ============================================================
+        //  캔버스 드로잉 설정
+        // ============================================================
+        function setupDrawingCanvas(canvas) {
+            const ctx = canvas.getContext('2d');
+            let drawing = false;
+            let lastX, lastY;
+
+            resetCanvas(canvas, ctx);
+
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const sx = canvas.width / rect.width;
+                const sy = canvas.height / rect.height;
+                const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sy };
+            }
+
+            function start(e) {
+                e.preventDefault();
+                drawing = true;
+                const p = getPos(e);
+                lastX = p.x; lastY = p.y;
+                ctx.fillStyle = '#FFF';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            function move(e) {
+                if (!drawing) return;
+                e.preventDefault();
+                const p = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+                lastX = p.x; lastY = p.y;
+            }
+            function stop() { drawing = false; }
+
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', move);
+            canvas.addEventListener('mouseup', stop);
+            canvas.addEventListener('mouseleave', stop);
+            canvas.addEventListener('touchstart', start, { passive: false });
+            canvas.addEventListener('touchmove', move, { passive: false });
+            canvas.addEventListener('touchend', stop);
+            canvas.addEventListener('touchcancel', stop);
+        }
+
+        function resetCanvas(canvas, ctx) {
+            if (!ctx) ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 20;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+        }
+
+        // ============================================================
+        //  이미지 전처리 (28×28 중앙 정렬 + 이진화)
+        // ============================================================
+        function processCanvas(sourceCanvas) {
+            const srcCtx = sourceCanvas.getContext('2d');
+            const srcData = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+
+            // 바운딩 박스 탐색
+            let minX = sourceCanvas.width, maxX = 0;
+            let minY = sourceCanvas.height, maxY = 0;
+            let hasContent = false;
+
+            for (let y = 0; y < sourceCanvas.height; y++) {
+                for (let x = 0; x < sourceCanvas.width; x++) {
+                    if (srcData.data[(y * sourceCanvas.width + x) * 4] > 30) {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                        hasContent = true;
+                    }
+                }
+            }
+            if (!hasContent) return null;
+
+            // 마진 추가
+            const margin = 30;
+            minX = Math.max(0, minX - margin);
+            maxX = Math.min(sourceCanvas.width, maxX + margin);
+            minY = Math.max(0, minY - margin);
+            maxY = Math.min(sourceCanvas.height, maxY + margin);
+
+            // 중앙 정렬 → 28×28 (MNIST 규격: 20×20 영역 + 4px 패딩)
+            const cW = maxX - minX, cH = maxY - minY;
+            const maxDim = Math.max(cW, cH);
+            const targetArea = 20;
+            const scale = targetArea / maxDim;
+            const drawW = cW * scale, drawH = cH * scale;
+            const offX = (28 - drawW) / 2, offY = (28 - drawH) / 2;
+
+            const outCanvas = document.createElement('canvas');
+            outCanvas.width = 28; outCanvas.height = 28;
+            const outCtx = outCanvas.getContext('2d');
+            outCtx.fillStyle = '#000';
+            outCtx.fillRect(0, 0, 28, 28);
+            outCtx.drawImage(sourceCanvas, minX, minY, cW, cH, offX, offY, drawW, drawH);
+
+            // 이진화
+            const imgData = outCtx.getImageData(0, 0, 28, 28);
+            const binary = new Uint8Array(IMAGE_SIZE);
+            for (let i = 0; i < IMAGE_SIZE; i++) {
+                binary[i] = imgData.data[i * 4] > 127 ? 1 : 0;
+            }
+            return binary;
+        }
+
+        // ============================================================
+        //  해밍거리 기반 k-NN 인식 (k = 5)
+        // ============================================================
+        function recognizeDigit(inputBinary) {
+            const K = 5;
+            const topDist = new Float64Array(K).fill(Infinity);
+            const topIdx = new Int32Array(K).fill(-1);
+
+            for (let i = 0; i < NUM_IMAGES; i++) {
+                let dist = 0;
+                const off = i * IMAGE_SIZE;
+                const worstTop = topDist[K - 1];
+
+                for (let j = 0; j < IMAGE_SIZE; j++) {
+                    dist += binaryData[off + j] ^ inputBinary[j]; // XOR = 다르면 1
+                    if (dist >= worstTop) break; // 조기 종료
+                }
+
+                if (dist < worstTop) {
+                    let pos = K - 1;
+                    while (pos > 0 && dist < topDist[pos - 1]) {
+                        topDist[pos] = topDist[pos - 1];
+                        topIdx[pos] = topIdx[pos - 1];
+                        pos--;
+                    }
+                    topDist[pos] = dist;
+                    topIdx[pos] = i;
+                }
+            }
+
+            // k-NN 다수결 투표
+            const votes = new Array(10).fill(0);
+            for (let i = 0; i < K; i++) {
+                if (topIdx[i] >= 0) votes[labelsData[topIdx[i]]]++;
+            }
+            const bestLabel = votes.indexOf(Math.max(...votes));
+
+            // 해당 라벨 중 가장 가까운 매치
+            let matchIdx = topIdx[0], matchDist = topDist[0];
+            for (let i = 0; i < K; i++) {
+                if (topIdx[i] >= 0 && labelsData[topIdx[i]] === bestLabel) {
+                    matchIdx = topIdx[i]; matchDist = topDist[i]; break;
+                }
+            }
+            return { label: bestLabel, distance: matchDist, matchIndex: matchIdx };
+        }
+
+        // ============================================================
+        //  시각화 유틸리티
+        // ============================================================
+        function createMNISTDataURL(index) {
+            const c = document.createElement('canvas');
+            c.width = 28; c.height = 28;
+            const ctx = c.getContext('2d');
+            const img = ctx.createImageData(28, 28);
+            const off = index * IMAGE_SIZE;
+            for (let i = 0; i < IMAGE_SIZE; i++) {
+                const v = grayscaleData[off + i];
+                img.data[i * 4] = v; img.data[i * 4 + 1] = v;
+                img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+            }
+            ctx.putImageData(img, 0, 0);
+            return c.toDataURL();
+        }
+
+        function createBinaryDataURL(binaryVec) {
+            const c = document.createElement('canvas');
+            c.width = 28; c.height = 28;
+            const ctx = c.getContext('2d');
+            const img = ctx.createImageData(28, 28);
+            for (let i = 0; i < IMAGE_SIZE; i++) {
+                const v = binaryVec[i] * 255;
+                img.data[i * 4] = v; img.data[i * 4 + 1] = v;
+                img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+            }
+            ctx.putImageData(img, 0, 0);
+            return c.toDataURL();
+        }
+
+        // ============================================================
+        //  게임 로직
+        // ============================================================
+        function generateTarget() {
+            gameState.targetNumber = Math.floor(Math.random() * 90) + 10; // 10 ~ 99
+            gameState.targetTens = Math.floor(gameState.targetNumber / 10);
+            gameState.targetOnes = gameState.targetNumber % 10;
+            gameState.attempts = 0;
+            gameState.attemptsTens = 0;
+            gameState.attemptsOnes = 0;
+            gameState.tensSolved = false;
+            gameState.onesSolved = false;
+        }
+
+        function calculateScore(distTens, distOnes, attempts) {
+            // 각 자릿수별 해밍거리 점수 (0~100)
+            const scoreTens = Math.round(Math.max(0, (1 - distTens / IMAGE_SIZE) * 100));
+            const scoreOnes = Math.round(Math.max(0, (1 - distOnes / IMAGE_SIZE) * 100));
+            const accuracy = Math.round((scoreTens + scoreOnes) / 2);
+            // 도전 횟수 감점 (2회부터 -15점씩)
+            const penalty = Math.max(0, (attempts - 1) * 15);
+            return Math.max(0, accuracy - penalty);
+        }
+
+        function submitDrawing() {
+            const feedback = document.getElementById('feedback-message');
+            feedback.innerHTML = '';
+
+            const binTens = processCanvas(canvasTens);
+            const binOnes = processCanvas(canvasOnes);
+
+            if (!binTens || !binOnes) {
+                showAlert('양쪽 캔버스에 모두 숫자를 그려주세요!', 'warning');
+                return;
+            }
+
+            gameState.attempts++;
+
+            const resTens = recognizeDigit(binTens);
+            const resOnes = recognizeDigit(binOnes);
+
+            const tensOk = resTens.label === gameState.targetTens;
+            const onesOk = resOnes.label === gameState.targetOnes;
+            const bothOk = tensOk && onesOk;
+
+            // 각 자릿수별로 아직 해결하지 못한 상태인 경우 시도 횟수를 증가
+            if (!gameState.tensSolved) {
+                gameState.attemptsTens++;
+                if (tensOk) {
+                    gameState.tensSolved = true;
+                }
+            }
+            if (!gameState.onesSolved) {
+                gameState.attemptsOnes++;
+                if (onesOk) {
+                    gameState.onesSolved = true;
+                }
+            }
+
+            // 결과 카드 표시
+            showResult(resTens, resOnes, binTens, binOnes, tensOk, onesOk);
+
+            if (bothOk) {
+                const score = calculateScore(resTens.distance, resOnes.distance, gameState.attempts);
+                feedback.innerHTML = '<span class="text-success">🎉 ' + score + '점!</span>';
+
+                // 버튼 전환
+                document.getElementById('btn-submit').classList.add('d-none');
+                document.getElementById('btn-next').classList.remove('d-none');
+
+                // 해당 숫자가 성공했을 때까지 소요된 각각의 시도 횟수를 누적 기록
+                gameState.digitStats[gameState.targetTens].attemptsList.push(gameState.attemptsTens);
+                gameState.digitStats[gameState.targetOnes].attemptsList.push(gameState.attemptsOnes);
+
+                finishRound(score, resTens, resOnes);
+            } else {
+                feedback.innerHTML = '<span class="text-danger">❌ 다시 도전하세요.</span>';
+            }
+        }
+
+        function finishRound(score, resTens, resOnes) {
+            gameState.scores.push(score);
+            gameState.roundHistory.push({
+                round: gameState.round,
+                target: gameState.targetNumber,
+                recognized: resTens.label * 10 + resOnes.label,
+                matchIndexTens: resTens.matchIndex,
+                matchIndexOnes: resOnes.matchIndex,
+                distTens: Math.round(resTens.distance),
+                distOnes: Math.round(resOnes.distance),
+                attempts: gameState.attempts,
+                score: score
+            });
+            gameState.phase = 'result';
+
+            updateAvgScore();
+
+            const nb = document.getElementById('btn-next');
+            if (gameState.round >= TOTAL_ROUNDS) {
+                nb.innerHTML = '<i class="bi bi-trophy"></i> 최종 결과 보기';
+                nb.classList.replace('btn-success', 'btn-primary');
+            } else {
+                nb.innerHTML = '다음 라운드 <i class="bi bi-arrow-right"></i>';
+                nb.classList.replace('btn-primary', 'btn-success');
+            }
+        }
+
+        function nextRound() {
+            if (gameState.round >= TOTAL_ROUNDS) { endGame(); return; }
+
+            gameState.round++;
+            gameState.phase = 'drawing';
+            generateTarget();
+
+            document.getElementById('current-round').textContent = gameState.round;
+            document.getElementById('target-number').textContent = gameState.targetNumber;
+            document.getElementById('feedback-message').innerHTML = '';
+
+            // 결과 창 초기 플레이스홀더 복구
+            document.getElementById('result-area').innerHTML =
+                '<div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">' +
+                '<i class="bi bi-cpu fs-1 mb-2 d-block"></i>' +
+                '<p class="mb-0 px-3">숫자를 그린 후 상단의 <b>[확인하기]</b> 버튼을 누르면 비교 결과가 표시됩니다.</p>' +
+                '</div>';
+
+            document.getElementById('btn-submit').classList.remove('d-none');
+            document.getElementById('btn-next').classList.add('d-none');
+
+            resetCanvas(canvasTens);
+            resetCanvas(canvasOnes);
+        }
+
+        function endGame() {
+            const avg = Math.round(gameState.scores.reduce((a, b) => a + b, 0) / gameState.scores.length);
+
+            document.getElementById('game-section').classList.add('d-none');
+            document.getElementById('final-section').classList.remove('d-none');
+            document.getElementById('final-score').textContent = avg + '점';
+
+            // 0~9 단일 숫자별 시도 횟수 총합(자연수) 통계 계산
+            let validDigits = [];
+            for (let d = 0; d < 10; d++) {
+                const list = gameState.digitStats[d].attemptsList;
+                if (list.length > 0) {
+                    const sum = list.reduce((a, b) => a + b, 0);
+                    validDigits.push({ digit: d, sum: sum });
+                }
+            }
+
+            if (validDigits.length > 0) {
+                // 시도 횟수의 총합(자연수)이 가장 적은 단일 숫자
+                const best = [...validDigits].sort((a, b) => a.sum - b.sum)[0];
+                // 시도 횟수의 총합(자연수)이 가장 많은 단일 숫자
+                const worst = [...validDigits].sort((a, b) => b.sum - a.sum)[0];
+
+                document.getElementById('stat-min-attempts').textContent = best.digit;
+                document.getElementById('stat-min-val').textContent = best.sum;
+
+                document.getElementById('stat-max-attempts').textContent = worst.digit;
+                document.getElementById('stat-max-val').textContent = worst.sum;
+            }
+
+            let comment = '';
+            if (avg >= 90) comment = '🏆 완벽한 손글씨! 대단해요!';
+            else if (avg >= 70) comment = '👏 훌륭해요! 조금만 더 연습하면 완벽!';
+            else if (avg >= 50) comment = '👍 좋은 시도! 또렷하게 그려보세요!';
+            else comment = '💪 연습하면 나아질 거예요! 다시 도전!';
+            document.getElementById('final-comment').textContent = comment;
+
+            // 최종 기록 테이블
+            let html = '<h5 class="fw-bold mb-3">📋 전체 기록</h5>' +
+                '<div class="table-responsive"><table class="table table-hover table-bordered bg-white align-middle text-center mb-0">' +
+                '<thead class="table-light"><tr>' +
+                '<th class="text-center">라운드</th><th class="text-center">목표</th>' +
+                '<th class="text-center">인식 (MNIST 매칭)</th><th class="text-center">해밍거리</th>' +
+                '<th class="text-center">도전</th><th class="text-center">점수</th>' +
+                '</tr></thead><tbody>';
+
+            gameState.roundHistory.forEach(h => {
+                const imgTens = createMNISTDataURL(h.matchIndexTens);
+                const imgOnes = createMNISTDataURL(h.matchIndexOnes);
+
+                html += '<tr>' +
+                    '<td class="text-center">' + h.round + '</td>' +
+                    '<td class="text-center fw-bold fs-5 text-dark">' + h.target + '</td>' +
+                    '<td class="text-center">' +
+                    '  <div class="d-inline-flex align-items-center gap-1 bg-black p-1 rounded">' +
+                    '    <img src="' + imgTens + '" class="pixel-preview" width="28" height="28">' +
+                    '    <img src="' + imgOnes + '" class="pixel-preview" width="28" height="28">' +
+                    '  </div>' +
+                    '  <span class="ms-2 fw-bold text-secondary">(' + h.recognized + ')</span>' +
+                    '</td>' +
+                    '<td class="text-center text-muted">' + h.distTens + ' + ' + h.distOnes + '</td>' +
+                    '<td class="text-center">' + h.attempts + '회</td>' +
+                    '<td class="text-center fw-bold text-primary">' + h.score + '점</td></tr>';
+            });
+
+            html += '<tr class="table-light fw-bold"><td colspan="5" class="text-end">평균 점수</td>' +
+                '<td class="text-center text-primary">' + avg + '점</td></tr>' +
+                '</tbody></table></div>';
+
+            document.getElementById('final-history').innerHTML = html;
+        }
+
+        function restartGame() {
+            gameState = {
+                round: 1, targetNumber: 0, targetTens: 0, targetOnes: 0,
+                attempts: 0, attemptsTens: 0, attemptsOnes: 0,
+                tensSolved: false, onesSolved: false,
+                scores: [], roundHistory: [], phase: 'drawing',
+                digitStats: Array.from({ length: 10 }, () => ({ attemptsList: [] }))
+            };
+
+            document.getElementById('final-section').classList.add('d-none');
+            document.getElementById('game-section').classList.remove('d-none');
+
+            generateTarget();
+            document.getElementById('current-round').textContent = '1';
+            document.getElementById('avg-score').textContent = '-';
+            document.getElementById('target-number').textContent = gameState.targetNumber;
+            document.getElementById('feedback-message').innerHTML = '';
+
+            document.getElementById('result-area').innerHTML =
+                '<div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">' +
+                '<i class="bi bi-cpu fs-1 mb-2 d-block"></i>' +
+                '<p class="mb-0 px-3">숫자를 그린 후 상단의 <b>[확인하기]</b> 버튼을 누르면 비교 결과가 표시됩니다.</p>' +
+                '</div>';
+
+            document.getElementById('btn-submit').classList.remove('d-none');
+            document.getElementById('btn-next').classList.add('d-none');
+
+            const nb = document.getElementById('btn-next');
+            nb.innerHTML = '다음 라운드 <i class="bi bi-arrow-right"></i>';
+            nb.classList.replace('btn-primary', 'btn-success');
+
+            resetCanvas(canvasTens);
+            resetCanvas(canvasOnes);
+        }
+
+        // ============================================================
+        //  UI 헬퍼
+        // ============================================================
+        function showResult(resTens, resOnes, binTens, binOnes, tensOk, onesOk) {
+            const area = document.getElementById('result-area');
+
+            // 기존 플레이스홀더 제거
+            const placeholder = document.getElementById('result-placeholder');
+            if (placeholder) placeholder.remove();
+
+            const userTensImg = createBinaryDataURL(binTens);
+            const userOnesImg = createBinaryDataURL(binOnes);
+            const matchTensImg = createMNISTDataURL(resTens.matchIndex);
+            const matchOnesImg = createMNISTDataURL(resOnes.matchIndex);
+
+            area.innerHTML =
+                renderDigitResult('십의 자리', userTensImg, matchTensImg,
+                    resTens.label, resTens.distance, tensOk) +
+                renderDigitResult('일의 자리', userOnesImg, matchOnesImg,
+                    resOnes.label, resOnes.distance, onesOk);
+        }
+
+        function renderDigitResult(title, userImg, matchImg, label, dist, isOk) {
+            const icon = isOk
+                ? '<i class="bi bi-check-circle-fill text-success"></i>'
+                : '<i class="bi bi-x-circle-fill text-danger"></i>';
+            const labelCls = isOk ? 'text-success' : 'text-danger';
+
+            return '<div class="col-12">' +
+                '<h6 class="fw-bold mb-2 text-secondary text-start ps-1">' + title + '</h6>' +
+                '<div class="d-flex align-items-center justify-content-start gap-3 flex-nowrap">' +
+                '  <div class="text-center">' +
+                '    <p class="small text-muted mb-1" style="font-size: 0.7rem;">내 그림</p>' +
+                '    <img src="' + userImg + '" class="pixel-preview" width="90" height="90">' +
+                '  </div>' +
+                '  <i class="bi bi-arrow-right fs-4 text-muted"></i>' +
+                '  <div class="text-center">' +
+                '    <p class="small text-muted mb-1" style="font-size: 0.7rem;">가장 비슷한</p>' +
+                '    <img src="' + matchImg + '" class="pixel-preview" width="90" height="90">' +
+                '  </div>' +
+                '  <div class="ms-2 text-start flex-grow-1">' +
+                '    <p class="mb-1 fw-bold" style="font-size: 0.95rem;">인식: <span class="' + labelCls + '">' + label + '</span> ' + icon + '</p>' +
+                '    <p class="text-muted mb-0" style="font-size: 0.75rem;">해밍거리: ' + dist + ' / ' + IMAGE_SIZE + '</p>' +
+                '  </div>' +
+                '</div>' +
+                '</div>';
+        }
+
+        function showAlert(msg, type) {
+            const feedback = document.getElementById('feedback-message');
+            feedback.innerHTML = '<span class="text-warning fs-5">' + msg + '</span>';
+            setTimeout(() => {
+                if (feedback.innerText.includes(msg)) feedback.innerHTML = '';
+            }, 2500);
+        }
+
+        function updateAvgScore() {
+            if (gameState.scores.length === 0) return;
+            const avg = Math.round(gameState.scores.reduce((a, b) => a + b, 0) / gameState.scores.length);
+            document.getElementById('avg-score').textContent = avg;
+        }
+
+        // ============================================================
+        //  초기화
+        // ============================================================
+        async function init() {
+            canvasTens = document.getElementById('canvas-tens');
+            canvasOnes = document.getElementById('canvas-ones');
+
+            setupDrawingCanvas(canvasTens);
+            setupDrawingCanvas(canvasOnes);
+
+            // 이벤트 바인딩
+            document.getElementById('btn-clear-tens').addEventListener('click', () => resetCanvas(canvasTens));
+            document.getElementById('btn-clear-ones').addEventListener('click', () => resetCanvas(canvasOnes));
+            document.getElementById('btn-submit').addEventListener('click', submitDrawing);
+            document.getElementById('btn-next').addEventListener('click', nextRound);
+            document.getElementById('btn-restart').addEventListener('click', restartGame);
+
+            // MNIST 로드
+            const ok = await loadMNIST();
+            if (!ok) return;
+
+            // 게임 시작
+            setTimeout(() => {
+                document.getElementById('loading-section').classList.add('d-none');
+                document.getElementById('game-section').classList.remove('d-none');
+                generateTarget();
+                document.getElementById('target-number').textContent = gameState.targetNumber;
+                gameState.phase = 'drawing';
+            }, 400);
+        }
+
+        init();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

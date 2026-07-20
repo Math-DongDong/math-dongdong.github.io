@@ -11,34 +11,34 @@
                 {
                     "title": "중1 수학",
                     "items": [
-                        {"name": "덧셈, 뺄셈", "path": "pages/middleschool/1/plus_minus.html"},
-                        {"name": "곱셈, 나눗셈", "path": "pages/middleschool/1/multiply_divide.html"},
-                        {"name": "다항식 챌린지", "path": "pages/middleschool/1/polynomial.html"},
-                        {"name": "생각을 읽는 마법구슬", "path": "pages/middleschool/1/read_mind.html"},
-                        {"name": "균형을 잡아라", "path": "pages/middleschool/1/equation.html"},
-                        {"name": "회전체 탐구", "path": "pages/middleschool/1/rotation.html"}
+                        { "name": "덧셈, 뺄셈", "path": "pages/middleschool/1/plus_minus.html" },
+                        { "name": "곱셈, 나눗셈", "path": "pages/middleschool/1/multiply_divide.html" },
+                        { "name": "다항식 챌린지", "path": "pages/middleschool/1/polynomial.html" },
+                        { "name": "생각을 읽는 마법구슬", "path": "pages/middleschool/1/read_mind.html" },
+                        { "name": "균형을 잡아라", "path": "pages/middleschool/1/equation.html" },
+                        { "name": "회전체 탐구", "path": "pages/middleschool/1/rotation.html" }
                     ]
                 },
                 {
                     "title": "중2 수학",
                     "items": [
-                        {"name": "지수법칙", "path": "pages/middleschool/2/exponents.html"}
+                        { "name": "지수법칙", "path": "pages/middleschool/2/exponents.html" }
                     ]
                 },
                 {
                     "title": "체험수학",
                     "items": [
-                        {"name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html"}
+                        { "name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html" }
                     ]
                 },
                 {
                     "title": "보드게임",
                     "items": [
-                        {"name": "스트림스", "path": "pages/middleschool/game/streams.html"},
-                        {"name": "Pig Game", "path": "pages/middleschool/game/pig_game.html"},
-                        {"name": "숫자야구", "path": "pages/middleschool/game/number_baseball.html"},
-                        {"name": "성냥개비 퍼즐", "path": "pages/middleschool/game/matchstick.html"},
-                        {"name": "주사위 모음", "path": "pages/middleschool/game/dice.html"}
+                        { "name": "스트림스", "path": "pages/middleschool/game/streams.html" },
+                        { "name": "Pig Game", "path": "pages/middleschool/game/pig_game.html" },
+                        { "name": "숫자야구", "path": "pages/middleschool/game/number_baseball.html" },
+                        { "name": "성냥개비 퍼즐", "path": "pages/middleschool/game/matchstick.html" },
+                        { "name": "주사위 모음", "path": "pages/middleschool/game/dice.html" }
                     ]
                 }
             ]
@@ -49,19 +49,26 @@
                 {
                     "title": "이미지 데이터의 표현",
                     "items": [
-                        {"name": "🖼️ 이미지 해상도", "path": "pages/aimath/image/resolution.html"},
-                        {"name": "⚫ 흑백 이미지", "path": "pages/aimath/image/blackandwhite.html"},
-                        {"name": "🎨 컬러 이미지", "path": "pages/aimath/image/color.html"}
+                        { "name": "🖼️ 이미지 해상도", "path": "pages/aimath/image/resolution.html" },
+                        { "name": "⚫ 흑백 이미지", "path": "pages/aimath/image/blackandwhite.html" },
+                        { "name": "🎨 컬러 이미지", "path": "pages/aimath/image/color.html" }
                     ]
                 },
                 {
                     "title": "이미지 데이터의 변환",
                     "items": [
-                        {"name": "🔘 그레이 필터", "path": "pages/aimath/image/grayscale.html"},
-                        {"name": "💡 밝기 조절", "path": "pages/aimath/image/brightness_adjust.html"},
-                        {"name": "➕ 이미지의 합성", "path": "pages/aimath/image/matrix_composite.html"}
+                        { "name": "🔘 그레이 필터", "path": "pages/aimath/image/grayscale.html" },
+                        { "name": "💡 밝기 조절", "path": "pages/aimath/image/brightness_adjust.html" },
+                        { "name": "➕ 이미지의 합성", "path": "pages/aimath/image/matrix_composite.html" }
+                    ]
+                },
+                {
+                    "title": "이미지 데이터의 분류",
+                    "items": [
+                        { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" },
                     ]
                 }
+
             ]
         },
         "automation": {
@@ -70,13 +77,13 @@
                 {
                     "title": "업무자동화",
                     "items": [
-                        {"name": "여비정산 신청서", "path": "pages/automation/travel_expense_report.html"}
+                        { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" }
                     ]
                 },
                 {
                     "title": "학생관리",
                     "items": [
-                        {"name": "학생관리 앱", "path": "pages/automation/appsheet.html"},
+                        { "name": "학생관리 앱", "path": "pages/automation/student/appsheet.html" },
                     ]
                 }
 
