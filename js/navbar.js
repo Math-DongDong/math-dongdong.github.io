@@ -72,21 +72,16 @@
                     "items": [
                         {"name": "여비정산 신청서", "path": "pages/automation/travel_expense_report.html"}
                     ]
-                }
-            ]
-        },
-        "studentmanagement": {
-            "brand": "HOME",
-            "menu": [
+                },
                 {
                     "title": "학생관리",
                     "items": [
-                        {"name": "학생관리 앱", "path": "pages/studentmanagement/appsheet.html"},
+                        {"name": "학생관리 앱", "path": "pages/automation/appsheet.html"},
                     ]
                 }
+
             ]
         }
-
     };
 
     // 2. 현재 실행 중인 HTML 파일의 경로를 기반으로 루트 경로 계산
