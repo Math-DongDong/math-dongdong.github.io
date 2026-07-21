@@ -55,15 +55,17 @@
                     ]
                 },
                 {
-                    "title": "이미지 데이터의 변환",
+                    "title": "이미지 데이터의 변환 및 분류",
                     "items": [
                         { "name": "🔘 그레이 필터", "path": "pages/aimath/image/grayscale.html" },
                         { "name": "💡 밝기 조절", "path": "pages/aimath/image/brightness_adjust.html" },
                         { "name": "➕ 이미지의 합성", "path": "pages/aimath/image/matrix_composite.html" }
+                        { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" },
+
                     ]
                 },
                 {
-                    "title": "이미지 데이터의 분류",
+                    "title": "텍스트 데이터의 표현",
                     "items": [
                         { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" },
                     ]
