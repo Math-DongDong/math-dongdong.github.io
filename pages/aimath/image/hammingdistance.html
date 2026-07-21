@@ -79,7 +79,7 @@
             <!-- 게임 정보 바 -->
             <div class="d-flex justify-content-between align-items-center bg-white p-3 mb-4 border-0">
                 <span class="badge bg-primary score-badge" style="font-size: 1.1rem; padding: 0.6rem 1.2rem;">
-                    라운드 <span id="current-round">1</span> / 7
+                    라운드 <span id="current-round">1</span> / 10
                 </span>
                 <span class="badge bg-warning text-dark score-badge" style="font-size: 1.1rem; padding: 0.6rem 1.2rem;">
                     평균 점수: <span id="avg-score">-</span>점
@@ -91,20 +91,12 @@
                 <div class="card-body d-flex flex-wrap align-items-center justify-content-between py-3 px-4 gap-3">
                     <div class="d-flex align-items-center gap-3">
                         <span class="fs-5 fw-bold text-muted">그려야 할 숫자:</span>
-                        <div id="target-number" class="target-display">00</div>
+                        <div id="target-number" class="target-display">0</div>
                     </div>
 
-                    <!-- 피드백과 액션 버튼들 -->
+                    <!-- 피드백 메시지 영역 -->
                     <div class="d-flex align-items-center gap-3">
                         <div id="feedback-message" class="fs-4 fw-bold"></div>
-                        <div class="d-flex align-items-center gap-2">
-                            <button id="btn-submit" class="btn btn-primary btn-lg fw-bold px-4">
-                                <i class="bi bi-check-lg"></i> 확인하기
-                            </button>
-                            <button id="btn-next" class="btn btn-success btn-lg fw-bold px-4 d-none">
-                                다음 라운드 <i class="bi bi-arrow-right"></i>
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -112,41 +104,29 @@
             <!-- 메인 콘텐츠 영역 -->
             <div class="row g-4 align-items-stretch mb-4">
                 <!-- 왼쪽: 그리기 영역 -->
-                <div class="col-lg-7">
+                <div class="col-lg-6">
                     <div class="card h-100 border-0 bg-white p-3">
                         <h5 class="fw-bold mb-3 text-center text-secondary">숫자 그리기</h5>
+                        <p class="text-center text-primary fw-semibold small mb-3">
+                            <i class="bi bi-info-circle"></i> 입력을 멈추고 1.5초가 지나면 자동으로 인식합니다.
+                        </p>
                         <div class="row g-3 justify-content-center">
-                            <div class="col-12 col-sm-6 text-center">
-                                <h6 class="fw-bold text-muted mb-2">십의 자리</h6>
-                                <canvas id="canvas-tens" class="draw-canvas mx-auto" width="250" height="250"></canvas>
-                                <div class="mt-2">
-                                    <button class="btn btn-sm btn-outline-secondary" id="btn-clear-tens">
-                                        <i class="bi bi-eraser"></i> 지우기
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-12 col-sm-6 text-center">
-                                <h6 class="fw-bold text-muted mb-2">일의 자리</h6>
-                                <canvas id="canvas-ones" class="draw-canvas mx-auto" width="250" height="250"></canvas>
-                                <div class="mt-2">
-                                    <button class="btn btn-sm btn-outline-secondary" id="btn-clear-ones">
-                                        <i class="bi bi-eraser"></i> 지우기
-                                    </button>
-                                </div>
+                            <div class="col-12 text-center">
+                                <canvas id="canvas-digit" class="draw-canvas mx-auto" width="250" height="250"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 오른쪽: 비교 결과 영역 -->
-                <div class="col-lg-5">
+                <div class="col-lg-6">
                     <div class="card h-100 border-0 bg-white p-3">
                         <h5 class="fw-bold mb-3 text-center text-secondary">인식 결과 비교</h5>
                         <div id="result-area" class="row g-3 align-content-start overflow-auto"
                             style="max-height: 560px;">
                             <div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">
                                 <i class="bi bi-cpu fs-1 mb-2 d-block"></i>
-                                <p class="mb-0 px-3">숫자를 그린 후 상단의 <b>[확인하기]</b> 버튼을 누르면 비교 결과가 표시됩니다.</p>
+                                <p class="mb-0 px-3">숫자를 그리면 이 곳에 인식 결과가 실시간으로 나타납니다.</p>
                             </div>
                         </div>
                     </div>
@@ -160,7 +140,7 @@
                 <div class="card-body py-5">
                     <h2 class="fw-bold mb-2">🎉 게임 완료!</h2>
                     <div id="final-score" class="display-1 fw-bold text-primary my-3"></div>
-                    <p class="text-muted mb-3">7라운드 평균 점수</p>
+                    <p class="text-muted mb-3">10라운드 평균 점수</p>
 
                     <p id="final-comment" class="fs-5 fw-semibold mb-4"></p>
                     <button class="btn btn-primary btn-lg fw-bold" id="btn-restart">
@@ -180,7 +160,7 @@
         const LABELS_URL = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_labels_uint8';
         const IMAGE_SIZE = 784;
         const NUM_IMAGES = 10000;
-        const TOTAL_ROUNDS = 7;
+        const TOTAL_ROUNDS = 10;
         const MAX_ATTEMPTS = 3;
         const CHUNK_SIZE = 5000;
 
@@ -188,22 +168,16 @@
         let binaryData = null;
         let labelsData = null;
 
-        let canvasTens, canvasOnes;
+        let canvasDigit;
+        let autoSubmitTimer = null;
 
         let gameState = {
             round: 1,
             targetNumber: 0,
-            targetTens: 0,
-            targetOnes: 0,
             attempts: 0,
-            attemptsTens: 0,
-            attemptsOnes: 0,
-            tensSolved: false,
-            onesSolved: false,
             scores: [],
             roundHistory: [],
-            phase: 'loading',
-            digitStats: Array.from({ length: 10 }, () => ({ attemptsList: [] }))
+            phase: 'loading'
         };
 
         // ============================================================
@@ -303,7 +277,10 @@
             }
 
             function start(e) {
+                if (gameState.phase !== 'drawing') return;
                 e.preventDefault();
+                clearTimeout(autoSubmitTimer);
+                
                 drawing = true;
                 const p = getPos(e);
                 lastX = p.x; lastY = p.y;
@@ -313,7 +290,7 @@
                 ctx.fill();
             }
             function move(e) {
-                if (!drawing) return;
+                if (!drawing || gameState.phase !== 'drawing') return;
                 e.preventDefault();
                 const p = getPos(e);
                 ctx.beginPath();
@@ -322,7 +299,17 @@
                 ctx.stroke();
                 lastX = p.x; lastY = p.y;
             }
-            function stop() { drawing = false; }
+            function stop() { 
+                if (!drawing) return;
+                drawing = false; 
+                
+                if (gameState.phase === 'drawing') {
+                    // 1.5초(1500ms) 대기 후 자동 인식 실행
+                    autoSubmitTimer = setTimeout(() => {
+                        autoCheckDigit();
+                    }, 1500);
+                }
+            }
 
             canvas.addEventListener('mousedown', start);
             canvas.addEventListener('mousemove', move);
@@ -474,136 +461,96 @@
         //  게임 로직
         // ============================================================
         function generateTarget() {
-            gameState.targetNumber = Math.floor(Math.random() * 90) + 10;
-            gameState.targetTens = Math.floor(gameState.targetNumber / 10);
-            gameState.targetOnes = gameState.targetNumber % 10;
+            // 0 ~ 9 까지 순서대로 목표 출제
+            gameState.targetNumber = gameState.round - 1; 
             gameState.attempts = 0;
-            gameState.attemptsTens = 0;
-            gameState.attemptsOnes = 0;
-            gameState.tensSolved = false;
-            gameState.onesSolved = false;
+            resetCanvas(canvasDigit);
+            document.getElementById('feedback-message').innerHTML = '';
+            document.getElementById('result-area').innerHTML =
+                '<div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">' +
+                '<i class="bi bi-cpu fs-1 mb-2 d-block"></i>' +
+                '<p class="mb-0 px-3">숫자를 그리면 이 곳에 인식 결과가 실시간으로 나타납니다.</p>' +
+                '</div>';
         }
 
-        function calculateScore(distTens, distOnes, attempts) {
-            const scoreTens = Math.round(Math.max(0, (1 - distTens / IMAGE_SIZE) * 100));
-            const scoreOnes = Math.round(Math.max(0, (1 - distOnes / IMAGE_SIZE) * 100));
-            const accuracy = Math.round((scoreTens + scoreOnes) / 2);
+        function calculateScore(dist, attempts) {
+            const baseScore = Math.round(Math.max(0, (1 - dist / IMAGE_SIZE) * 100));
             const penalty = Math.max(0, (attempts - 1) * 15);
-            return Math.max(0, accuracy - penalty);
+            return Math.max(0, baseScore - penalty);
         }
 
-        function submitDrawing() {
-            const feedback = document.getElementById('feedback-message');
-            feedback.innerHTML = '';
+        function autoCheckDigit() {
+            if (gameState.phase !== 'drawing') return;
+            
+            const binDigit = processCanvas(canvasDigit);
+            if (!binDigit) return;
 
-            const binTens = processCanvas(canvasTens);
-            const binOnes = processCanvas(canvasOnes);
-
-            if (!binTens || !binOnes) {
-                showAlert('양쪽 캔버스에 모두 숫자를 그려주세요!', 'warning');
-                return;
-            }
-
+            gameState.phase = 'checking'; 
             gameState.attempts++;
 
-            const resTens = recognizeDigit(binTens);
-            const resOnes = recognizeDigit(binOnes);
+            const feedback = document.getElementById('feedback-message');
+            const res = recognizeDigit(binDigit);
+            const isOk = res.label === gameState.targetNumber;
 
-            const tensOk = resTens.label === gameState.targetTens;
-            const onesOk = resOnes.label === gameState.targetOnes;
-            const bothOk = tensOk && onesOk;
+            showResult(res, binDigit, isOk);
 
-            if (!gameState.tensSolved) {
-                gameState.attemptsTens++;
-                if (tensOk) gameState.tensSolved = true;
-            }
-            if (!gameState.onesSolved) {
-                gameState.attemptsOnes++;
-                if (onesOk) gameState.onesSolved = true;
-            }
-
-            showResult(resTens, resOnes, binTens, binOnes, tensOk, onesOk);
-
-            if (bothOk) {
-                const score = calculateScore(resTens.distance, resOnes.distance, gameState.attempts);
-                feedback.innerHTML = '<span class="text-success">🎉 ' + score + '점!</span>';
-
-                document.getElementById('btn-submit').classList.add('d-none');
-                document.getElementById('btn-next').classList.remove('d-none');
-
-                gameState.digitStats[gameState.targetTens].attemptsList.push(gameState.attemptsTens);
-                gameState.digitStats[gameState.targetOnes].attemptsList.push(gameState.attemptsOnes);
-
-                finishRound(score, resTens, resOnes);
+            if (isOk) {
+                const score = calculateScore(res.distance, gameState.attempts);
+                feedback.innerHTML = '<span class="text-success">🎉 정답! ' + score + '점</span>';
+                
+                setTimeout(() => {
+                    finishRound(score, res);
+                }, 1200);
             } else {
                 if (gameState.attempts >= MAX_ATTEMPTS) {
                     feedback.innerHTML = '<span class="text-danger">❌ 실패! 기회를 모두 소진했습니다.</span>';
-                    document.getElementById('btn-submit').classList.add('d-none');
-                    document.getElementById('btn-next').classList.remove('d-none');
-
-                    gameState.digitStats[gameState.targetTens].attemptsList.push(gameState.attemptsTens);
-                    gameState.digitStats[gameState.targetOnes].attemptsList.push(gameState.attemptsOnes);
-
-                    finishRound(0, resTens, resOnes);
+                    setTimeout(() => {
+                        finishRound(0, res); 
+                    }, 1500);
                 } else {
                     const remain = MAX_ATTEMPTS - gameState.attempts;
-                    feedback.innerHTML = '<span class="text-danger">❌ 다시 도전하세요. (남은 기회: ' + remain + '번)</span>';
+                    feedback.innerHTML = '<span class="text-danger">❌ 오답. 다시 그려주세요! (남은 기회: ' + remain + ')</span>';
+                    
+                    setTimeout(() => {
+                        resetCanvas(canvasDigit);
+                        feedback.innerHTML = '';
+                        gameState.phase = 'drawing';
+                    }, 1200);
                 }
             }
         }
 
-        function finishRound(score, resTens, resOnes) {
+        function finishRound(score, res) {
             gameState.scores.push(score);
             gameState.roundHistory.push({
                 round: gameState.round,
                 target: gameState.targetNumber,
-                recognized: resTens.label * 10 + resOnes.label,
-                matchIndexTens: resTens.matchIndex,
-                matchIndexOnes: resOnes.matchIndex,
-                distTens: Math.round(resTens.distance),
-                distOnes: Math.round(resOnes.distance),
+                recognized: res.label,
+                matchIndex: res.matchIndex,
+                dist: Math.round(res.distance),
                 attempts: gameState.attempts,
                 score: score
             });
-            gameState.phase = 'result';
-
+            
             updateAvgScore();
 
-            const nb = document.getElementById('btn-next');
             if (gameState.round >= TOTAL_ROUNDS) {
-                nb.innerHTML = '<i class="bi bi-trophy"></i> 최종 결과 보기';
-                nb.classList.replace('btn-success', 'btn-primary');
+                endGame();
             } else {
-                nb.innerHTML = '다음 라운드 <i class="bi bi-arrow-right"></i>';
-                nb.classList.replace('btn-primary', 'btn-success');
+                nextRound();
             }
         }
 
         function nextRound() {
-            if (gameState.round >= TOTAL_ROUNDS) { endGame(); return; }
-
             gameState.round++;
             gameState.phase = 'drawing';
             generateTarget();
-
             document.getElementById('current-round').textContent = gameState.round;
             document.getElementById('target-number').textContent = gameState.targetNumber;
-            document.getElementById('feedback-message').innerHTML = '';
-
-            document.getElementById('result-area').innerHTML =
-                '<div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">' +
-                '<i class="bi bi-cpu fs-1 mb-2 d-block"></i>' +
-                '<p class="mb-0 px-3">숫자를 그린 후 상단의 <b>[확인하기]</b> 버튼을 누르면 비교 결과가 표시됩니다.</p>' +
-                '</div>';
-
-            document.getElementById('btn-submit').classList.remove('d-none');
-            document.getElementById('btn-next').classList.add('d-none');
-
-            resetCanvas(canvasTens);
-            resetCanvas(canvasOnes);
         }
 
         function endGame() {
+            gameState.phase = 'result';
             const avg = Math.round(gameState.scores.reduce((a, b) => a + b, 0) / gameState.scores.length);
 
             document.getElementById('game-section').classList.add('d-none');
@@ -622,14 +569,13 @@
                 '<thead class="table-light"><tr>' +
                 '<th class="text-center">라운드</th><th class="text-center">목표</th>' +
                 '<th class="text-center">인식 (MNIST 매칭)</th>' +
-                '<th class="text-center">성공여부</th>' + // 열 추가됨
+                '<th class="text-center">성공여부</th>' +
                 '<th class="text-center">해밍거리</th>' +
                 '<th class="text-center">도전</th><th class="text-center">점수</th>' +
                 '</tr></thead><tbody>';
 
             gameState.roundHistory.forEach(h => {
-                const imgTens = createMNISTDataURL(h.matchIndexTens);
-                const imgOnes = createMNISTDataURL(h.matchIndexOnes);
+                const img = createMNISTDataURL(h.matchIndex);
                 const isSuccess = h.target === h.recognized;
                 const statusBadge = isSuccess ? '<span class="badge bg-success">성공</span>' : '<span class="badge bg-danger">실패</span>';
 
@@ -638,18 +584,16 @@
                     '<td class="text-center fw-bold fs-5 text-dark">' + h.target + '</td>' +
                     '<td class="text-center">' +
                     '  <div class="d-inline-flex align-items-center gap-1 bg-black p-1 rounded">' +
-                    '    <img src="' + imgTens + '" class="pixel-preview" width="28" height="28">' +
-                    '    <img src="' + imgOnes + '" class="pixel-preview" width="28" height="28">' +
+                    '    <img src="' + img + '" class="pixel-preview" width="28" height="28">' +
                     '  </div>' +
                     '  <span class="ms-2 fw-bold text-secondary">(' + h.recognized + ')</span>' +
                     '</td>' +
-                    '<td class="text-center">' + statusBadge + '</td>' + // 열 데이터 추가됨
-                    '<td class="text-center text-muted">' + h.distTens + ' + ' + h.distOnes + '</td>' +
+                    '<td class="text-center">' + statusBadge + '</td>' +
+                    '<td class="text-center text-muted">' + h.dist + '</td>' +
                     '<td class="text-center">' + h.attempts + '회</td>' +
                     '<td class="text-center fw-bold text-primary">' + h.score + '점</td></tr>';
             });
 
-            // colspan을 5에서 6으로 변경
             html += '<tr class="table-light fw-bold"><td colspan="6" class="text-end">평균 점수</td>' +
                 '<td class="text-center text-primary">' + avg + '점</td></tr>' +
                 '</tbody></table></div>';
@@ -659,11 +603,8 @@
 
         function restartGame() {
             gameState = {
-                round: 1, targetNumber: 0, targetTens: 0, targetOnes: 0,
-                attempts: 0, attemptsTens: 0, attemptsOnes: 0,
-                tensSolved: false, onesSolved: false,
-                scores: [], roundHistory: [], phase: 'drawing',
-                digitStats: Array.from({ length: 10 }, () => ({ attemptsList: [] }))
+                round: 1, targetNumber: 0,
+                attempts: 0, scores: [], roundHistory: [], phase: 'drawing'
             };
 
             document.getElementById('final-section').classList.add('d-none');
@@ -673,42 +614,17 @@
             document.getElementById('current-round').textContent = '1';
             document.getElementById('avg-score').textContent = '-';
             document.getElementById('target-number').textContent = gameState.targetNumber;
-            document.getElementById('feedback-message').innerHTML = '';
-
-            document.getElementById('result-area').innerHTML =
-                '<div id="result-placeholder" class="text-center text-muted py-5 w-100 my-auto">' +
-                '<i class="bi bi-cpu fs-1 mb-2 d-block"></i>' +
-                '<p class="mb-0 px-3">숫자를 그린 후 상단의 <b>[확인하기]</b> 버튼을 누르면 비교 결과가 표시됩니다.</p>' +
-                '</div>';
-
-            document.getElementById('btn-submit').classList.remove('d-none');
-            document.getElementById('btn-next').classList.add('d-none');
-
-            const nb = document.getElementById('btn-next');
-            nb.innerHTML = '다음 라운드 <i class="bi bi-arrow-right"></i>';
-            nb.classList.replace('btn-primary', 'btn-success');
-
-            resetCanvas(canvasTens);
-            resetCanvas(canvasOnes);
         }
 
         // ============================================================
         //  UI 헬퍼
         // ============================================================
-        function showResult(resTens, resOnes, binTens, binOnes, tensOk, onesOk) {
+        function showResult(res, binDigit, isOk) {
             const area = document.getElementById('result-area');
+            const userImg = createBinaryDataURL(binDigit);
+            const matchImg = createMNISTDataURL(res.matchIndex);
 
-            const placeholder = document.getElementById('result-placeholder');
-            if (placeholder) placeholder.remove();
-
-            const userTensImg = createBinaryDataURL(binTens);
-            const userOnesImg = createBinaryDataURL(binOnes);
-            const matchTensImg = createMNISTDataURL(resTens.matchIndex);
-            const matchOnesImg = createMNISTDataURL(resOnes.matchIndex);
-
-            area.innerHTML =
-                renderDigitResult('십의 자리', userTensImg, matchTensImg, resTens.label, resTens.distance, tensOk) +
-                renderDigitResult('일의 자리', userOnesImg, matchOnesImg, resOnes.label, resOnes.distance, onesOk);
+            area.innerHTML = renderDigitResult('인식 결과', userImg, matchImg, res.label, res.distance, isOk);
         }
 
         function renderDigitResult(title, userImg, matchImg, label, dist, isOk) {
@@ -718,31 +634,23 @@
             const labelCls = isOk ? 'text-success' : 'text-danger';
 
             return '<div class="col-12">' +
-                '<h6 class="fw-bold mb-2 text-secondary text-start ps-1">' + title + '</h6>' +
-                '<div class="d-flex align-items-center justify-content-start gap-3 flex-nowrap">' +
+                '<h6 class="fw-bold mb-3 text-secondary text-start ps-1">' + title + '</h6>' +
+                '<div class="d-flex align-items-center justify-content-start gap-4 flex-nowrap">' +
                 '  <div class="text-center">' +
-                '    <p class="small text-muted mb-1" style="font-size: 0.7rem;">내 그림</p>' +
-                '    <img src="' + userImg + '" class="pixel-preview" width="90" height="90">' +
+                '    <p class="small text-muted mb-2" style="font-size: 0.8rem;">내 그림</p>' +
+                '    <img src="' + userImg + '" class="pixel-preview" width="150" height="150">' +
                 '  </div>' +
-                '  <i class="bi bi-arrow-right fs-4 text-muted"></i>' +
+                '  <i class="bi bi-arrow-right fs-1 text-muted"></i>' +
                 '  <div class="text-center">' +
-                '    <p class="small text-muted mb-1" style="font-size: 0.7rem;">가장 비슷한</p>' +
-                '    <img src="' + matchImg + '" class="pixel-preview" width="90" height="90">' +
+                '    <p class="small text-muted mb-2" style="font-size: 0.8rem;">가장 비슷한</p>' +
+                '    <img src="' + matchImg + '" class="pixel-preview" width="150" height="150">' +
                 '  </div>' +
-                '  <div class="ms-2 text-start flex-grow-1">' +
-                '    <p class="mb-1 fw-bold" style="font-size: 0.95rem;">인식: <span class="' + labelCls + '">' + label + '</span> ' + icon + '</p>' +
-                '    <p class="text-muted mb-0" style="font-size: 0.75rem;">해밍거리: ' + dist + ' / ' + IMAGE_SIZE + '</p>' +
+                '  <div class="ms-3 text-start flex-grow-1">' +
+                '    <p class="mb-2 fw-bold" style="font-size: 1.1rem;">인식: <span class="' + labelCls + '">' + label + '</span> ' + icon + '</p>' +
+                '    <p class="text-muted mb-0" style="font-size: 0.85rem;">해밍거리: ' + Math.round(dist) + ' / ' + IMAGE_SIZE + '</p>' +
                 '  </div>' +
                 '</div>' +
                 '</div>';
-        }
-
-        function showAlert(msg, type) {
-            const feedback = document.getElementById('feedback-message');
-            feedback.innerHTML = '<span class="text-warning fs-5">' + msg + '</span>';
-            setTimeout(() => {
-                if (feedback.innerText.includes(msg)) feedback.innerHTML = '';
-            }, 2500);
         }
 
         function updateAvgScore() {
@@ -755,16 +663,9 @@
         //  초기화
         // ============================================================
         async function init() {
-            canvasTens = document.getElementById('canvas-tens');
-            canvasOnes = document.getElementById('canvas-ones');
+            canvasDigit = document.getElementById('canvas-digit');
+            setupDrawingCanvas(canvasDigit);
 
-            setupDrawingCanvas(canvasTens);
-            setupDrawingCanvas(canvasOnes);
-
-            document.getElementById('btn-clear-tens').addEventListener('click', () => resetCanvas(canvasTens));
-            document.getElementById('btn-clear-ones').addEventListener('click', () => resetCanvas(canvasOnes));
-            document.getElementById('btn-submit').addEventListener('click', submitDrawing);
-            document.getElementById('btn-next').addEventListener('click', nextRound);
             document.getElementById('btn-restart').addEventListener('click', restartGame);
 
             const ok = await loadMNIST();
