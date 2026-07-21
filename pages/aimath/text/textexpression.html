@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>텍스트 데이터의 표현과 주제어 찾기</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+  
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', sans-serif;
+            background-color: #ffffff; /* 배경 분리 제거 */
+            padding-bottom: 50px;
+        }
+
+        .word-badge {
+            display: inline-block;
+            background-color: #f0f2f6;
+            color: #31333F;
+            border: 1px solid #d6d6d8;
+            border-radius: 15px; 
+            padding: 5px 12px;
+            margin: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .word-badge:hover {
+            transform: scale(1.05); 
+            background-color: #e0e2e6;
+            border-color: #ff4b4b; 
+            cursor: pointer;
+        }
+
+        .bag-container {
+            border: 2px dashed #ff4b4b;
+            border-radius: 10px;
+            padding: 20px;
+            background-color: #fff9f9;
+            text-align: center;
+            min-height: 150px;
+        }
+
+        /* 벡터 테이블 스타일 */
+        .vector-table th {
+            text-align: center !important;
+            background-color: #e8f4f8 !important;
+            vertical-align: middle;
+        }
+        .vector-table td {
+            text-align: center !important;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 16px;
+            vertical-align: middle;
+            border-top: none;
+            border-bottom: none;
+        }
+        
+        /* 에디터 테이블 스타일 */
+        .editor-table th {
+            background-color: #f1f3f5;
+            text-align: center;
+        }
+        .edit-cell {
+            background-color: #fff;
+            cursor: text;
+        }
+        .edit-cell:focus {
+            background-color: #e8f4f8;
+            outline: 2px solid #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <script src="../../../js/navbar.js"></script>
+
+    <!-- 배경 섀도우 및 분리 제거 -->
+    <main class="container py-4 mt-3">
+        <h2 class="fw-bold mb-5 text-center">👜 텍스트 데이터의 표현과 주제어 찾기</h2>
+
+        <!-- 1. 텍스트 입력 섹션 -->
+        <div class="accordion mb-4" id="inputAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button fw-bold fs-5 bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInput" aria-expanded="true">
+                        🔍 텍스트 데이터 입력 열기/닫기
+                    </button>
+                </h2>
+                <div id="collapseInput" class="accordion-collapse collapse show">
+                    <div class="accordion-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="fw-bold mb-2">텍스트 A</label>
+                                <textarea id="text-a" class="form-control" rows="3">풍미 깊은 음식과 편안하고 아늑한 분위기가 조화롭게 어우러지는 특별하게 만들어주는 곳이에요.</textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="fw-bold mb-2">텍스트 B</label>
+                                <textarea id="text-b" class="form-control" rows="3">맛은 정말 훌륭했지만, 직원의 응대가 다소 미숙하고 주문한 음식이 늦게 나와서 실망스러웠어요~</textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="fw-bold mb-2">텍스트 C</label>
+                                <textarea id="text-c" class="form-control" rows="3">강력 추천! 음식이 기대 이상이었고, 특히 정성이 느껴지는 플레이팅은 감동 그 자체였습니다.</textarea>
+                            </div>
+                        </div>
+                        <button id="btn-preprocess" class="btn btn-primary w-100 mt-3 fw-bold">🚀 데이터 전처리</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 2. 에디터 및 단어 가방 섹션 -->
+        <div id="editor-section" class="row g-4 d-none mb-5">
+            <!-- 왼쪽: 에디터 -->
+            <div class="col-lg-6">
+                <h4 class="fw-bold">1️⃣ 불용어 제거</h4>
+                <p class="text-muted small">방향키를 사용하여 이동하며 단어를 자유롭게 수정한 뒤 아래 버튼을 눌러주세요.</p>
+                
+                <div class="table-responsive border rounded" style="max-height: 450px;">
+                    <table class="table table-bordered table-sm align-middle mb-0 editor-table">
+                        <thead class="sticky-top">
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>텍스트 A</th>
+                                <th>텍스트 B</th>
+                                <th>텍스트 C</th>
+                                <th style="width: 60px;">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="editor-tbody">
+                            <!-- JS로 내용 채워짐 -->
+                        </tbody>
+                    </table>
+                </div>
+                <button id="btn-make-bag" class="btn btn-primary w-100 mt-3 fw-bold">🎒 단어 가방 만들기</button>
+            </div>
+
+            <!-- 오른쪽: 단어 가방 -->
+            <div class="col-lg-6">
+                <h4 class="fw-bold">2️⃣ 단어 가방</h4>
+                <p class="text-muted small">불용어가 제거된 최종 단어 집합입니다.</p>
+                
+                <div id="bag-placeholder" class="alert alert-info text-center py-5">
+                    👈 왼쪽에서 수정을 마치고 <b>'단어 가방 만들기'</b> 버튼을 눌러주세요.
+                </div>
+
+                <div id="bag-content" class="d-none">
+                    <div class="bag-container" id="badges-container">
+                        <h4 class="mb-3 text-secondary">👜 Bag of Words</h4>
+                        <div id="badges-area"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 벡터 표현 및 워드 클라우드 섹션 -->
+        <div id="vector-section" class="mt-4 d-none">
+            <h4 class="fw-bold">3️⃣ 원-핫 벡터 표현 (One-Hot Vector)</h4>
+            <p class="text-muted small">단어 가방의 단어가 포함되어 있으면 1, 없으면 0으로 표시합니다.</p>
+            <div class="table-responsive mb-5">
+                <table class="table vector-table table-borderless">
+                    <thead class="border-bottom border-dark" id="onehot-thead"></thead>
+                    <tbody id="onehot-tbody"></tbody>
+                </table>
+            </div>
+
+            <h4 class="fw-bold">4️⃣ 빈도수 벡터 표현 (Frequency Vector)</h4>
+            <p class="text-muted small">각 단어가 문장에 몇 번 등장했는지를 통해 주제어를 찾을 수 있습니다.</p>
+            <div class="table-responsive mb-4">
+                <table class="table vector-table table-borderless">
+                    <thead class="border-bottom border-dark" id="freq-thead"></thead>
+                    <tbody id="freq-tbody"></tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-end mb-4">
+                <button class="btn btn-secondary fw-bold" data-bs-toggle="modal" data-bs-target="#wordcloudModal" title="단어들의 빈도수를 시각적으로 표현합니다.">
+                    <i class="bi bi-cloud-haze2"></i> 워드클라우드 보기
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- 워드클라우드 모달 -->
+    <div class="modal fade" id="wordcloudModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title fw-bold">☁️ 워드클라우드</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center p-4">
+                    <canvas id="wc-canvas" width="400" height="300" style="max-width: 100%; height: auto;"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- WordCloud2.js (워드클라우드 라이브러리) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
+
+    <script>
+        // 전역 데이터 저장소
+        let processedTokens = { a: [], b: [], c: [] };
+        let finalVocab = [];
+        let finalFrequencies = {};
+
+        // 텍스트 토큰화 (특수문자 제거 후 공백 분리)
+        function tokenize(text) {
+            let cleaned = text.replace(/[^가-힣a-zA-Z0-9\s]/g, '');
+            return cleaned.trim().split(/\s+/).filter(word => word.length > 0);
+        }
+
+        // 1. 데이터 전처리 버튼 클릭 이벤트
+        document.getElementById('btn-preprocess').addEventListener('click', () => {
+            const txtA = document.getElementById('text-a').value;
+            const txtB = document.getElementById('text-b').value;
+            const txtC = document.getElementById('text-c').value;
+
+            const tokensA = tokenize(txtA);
+            const tokensB = tokenize(txtB);
+            const tokensC = tokenize(txtC); 
+
+            const maxLen = Math.max(tokensA.length, tokensB.length, tokensC.length);
+            const tbody = document.getElementById('editor-tbody');
+            tbody.innerHTML = '';
+
+            for (let i = 0; i < maxLen; i++) {
+                const a = tokensA[i] || '';
+                const b = tokensB[i] || '';
+                const c = tokensC[i] || '';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-center bg-light text-muted fw-bold">${i + 1}</td>
+                    <td contenteditable="true" class="edit-cell col-a text-center">${a}</td>
+                    <td contenteditable="true" class="edit-cell col-b text-center">${b}</td>
+                    <td contenteditable="true" class="edit-cell col-c text-center">${c}</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-danger px-2 py-0" onclick="this.closest('tr').remove()" title="행 삭제">
+                            <i class="bi bi-trash3"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+
+            document.getElementById('editor-section').classList.remove('d-none');
+            document.getElementById('vector-section').classList.add('d-none');
+            document.getElementById('bag-placeholder').classList.remove('d-none');
+            document.getElementById('bag-content').classList.add('d-none');
+        });
+
+        // 1-1. 키보드 방향키 이동 이벤트 추가 (엑셀과 같은 동작 지원)
+        document.getElementById('editor-tbody').addEventListener('keydown', function(e) {
+            if (!e.target.classList.contains('edit-cell')) return;
+
+            const currentTd = e.target;
+            const currentTr = currentTd.parentElement;
+            const tds = Array.from(currentTr.querySelectorAll('.edit-cell'));
+            const colIndex = tds.indexOf(currentTd);
+            
+            const trs = Array.from(currentTr.parentElement.children);
+            const rowIndex = trs.indexOf(currentTr);
+
+            let nextTd = null;
+
+            if (e.key === 'ArrowUp') {
+                if (rowIndex > 0) nextTd = trs[rowIndex - 1].querySelectorAll('.edit-cell')[colIndex];
+                e.preventDefault(); // 기본 스크롤/캐럿 이동 방지
+            } else if (e.key === 'ArrowDown') {
+                if (rowIndex < trs.length - 1) nextTd = trs[rowIndex + 1].querySelectorAll('.edit-cell')[colIndex];
+                e.preventDefault();
+            } else if (e.key === 'ArrowLeft') {
+                const sel = window.getSelection();
+                // 텍스트 맨 앞에 커서가 있을 때만 왼쪽 셀로 이동
+                if (sel.anchorOffset === 0 && colIndex > 0) {
+                    nextTd = tds[colIndex - 1];
+                    e.preventDefault();
+                }
+            } else if (e.key === 'ArrowRight') {
+                const sel = window.getSelection();
+                const textLen = currentTd.innerText.replace(/\n$/, '').length;
+                // 텍스트 맨 끝에 커서가 있을 때만 오른쪽 셀로 이동
+                if (sel.anchorOffset === textLen && colIndex < tds.length - 1) {
+                    nextTd = tds[colIndex + 1];
+                    e.preventDefault();
+                }
+            }
+
+            if (nextTd) {
+                nextTd.focus();
+                // 포커스 이동 후 텍스트 전체 선택 혹은 끝으로 커서 이동
+                const range = document.createRange();
+                const sel = window.getSelection();
+                range.selectNodeContents(nextTd);
+                range.collapse(false); // 텍스트 끝으로 이동
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        });
+
+        // 2. 단어 가방 만들기 버튼 클릭 이벤트
+        document.getElementById('btn-make-bag').addEventListener('click', () => {
+            processedTokens = { a: [], b: [], c: [] };
+            
+            // 테이블의 현재 값들 읽어오기
+            document.querySelectorAll('#editor-tbody tr').forEach(tr => {
+                const a = tr.querySelector('.col-a').innerText.trim();
+                const b = tr.querySelector('.col-b').innerText.trim();
+                const c = tr.querySelector('.col-c').innerText.trim();
+
+                if (a) processedTokens.a.push(a);
+                if (b) processedTokens.b.push(b);
+                if (c) processedTokens.c.push(c);
+            });
+
+            const allTokens = [...processedTokens.a, ...processedTokens.b, ...processedTokens.c];
+            
+            if (allTokens.length === 0) {
+                alert("단어 가방이 비어있습니다. 단어를 남겨주세요.");
+                return;
+            }
+
+            // 중복 제거 및 정렬
+            finalVocab = [...new Set(allTokens)].sort();
+            
+            // 전체 빈도수 계산
+            finalFrequencies = {};
+            finalVocab.forEach(word => {
+                finalFrequencies[word] = allTokens.filter(t => t === word).length;
+            });
+
+            // 단어 가방 뱃지 렌더링
+            const badgesArea = document.getElementById('badges-area');
+            badgesArea.innerHTML = '';
+            finalVocab.forEach(word => {
+                const badge = document.createElement('span');
+                badge.className = 'word-badge';
+                badge.innerHTML = `${word} <small class="text-muted">(${finalFrequencies[word]})</small>`;
+                badgesArea.appendChild(badge);
+            });
+
+            document.getElementById('bag-placeholder').classList.add('d-none');
+            document.getElementById('bag-content').classList.remove('d-none');
+
+            // 벡터 표현 테이블 렌더링
+            renderVectorTables();
+            document.getElementById('vector-section').classList.remove('d-none');
+        });
+
+        // 벡터 렌더링 헬퍼 함수
+        function renderVectorTables() {
+            const onehotThead = document.getElementById('onehot-thead');
+            const onehotTbody = document.getElementById('onehot-tbody');
+            const freqThead = document.getElementById('freq-thead');
+            const freqTbody = document.getElementById('freq-tbody');
+
+            // 테이블 헤더 구성
+            let thHtml = `<tr class="table-light"><th style="width:50px;"></th><th></th>`;
+            finalVocab.forEach(word => { thHtml += `<th>${word}</th>`; });
+            thHtml += `<th></th></tr>`;
+            
+            onehotThead.innerHTML = thHtml;
+            freqThead.innerHTML = thHtml;
+
+            onehotTbody.innerHTML = '';
+            freqTbody.innerHTML = '';
+
+            const docs = [
+                { name: 'A', tokens: processedTokens.a },
+                { name: 'B', tokens: processedTokens.b },
+                { name: 'C', tokens: processedTokens.c }
+            ];
+
+            docs.forEach(doc => {
+                // One-Hot 생성
+                let trOH = `<tr><th class="bg-light">${doc.name}</th><td class="text-muted fs-5">(</td>`;
+                // 빈도수 생성
+                let trFreq = `<tr><th class="bg-light">${doc.name}</th><td class="text-muted fs-5">(</td>`;
+
+                finalVocab.forEach((word, index) => {
+                    const isLast = index === finalVocab.length - 1;
+                    const comma = isLast ? '' : ',';
+                    
+                    const count = doc.tokens.filter(t => t === word).length;
+                    const isExist = count > 0 ? 1 : 0;
+
+                    trOH += `<td>${isExist}${comma}</td>`;
+                    trFreq += `<td>${count}${comma}</td>`;
+                });
+
+                trOH += `<td class="text-muted fs-5">)</td></tr>`;
+                trFreq += `<td class="text-muted fs-5">)</td></tr>`;
+
+                onehotTbody.insertAdjacentHTML('beforeend', trOH);
+                freqTbody.insertAdjacentHTML('beforeend', trFreq);
+            });
+        }
+
+        // 워드클라우드 렌더링 (모달이 뜰 때 캔버스가 보여야 정상 동작함)
+        const wordcloudModal = document.getElementById('wordcloudModal');
+        wordcloudModal.addEventListener('shown.bs.modal', () => {
+            const list = finalVocab.map(word => [word, finalFrequencies[word] * 20]); // 가중치 곱셈으로 크기 키움
+            WordCloud(document.getElementById('wc-canvas'), {
+                list: list,
+                fontFamily: "'Pretendard Variable', sans-serif",
+                weightFactor: 2,
+                color: 'random-dark',
+                backgroundColor: '#ffffff',
+                rotateRatio: 0
+            });
+        });
+    </script>
+</body>
+</html>

@@ -67,7 +67,9 @@
                 {
                     "title": "텍스트 데이터의 표현",
                     "items": [
-                        { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" },
+                        { "name": "👜 텍스트 데이터의 표현과 주제어", "path": "pages/aimath/text/textexpression.html" },
+                        { "name": "🧮 텍스트 데이터에서 유용한 정보 찾기", "path": "pages/aimath/text/textconversion.html" }
+
                     ]
                 }
 
