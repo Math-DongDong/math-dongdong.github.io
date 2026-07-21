@@ -59,7 +59,7 @@
                     "items": [
                         { "name": "🔘 그레이 필터", "path": "pages/aimath/image/grayscale.html" },
                         { "name": "💡 밝기 조절", "path": "pages/aimath/image/brightness_adjust.html" },
-                        { "name": "➕ 이미지의 합성", "path": "pages/aimath/image/matrix_composite.html" }
+                        { "name": "➕ 이미지의 합성", "path": "pages/aimath/image/matrix_composite.html" },
                         { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" },
 
                     ]
