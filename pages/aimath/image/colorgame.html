@@ -82,12 +82,13 @@
                     라운드 <span id="current-round">1</span> / 7
                 </span>
                 <span class="badge bg-warning text-dark score-badge">
-                    평균 점수: <span id="avg-score">-</span>점
+                    전체 평균 점수: <span id="avg-score">-</span>점
                 </span>
             </div>
 
             <p class="text-center text-muted mb-4">
-                빛의 삼원색(R, G, B)을 <b>7단계</b>로 조절하여 똑같이 만들어보세요.
+                빛의 삼원색(R, G, B)을 <b>7단계</b>로 조절하여 똑같이 만들어보세요.<br>
+                <span class="text-danger small fw-medium">※ 힌트가 제공된 라운드의 점수는 전체 평균 계산에서 제외됩니다.</span>
             </p>
 
             <!-- 1행: 색상 비교 영역 (맞닿게 배치) -->
@@ -107,13 +108,7 @@
                 </div>
             </div>
 
-            <!-- 결과 피드백 영역 (제출 시 표시, 힌트는 토스트로 분리) -->
-            <div id="result-area" class="text-center mb-4 d-none">
-                <h1 class="display-3 fw-bold text-primary mb-2" id="score-display">0점</h1>
-                <p class="fs-5 text-secondary fw-semibold mb-2" id="feedback-display"></p>
-            </div>
-
-            <!-- 2행: 컨트롤 슬라이더 영역 -->
+            <!-- 2행: 컨트롤 슬라이더 및 결과 표시 영역 -->
             <div class="row justify-content-center">
                 <div class="col-lg-8 col-md-10">
                     <div class="card border-0 shadow-sm rounded-4 p-4 mb-5">
@@ -148,6 +143,13 @@
                         <button id="btn-action" class="btn btn-primary w-100 fw-bold py-3 fs-5 shadow-sm">
                             <i class="bi bi-check-circle"></i> 제출하고 색상 확인하기
                         </button>
+
+                        <!-- 결과 피드백 영역 (버튼 하단 고정, 레이아웃 쉬프트 방지) -->
+                        <div id="result-area" class="text-center mt-4" style="min-height: 120px; visibility: hidden;">
+                            <h1 class="display-3 fw-bold text-primary mb-2" id="score-display">0점</h1>
+                            <p class="fs-5 text-secondary fw-semibold mb-0" id="feedback-display"></p>
+                        </div>
+                        
                     </div>
                 </div>
             </div>
@@ -173,7 +175,7 @@
                 <div class="card-body">
                     <h2 class="fw-bold mb-2">🎉 게임 완료!</h2>
                     <div id="final-score" class="display-1 fw-bold text-primary my-3"></div>
-                    <p class="text-muted mb-3">7라운드 평균 점수</p>
+                    <p class="text-muted mb-3">7라운드 전체 평균 점수</p>
 
                     <p id="final-comment" class="fs-5 fw-semibold mb-5"></p>
                     
@@ -207,9 +209,12 @@
         const TOTAL_ROUNDS = 7;
         
         let gameState = {
-            round: 1,
-            scores: []
+            round: 1
         };
+        
+        // 점수와 평균 계산을 위한 전역 배열/집합
+        let allAttemptScores = [];      // 형태: { round: 1, score: 90 }
+        let excludedRounds = new Set(); // 힌트가 제공되어 평균에서 제외할 라운드 번호 기록
         
         let targetSteps = { r: 0, g: 0, b: 0 };
         let isSubmitted = false;
@@ -244,7 +249,6 @@
         // 힌트 토스트 출력 함수
         function showToast(message, type) {
             hintToastEl.className = `toast align-items-center border-0 bg-${type} text-${type === 'warning' ? 'dark' : 'white'}`;
-            // 닫기 버튼 색상 조정
             const btnClose = hintToastEl.querySelector('.btn-close');
             if (type === 'warning') {
                 btnClose.classList.remove('btn-close-white');
@@ -281,6 +285,7 @@
             isCorrect = false;
             
             resetToPlayState();
+            resultArea.style.visibility = 'hidden';
         }
 
         // 플레이 상태(제출 전, 혹은 슬라이더 조작 중) UI 세팅
@@ -301,7 +306,7 @@
             isSubmitted = false;
         }
 
-        // 슬라이더 조작 시 발생 (자동 다시 도전 적용)
+        // 슬라이더 조작 시 발생
         function updateSliderLabels() {
             valR.textContent = sliderR.value + "단계";
             valG.textContent = sliderG.value + "단계";
@@ -311,10 +316,10 @@
             actualG.textContent = rgbSteps[sliderG.value];
             actualB.textContent = rgbSteps[sliderB.value];
 
-            // 오답인 상태에서 슬라이더를 만지면 자동으로 다시 도전 모드로 즉각 복구
+            // 오답인 상태에서 슬라이더를 만지면 다시 도전 모드로 즉각 복구
             if (isSubmitted && !isCorrect) {
                 resetToPlayState();
-                resultArea.classList.add('d-none');
+                resultArea.style.visibility = 'hidden';
             }
         }
 
@@ -360,9 +365,10 @@
             // 정답 판정 (거리가 0일 때)
             isCorrect = (distance === 0);
 
-            document.getElementById('score-display').textContent = score + "점";
+            // 전역 배열에 점수 기록
+            allAttemptScores.push({ round: gameState.round, score: score });
             
-            // 시도 기록 추가
+            // 시도 기록 렌더링
             addHistoryLog(userSteps, userRgbStr, score);
 
             const diffs = [
@@ -384,11 +390,9 @@
                 btnAction.classList.add('btn-success');
                 btnAction.innerHTML = '<i class="bi bi-check-all"></i> 정답 확인 완료';
 
-                // 자동 다음 라운드 진행
+                // 2초 후 자동 다음 라운드 진행
                 setTimeout(() => {
-                    gameState.scores.push(score);
                     gameState.round++;
-                    updateAvgScore();
                     startNewRound();
                 }, 2000);
 
@@ -401,8 +405,10 @@
                 else feedback = "🤔 빛의 비율을 한 번 더 고민해 볼까요?";
                 document.getElementById('feedback-display').textContent = feedback;
 
-                // 점진적 힌트 토스트 로직
+                // 점진적 힌트 토스트 로직 및 라운드 제외 처리
                 if (failCount === 3) {
+                    excludedRounds.add(gameState.round); // 힌트가 표시되므로 해당 라운드는 평균 계산에서 제외
+                    
                     let action = worstColor.val > 0 ? "높이는" : "낮추는";
                     showToast(`💡 <b>힌트 1단계:</b> 지금 <b>${worstColor.name} 빛</b>을 <b>${action} 방향</b>으로 조절해보세요!`, "warning");
                 } else if (failCount > 3) {
@@ -417,11 +423,15 @@
                 btnAction.innerHTML = '<i class="bi bi-sliders"></i> 슬라이더를 움직여 다시 조절해보세요';
             }
 
-            resultArea.classList.remove('d-none');
+            // 평균 갱신 (힌트가 제공된 라운드는 제외됨)
+            updateAvgScore(); 
+
+            document.getElementById('score-display').textContent = score + "점";
+            resultArea.style.visibility = 'visible';
             isSubmitted = true;
         }
 
-        // 시도 기록 렌더링 (모든 라운드 유지)
+        // 시도 기록 렌더링
         function addHistoryLog(steps, colorStr, score) {
             const placeholder = document.getElementById('history-placeholder');
             if(placeholder) placeholder.remove();
@@ -441,37 +451,55 @@
                 </div>
                 <span class="fw-bold text-dark fs-5">${score}점</span>
             `;
-            // 최신 시도가 위로 오도록 추가
             historyList.prepend(li);
         }
 
+        // 평균 갱신 함수
         function updateAvgScore() {
-            if (gameState.scores.length === 0) return;
-            const avg = Math.round(gameState.scores.reduce((a, b) => a + b, 0) / gameState.scores.length);
+            // excludedRounds에 포함되지 않은 (힌트를 보지 않은) 라운드의 점수만 필터링
+            const validScores = allAttemptScores.filter(item => !excludedRounds.has(item.round));
+            
+            if (validScores.length === 0) {
+                document.getElementById('avg-score').textContent = '-';
+                return;
+            }
+            
+            const avg = Math.round(validScores.reduce((acc, cur) => acc + cur.score, 0) / validScores.length);
             document.getElementById('avg-score').textContent = avg;
         }
 
+        // 최종 결과 화면
         function showFinalResult() {
             document.getElementById('game-section').classList.add('d-none');
             document.getElementById('final-section').classList.remove('d-none');
 
-            const avg = Math.round(gameState.scores.reduce((a, b) => a + b, 0) / gameState.scores.length);
-            document.getElementById('final-score').textContent = avg + '점';
+            const validScores = allAttemptScores.filter(item => !excludedRounds.has(item.round));
+            let avg = 0;
+            
+            if (validScores.length > 0) {
+                avg = Math.round(validScores.reduce((acc, cur) => acc + cur.score, 0) / validScores.length);
+                document.getElementById('final-score').textContent = avg + '점';
+            } else {
+                document.getElementById('final-score').textContent = '-점';
+            }
 
             let comment = '';
-            if (avg >= 95) comment = '🏆 최고의 컬러 감각! 빛의 마술사네요!';
-            else if (avg >= 80) comment = '👏 훌륭해요! 색에 대한 이해도가 매우 높습니다.';
-            else if (avg >= 60) comment = '👍 좋은 시도! RGB 혼합 원리를 꽤 파악하셨군요.';
+            if (validScores.length === 0) comment = '😅 모든 라운드에서 힌트를 사용하셨군요! 다음엔 힌트 없이 도전해보세요.';
+            else if (avg >= 90) comment = '🏆 최고의 컬러 감각! 빛의 마술사네요!';
+            else if (avg >= 75) comment = '👏 훌륭해요! 색에 대한 이해도가 매우 높습니다.';
+            else if (avg >= 55) comment = '👍 좋은 시도! RGB 혼합 원리를 꽤 파악하셨군요.';
             else comment = '💪 연습하면 나아질 거예요! 다시 도전해볼까요?';
+            
             document.getElementById('final-comment').textContent = comment;
         }
 
+        // 재시작
         document.getElementById('btn-restart').addEventListener('click', () => {
             gameState.round = 1;
-            gameState.scores = [];
+            allAttemptScores = [];
+            excludedRounds.clear();
             document.getElementById('avg-score').textContent = '-';
             
-            // 재도전 시 기록 초기화
             historyList.innerHTML = `<li class="list-group-item text-center text-muted py-4 bg-transparent" id="history-placeholder">
                                         아직 제출한 기록이 없습니다. 색상을 섞어 제출해보세요!
                                      </li>`;
