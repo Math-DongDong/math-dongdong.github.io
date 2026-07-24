@@ -68,7 +68,8 @@
                     "title": "텍스트 데이터의 표현",
                     "items": [
                         { "name": "👜 텍스트 데이터의 표현과 주제어", "path": "pages/aimath/text/textexpression.html" },
-                        { "name": "🧮 유용한 정보 찾기", "path": "pages/aimath/text/textconversion.html" }
+                        { "name": "🧮 유용한 정보 찾기", "path": "pages/aimath/text/textconversion.html" },
+                        { "name": "💬 텍스트 감성 분석", "path": "pages/aimath/text/sentimentanalysis.html" }
 
                     ]
                 }

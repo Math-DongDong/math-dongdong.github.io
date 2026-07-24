@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>텍스트 감성 분석</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 네비게이션바 공통 CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+
+    <!-- 폰트 -->
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        .word-badge {
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+            margin: 0.2rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .word-badge:hover {
+            opacity: 0.8;
+            transform: scale(1.05);
+        }
+
+        .section-container {
+            display: none;
+        }
+
+        .active-section {
+            display: block;
+        }
+    </style>
+
+    <!-- Firebase SDK (Compat 모드 - 단일 파일 사용에 적합) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-check-compat.js"></script>
+
+    <!-- Brain.js (자바스크립트 지도학습 머신러닝 라이브러리) -->
+    <script src="https://cdn.rawgit.com/BrainJS/brain.js/master/browser.js"></script>
+</head>
+
+<body>
+    <!-- 상단 네비게이션바 공통 스크립트 -->
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <!-- 현재 접속 중인 방 정보 (기존 네비게이션 바에서 이동됨) -->
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info"></span>
+        </div>
+
+        <!-- ==================== 1. 랜딩 페이지 (방 접속 / 생성) ==================== -->
+        <div id="landing-section" class="section-container active-section text-center py-5">
+            <h1 class="fw-bold mb-4">함께 모으는 데이터, 똑똑해지는 인공지능</h1>
+            <p class="text-muted mb-5">방 코드를 입력하여 데이터 수집에 참여하거나, 선생님 대시보드에 접속하세요.</p>
+
+            <div class="row justify-content-center">
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 mb-4 border-0 rounded-4">
+                        <h4 class="fw-bold mb-3">🧑‍🎓 학생용 접속</h4>
+                        <input type="text" id="room-code-input"
+                            class="form-control form-control-lg text-center mb-3 fw-bold" placeholder="방 코드 4자리 입력">
+                        <button id="btn-join-room" class="btn btn-primary btn-lg w-100 fw-bold">방 입장하기</button>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 border-0 rounded-4 bg-light">
+                        <h4 class="fw-bold mb-3 text-secondary">👨‍🏫 교사용 대시보드</h4>
+                        <button id="btn-create-room" class="btn btn-outline-dark btn-lg w-100 fw-bold mb-2">새로운 방
+                            만들기</button>
+                        <button id="btn-admin-dash" class="btn btn-dark btn-lg w-100 fw-bold">대시보드 열기</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 학생용 (데이터 수집 및 AI 학습) ==================== -->
+        <div id="student-section" class="section-container">
+            <div class="row g-4">
+                <!-- 데이터 입력 -->
+                <div class="col-md-4">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 h-100">
+                        <h5 class="fw-bold mb-3">📝 단어 등록하기</h5>
+                        <input type="text" id="word-input" class="form-control mb-3" placeholder="예: 맛있다, 더럽다 (최대 20자)"
+                            maxlength="20">
+                        <div class="d-flex gap-2 mb-3">
+                            <input type="radio" class="btn-check" name="sentiment" id="sent-pos" value="positive"
+                                checked>
+                            <label class="btn btn-outline-primary w-50 fw-bold" for="sent-pos">😊 긍정</label>
+
+                            <input type="radio" class="btn-check" name="sentiment" id="sent-neg" value="negative">
+                            <label class="btn btn-outline-danger w-50 fw-bold" for="sent-neg">😡 부정</label>
+                        </div>
+                        <button id="btn-add-word" class="btn btn-success w-100 fw-bold">데이터베이스에 추가</button>
+                    </div>
+                </div>
+
+                <!-- 수집된 데이터 현황 -->
+                <div class="col-md-8">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 h-100">
+                        <h5 class="fw-bold mb-3">🗂️ 우리가 모은 데이터 <span class="badge bg-secondary"
+                                id="data-count">0개</span></h5>
+                        <div id="words-container" class="border rounded p-3 bg-light overflow-auto"
+                            style="height: 200px;">
+                            <!-- 실시간 단어 뱃지 출력 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 인공지능 지도학습 및 테스트 -->
+                <div class="col-12 mt-4">
+                    <div class="card shadow border-primary rounded-4 p-4">
+                        <h4 class="fw-bold text-primary mb-3"><i class="bi bi-robot"></i> 인공지능 지도학습 (Supervised
+                            Learning)</h4>
+                        <p class="text-muted small">모인 데이터를 바탕으로 AI 신경망(Neural Network)을 훈련시키고 문장의 감성을 분석해보세요!</p>
+
+                        <button id="btn-train-ai" class="btn btn-primary fw-bold mb-4">▶️ 수집된 데이터로 AI 학습 시작하기</button>
+                        <p id="train-status" class="text-success fw-bold d-none">학습 완료! 이제 아래에서 문장을 테스트해보세요.</p>
+
+                        <div class="input-group input-group-lg mt-2">
+                            <input type="text" id="ai-test-input" class="form-control" placeholder="분석할 문장을 입력하세요."
+                                disabled>
+                            <button class="btn btn-dark fw-bold" id="btn-test-ai" disabled>분석하기</button>
+                        </div>
+
+                        <div id="ai-result-area" class="mt-4 text-center d-none">
+                            <h2 id="ai-result-text" class="fw-bold"></h2>
+                            <div class="progress mt-2" style="height: 25px;">
+                                <div id="ai-progress-pos" class="progress-bar bg-primary" role="progressbar"
+                                    style="width: 0%">긍정</div>
+                                <div id="ai-progress-neg" class="progress-bar bg-danger" role="progressbar"
+                                    style="width: 0%">부정</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 교사용 대시보드 ==================== -->
+        <div id="admin-section" class="section-container">
+            <h2 class="fw-bold mb-4">👨‍🏫 교사 실시간 대시보드</h2>
+            <div class="card shadow-sm border-0 rounded-4 p-4">
+                <div class="row align-items-center mb-4">
+                    <div class="col-md-4">
+                        <label class="fw-bold mb-2">모니터링할 방 선택</label>
+                        <select id="admin-room-select" class="form-select form-select-lg">
+                            <option value="">방을 선택하세요</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8 text-end mt-4 mt-md-0">
+                        <span class="fs-5 fw-bold text-primary">현재 접속 중인 방: <span id="admin-active-room">-</span></span>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle text-center">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>단어 (Text)</th>
+                                <th>감성 라벨 (Sentiment)</th>
+                                <th>관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-table-body">
+                            <!-- 실시간 데이터 로드 -->
+                            <tr>
+                                <td colspan="3" class="text-muted">방을 선택하면 데이터가 표시됩니다.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 스크립트 로직 -->
+    <script>
+        // =====================================================================
+        // [보안 및 파이어베이스 설정] 
+        // ⚠️ 아래 빈칸을 선생님의 실제 키 값으로 변경하세요!
+        // =====================================================================
+        const RECAPTCHA_SITE_KEY = "6Ldu72ItAAAAALg5JRi8i1D40zzFBGLKTEmI9Lyu";
+
+        const firebaseConfig = {
+            apiKey: "여기에_API_KEY",
+            authDomain: "여기에_AUTH_DOMAIN",
+            projectId: "여기에_PROJECT_ID",
+            storageBucket: "여기에_STORAGE_BUCKET",
+            messagingSenderId: "여기에_MESSAGING_SENDER_ID",
+            appId: "여기에_APP_ID"
+        };
+
+        // Firebase 초기화
+        firebase.initializeApp(firebaseConfig);
+
+        // App Check (reCAPTCHA v3) 활성화 - 봇/매크로 차단 방패
+        const appCheck = firebase.appCheck();
+        appCheck.activate(RECAPTCHA_SITE_KEY, true);
+
+        // Firestore 데이터베이스 연결
+        const db = firebase.firestore();
+
+        // 전역 상태 변수
+        let currentRoomCode = null;
+        let currentUnsubscribe = null; // 실시간 리스너 해제용
+        let wordsData = []; // AI 학습을 위한 로컬 배열
+        let net = new brain.recurrent.LSTM(); // Brain.js LSTM 신경망 객체
+
+        // UI 요소
+        const sectionLanding = document.getElementById('landing-section');
+        const sectionStudent = document.getElementById('student-section');
+        const sectionAdmin = document.getElementById('admin-section');
+        const navRoomInfo = document.getElementById('nav-room-info');
+
+        // =====================================================================
+        // [랜딩 페이지 로직]
+        // =====================================================================
+
+        // 1. 새로운 방 만들기 (교사)
+        document.getElementById('btn-create-room').addEventListener('click', async () => {
+            const topic = prompt("이 방의 주제를 입력하세요 (예: 1반 급식 평가)");
+            if (!topic) return;
+
+            // 4자리 영문+숫자 랜덤 코드 생성
+            const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+            try {
+                await db.collection("rooms").doc(roomCode).set({
+                    topic: topic,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                alert(`방이 생성되었습니다!\n방 코드: [ ${roomCode} ]\n학생들에게 이 코드를 알려주세요.`);
+            } catch (error) {
+                console.error(error);
+                alert("방 생성 실패. 파이어베이스 규칙을 확인하세요.");
+            }
+        });
+
+        // 2. 방 입장하기 (학생)
+        document.getElementById('btn-join-room').addEventListener('click', async () => {
+            const code = document.getElementById('room-code-input').value.toUpperCase().trim();
+            if (code.length === 0) return alert("코드를 입력하세요.");
+
+            const roomRef = db.collection("rooms").doc(code);
+            const doc = await roomRef.get();
+
+            if (doc.exists) {
+                currentRoomCode = code;
+                navRoomInfo.textContent = `현재 방: ${code} (${doc.data().topic})`;
+
+                sectionLanding.classList.remove('active-section');
+                sectionStudent.classList.add('active-section');
+
+                // 실시간 데이터 동기화 시작
+                startStudentRealtimeSync();
+            } else {
+                alert("존재하지 않는 방 코드입니다.");
+            }
+        });
+
+        // 3. 교사 대시보드 열기
+        document.getElementById('btn-admin-dash').addEventListener('click', () => {
+            sectionLanding.classList.remove('active-section');
+            sectionAdmin.classList.add('active-section');
+            navRoomInfo.textContent = "교사 대시보드";
+            loadAdminRooms();
+        });
+
+
+        // =====================================================================
+        // [학생용 기능 로직]
+        // =====================================================================
+
+        // 데이터 실시간 동기화
+        function startStudentRealtimeSync() {
+            const wordsRef = db.collection("rooms").doc(currentRoomCode).collection("words");
+
+            wordsRef.onSnapshot((snapshot) => {
+                wordsData = [];
+                const container = document.getElementById('words-container');
+                container.innerHTML = "";
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    wordsData.push(data);
+
+                    // 뱃지 UI 생성
+                    const badge = document.createElement('span');
+                    badge.className = `badge rounded-pill word-badge ${data.sentiment === 'positive' ? 'bg-primary' : 'bg-danger'}`;
+                    badge.textContent = data.text;
+                    container.appendChild(badge);
+                });
+
+                document.getElementById('data-count').textContent = `${wordsData.length}개`;
+            });
+        }
+
+        // 단어 추가 (중복 방지 적용)
+        document.getElementById('btn-add-word').addEventListener('click', async () => {
+            const word = document.getElementById('word-input').value.trim();
+            const sentiment = document.querySelector('input[name="sentiment"]:checked').value;
+
+            if (word.length < 1) return alert("단어를 입력하세요.");
+
+            // 로컬 배열에서 중복 검사 (서버 비용 절약)
+            if (wordsData.some(item => item.text === word)) {
+                return alert("이미 등록된 단어입니다!");
+            }
+
+            try {
+                await db.collection("rooms").doc(currentRoomCode).collection("words").add({
+                    text: word,
+                    sentiment: sentiment,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                document.getElementById('word-input').value = ""; // 입력창 초기화
+            } catch (error) {
+                console.error(error);
+                alert("데이터 추가 중 오류가 발생했습니다.");
+            }
+        });
+
+        // =====================================================================
+        // [인공지능 지도학습 (Brain.js) 로직]
+        // =====================================================================
+        document.getElementById('btn-train-ai').addEventListener('click', () => {
+            if (wordsData.length < 3) {
+                return alert("학습을 위해 최소 3개 이상의 데이터가 필요합니다.");
+            }
+
+            document.getElementById('btn-train-ai').textContent = "⏳ AI 학습 중... (브라우저가 잠시 멈출 수 있습니다)";
+            document.getElementById('btn-train-ai').disabled = true;
+
+            // 약간의 딜레이를 주어 UI 업데이트가 반영되도록 함
+            setTimeout(() => {
+                // Brain.js 학습 데이터 형식으로 변환
+                const trainingData = wordsData.map(item => ({
+                    input: item.text,
+                    output: item.sentiment === 'positive' ? { positive: 1 } : { negative: 1 }
+                }));
+
+                // LSTM 모델 학습 (브라우저 부하 방지를 위해 반복 횟수 조절)
+                net.train(trainingData, {
+                    iterations: 500, // 학습 반복 횟수
+                    log: false
+                });
+
+                document.getElementById('btn-train-ai').textContent = "▶️ 학습 완료! 데이터 추가 시 다시 누르세요";
+                document.getElementById('btn-train-ai').disabled = false;
+                document.getElementById('train-status').classList.remove('d-none');
+
+                // 테스트 입력창 활성화
+                document.getElementById('ai-test-input').disabled = false;
+                document.getElementById('btn-test-ai').disabled = false;
+            }, 100);
+        });
+
+        // AI 텍스트 분석 실행
+        document.getElementById('btn-test-ai').addEventListener('click', () => {
+            const inputTxt = document.getElementById('ai-test-input').value.trim();
+            if (!inputTxt) return;
+
+            // 신경망 추론(Run)
+            const result = net.run(inputTxt);
+
+            // 결과가 없는 단어(처음 보는 패턴)일 경우의 예외 처리
+            const posScore = result.positive || 0.01;
+            const negScore = result.negative || 0.01;
+
+            // 확률 백분율 환산 (두 합이 1이 되도록 정규화)
+            const total = posScore + negScore;
+            const posPercent = Math.round((posScore / total) * 100);
+            const negPercent = Math.round((negScore / total) * 100);
+
+            // 결과 UI 업데이트
+            const resultArea = document.getElementById('ai-result-area');
+            const resultText = document.getElementById('ai-result-text');
+            const barPos = document.getElementById('ai-progress-pos');
+            const barNeg = document.getElementById('ai-progress-neg');
+
+            resultArea.classList.remove('d-none');
+
+            if (posPercent > negPercent) {
+                resultText.innerHTML = "😊 긍정적인 문장입니다!";
+                resultText.className = "fw-bold text-primary";
+            } else {
+                resultText.innerHTML = "😡 부정적인 문장입니다.";
+                resultText.className = "fw-bold text-danger";
+            }
+
+            barPos.style.width = `${posPercent}%`;
+            barPos.textContent = `긍정 ${posPercent}%`;
+
+            barNeg.style.width = `${negPercent}%`;
+            barNeg.textContent = `부정 ${negPercent}%`;
+        });
+
+
+        // =====================================================================
+        // [교사용 대시보드 로직]
+        // =====================================================================
+
+        // 1. 방 목록 불러오기 (드롭다운)
+        function loadAdminRooms() {
+            db.collection("rooms").orderBy("createdAt", "desc").get().then((snapshot) => {
+                const select = document.getElementById('admin-room-select');
+                select.innerHTML = '<option value="">방을 선택하세요</option>'; // 초기화
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = `[${doc.id}] ${data.topic}`;
+                    select.appendChild(option);
+                });
+            });
+        }
+
+        // 2. 드롭다운 선택 시 해당 방 실시간 모니터링
+        document.getElementById('admin-room-select').addEventListener('change', (e) => {
+            const code = e.target.value;
+            if (!code) return;
+
+            document.getElementById('admin-active-room').textContent = code;
+
+            // 이전 방의 실시간 연결을 끊음 (비용 및 혼선 방지)
+            if (currentUnsubscribe) currentUnsubscribe();
+
+            // 새 방에 실시간 리스너 연결
+            const wordsRef = db.collection("rooms").doc(code).collection("words").orderBy("createdAt", "desc");
+
+            currentUnsubscribe = wordsRef.onSnapshot((snapshot) => {
+                const tbody = document.getElementById('admin-table-body');
+                tbody.innerHTML = "";
+
+                if (snapshot.empty) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="text-muted">등록된 단어가 없습니다.</td></tr>';
+                    return;
+                }
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const tr = document.createElement('tr');
+
+                    const labelBadge = data.sentiment === 'positive'
+                        ? '<span class="badge bg-primary">긍정</span>'
+                        : '<span class="badge bg-danger">부정</span>';
+
+                    tr.innerHTML = `
+                        <td class="fw-bold">${data.text}</td>
+                        <td>${labelBadge}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteWord('${code}', '${doc.id}')">
+                                <i class="bi bi-trash"></i> 삭제
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            });
+        });
+
+        // 3. 교사의 강제 삭제 기능
+        window.deleteWord = async function (roomCode, wordId) {
+            if (confirm("이 단어를 삭제하시겠습니까? (학생들 화면에서도 즉시 사라집니다)")) {
+                try {
+                    await db.collection("rooms").doc(roomCode).collection("words").doc(wordId).delete();
+                } catch (error) {
+                    console.error("삭제 실패", error);
+                }
+            }
+        };
+
+    </script>
+
+    <!-- Firebase SDK v12.16.0 Module Initialization -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+
+        // Initialize Firebase
+        const app = initializeApp({
+            apiKey: "AIzaSyAmt01l_L5V0yuV47fn7Jx0IWWBn2C3UeA",
+            authDomain: "api-for-student.firebaseapp.com",
+            projectId: "api-for-student",
+            storageBucket: "api-for-student.firebasestorage.app",
+            messagingSenderId: "803624463914",
+            appId: "1:803624463914:web:1fb32b9dda8122429d9d53",
+            measurementId: "G-0V2JL5J9X5"
+        });
+        const analytics = getAnalytics(app);
+    </script>
+</body>
+
+</html>
