@@ -215,13 +215,23 @@
             serverTimestamp, query, orderBy, deleteDoc
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
+        // 텍스트를 신경망이 처리할 수 있는 숫자 빈도수 객체로 변환하는 함수
+        function encodeText(text) {
+            const result = {};
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                result[char] = (result[char] || 0) + 1;
+            }
+            return result;
+        }
+
         // 전역 상태 변수
         let currentRoomCode = null;
         let currentUnsubscribe = null; // 실시간 리스너 해제용
         let wordsData = []; // AI 학습을 위한 로컬 배열
         let adminWordsData = []; // 대시보드용 데이터
-        let net = new brain.recurrent.LSTM(); // Brain.js LSTM 신경망 객체
-        let adminNet = new brain.recurrent.LSTM(); // 대시보드용 신경망
+        let net = new brain.NeuralNetwork(); // Brain.js 일반 신경망 (확률 반환 지원)
+        let adminNet = new brain.NeuralNetwork(); // 대시보드용 신경망
 
         // UI 요소
         const sectionLanding = document.getElementById('landing-section');
@@ -383,9 +393,9 @@
 
             // 약간의 딜레이를 주어 UI 업데이트가 반영되도록 함
             setTimeout(() => {
-                // Brain.js 학습 데이터 형식으로 변환
+                // Brain.js 학습 데이터 형식으로 변환 (텍스트 인코딩 적용)
                 const trainingData = wordsData.map(item => ({
-                    input: item.text,
+                    input: encodeText(item.text),
                     output: item.sentiment === 'positive' ? { positive: 1 } : { negative: 1 }
                 }));
 
@@ -410,8 +420,8 @@
             const inputTxt = document.getElementById('ai-test-input').value.trim();
             if (!inputTxt) return;
 
-            // 신경망 추론(Run)
-            const result = net.run(inputTxt);
+            // 신경망 추론(Run) - 인코딩된 데이터로 변환 후 실행
+            const result = net.run(encodeText(inputTxt));
 
             // 결과가 없는 단어(처음 보는 패턴)일 경우의 예외 처리
             const posScore = result.positive || 0.01;
@@ -530,7 +540,7 @@
 
             setTimeout(() => {
                 const trainingData = adminWordsData.map(item => ({
-                    input: item.text,
+                    input: encodeText(item.text),
                     output: item.sentiment === 'positive' ? { positive: 1 } : { negative: 1 }
                 }));
 
@@ -552,7 +562,7 @@
             const inputTxt = document.getElementById('admin-ai-test-input').value.trim();
             if (!inputTxt) return;
 
-            const result = adminNet.run(inputTxt);
+            const result = adminNet.run(encodeText(inputTxt));
             const posScore = result.positive || 0.01;
             const negScore = result.negative || 0.01;
 
