@@ -42,10 +42,7 @@
         }
     </style>
 
-    <!-- Firebase SDK (Compat 모드 - 단일 파일 사용에 적합) -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-check-compat.js"></script>
+
 
     <!-- Brain.js (자바스크립트 지도학습 머신러닝 라이브러리) -->
     <script src="https://cdn.rawgit.com/BrainJS/brain.js/master/browser.js"></script>
@@ -188,34 +185,12 @@
     </main>
 
     <!-- 스크립트 로직 -->
-    <script>
-        // =====================================================================
-        // [보안 및 파이어베이스 설정] 
-        // ⚠️ 아래 빈칸을 선생님의 실제 키 값으로 변경하세요!
-        // =====================================================================
-        const RECAPTCHA_SITE_KEY = "6Ldu72ItAAAAALg5JRi8i1D40zzFBGLKTEmI9Lyu";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyAmt01l_L5V0yuV47fn7Jx0IWWBn2C3UeA",
-            authDomain: "api-for-student.firebaseapp.com",
-            projectId: "api-for-student",
-            storageBucket: "api-for-student.firebasestorage.app",
-            messagingSenderId: "803624463914",
-            appId: "1:803624463914:web:1fb32b9dda8122429d9d53"
-        };
-
-        // Firebase 초기화
-        firebase.initializeApp(firebaseConfig);
-
-        // App Check (reCAPTCHA v3) 활성화 - 봇/매크로 차단 방패
-        const appCheck = firebase.appCheck();
-        appCheck.activate(
-            new firebase.appCheck.ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
-            true
-        );
-
-        // Firestore 데이터베이스 연결
-        const db = firebase.firestore();
+    <script type="module">
+        import { db } from "../../../js/firebase-config.js";
+        import {
+            collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc,
+            serverTimestamp, query, orderBy, deleteDoc
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // 전역 상태 변수
         let currentRoomCode = null;
@@ -242,9 +217,9 @@
             const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
 
             try {
-                await db.collection("rooms").doc(roomCode).set({
+                await setDoc(doc(db, "rooms", roomCode), {
                     topic: topic,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    createdAt: serverTimestamp()
                 });
                 alert(`방이 생성되었습니다!\n방 코드: [ ${roomCode} ]\n학생들에게 이 코드를 알려주세요.`);
             } catch (error) {
@@ -258,12 +233,12 @@
             const code = document.getElementById('room-code-input').value.toUpperCase().trim();
             if (code.length === 0) return alert("코드를 입력하세요.");
 
-            const roomRef = db.collection("rooms").doc(code);
-            const doc = await roomRef.get();
+            const roomRef = doc(db, "rooms", code);
+            const docSnap = await getDoc(roomRef);
 
-            if (doc.exists) {
+            if (docSnap.exists()) {
                 currentRoomCode = code;
-                navRoomInfo.textContent = `현재 방: ${code} (${doc.data().topic})`;
+                navRoomInfo.textContent = `현재 방: ${code} (${docSnap.data().topic})`;
 
                 sectionLanding.classList.remove('active-section');
                 sectionStudent.classList.add('active-section');
@@ -290,15 +265,15 @@
 
         // 데이터 실시간 동기화
         function startStudentRealtimeSync() {
-            const wordsRef = db.collection("rooms").doc(currentRoomCode).collection("words");
+            const wordsRef = collection(db, "rooms", currentRoomCode, "words");
 
-            wordsRef.onSnapshot((snapshot) => {
+            onSnapshot(wordsRef, (snapshot) => {
                 wordsData = [];
                 const container = document.getElementById('words-container');
                 container.innerHTML = "";
 
-                snapshot.forEach(doc => {
-                    const data = doc.data();
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
                     wordsData.push(data);
 
                     // 뱃지 UI 생성
@@ -325,10 +300,10 @@
             }
 
             try {
-                await db.collection("rooms").doc(currentRoomCode).collection("words").add({
+                await addDoc(collection(db, "rooms", currentRoomCode, "words"), {
                     text: word,
                     sentiment: sentiment,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    createdAt: serverTimestamp()
                 });
                 document.getElementById('word-input').value = ""; // 입력창 초기화
             } catch (error) {
@@ -418,18 +393,18 @@
         // =====================================================================
 
         // 1. 방 목록 불러오기 (드롭다운)
-        function loadAdminRooms() {
-            db.collection("rooms").orderBy("createdAt", "desc").get().then((snapshot) => {
-                const select = document.getElementById('admin-room-select');
-                select.innerHTML = '<option value="">방을 선택하세요</option>'; // 초기화
+        async function loadAdminRooms() {
+            const q = query(collection(db, "rooms"), orderBy("createdAt", "desc"));
+            const snapshot = await getDocs(q);
+            const select = document.getElementById('admin-room-select');
+            select.innerHTML = '<option value="">방을 선택하세요</option>'; // 초기화
 
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    const option = document.createElement('option');
-                    option.value = doc.id;
-                    option.textContent = `[${doc.id}] ${data.topic}`;
-                    select.appendChild(option);
-                });
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                const option = document.createElement('option');
+                option.value = docSnap.id;
+                option.textContent = `[${docSnap.id}] ${data.topic}`;
+                select.appendChild(option);
             });
         }
 
@@ -444,9 +419,9 @@
             if (currentUnsubscribe) currentUnsubscribe();
 
             // 새 방에 실시간 리스너 연결
-            const wordsRef = db.collection("rooms").doc(code).collection("words").orderBy("createdAt", "desc");
+            const qWords = query(collection(db, "rooms", code, "words"), orderBy("createdAt", "desc"));
 
-            currentUnsubscribe = wordsRef.onSnapshot((snapshot) => {
+            currentUnsubscribe = onSnapshot(qWords, (snapshot) => {
                 const tbody = document.getElementById('admin-table-body');
                 tbody.innerHTML = "";
 
@@ -455,8 +430,8 @@
                     return;
                 }
 
-                snapshot.forEach(doc => {
-                    const data = doc.data();
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
                     const tr = document.createElement('tr');
 
                     const labelBadge = data.sentiment === 'positive'
@@ -467,7 +442,7 @@
                         <td class="fw-bold">${data.text}</td>
                         <td>${labelBadge}</td>
                         <td>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteWord('${code}', '${doc.id}')">
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteWord('${code}', '${docSnap.id}')">
                                 <i class="bi bi-trash"></i> 삭제
                             </button>
                         </td>
@@ -481,7 +456,7 @@
         window.deleteWord = async function (roomCode, wordId) {
             if (confirm("이 단어를 삭제하시겠습니까? (학생들 화면에서도 즉시 사라집니다)")) {
                 try {
-                    await db.collection("rooms").doc(roomCode).collection("words").doc(wordId).delete();
+                    await deleteDoc(doc(db, "rooms", roomCode, "words", wordId));
                 } catch (error) {
                     console.error("삭제 실패", error);
                 }
@@ -490,26 +465,6 @@
 
     </script>
 
-    <!-- Firebase SDK v12.16.0 Module Initialization -->
-    <script type="module">
-        // Import the functions you need from the SDKs you need
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
-        // TODO: Add SDKs for Firebase products that you want to use
-        // https://firebase.google.com/docs/web/setup#available-libraries
-
-        // Initialize Firebase
-        const app = initializeApp({
-            apiKey: "AIzaSyAmt01l_L5V0yuV47fn7Jx0IWWBn2C3UeA",
-            authDomain: "api-for-student.firebaseapp.com",
-            projectId: "api-for-student",
-            storageBucket: "api-for-student.firebasestorage.app",
-            messagingSenderId: "803624463914",
-            appId: "1:803624463914:web:1fb32b9dda8122429d9d53",
-            measurementId: "G-0V2JL5J9X5"
-        }, "analytics");
-        const analytics = getAnalytics(app);
-    </script>
 </body>
 
 </html>
