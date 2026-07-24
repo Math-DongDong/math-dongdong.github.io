@@ -1,19 +1,16 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBmbTg1WKo53_dsjoZsF991LC8WEMPjnlg",
-  authDomain: "mathdongdong-db.firebaseapp.com",
-  projectId: "mathdongdong-db",
-  storageBucket: "mathdongdong-db.firebasestorage.app",
-  messagingSenderId: "1047361095956",
-  appId: "1:1047361095956:web:58634f39a5334095125a01",
-  measurementId: "G-NMRCVLP3ZD"
+  apiKey: "AIzaSyAKsWMTwBY8gPGTB0Q8xWTbxgCHIuGkw9I",
+  authDomain: "mathdongdong.firebaseapp.com",
+  projectId: "mathdongdong",
+  storageBucket: "mathdongdong.firebasestorage.app",
+  messagingSenderId: "714302394309",
+  appId: "1:714302394309:web:9eb03d26f36eceadb705ac"
 };
 
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const db = getFirestore(app);
+const db = getFirestore(app, "sentimentanalysis");
 
-export { app, analytics, db };
+export { app, db };
