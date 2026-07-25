@@ -49,6 +49,25 @@
 </head>
 
 <body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody">
+                    <!-- Message -->
+                </div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 상단 네비게이션바 공통 스크립트 -->
     <script src="../../../js/navbar.js"></script>
 
@@ -205,6 +224,7 @@
     <!-- 스크립트 로직 -->
     <script type="module">
         import { db } from "../../../js/firebase-config.js";
+        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
         import {
             collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc,
             serverTimestamp, query, orderBy, deleteDoc
@@ -234,13 +254,93 @@
         const sectionAdmin = document.getElementById('admin-section');
         const navRoomInfo = document.getElementById('nav-room-info');
 
+        // 커스텀 모달 로직
+        let customModalInstance = null;
+
+        function showCustomModal(title, message, isPrompt = false, isPassword = false) {
+            return new Promise((resolve) => {
+                if (!customModalInstance) {
+                    customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
+                }
+                
+                document.getElementById('customModalTitle').innerHTML = title;
+                
+                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
+                if (isPrompt) {
+                    let type = isPassword ? 'password' : 'text';
+                    let extraAttrs = isPassword ? 'style="ime-mode: disabled;" placeholder="영문 입력"' : '';
+                    bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3" id="customModalInput" ${extraAttrs}>`;
+                }
+                document.getElementById('customModalBody').innerHTML = bodyHtml;
+                
+                const btnCancel = document.getElementById('customModalCancel');
+                const btnConfirm = document.getElementById('customModalConfirm');
+                const customModal = document.getElementById('customModal');
+                
+                if (isPrompt) {
+                    btnCancel.classList.remove('d-none');
+                } else {
+                    btnCancel.classList.add('d-none');
+                }
+                
+                const cleanup = () => {
+                    btnConfirm.removeEventListener('click', handleConfirm);
+                    btnCancel.removeEventListener('click', handleCancel);
+                    customModal.removeEventListener('hidden.bs.modal', handleCancel);
+                    if (isPrompt) {
+                        const input = document.getElementById('customModalInput');
+                        if (input) input.removeEventListener('keypress', handleEnter);
+                    }
+                };
+
+                const handleConfirm = () => {
+                    const inputVal = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true;
+                    cleanup();
+                    customModalInstance.hide();
+                    resolve(inputVal);
+                };
+                
+                const handleCancel = () => {
+                    cleanup();
+                    resolve(null);
+                };
+                
+                const handleEnter = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirm();
+                    }
+                };
+
+                btnConfirm.addEventListener('click', handleConfirm);
+                btnCancel.addEventListener('click', handleCancel);
+                customModal.addEventListener('hidden.bs.modal', handleCancel);
+                
+                customModalInstance.show();
+                
+                if (isPrompt) {
+                    customModal.addEventListener('shown.bs.modal', function onShown() {
+                        const input = document.getElementById('customModalInput');
+                        if (input) {
+                            input.focus();
+                            input.addEventListener('keypress', handleEnter);
+                        }
+                        customModal.removeEventListener('shown.bs.modal', onShown);
+                    });
+                }
+            });
+        }
+
+        const customAlert = (title, message) => showCustomModal(title, message, false);
+        const customPrompt = (title, message, isPassword = false) => showCustomModal(title, message, true, isPassword);
+
         // =====================================================================
         // [랜딩 페이지 로직]
         // =====================================================================
 
         // 1. 새로운 방 만들기 (교사)
         document.getElementById('btn-create-room').addEventListener('click', async () => {
-            const topic = prompt("이 방의 주제를 입력하세요 (예: 1반 급식 평가)");
+            const topic = await customPrompt("새로운 방 만들기", "이 방의 주제를 입력하세요 (예: 1반 급식 평가)");
             if (!topic) return;
 
             // 4자리 영문+숫자 랜덤 코드 생성
@@ -251,17 +351,17 @@
                     topic: topic,
                     createdAt: serverTimestamp()
                 });
-                alert(`방이 생성되었습니다!\n방 코드: [ ${roomCode} ]\n학생들에게 이 코드를 알려주세요.`);
+                await customAlert("방 생성 성공", `방이 생성되었습니다!<br>방 코드: [ <b>${roomCode}</b> ]<br>학생들에게 이 코드를 알려주세요.`);
             } catch (error) {
                 console.error(error);
-                alert("방 생성 실패. 파이어베이스 규칙을 확인하세요.");
+                await customAlert("오류", "방 생성 실패. 파이어베이스 규칙을 확인하세요.");
             }
         });
 
         // 2. 방 입장하기 (학생)
         document.getElementById('btn-join-room').addEventListener('click', async () => {
             const code = document.getElementById('room-code-input').value.toUpperCase().trim();
-            if (code.length === 0) return alert("코드를 입력하세요.");
+            if (code.length === 0) return await customAlert("알림", "코드를 입력하세요.");
 
             const roomRef = doc(db, "rooms", code);
             const docSnap = await getDoc(roomRef);
@@ -276,12 +376,18 @@
                 // 실시간 데이터 동기화 시작
                 startStudentRealtimeSync();
             } else {
-                alert("존재하지 않는 방 코드입니다.");
+                await customAlert("알림", "존재하지 않는 방 코드입니다.");
             }
         });
 
         // 3. 교사 대시보드 열기
-        document.getElementById('btn-admin-dash').addEventListener('click', () => {
+        document.getElementById('btn-admin-dash').addEventListener('click', async () => {
+            const code = await customPrompt("대시보드 접속", "대시보드에 접속하려면 접속 코드를 입력하세요.", true);
+            if (code !== ADMIN_ACCESS_CODE) {
+                if (code !== null) await customAlert("접속 실패", "접속 코드가 일치하지 않습니다.");
+                return;
+            }
+
             sectionLanding.classList.remove('active-section');
             sectionAdmin.classList.add('active-section');
             navRoomInfo.textContent = "모아보기";
@@ -333,7 +439,7 @@
 
         // 학생/교사 공통 수정 및 삭제 함수
         window.editOrDeleteWord = async function (roomCode, wordId, currentText) {
-            const action = prompt(`단어: "${currentText}"\n삭제하시려면 '삭제'를 입력하세요.\n수정하시려면 새로운 단어를 입력하세요.`);
+            const action = await customPrompt("단어 수정/삭제", `선택한 단어: "<b>${currentText}</b>"<br><small class="text-muted">삭제하시려면 '삭제'를 입력하세요.<br>수정하시려면 새로운 단어를 입력하세요.</small>`);
             if (action === null) return; // 취소
             if (action === '삭제') {
                 try {
@@ -355,11 +461,11 @@
             const word = document.getElementById('word-input').value.trim();
             const sentiment = document.querySelector('input[name="sentiment"]:checked').value;
 
-            if (word.length < 1) return alert("단어를 입력하세요.");
+            if (word.length < 1) return await customAlert("알림", "단어를 입력하세요.");
 
             // 로컬 배열에서 중복 검사 (서버 비용 절약)
             if (wordsData.some(item => item.text === word)) {
-                return alert("이미 등록된 단어입니다!");
+                return await customAlert("알림", "이미 등록된 단어입니다!");
             }
 
             try {
@@ -371,16 +477,16 @@
                 document.getElementById('word-input').value = ""; // 입력창 초기화
             } catch (error) {
                 console.error(error);
-                alert("데이터 추가 중 오류가 발생했습니다.");
+                await customAlert("오류", "데이터 추가 중 오류가 발생했습니다.");
             }
         });
 
         // =====================================================================
         // [인공지능 지도학습 (Brain.js) 로직]
         // =====================================================================
-        document.getElementById('btn-train-ai').addEventListener('click', () => {
+        document.getElementById('btn-train-ai').addEventListener('click', async () => {
             if (wordsData.length < 3) {
-                return alert("학습을 위해 최소 3개 이상의 데이터가 필요합니다.");
+                return await customAlert("알림", "학습을 위해 최소 3개 이상의 데이터가 필요합니다.");
             }
 
             document.getElementById('btn-train-ai').textContent = "⏳ AI 학습 중... (브라우저가 잠시 멈출 수 있습니다)";
@@ -526,9 +632,9 @@
         // =====================================================================
         // [실시간 대시보드 AI 로직]
         // =====================================================================
-        document.getElementById('btn-admin-train-ai').addEventListener('click', () => {
+        document.getElementById('btn-admin-train-ai').addEventListener('click', async () => {
             if (adminWordsData.length < 3) {
-                return alert("학습을 위해 최소 3개 이상의 데이터가 필요합니다.");
+                return await customAlert("알림", "학습을 위해 최소 3개 이상의 데이터가 필요합니다.");
             }
             document.getElementById('btn-admin-train-ai').textContent = "⏳ AI 학습 중...";
             document.getElementById('btn-admin-train-ai').disabled = true;
