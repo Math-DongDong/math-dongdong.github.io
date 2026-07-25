@@ -11,6 +11,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, "sentimentanalysis");
+const dbSentiment = getFirestore(app, "sentimentanalysis");
+const dbBlotto = getFirestore(app, "blottogame");
 
-export { app, db };
+export { app, dbSentiment, dbBlotto };

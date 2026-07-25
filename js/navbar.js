@@ -36,6 +36,7 @@
                     "items": [
                         { "name": "스트림스", "path": "pages/middleschool/game/streams.html" },
                         { "name": "Pig Game", "path": "pages/middleschool/game/pig_game.html" },
+                        { "name": "블로토 대령 게임", "path": "pages/middleschool/game/blottogame.html" },
                         { "name": "숫자야구", "path": "pages/middleschool/game/number_baseball.html" },
                         { "name": "성냥개비 퍼즐", "path": "pages/middleschool/game/matchstick.html" },
                         { "name": "주사위 모음", "path": "pages/middleschool/game/dice.html" }

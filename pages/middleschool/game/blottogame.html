@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 블로토 게임 (Blotto Game)</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 네비게이션바 공통 CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+
+    <!-- 폰트 및 커스텀 스타일 -->
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        .section-container {
+            display: none;
+        }
+
+        .active-section {
+            display: block;
+        }
+
+        /* 표(Table) 스타일 */
+        .blotto-table th,
+        .blotto-table td {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .blotto-table th:first-child {
+            background-color: #f1f3f5;
+            font-weight: bold;
+        }
+
+        .round-row td {
+            background-color: #fff;
+        }
+
+        .hidden-value {
+            color: transparent;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            user-select: none;
+        }
+
+        .submitted-check {
+            color: #198754;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody">
+                    <!-- Message -->
+                </div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
+                        id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 상단 네비게이션바 공통 스크립트 -->
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <!-- 현재 접속 중인 방 정보 -->
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info">대기 중</span>
+        </div>
+
+        <!-- ==================== 1. 랜딩 페이지 ==================== -->
+        <div id="landing-section" class="section-container active-section text-center py-5">
+            <h1 class="fw-bold mb-4">⚔️ 블로토 게임 (Blotto Game)</h1>
+            <p class="text-muted mb-5">병력을 효율적으로 배분하여 더 많은 전장에서 승리하세요!</p>
+
+            <div class="row justify-content-center g-4">
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 h-100 border-0 rounded-4">
+                        <h4 class="fw-bold mb-3">🧑‍🎓 학생: 게임 입장</h4>
+                        <input type="text" id="join-room-code"
+                            class="form-control form-control-lg text-center mb-2 fw-bold" placeholder="방 코드 4자리 입력">
+                        <input type="text" id="join-nickname" class="form-control form-control-lg text-center mb-3"
+                            placeholder="닉네임 (예: 1모둠, 홍길동)" maxlength="10">
+                        <button id="btn-join-room" class="btn btn-primary btn-lg w-100 fw-bold">접속하기</button>
+                    </div>
+                </div>
+
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 h-100 border-0 rounded-4 bg-light">
+                        <h4 class="fw-bold mb-3">👨‍🏫 선생님: 방 만들기</h4>
+                        <p class="text-muted small">새로운 게임 방을 개설하거나 기존 방의 대시보드를 엽니다.</p>
+                        <button id="btn-admin-dash" class="btn btn-dark btn-lg w-100 fw-bold mt-auto">선생님 대시보드 (방
+                            만들기)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 교사(관리자) 대시보드 ==================== -->
+        <div id="admin-section" class="section-container">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="fw-bold mb-0">👨‍🏫 블로토 게임 대시보드</h2>
+                <div>
+                    <span class="fs-5 fw-bold text-primary me-3" id="admin-active-room"></span>
+                    <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
+                </div>
+            </div>
+
+            <div class="row g-4" id="admin-settings-area" style="display: none;">
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <h5 class="fw-bold mb-3">⚙️ 게임 설정</h5>
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label">참여 모둠 수</label>
+                                <input type="number" id="setting-teams" class="form-control" value="7" min="2" max="20">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">병사 수</label>
+                                <input type="number" id="setting-soldiers" class="form-control" value="200" min="10"
+                                    max="1000">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">총 라운드 수</label>
+                                <input type="number" id="setting-rounds" class="form-control" value="7" min="1"
+                                    max="20">
+                            </div>
+                            <div class="col-md-3">
+                                <button id="btn-confirm-create" class="btn btn-success w-100 fw-bold">새 게임 시작</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4 mt-2" id="admin-board-area" style="display: none;">
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 overflow-auto">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold mb-0">📊 현황판 (현재: <span id="admin-current-round-text"
+                                    class="text-primary">1</span> 라운드)</h5>
+                            <button id="btn-next-round" class="btn btn-warning fw-bold" disabled>다음 라운드로 진행 (모두 입력 시
+                                활성화)</button>
+                        </div>
+
+                        <table class="table table-bordered blotto-table" id="admin-table">
+                            <thead class="table-light" id="admin-thead">
+                                <!-- 동적 생성: 모둠/닉네임 -->
+                            </thead>
+                            <tbody id="admin-tbody">
+                                <!-- 동적 생성: 현재병사, 점수, 라운드별 출전 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 학생(모둠) 플레이 화면 ==================== -->
+        <div id="student-section" class="section-container">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 text-center">
+                        <h3 class="fw-bold mb-1 text-primary" id="student-nickname-display">모둠 이름</h3>
+                        <p class="text-muted mb-4">현재 라운드: <span class="badge bg-danger fs-6"
+                                id="student-round-display">1 / 7</span></p>
+
+                        <div class="bg-light rounded p-4 mb-4">
+                            <h5 class="fw-bold mb-2">잔여 병사 수</h5>
+                            <h1 class="display-4 fw-bold text-success" id="student-remaining-display">200</h1>
+                        </div>
+
+                        <div id="student-input-area">
+                            <h5 class="fw-bold mb-3">⚔️ 이번 라운드 출전 병사 수</h5>
+                            <div class="input-group input-group-lg mb-3">
+                                <input type="number" id="student-deploy-input" class="form-control text-center fw-bold"
+                                    placeholder="0" min="0">
+                                <button class="btn btn-primary fw-bold px-4" id="btn-submit-deploy">출전!</button>
+                            </div>
+                            <p class="text-muted small text-start">※ 남은 병사 수보다 많이 출전시킬 수 없습니다.</p>
+                        </div>
+
+                        <div id="student-waiting-area" class="d-none">
+                            <div class="spinner-border text-primary mb-3" role="status"></div>
+                            <h5 class="fw-bold text-primary">출전 완료!</h5>
+                            <p class="text-muted">다른 모둠이 제출할 때까지 대기 중입니다...</p>
+                        </div>
+
+                        <div id="student-finished-area" class="d-none">
+                            <h2 class="fw-bold text-success mb-3">🏆 게임 종료!</h2>
+                            <p class="text-muted">모든 라운드가 끝났습니다.<br>선생님 화면에서 최종 순위를 확인하세요.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 스크립트 로직 -->
+    <script type="module">
+        import { dbBlotto as db } from "../../../js/firebase-config.js";
+        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
+        import {
+            collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc, updateDoc,
+            serverTimestamp, query, orderBy
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+        // =====================================================================
+        // 공통 유틸리티 (모달)
+        // =====================================================================
+        let customModalInstance = null;
+
+        function showCustomModal(title, message, isPrompt = false, isPassword = false) {
+            return new Promise((resolve) => {
+                if (!customModalInstance) {
+                    customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
+                }
+
+                document.getElementById('customModalTitle').innerHTML = title;
+
+                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
+                if (isPrompt) {
+                    let type = isPassword ? 'password' : 'text';
+                    let extraAttrs = isPassword ? 'style="ime-mode: disabled;" placeholder="영문 입력"' : '';
+                    bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3" id="customModalInput" ${extraAttrs}>`;
+                }
+                document.getElementById('customModalBody').innerHTML = bodyHtml;
+
+                const btnCancel = document.getElementById('customModalCancel');
+                const btnConfirm = document.getElementById('customModalConfirm');
+                const customModal = document.getElementById('customModal');
+
+                if (isPrompt) {
+                    btnCancel.classList.remove('d-none');
+                } else {
+                    btnCancel.classList.add('d-none');
+                }
+
+                const cleanup = () => {
+                    btnConfirm.removeEventListener('click', handleConfirm);
+                    btnCancel.removeEventListener('click', handleCancel);
+                    customModal.removeEventListener('hidden.bs.modal', handleCancel);
+                    if (isPrompt) {
+                        const input = document.getElementById('customModalInput');
+                        if (input) input.removeEventListener('keypress', handleEnter);
+                    }
+                };
+
+                const handleConfirm = () => {
+                    const inputVal = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true;
+                    cleanup();
+                    customModalInstance.hide();
+                    resolve(inputVal);
+                };
+
+                const handleCancel = () => {
+                    cleanup();
+                    resolve(null);
+                };
+
+                const handleEnter = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirm();
+                    }
+                };
+
+                btnConfirm.addEventListener('click', handleConfirm);
+                btnCancel.addEventListener('click', handleCancel);
+                customModal.addEventListener('hidden.bs.modal', handleCancel);
+
+                customModalInstance.show();
+
+                if (isPrompt) {
+                    customModal.addEventListener('shown.bs.modal', function onShown() {
+                        const input = document.getElementById('customModalInput');
+                        if (input) {
+                            input.focus();
+                            input.addEventListener('keypress', handleEnter);
+                        }
+                        customModal.removeEventListener('shown.bs.modal', onShown);
+                    });
+                }
+            });
+        }
+
+        const customAlert = (title, message) => showCustomModal(title, message, false);
+        const customPrompt = (title, message, isPassword = false) => showCustomModal(title, message, true, isPassword);
+
+        // =====================================================================
+        // 전역 상태 변수
+        // =====================================================================
+        let currentRoomCode = null;
+        let currentNickname = null;
+        let roomSettings = null;
+        let roomState = null;
+        let playersData = {}; // key: nickname, value: player data
+
+        let unsubRoom = null;
+        let unsubPlayers = null;
+
+        // UI 영역
+        const sectionLanding = document.getElementById('landing-section');
+        const sectionStudent = document.getElementById('student-section');
+        const sectionAdmin = document.getElementById('admin-section');
+        const navRoomInfo = document.getElementById('nav-room-info');
+
+        // =====================================================================
+        // 1. 랜딩 페이지 로직
+        // =====================================================================
+
+        // 교사 대시보드 접속
+        document.getElementById('btn-admin-dash').addEventListener('click', async () => {
+            const code = await customPrompt("선생님 대시보드", "대시보드에 접속하려면 접속 코드를 입력하세요.", true);
+            if (code !== ADMIN_ACCESS_CODE) {
+                if (code !== null) await customAlert("접속 실패", "접속 코드가 일치하지 않습니다.");
+                return;
+            }
+
+            sectionLanding.classList.remove('active-section');
+            sectionAdmin.classList.add('active-section');
+            document.getElementById('admin-settings-area').style.display = 'block';
+            document.getElementById('admin-board-area').style.display = 'none';
+        });
+
+        // 새로운 방 만들기
+        document.getElementById('btn-create-room').addEventListener('click', () => {
+            document.getElementById('admin-settings-area').style.display = 'block';
+            document.getElementById('admin-board-area').style.display = 'none';
+            document.getElementById('admin-active-room').textContent = "";
+            if (unsubRoom) unsubRoom();
+            if (unsubPlayers) unsubPlayers();
+        });
+
+        document.getElementById('btn-confirm-create').addEventListener('click', async () => {
+            const teams = parseInt(document.getElementById('setting-teams').value);
+            const soldiers = parseInt(document.getElementById('setting-soldiers').value);
+            const rounds = parseInt(document.getElementById('setting-rounds').value);
+
+            if (!teams || !soldiers || !rounds) return customAlert("오류", "설정 값을 모두 올바르게 입력하세요.");
+
+            const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+            try {
+                // 방 기본 정보 생성
+                await setDoc(doc(db, "blotto_rooms", roomCode), {
+                    settings: {
+                        teamsCount: teams,
+                        maxSoldiers: soldiers,
+                        maxRounds: rounds
+                    },
+                    state: {
+                        currentRound: 1,
+                        status: "playing"
+                    },
+                    createdAt: serverTimestamp()
+                });
+
+                await customAlert("방 생성 완료", `게임이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]<br>학생들에게 코드를 안내해 주세요.`);
+
+                startAdminMonitoring(roomCode);
+            } catch (error) {
+                console.error(error);
+                await customAlert("오류", "방 생성에 실패했습니다.");
+            }
+        });
+
+        // 학생 방 접속
+        document.getElementById('btn-join-room').addEventListener('click', async () => {
+            const code = document.getElementById('join-room-code').value.toUpperCase().trim();
+            const nickname = document.getElementById('join-nickname').value.trim();
+
+            if (!code || !nickname) return await customAlert("알림", "방 코드와 닉네임을 모두 입력하세요.");
+
+            const roomRef = doc(db, "blotto_rooms", code);
+            const docSnap = await getDoc(roomRef);
+
+            if (!docSnap.exists()) {
+                return await customAlert("알림", "존재하지 않는 방 코드입니다.");
+            }
+
+            const roomData = docSnap.data();
+            const teamsMax = roomData.settings.teamsCount;
+
+            // 이미 있는 닉네임인지 확인 (재접속)
+            const playerRef = doc(db, "blotto_rooms", code, "players", nickname);
+            const playerSnap = await getDoc(playerRef);
+
+            if (!playerSnap.exists()) {
+                // 신규 접속인 경우 인원 수 체크
+                const playersCol = collection(db, "blotto_rooms", code, "players");
+                const currentPlayersSnap = await getDocs(playersCol);
+                if (currentPlayersSnap.size >= teamsMax) {
+                    return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
+                }
+
+                // 플레이어 데이터 생성
+                await setDoc(playerRef, {
+                    nickname: nickname,
+                    score: 0,
+                    remaining: roomData.settings.maxSoldiers,
+                    rounds: {},
+                    joinedAt: serverTimestamp()
+                });
+            }
+
+            currentRoomCode = code;
+            currentNickname = nickname;
+
+            sectionLanding.classList.remove('active-section');
+            sectionStudent.classList.add('active-section');
+
+            startStudentRealtimeSync();
+        });
+
+
+        // =====================================================================
+        // 2. 선생님 대시보드 로직
+        // =====================================================================
+        function startAdminMonitoring(roomCode) {
+            currentRoomCode = roomCode;
+            document.getElementById('admin-settings-area').style.display = 'none';
+            document.getElementById('admin-board-area').style.display = 'block';
+            document.getElementById('admin-active-room').innerHTML = `현재 방 코드: <span class="badge bg-primary fs-5">${roomCode}</span>`;
+
+            if (unsubRoom) unsubRoom();
+            if (unsubPlayers) unsubPlayers();
+
+            // 방 정보 구독
+            unsubRoom = onSnapshot(doc(db, "blotto_rooms", roomCode), (docSnap) => {
+                if (docSnap.exists()) {
+                    roomSettings = docSnap.data().settings;
+                    roomState = docSnap.data().state;
+                    renderAdminBoard();
+                }
+            });
+
+            // 플레이어 정보 구독
+            unsubPlayers = onSnapshot(collection(db, "blotto_rooms", roomCode, "players"), (snapshot) => {
+                playersData = {};
+                snapshot.forEach(doc => {
+                    playersData[doc.id] = doc.data();
+                });
+                renderAdminBoard();
+            });
+        }
+
+        function renderAdminBoard() {
+            if (!roomSettings || !roomState) return;
+
+            const thead = document.getElementById('admin-thead');
+            const tbody = document.getElementById('admin-tbody');
+            const currentRound = roomState.currentRound;
+            const maxRounds = roomSettings.maxRounds;
+
+            document.getElementById('admin-current-round-text').textContent = currentRound;
+
+            // 플레이어 목록 배열 (가입순 정렬)
+            const playersList = Object.values(playersData).sort((a, b) => {
+                return (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0);
+            });
+            const playerNames = playersList.map(p => p.nickname);
+
+            // 헤더 생성 (모둠/닉네임)
+            let theadHtml = `<tr><th>모둠</th>`;
+            for (let i = 0; i < roomSettings.teamsCount; i++) {
+                if (playerNames[i]) {
+                    theadHtml += `<th>${playerNames[i]}</th>`;
+                } else {
+                    theadHtml += `<th class="text-muted">(대기중)</th>`;
+                }
+            }
+            theadHtml += `</tr>`;
+            thead.innerHTML = electricityHtml(theadHtml);
+
+            // 본문 생성
+            let tbodyHtml = ``;
+
+            // 현재 병사 행
+            tbodyHtml += `<tr><th>현재 병사</th>`;
+            for (let i = 0; i < roomSettings.teamsCount; i++) {
+                if (playerNames[i]) {
+                    tbodyHtml += `<td class="fs-5 fw-bold text-success">${playersList[i].remaining}</td>`;
+                } else {
+                    tbodyHtml += `<td>-</td>`;
+                }
+            }
+            tbodyHtml += `</tr>`;
+
+            // 점수 행
+            tbodyHtml += `<tr><th>점수</th>`;
+            for (let i = 0; i < roomSettings.teamsCount; i++) {
+                if (playerNames[i]) {
+                    tbodyHtml += `<td class="fs-5 fw-bold text-primary">${playersList[i].score}</td>`;
+                } else {
+                    tbodyHtml += `<td>-</td>`;
+                }
+            }
+            tbodyHtml += `</tr>`;
+
+            // 각 라운드 행
+            let allSubmittedCurrentRound = true;
+            let joinedPlayersCount = playersList.length;
+
+            for (let r = 1; r <= maxRounds; r++) {
+                tbodyHtml += `<tr class="round-row"><th>${r}라운드</th>`;
+
+                for (let i = 0; i < roomSettings.teamsCount; i++) {
+                    if (playerNames[i]) {
+                        const playerRoundData = playersList[i].rounds[r];
+                        if (playerRoundData !== undefined) {
+                            // 현재 진행중인 라운드라면 숫자를 바로 안보여주고 체크 표시 (모두 내면 그때 공개? 아니면 그냥 엑셀처럼 공개?
+                            // 블로토 게임 특성상 모두 내기 전까지는 숨겨야 함
+                            if (r === currentRound && roomState.status === "playing") {
+                                tbodyHtml += `<td><span class="submitted-check">✔ 완료</span></td>`;
+                            } else {
+                                tbodyHtml += `<td>${playerRoundData}</td>`;
+                            }
+                        } else {
+                            tbodyHtml += `<td></td>`;
+                            if (r === currentRound) allSubmittedCurrentRound = false;
+                        }
+                    } else {
+                        tbodyHtml += `<td></td>`;
+                    }
+                }
+                tbodyHtml += `</tr>`;
+            }
+
+            tbody.innerHTML = electricityHtml(tbodyHtml);
+
+            // 다음 라운드 버튼 활성화 로직
+            const btnNext = document.getElementById('btn-next-round');
+            if (roomState.status === "finished" || currentRound > maxRounds) {
+                btnNext.disabled = true;
+                btnNext.textContent = "게임 종료";
+                btnNext.className = "btn btn-secondary fw-bold";
+            } else if (joinedPlayersCount > 1 && allSubmittedCurrentRound) {
+                // 혼자서는 못넘어가게 (테스트시 불편하면 joinedPlayersCount > 0 로 변경)
+                btnNext.disabled = false;
+                btnNext.textContent = "라운드 결과 처리 (다음으로)";
+                btnNext.className = "btn btn-success fw-bold";
+            } else {
+                btnNext.disabled = true;
+                btnNext.textContent = "모두 제출 시 활성화됨";
+                btnNext.className = "btn btn-warning fw-bold";
+            }
+        }
+
+        // HTML 이스케이프가 아닌 단순 HTML 래퍼 (문법 오류 방지용 래퍼 함수)
+        function electricityHtml(html) { return html; }
+
+
+        // 다음 라운드 처리 (점수 계산 및 차감)
+        document.getElementById('btn-next-round').addEventListener('click', async () => {
+            const currentRound = roomState.currentRound;
+            const maxRounds = roomSettings.maxRounds;
+            const teamsCount = roomSettings.teamsCount;
+
+            // 현재 라운드 데이터 모으기
+            let roundDeployments = []; // { nickname, deployed }
+
+            for (let nickname in playersData) {
+                const player = playersData[nickname];
+                const deployed = player.rounds[currentRound] || 0;
+                roundDeployments.push({ nickname, deployed });
+            }
+
+            // 출전 병사 수 내림차순 정렬
+            roundDeployments.sort((a, b) => b.deployed - a.deployed);
+
+            // 순위에 따른 점수 부여 (1등: 참여모둠개수-1 점)
+            // 동점자 처리: 병사 수가 같으면 동일하게 높은 순위 적용
+            let currentRank = 1;
+            let previousDeployed = -1;
+            let skippedRanks = 0;
+
+            let scoreUpdates = {}; // nickname -> addedScore
+
+            for (let i = 0; i < roundDeployments.length; i++) {
+                const deployed = roundDeployments[i].deployed;
+                if (deployed === previousDeployed) {
+                    // 동점
+                    skippedRanks++;
+                } else {
+                    currentRank = currentRank + skippedRanks;
+                    skippedRanks = 1;
+                }
+
+                // 점수 = 참여모둠 수 - 순위 (만약 팀 수가 부족하게 들어왔어도, 설정된 전체 모둠 수 기준으로 할지 현재 참여 인원 기준으로 할지)
+                // 엑셀 원본은 '설정된 참여모둠 수' 기준이므로 teamsCount 사용
+                const earnedScore = Math.max(0, teamsCount - currentRank);
+                scoreUpdates[roundDeployments[i].nickname] = earnedScore;
+                previousDeployed = deployed;
+            }
+
+            // DB 업데이트 일괄 실행
+            try {
+                // 플레이어별 점수 및 남은 병사 수 갱신
+                for (let nickname in playersData) {
+                    const player = playersData[nickname];
+                    const deployed = player.rounds[currentRound] || 0;
+                    const newRemaining = Math.max(0, player.remaining - deployed);
+                    const newScore = player.score + (scoreUpdates[nickname] || 0);
+
+                    await updateDoc(doc(db, "blotto_rooms", currentRoomCode, "players", nickname), {
+                        remaining: newRemaining,
+                        score: newScore
+                    });
+                }
+
+                // 방 라운드 갱신
+                let nextStatus = "playing";
+                if (currentRound >= maxRounds) {
+                    nextStatus = "finished";
+                }
+
+                await updateDoc(doc(db, "blotto_rooms", currentRoomCode), {
+                    "state.currentRound": currentRound + 1,
+                    "state.status": nextStatus
+                });
+
+            } catch (err) {
+                console.error(err);
+                await customAlert("오류", "라운드 처리 중 문제가 발생했습니다.");
+            }
+        });
+
+
+        // =====================================================================
+        // 3. 학생(모둠) 플레이 로직
+        // =====================================================================
+        function startStudentRealtimeSync() {
+            navRoomInfo.innerHTML = `방 코드: <b>${currentRoomCode}</b> | 접속: <b>${currentNickname}</b>`;
+            document.getElementById('student-nickname-display').textContent = currentNickname;
+
+            // 방 정보 구독 (라운드 진행 상황 파악)
+            unsubRoom = onSnapshot(doc(db, "blotto_rooms", currentRoomCode), (docSnap) => {
+                if (docSnap.exists()) {
+                    roomSettings = docSnap.data().settings;
+                    roomState = docSnap.data().state;
+                    updateStudentUI();
+                }
+            });
+
+            // 내 정보 구독 (잔여 병사 등 갱신)
+            unsubPlayers = onSnapshot(doc(db, "blotto_rooms", currentRoomCode, "players", currentNickname), (docSnap) => {
+                if (docSnap.exists()) {
+                    playersData[currentNickname] = docSnap.data();
+                    updateStudentUI();
+                }
+            });
+        }
+
+        function updateStudentUI() {
+            if (!roomSettings || !roomState || !playersData[currentNickname]) return;
+
+            const myData = playersData[currentNickname];
+            const currentRound = roomState.currentRound;
+            const maxRounds = roomSettings.maxRounds;
+
+            document.getElementById('student-remaining-display').textContent = myData.remaining;
+
+            const inputArea = document.getElementById('student-input-area');
+            const waitingArea = document.getElementById('student-waiting-area');
+            const finishedArea = document.getElementById('student-finished-area');
+            const deployInput = document.getElementById('student-deploy-input');
+
+            if (roomState.status === "finished" || currentRound > maxRounds) {
+                document.getElementById('student-round-display').textContent = `게임 종료`;
+                inputArea.classList.add('d-none');
+                waitingArea.classList.add('d-none');
+                finishedArea.classList.remove('d-none');
+                return;
+            }
+
+            document.getElementById('student-round-display').textContent = `${currentRound} / ${maxRounds}`;
+
+            // 현재 라운드를 이미 제출했는지 확인
+            const hasSubmittedRound = myData.rounds[currentRound] !== undefined;
+
+            if (hasSubmittedRound) {
+                inputArea.classList.add('d-none');
+                waitingArea.classList.remove('d-none');
+            } else {
+                inputArea.classList.remove('d-none');
+                waitingArea.classList.add('d-none');
+                deployInput.value = ""; // 입력창 초기화
+                deployInput.max = myData.remaining;
+            }
+        }
+
+        // 출전 버튼 클릭 (학생)
+        document.getElementById('btn-submit-deploy').addEventListener('click', async () => {
+            const myData = playersData[currentNickname];
+            const currentRound = roomState.currentRound;
+
+            let deployCount = parseInt(document.getElementById('student-deploy-input').value);
+
+            if (isNaN(deployCount) || deployCount < 0) {
+                return await customAlert("알림", "출전할 병사 수를 올바르게 입력하세요.");
+            }
+            if (deployCount > myData.remaining) {
+                return await customAlert("알림", "남은 병사 수보다 많이 출전시킬 수 없습니다.");
+            }
+
+            try {
+                const playerRef = doc(db, "blotto_rooms", currentRoomCode, "players", currentNickname);
+                // rounds 맵 업데이트
+                await setDoc(playerRef, {
+                    rounds: {
+                        [currentRound]: deployCount
+                    }
+                }, { merge: true });
+
+            } catch (err) {
+                console.error(err);
+                await customAlert("오류", "제출 중 오류가 발생했습니다.");
+            }
+        });
+
+    </script>
+</body>
+
+</html>
