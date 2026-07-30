@@ -122,9 +122,13 @@
         <div id="admin-section" class="section-container">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2 class="fw-bold mb-0">👨‍🏫 블로토 게임 대시보드</h2>
-                <div>
+                <div class="d-flex gap-2 align-items-center">
+                    <select id="admin-room-select" class="form-select w-auto me-2">
+                        <option value="">방을 선택하세요</option>
+                    </select>
                     <span class="fs-5 fw-bold text-primary me-3" id="admin-active-room"></span>
                     <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
+                    <button id="btn-delete-room" class="btn btn-danger fw-bold">현재 방 삭제하기</button>
                 </div>
             </div>
 
@@ -206,6 +210,7 @@
                             <div class="spinner-border text-primary mb-3" role="status"></div>
                             <h5 class="fw-bold text-primary">출전 완료!</h5>
                             <p class="text-muted">다른 모둠이 제출할 때까지 대기 중입니다...</p>
+                            <button class="btn btn-outline-secondary mt-2" id="btn-edit-deploy">수정하기</button>
                         </div>
 
                         <div id="student-finished-area" class="d-none">
@@ -225,7 +230,7 @@
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
         import {
             collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc, updateDoc,
-            serverTimestamp, query, orderBy
+            serverTimestamp, query, orderBy, deleteDoc
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // =====================================================================
@@ -328,6 +333,9 @@
         let unsubRoom = null;
         let unsubPlayers = null;
 
+        let isEditingDeploy = false;
+        let lastSeenRound = 0;
+
         // UI 영역
         const sectionLanding = document.getElementById('landing-section');
         const sectionStudent = document.getElementById('student-section');
@@ -350,6 +358,7 @@
             sectionAdmin.classList.add('active-section');
             document.getElementById('admin-settings-area').style.display = 'block';
             document.getElementById('admin-board-area').style.display = 'none';
+            loadAdminRooms();
         });
 
         // 새로운 방 만들기
@@ -452,6 +461,17 @@
             document.getElementById('admin-board-area').style.display = 'block';
             document.getElementById('admin-active-room').innerHTML = `현재 방 코드: <span class="badge bg-primary fs-5">${roomCode}</span>`;
 
+            const select = document.getElementById('admin-room-select');
+            if (select && select.querySelector(`option[value="${roomCode}"]`)) {
+                select.value = roomCode;
+            } else if (select) {
+                const option = document.createElement('option');
+                option.value = roomCode;
+                option.textContent = `[${roomCode}]`;
+                select.appendChild(option);
+                select.value = roomCode;
+            }
+
             if (unsubRoom) unsubRoom();
             if (unsubPlayers) unsubPlayers();
 
@@ -473,6 +493,74 @@
                 renderAdminBoard();
             });
         }
+
+        async function loadAdminRooms() {
+            const q = query(collection(db, "blotto_rooms"), orderBy("createdAt", "desc"));
+            const snapshot = await getDocs(q);
+            const select = document.getElementById('admin-room-select');
+            select.innerHTML = '<option value="">방을 선택하세요</option>'; 
+            snapshot.forEach(docSnap => {
+                const option = document.createElement('option');
+                option.value = docSnap.id;
+                option.textContent = `[${docSnap.id}]`; 
+                select.appendChild(option);
+            });
+        }
+
+        document.getElementById('admin-room-select').addEventListener('change', (e) => {
+            const code = e.target.value;
+            if (!code) {
+                document.getElementById('admin-settings-area').style.display = 'block';
+                document.getElementById('admin-board-area').style.display = 'none';
+                document.getElementById('admin-active-room').textContent = "";
+                if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+                if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+                return;
+            }
+            startAdminMonitoring(code);
+        });
+
+        document.getElementById('btn-delete-room').addEventListener('click', async () => {
+            const select = document.getElementById('admin-room-select');
+            const roomCode = select.value;
+
+            if (!roomCode) {
+                return await customAlert("알림", "삭제할 방을 선택해 주세요.");
+            }
+
+            const confirmed = await customConfirm(
+                "방 삭제 확인",
+                `[ <b class="text-danger">${roomCode}</b> ] 방을 정말로 삭제하시겠습니까?<br><small class="text-muted">삭제된 방과 관련된 모든 학생 데이터는 복구할 수 없습니다.</small>`
+            );
+
+            if (!confirmed) return;
+
+            try {
+                // players 하위 컬렉션 삭제
+                const playersSnap = await getDocs(collection(db, "blotto_rooms", roomCode, "players"));
+                const deletePromises = [];
+                playersSnap.forEach(docSnap => {
+                    deletePromises.push(deleteDoc(doc(db, "blotto_rooms", roomCode, "players", docSnap.id)));
+                });
+                await Promise.all(deletePromises);
+
+                // 방 문서 삭제
+                await deleteDoc(doc(db, "blotto_rooms", roomCode));
+
+                if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+                if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+                
+                document.getElementById('admin-active-room').textContent = "";
+                document.getElementById('admin-settings-area').style.display = 'block';
+                document.getElementById('admin-board-area').style.display = 'none';
+
+                await loadAdminRooms();
+                await customAlert("삭제 완료", "방이 성공적으로 삭제되었습니다.");
+            } catch (error) {
+                console.error(error);
+                await customAlert("오류", "방 삭제 처리 중 오류가 발생했습니다.");
+            }
+        });
 
         function renderAdminBoard() {
             if (!roomSettings || !roomState) return;
@@ -705,19 +793,32 @@
 
             document.getElementById('student-round-display').textContent = `${currentRound} / ${maxRounds}`;
 
+            if (lastSeenRound !== currentRound) {
+                isEditingDeploy = false;
+                lastSeenRound = currentRound;
+            }
+
             // 현재 라운드를 이미 제출했는지 확인
             const hasSubmittedRound = myData.rounds[currentRound] !== undefined;
 
-            if (hasSubmittedRound) {
+            if (hasSubmittedRound && !isEditingDeploy) {
                 inputArea.classList.add('d-none');
                 waitingArea.classList.remove('d-none');
             } else {
                 inputArea.classList.remove('d-none');
                 waitingArea.classList.add('d-none');
-                deployInput.value = ""; // 입력창 초기화
+                if (!isEditingDeploy) {
+                    deployInput.value = ""; // 입력창 초기화
+                }
                 deployInput.max = myData.remaining;
             }
         }
+
+        document.getElementById('btn-edit-deploy').addEventListener('click', () => {
+            isEditingDeploy = true;
+            document.getElementById('student-deploy-input').value = playersData[currentNickname].rounds[roomState.currentRound] || "";
+            updateStudentUI();
+        });
 
         // 출전 버튼 클릭 (학생)
         document.getElementById('btn-submit-deploy').addEventListener('click', async () => {
@@ -741,6 +842,7 @@
                         [currentRound]: deployCount
                     }
                 }, { merge: true });
+                isEditingDeploy = false;
 
             } catch (err) {
                 console.error(err);
