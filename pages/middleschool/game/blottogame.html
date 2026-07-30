@@ -233,7 +233,7 @@
         // =====================================================================
         let customModalInstance = null;
 
-        function showCustomModal(title, message, isPrompt = false, isPassword = false) {
+        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
             return new Promise((resolve) => {
                 if (!customModalInstance) {
                     customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
@@ -253,32 +253,37 @@
                 const btnConfirm = document.getElementById('customModalConfirm');
                 const customModal = document.getElementById('customModal');
 
-                if (isPrompt) {
+                if (isPrompt || isConfirm) {
                     btnCancel.classList.remove('d-none');
                 } else {
                     btnCancel.classList.add('d-none');
                 }
 
-                const cleanup = () => {
+                let resolved = false;
+                let resolveValue = null;
+
+                const handleConfirm = () => {
+                    resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true;
+                    customModalInstance.hide();
+                };
+
+                const handleCancel = () => {
+                    resolveValue = isConfirm ? false : null;
+                    customModalInstance.hide();
+                };
+
+                const handleHidden = () => {
                     btnConfirm.removeEventListener('click', handleConfirm);
                     btnCancel.removeEventListener('click', handleCancel);
-                    customModal.removeEventListener('hidden.bs.modal', handleCancel);
+                    customModal.removeEventListener('hidden.bs.modal', handleHidden);
                     if (isPrompt) {
                         const input = document.getElementById('customModalInput');
                         if (input) input.removeEventListener('keypress', handleEnter);
                     }
-                };
-
-                const handleConfirm = () => {
-                    const inputVal = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true;
-                    cleanup();
-                    customModalInstance.hide();
-                    resolve(inputVal);
-                };
-
-                const handleCancel = () => {
-                    cleanup();
-                    resolve(null);
+                    if (!resolved) {
+                        resolved = true;
+                        resolve(resolveValue);
+                    }
                 };
 
                 const handleEnter = (e) => {
@@ -290,7 +295,7 @@
 
                 btnConfirm.addEventListener('click', handleConfirm);
                 btnCancel.addEventListener('click', handleCancel);
-                customModal.addEventListener('hidden.bs.modal', handleCancel);
+                customModal.addEventListener('hidden.bs.modal', handleHidden);
 
                 customModalInstance.show();
 
@@ -309,6 +314,7 @@
 
         const customAlert = (title, message) => showCustomModal(title, message, false);
         const customPrompt = (title, message, isPassword = false) => showCustomModal(title, message, true, isPassword);
+        const customConfirm = (title, message) => showCustomModal(title, message, false, false, true);
 
         // =====================================================================
         // 전역 상태 변수
