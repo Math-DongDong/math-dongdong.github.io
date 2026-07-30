@@ -163,7 +163,10 @@
         <div id="admin-section" class="section-container">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2 class="fw-bold mb-0">👨‍🏫 실시간 대시보드</h2>
-                <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
+                <div class="d-flex gap-2">
+                    <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
+                    <button id="btn-delete-room" class="btn btn-danger fw-bold">현재 방 지우기</button>
+                </div>
             </div>
 
             <div class="row g-4">
@@ -258,7 +261,7 @@
         // 커스텀 모달 로직
         let customModalInstance = null;
 
-        function showCustomModal(title, message, isPrompt = false, isPassword = false) {
+        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
             return new Promise((resolve) => {
                 if (!customModalInstance) {
                     customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
@@ -278,7 +281,7 @@
                 const btnConfirm = document.getElementById('customModalConfirm');
                 const customModal = document.getElementById('customModal');
 
-                if (isPrompt) {
+                if (isPrompt || isConfirm) {
                     btnCancel.classList.remove('d-none');
                 } else {
                     btnCancel.classList.add('d-none');
@@ -334,6 +337,7 @@
 
         const customAlert = (title, message) => showCustomModal(title, message, false);
         const customPrompt = (title, message, isPassword = false) => showCustomModal(title, message, true, isPassword);
+        const customConfirm = (title, message) => showCustomModal(title, message, false, false, true);
 
         // =====================================================================
         // [랜딩 페이지 로직]
@@ -391,7 +395,7 @@
 
             sectionLanding.classList.remove('active-section');
             sectionAdmin.classList.add('active-section');
-            navRoomInfo.textContent = "모아보기";
+            navRoomInfo.textContent = "";
             loadAdminRooms();
         });
 
@@ -577,6 +581,52 @@
                 select.appendChild(option);
             });
         }
+
+        // 현재 방 지우기
+        document.getElementById('btn-delete-room').addEventListener('click', async () => {
+            const select = document.getElementById('admin-room-select');
+            const roomCode = select.value;
+
+            if (!roomCode) {
+                return await customAlert("알림", "지울 방을 선택해 주세요.");
+            }
+
+            const confirmed = await customConfirm(
+                "방 삭제 확인",
+                `[ <b class="text-danger">${roomCode}</b> ] 방을 정말로 삭제하시겠습니까?<br><small class="text-muted">삭제된 방의 모든 데이터는 복구할 수 없습니다.</small>`
+            );
+
+            if (!confirmed) return;
+
+            try {
+                // 해당 방의 words 하위 컬렉션 삭제
+                const wordsSnap = await getDocs(collection(db, "rooms", roomCode, "words"));
+                const deletePromises = [];
+                wordsSnap.forEach(docSnap => {
+                    deletePromises.push(deleteDoc(doc(db, "rooms", roomCode, "words", docSnap.id)));
+                });
+                await Promise.all(deletePromises);
+
+                // 방 문서 삭제
+                await deleteDoc(doc(db, "rooms", roomCode));
+
+                // 실시간 리스너 해제 및 UI 초기화
+                if (currentUnsubscribe) {
+                    currentUnsubscribe();
+                    currentUnsubscribe = null;
+                }
+                document.getElementById('admin-active-room').textContent = "-";
+                document.getElementById('admin-words-container').innerHTML = '<span class="text-muted">방을 선택하면 데이터가 표시됩니다.</span>';
+                document.getElementById('admin-ai-section').style.display = 'none';
+
+                // 방 목록 새로고침 및 성공 알림
+                await loadAdminRooms();
+                await customAlert("삭제 완료", "방이 성공적으로 삭제되었습니다.");
+            } catch (error) {
+                console.error(error);
+                await customAlert("오류", "방 삭제 처리 중 오류가 발생했습니다.");
+            }
+        });
 
         // 2. 드롭다운 선택 시 해당 방 실시간 모니터링
         document.getElementById('admin-room-select').addEventListener('change', (e) => {
