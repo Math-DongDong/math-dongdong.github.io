@@ -151,33 +151,71 @@ body {
 }
 .pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
-/* 랭킹 테이블 */
+/* 랭킹 테이블 & 공통 뱃지 */
 .ranking-table th { background-color: #f1f5f9; font-size: 0.85rem; }
 .ranking-table td { font-size: 0.9rem; vertical-align: middle; }
-.rank-badge {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 28px; height: 28px; border-radius: 50%; font-weight: 800; font-size: 0.8rem;
-}
+.ranking-table .sortable { cursor: pointer; user-select: none; }
+.ranking-table .sortable:hover { background-color: #e2e8f0; }
+.rank-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font-weight: 800; font-size: 0.8rem; }
 .rank-1 { background: #fef08a; color: #92400e; }
 .rank-2 { background: #e2e8f0; color: #475569; }
 .rank-3 { background: #fed7aa; color: #9a3412; }
-
-/* 수준 뱃지 */
-.level-tier {
-    display: inline-block;
-    padding: 0.2rem 0.6rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 700;
-}
+.level-tier { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
 .tier-high { background: #dcfce7; color: #166534; }
 .tier-mid { background: #fef9c3; color: #854d0e; }
 .tier-low { background: #fee2e2; color: #991b1b; }
+
+/* 대시보드 통계 카드 및 차트 */
+.stat-card { border: none; border-radius: 16px; padding: 1.5rem; text-align: center; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+.stat-card .stat-value { font-size: 2.2rem; font-weight: 800; }
+.stat-card .stat-label { font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem; }
+.stat-blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.stat-green { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.stat-orange { background: linear-gradient(135deg, #f97316, #ea580c); }
+.stat-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.dashboard-card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.bar-chart-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.bar-label { width: 100px; font-size: 0.8rem; font-weight: 600; text-align: right; flex-shrink: 0; }
+.bar-track { flex: 1; height: 28px; background: #f1f5f9; border-radius: 6px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; padding-left: 8px; font-size: 0.75rem; font-weight: 700; color: #fff; transition: width 0.5s; min-width: 0; }
+.bar-value { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; font-weight: 600; color: #64748b; }
+.detail-table th { font-size: 0.8rem; background: #f8fafc; }
+.detail-table td { font-size: 0.85rem; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 
 <body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 학생 상세 모달 -->
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="detailModalTitle">학생 상세 이력</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailModalBody"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- 네비게이션 바 -->
     <script src="../../../js/navbar.js"></script>
 
@@ -229,9 +267,10 @@ body {
                                 <span id="combo-display" class="text-warning fw-bold"></span>
                                 <span class="text-light small fw-bold">평균: <span id="avg-time">0.0초</span></span>
                             </div>
-                            <div class="d-flex justify-content-end gap-3">
+                            <div class="d-flex justify-content-end gap-3 align-items-center">
                                 <span id="max-combo-display" class="text-warning fw-bold small"></span>
-                                <span class="fw-bold fs-6">점수: <span id="score">0</span></span>
+                                <span class="fw-bold fs-6 me-2">점수: <span id="score">0</span></span>
+                                <button onclick="endGame()" class="btn btn-danger btn-sm fw-bold px-2 py-1" style="font-size:0.8rem;">종료</button>
                             </div>
                         </div>
                     </div>
@@ -319,11 +358,46 @@ body {
         </div>
     </div>
 
+    <!-- ==================== 4. 대시보드 ==================== -->
+    <div id="dashboard-section" class="section-container">
+        <div class="container py-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="fw-bold mb-0"><i class="bi bi-bar-chart-line"></i> 정수와 유리수 마스터 대시보드</h2>
+                <div>
+                    <button id="btn-refresh" class="btn btn-outline-primary fw-bold me-2"><i class="bi bi-arrow-clockwise"></i> 새로고침</button>
+                    <button id="btn-delete-all" class="btn btn-outline-danger fw-bold"><i class="bi bi-trash"></i> 전체 삭제</button>
+                </div>
+            </div>
+            <!-- 요약 통계 카드 -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3"><div class="stat-card stat-blue"><div class="stat-value" id="stat-total">0</div><div class="stat-label">총 플레이 횟수</div></div></div>
+                <div class="col-6 col-md-3"><div class="stat-card stat-green"><div class="stat-value" id="stat-players">0</div><div class="stat-label">참여 학생 수</div></div></div>
+                <div class="col-6 col-md-3"><div class="stat-card stat-orange"><div class="stat-value" id="stat-avg-score">0</div><div class="stat-label">평균 점수</div></div></div>
+                <div class="col-6 col-md-3"><div class="stat-card stat-purple"><div class="stat-value" id="stat-avg-accuracy">0%</div><div class="stat-label">평균 정답률</div></div></div>
+            </div>
+            <div class="row g-4">
+                <div class="col-12">
+                    <div class="dashboard-card">
+                        <h5 class="fw-bold mb-3">🏆 전체 랭킹 (닉네임별 최고 기록)</h5>
+                        <div id="dashboard-ranking-area" class="table-responsive"><p class="text-muted text-center">데이터를 불러오는 중...</p></div>
+                    </div>
+                </div>
+                <div class="col-md-6"><div class="dashboard-card h-100"><h5 class="fw-bold mb-3">📊 레벨별 평균 정답률</h5><div id="level-chart-area"></div></div></div>
+                <div class="col-md-6"><div class="dashboard-card h-100"><h5 class="fw-bold mb-3">⏱️ 평균 풀이 속도 분포</h5><div id="speed-chart-area"></div></div></div>
+                <div class="col-12"><div class="dashboard-card"><h5 class="fw-bold mb-3">🎯 수준별 그룹 분류</h5><div class="row g-3" id="tier-groups-area"></div></div></div>
+            </div>
+            <div class="text-center mt-4">
+                <button onclick="restartGame()" class="btn btn-secondary btn-lg fw-bold">← 게임으로 돌아가기</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ==================== 스크립트 ==================== -->
     <script type="module">
         import { dbPlusMinus as db } from "../../../js/firebase-config.js";
+        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
         import {
-            collection, doc, addDoc, getDocs, query, orderBy, limit, where,
+            collection, doc, addDoc, getDocs, deleteDoc, query, orderBy, limit, where,
             serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
@@ -343,6 +417,9 @@ body {
         let totalAttempts = 0;
         let questionStartTime = 0;
         let isChecking = false;
+        let wrongCount = 0; // 힌트 제공용
+        let currentHint = "";
+        let invertedAnswer = null; // 분수 힌트용
 
         // 레벨별 정오답 추적
         let levelBreakdown = { 1: { solved: 0, wrong: 0 }, 2: { solved: 0, wrong: 0 }, 3: { solved: 0, wrong: 0 }, 4: { solved: 0, wrong: 0 } };
@@ -458,9 +535,63 @@ body {
         });
 
         // 교사 대시보드 열기
-        document.getElementById('btn-open-dashboard').addEventListener('click', () => {
-            window.location.href = 'plus_minus_dashboard.html';
+        document.getElementById('btn-open-dashboard').addEventListener('click', async () => {
+            const code = await customPrompt("대시보드 접속", "대시보드에 접속하려면 접속 코드를 입력하세요.", true);
+            if (code !== ADMIN_ACCESS_CODE) {
+                if (code !== null) await customAlert("접속 실패", "접속 코드가 틀렸습니다.");
+                return;
+            }
+            showSection('dashboard-section');
+            loadAllData();
         });
+
+        // =====================================================================
+        // 모달 유틸
+        // =====================================================================
+        let customModalInstance = null;
+        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
+            return new Promise((resolve) => {
+                if (!customModalInstance) customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
+                document.getElementById('customModalTitle').innerHTML = title;
+                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
+                if (isPrompt) {
+                    let type = isPassword ? 'password' : 'text';
+                    bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3" id="customModalInput">`;
+                }
+                document.getElementById('customModalBody').innerHTML = bodyHtml;
+                const btnCancel = document.getElementById('customModalCancel');
+                const btnConfirm = document.getElementById('customModalConfirm');
+                const modal = document.getElementById('customModal');
+                if (isPrompt || isConfirm) btnCancel.classList.remove('d-none');
+                else btnCancel.classList.add('d-none');
+                let resolveValue = null;
+                const handleConfirm = () => { resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true; customModalInstance.hide(); };
+                const handleCancel = () => { resolveValue = isConfirm ? false : null; customModalInstance.hide(); };
+                const handleHidden = () => {
+                    btnConfirm.removeEventListener('click', handleConfirm);
+                    btnCancel.removeEventListener('click', handleCancel);
+                    modal.removeEventListener('hidden.bs.modal', handleHidden);
+                    resolve(resolveValue);
+                };
+                btnConfirm.addEventListener('click', handleConfirm);
+                btnCancel.addEventListener('click', handleCancel);
+                modal.addEventListener('hidden.bs.modal', handleHidden);
+                customModalInstance.show();
+                if (isPrompt) {
+                    modal.addEventListener('shown.bs.modal', function onShown() {
+                        const input = document.getElementById('customModalInput');
+                        if (input) {
+                            input.focus();
+                            input.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleConfirm(); });
+                        }
+                        modal.removeEventListener('shown.bs.modal', onShown);
+                    });
+                }
+            });
+        }
+        const customAlert = (t, m) => showCustomModal(t, m, false);
+        const customPrompt = (t, m, pw) => showCustomModal(t, m, true, pw);
+        const customConfirm = (t, m) => showCustomModal(t, m, false, false, true);
 
         // =====================================================================
         // 게임 로직 (스트림릿 원본 이식)
@@ -518,6 +649,10 @@ body {
             currentInput = "";
             inputBox.innerText = "";
             inputBox.classList.remove('shake');
+            wrongCount = 0;
+            hintMsg.innerText = "※ 분수는 1/2 형식의 기약분수로 입력하세요.";
+            hintMsg.classList.add('text-muted');
+            hintMsg.classList.remove('text-primary', 'fw-bold');
 
             let newLevel = 1;
             if (score >= LEVEL_THRESHOLDS[3]) newLevel = 4;
@@ -543,22 +678,41 @@ body {
                 qHtml = `<span>${a}</span> <span class="mx-1 text-primary">+</span> <span>${b}</span>`;
                 ansStr = (a + b).toString();
                 hintMsg.style.opacity = 0;
+                currentHint = "";
             } else if (problemType === 2) {
                 let a = getRandomInt(-10, 10);
                 let b = getRandomInt(1, 10);
                 let isAdd = Math.random() < 0.5;
-                qHtml = `<span>${a}</span> <span class="mx-1 text-primary">${isAdd ? '+' : '-'}</span> <span>${b}</span>`;
+                let showPlus = Math.random() < 0.5;
+                let strB = (showPlus && !isAdd) ? `(+${b})` : `${b}`;
+                qHtml = `<span>${a}</span> <span class="mx-1 text-primary">${isAdd ? '+' : '-'}</span> <span>${strB}</span>`;
                 ansStr = isAdd ? (a + b).toString() : (a - b).toString();
                 hintMsg.style.opacity = 0;
+                
+                if (!isAdd && strB === `(+${b})`) {
+                    currentHint = `${a}-(+${b})은(는) ${a}-${b}과(와) 같습니다.`;
+                } else {
+                    currentHint = ""; 
+                }
             } else if (problemType === 3) {
                 let a = getRandomInt(-10, 10);
                 let b = getRandomInt(-10, 10);
                 if (a === 0) a = 2; if (b === 0) b = -3;
                 let isAdd = Math.random() < 0.5;
-                let signB = b > 0 ? `${b}` : `(${b})`;
+                let signB = b > 0 ? `(+${b})` : `(${b})`;
                 qHtml = `<span>${a}</span> <span class="mx-1 text-primary">${isAdd ? '+' : '-'}</span> <span>${signB}</span>`;
                 ansStr = isAdd ? (a + b).toString() : (a - b).toString();
                 hintMsg.style.opacity = 0;
+                
+                if (!isAdd) {
+                    if (b < 0) {
+                        currentHint = `${a}-(${b})은(는) ${a}+${-b}과(와) 같습니다.`;
+                    } else {
+                        currentHint = `${a}-(+${b})은(는) ${a}-${b}과(와) 같습니다.`;
+                    }
+                } else {
+                    currentHint = ""; 
+                }
             } else if (problemType === 4) {
                 hintMsg.style.opacity = 1;
                 let d1 = getRandomInt(2, 6);
@@ -569,6 +723,10 @@ body {
                 qHtml = `${createFractionHTML(n1, d1, true)} <span class="mx-1 text-primary">${isAdd ? '+' : '-'}</span> ${createFractionHTML(n2, d2, false)}`;
                 let top = isAdd ? (n1 * d2 + n2 * d1) : (n1 * d2 - n2 * d1);
                 let bottom = d1 * d2;
+                
+                currentHint = "";
+                invertedAnswer = null;
+                
                 if (top === 0) {
                     ansStr = "0";
                 } else {
@@ -576,6 +734,9 @@ body {
                     top /= g; bottom /= g;
                     if (bottom < 0) { top = -top; bottom = -bottom; }
                     ansStr = bottom === 1 ? `${top}` : `${top}/${bottom}`;
+                    if (bottom !== 1 && top !== 0) {
+                        invertedAnswer = top < 0 ? `-${bottom}/${-top}` : `${bottom}/${top}`;
+                    }
                 }
             }
 
@@ -628,6 +789,7 @@ body {
                 combo = 0;
                 lives--;
                 levelBreakdown[currentProblemLevel].wrong++;
+                wrongCount++;
                 updateUI();
 
                 if (lives <= 0) {
@@ -639,12 +801,25 @@ body {
                 inputBox.classList.remove('shake');
                 void inputBox.offsetWidth;
                 inputBox.classList.add('shake');
+                let userWrongInput = currentInput;
                 currentInput = "";
                 inputBox.innerText = "";
 
-                feedbackMsg.innerText = "앗, 다시 계산해볼까요? 😅";
-                feedbackMsg.classList.remove('opacity-0', 'text-success');
-                feedbackMsg.classList.add('opacity-100', 'text-danger');
+                if (currentProblemLevel === 4 && invertedAnswer && userWrongInput === invertedAnswer) {
+                    hintMsg.style.opacity = 1;
+                    hintMsg.innerText = `💡 힌트: 분자/분모의 형태로 작성하세요`;
+                    hintMsg.classList.remove('text-muted');
+                    hintMsg.classList.add('text-primary', 'fw-bold');
+                } else if (wrongCount >= 2 && currentHint !== "") {
+                    hintMsg.style.opacity = 1;
+                    hintMsg.innerText = `💡 힌트: ${currentHint}`;
+                    hintMsg.classList.remove('text-muted');
+                    hintMsg.classList.add('text-primary', 'fw-bold');
+                } else {
+                    feedbackMsg.innerText = "앗, 다시 계산해볼까요? 😅";
+                    feedbackMsg.classList.remove('opacity-0', 'text-success');
+                    feedbackMsg.classList.add('opacity-100', 'text-danger');
+                }
 
                 setTimeout(() => {
                     feedbackMsg.classList.remove('opacity-100');
@@ -687,7 +862,7 @@ body {
         // =====================================================================
         // 게임 종료 & Firebase 저장
         // =====================================================================
-        async function endGame() {
+        window.endGame = async function() {
             const avgSec = solvedCount === 0 ? 0 : parseFloat(((totalTimeMs / solvedCount) / 1000).toFixed(1));
             const accuracy = totalAttempts === 0 ? 0 : Math.round((solvedCount / totalAttempts) * 100);
 
@@ -723,6 +898,204 @@ body {
 
             // 랭킹 로드
             loadRanking('gameover-ranking-area');
+        }
+
+        // =====================================================================
+        // 대시보드 로직
+        // =====================================================================
+        const LEVEL_SHORT = ["Lv.1 덧셈", "Lv.2 뺄셈", "Lv.3 음수", "Lv.4 분수"];
+        const LEVEL_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#8b5cf6"];
+        let allRecords = [];
+        let currentSortKey = 'score';
+        let currentSortAsc = false;
+
+        async function loadAllData() {
+            try {
+                const q = query(collection(db, "game_records"), orderBy("playedAt", "desc"));
+                const snapshot = await getDocs(q);
+                allRecords = [];
+                snapshot.forEach(docSnap => {
+                    const d = docSnap.data();
+                    d._id = docSnap.id;
+                    allRecords.push(d);
+                });
+                renderDashboard();
+            } catch (err) {
+                console.error(err);
+                customAlert("오류", "데이터를 불러올 수 없습니다.");
+            }
+        }
+
+        document.getElementById('btn-refresh').addEventListener('click', loadAllData);
+        document.getElementById('btn-delete-all').addEventListener('click', async () => {
+            const confirmed = await customConfirm("전체 삭제", "정말로 모든 기록을 삭제하시겠습니까?<br><small class='text-muted'>이 작업은 되돌릴 수 없습니다.</small>");
+            if (!confirmed) return;
+            try {
+                const snapshot = await getDocs(collection(db, "game_records"));
+                const promises = [];
+                snapshot.forEach(docSnap => { promises.push(deleteDoc(doc(db, "game_records", docSnap.id))); });
+                await Promise.all(promises);
+                allRecords = [];
+                renderDashboard();
+                customAlert("완료", "모든 기록이 삭제되었습니다.");
+            } catch (err) {
+                console.error(err);
+                customAlert("오류", "삭제 중 오류가 발생했습니다.");
+            }
+        });
+
+        function renderDashboard() {
+            if (allRecords.length === 0) {
+                document.getElementById('stat-total').innerText = '0';
+                document.getElementById('stat-players').innerText = '0';
+                document.getElementById('stat-avg-score').innerText = '0';
+                document.getElementById('stat-avg-accuracy').innerText = '0%';
+                document.getElementById('dashboard-ranking-area').innerHTML = '<p class="text-muted text-center">기록이 없습니다.</p>';
+                document.getElementById('level-chart-area').innerHTML = '';
+                document.getElementById('speed-chart-area').innerHTML = '';
+                document.getElementById('tier-groups-area').innerHTML = '';
+                return;
+            }
+
+            const bestMap = {}; const allByNickname = {};
+            allRecords.forEach(r => {
+                if (!allByNickname[r.nickname]) allByNickname[r.nickname] = [];
+                allByNickname[r.nickname].push(r);
+                if (!bestMap[r.nickname] || r.score > bestMap[r.nickname].score) bestMap[r.nickname] = r;
+            });
+            const bestList = Object.values(bestMap);
+
+            document.getElementById('stat-total').innerText = allRecords.length;
+            document.getElementById('stat-players').innerText = bestList.length;
+            document.getElementById('stat-avg-score').innerText = Math.round(bestList.reduce((s, r) => s + r.score, 0) / bestList.length);
+            document.getElementById('stat-avg-accuracy').innerText = Math.round(bestList.reduce((s, r) => s + (r.accuracy || 0), 0) / bestList.length) + '%';
+
+            renderRankingTable(bestList, allByNickname);
+            renderLevelChart(bestList);
+            renderSpeedChart(bestList);
+            renderTierGroups(bestList);
+        }
+
+        function renderRankingTable(bestList, allByNickname) {
+            const sorted = [...bestList].sort((a, b) => currentSortAsc ? (a[currentSortKey]||0) - (b[currentSortKey]||0) : (b[currentSortKey]||0) - (a[currentSortKey]||0));
+            const cols = [{k:'score', l:'점수'},{k:'maxLevel', l:'레벨'},{k:'accuracy', l:'정답률'},{k:'avgTime', l:'평균풀이'},{k:'maxCombo', l:'콤보'},{k:'totalSolved', l:'풀이수'}];
+            let html = `<table class="table table-sm table-hover ranking-table mb-0"><thead><tr><th>#</th><th>닉네임</th>`;
+            cols.forEach(c => html += `<th class="text-center sortable" data-key="${c.k}">${c.l}${currentSortKey===c.k?(currentSortAsc?'▲':'▼'):''}</th>`);
+            html += `<th class="text-center">수준</th><th class="text-center">플레이</th></tr></thead><tbody>`;
+
+            const maxS = Math.max(...bestList.map(r => r.score));
+            sorted.forEach((r, i) => {
+                const rankHtml = i < 3 ? `<span class="rank-badge rank-${i+1}">${['🥇','🥈','🥉'][i]}</span>` : i+1;
+                const tierClass = r.score >= maxS*0.7 ? 'tier-high' : (r.score >= maxS*0.4 ? 'tier-mid' : 'tier-low');
+                const tierLabel = r.score >= maxS*0.7 ? '상' : (r.score >= maxS*0.4 ? '중' : '하');
+                html += `<tr style="cursor:pointer;" data-nickname="${r.nickname}">
+                    <td>${rankHtml}</td><td class="fw-bold">${r.nickname}</td>
+                    <td class="text-center text-primary fw-bold">${r.score}</td>
+                    <td class="text-center"><span class="badge bg-success">${LEVEL_TITLES[Math.min((r.maxLevel||1)-1,3)].split(' ')[0]}</span></td>
+                    <td class="text-center">${r.accuracy||0}%</td><td class="text-center">${r.avgTime||0}초</td>
+                    <td class="text-center">${r.maxCombo||0}</td><td class="text-center">${r.totalSolved||0}</td>
+                    <td class="text-center"><span class="tier-badge ${tierClass}">${tierLabel}</span></td>
+                    <td class="text-center"><span class="badge bg-secondary">${allByNickname[r.nickname].length}회</span></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('dashboard-ranking-area').innerHTML = html;
+
+            document.querySelectorAll('.sortable').forEach(th => th.addEventListener('click', () => {
+                if(currentSortKey === th.dataset.key) currentSortAsc = !currentSortAsc;
+                else { currentSortKey = th.dataset.key; currentSortAsc = false; }
+                renderRankingTable(bestList, allByNickname);
+            }));
+
+            document.querySelectorAll('#dashboard-ranking-area tr[data-nickname]').forEach(tr => {
+                tr.addEventListener('click', () => showStudentDetail(tr.dataset.nickname, allByNickname[tr.dataset.nickname]));
+            });
+        }
+
+        window.showStudentDetail = function(nickname, records) {
+            document.getElementById('detailModalTitle').innerText = `📋 ${nickname} 님의 전체 이력`;
+            const sorted = [...records].sort((a, b) => (b.playedAt?.toMillis?.()||0) - (a.playedAt?.toMillis?.()||0));
+            
+            const lvlTotals = {1:{s:0,w:0},2:{s:0,w:0},3:{s:0,w:0},4:{s:0,w:0}};
+            sorted.forEach(r => {
+                if(r.levelBreakdown) {
+                    for(let lv=1;lv<=4;lv++) {
+                        const d = r.levelBreakdown[lv];
+                        if(d) { lvlTotals[lv].s += d.solved||0; lvlTotals[lv].w += d.wrong||0; }
+                    }
+                }
+            });
+
+            let lvlHtml = '<div class="mb-3"><h6 class="fw-bold mb-2">레벨별 누적 성적</h6><div class="row g-2">';
+            for(let lv=1;lv<=4;lv++) {
+                const total = lvlTotals[lv].s + lvlTotals[lv].w;
+                const acc = total > 0 ? Math.round((lvlTotals[lv].s/total)*100)+'%' : '-';
+                lvlHtml += `<div class="col-6 col-md-3"><div class="border rounded p-2 text-center"><div class="small text-muted">${LEVEL_SHORT[lv-1]}</div><div class="fw-bold">${acc}</div><div class="text-muted" style="font-size:0.7rem;">${lvlTotals[lv].s}맞 / ${lvlTotals[lv].w}틀</div></div></div>`;
+            }
+            lvlHtml += '</div></div>';
+
+            let tableHtml = `<div class="table-responsive"><table class="table table-sm detail-table"><thead><tr><th>일시</th><th class="text-center">점수</th><th class="text-center">레벨</th><th class="text-center">정답률</th><th class="text-center">풀이</th><th class="text-center">콤보</th></tr></thead><tbody>`;
+            sorted.forEach(r => {
+                const dateStr = r.playedAt?.toDate?.() ? r.playedAt.toDate().toLocaleString('ko-KR') : '-';
+                tableHtml += `<tr><td class="small">${dateStr}</td><td class="text-center fw-bold text-primary">${r.score}</td><td class="text-center"><span class="badge bg-success">${LEVEL_TITLES[Math.min((r.maxLevel||1)-1,3)].split(' ')[0]}</span></td><td class="text-center">${r.accuracy||0}%</td><td class="text-center">${r.avgTime||0}초</td><td class="text-center">${r.maxCombo||0}</td></tr>`;
+            });
+            tableHtml += '</tbody></table></div>';
+            document.getElementById('detailModalBody').innerHTML = lvlHtml + tableHtml;
+            new bootstrap.Modal(document.getElementById('detailModal')).show();
+        }
+
+        function renderLevelChart(bestList) {
+            const lvlTotals = {1:{s:0,w:0},2:{s:0,w:0},3:{s:0,w:0},4:{s:0,w:0}};
+            bestList.forEach(r => {
+                if(r.levelBreakdown) {
+                    for(let lv=1;lv<=4;lv++) {
+                        const d = r.levelBreakdown[lv];
+                        if(d) { lvlTotals[lv].s += d.solved||0; lvlTotals[lv].w += d.wrong||0; }
+                    }
+                }
+            });
+            let html = '';
+            for(let lv=1;lv<=4;lv++) {
+                const total = lvlTotals[lv].s + lvlTotals[lv].w;
+                const acc = total > 0 ? Math.round((lvlTotals[lv].s/total)*100) : 0;
+                html += `<div class="bar-chart-row"><div class="bar-label">${LEVEL_SHORT[lv-1]}</div><div class="bar-track"><div class="bar-fill" style="width:${acc}%;background:${LEVEL_COLORS[lv-1]};">${acc>10?acc+'%':''}</div><div class="bar-value">${total>0?acc+'% ('+lvlTotals[lv].s+'/'+total+')':'데이터 없음'}</div></div></div>`;
+            }
+            document.getElementById('level-chart-area').innerHTML = html;
+        }
+
+        function renderSpeedChart(bestList) {
+            const buckets = [{l:'~1초',m:0,M:1,c:0,co:'#22c55e'},{l:'1~2초',m:1,M:2,c:0,co:'#3b82f6'},{l:'2~3초',m:2,M:3,c:0,co:'#f97316'},{l:'3~5초',m:3,M:5,c:0,co:'#ef4444'},{l:'5초~',m:5,M:Infinity,c:0,co:'#991b1b'}];
+            bestList.forEach(r => {
+                const t = r.avgTime||0;
+                for(const b of buckets) if(t>=b.m && t<b.M) { b.c++; break; }
+            });
+            const maxC = Math.max(...buckets.map(b=>b.c), 1);
+            let html = '';
+            buckets.forEach(b => {
+                const pct = Math.round((b.c/maxC)*100);
+                html += `<div class="bar-chart-row"><div class="bar-label">${b.l}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${b.co};">${b.c>0?b.c+'명':''}</div><div class="bar-value">${b.c}명</div></div></div>`;
+            });
+            document.getElementById('speed-chart-area').innerHTML = html;
+        }
+
+        function renderTierGroups(bestList) {
+            const maxS = Math.max(...bestList.map(r=>r.score));
+            const tH = maxS*0.7, tM = maxS*0.4;
+            const groups = {h:[], m:[], l:[]};
+            bestList.forEach(r => { if(r.score>=tH) groups.h.push(r); else if(r.score>=tM) groups.m.push(r); else groups.l.push(r); });
+            const configs = [
+                {k:'h', l:'🟢 상위 그룹', d:`점수 ${Math.ceil(tH)}점 이상`, bc:'tier-high', co:'#22c55e'},
+                {k:'m', l:'🟡 중위 그룹', d:`점수 ${Math.ceil(tM)}~${Math.ceil(tH)-1}점`, bc:'tier-mid', co:'#eab308'},
+                {k:'l', l:'🔴 하위 그룹', d:`점수 ${Math.ceil(tM)-1}점 이하`, bc:'tier-low', co:'#ef4444'}
+            ];
+            let html = '';
+            configs.forEach(c => {
+                const students = groups[c.k].sort((a,b)=>b.score-a.score);
+                let names = students.map(s => `<span class="tier-badge ${c.bc} me-1 mb-1">${s.nickname} (${s.score}점)</span>`).join('');
+                if(students.length===0) names = '<span class="text-muted small">해당 학생 없음</span>';
+                html += `<div class="col-md-4"><div class="border rounded-4 p-3 h-100" style="border-left:4px solid ${c.co} !important;"><h6 class="fw-bold mb-1">${c.l}</h6><p class="text-muted small mb-2">${c.d} · ${students.length}명</p><div class="d-flex flex-wrap">${names}</div></div></div>`;
+            });
+            document.getElementById('tier-groups-area').innerHTML = html;
         }
 
         // =====================================================================
