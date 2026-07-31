@@ -21,5 +21,6 @@ const appCheck = initializeAppCheck(app, {
 const dbSentiment = getFirestore(app, "sentimentanalysis");
 const dbBlotto = getFirestore(app, "blottogame");
 const dbPlusMinus = getFirestore(app, "plusminus");
+const dbMultiplyDivide = getFirestore(app, "multiplydivide");
 
-export { app, dbSentiment, dbBlotto, dbPlusMinus };
+export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide };
