@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAKsWMTwBY8gPGTB0Q8xWTbxgCHIuGkw9I",
@@ -11,6 +12,12 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
+const appCheck = initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider('6LcldW4tAAAAAHZBALIPn8CeB0uhuLII_6nZbinh'),
+  isTokenAutoRefreshEnabled: true
+});
+
 const dbSentiment = getFirestore(app, "sentimentanalysis");
 const dbBlotto = getFirestore(app, "blottogame");
 
