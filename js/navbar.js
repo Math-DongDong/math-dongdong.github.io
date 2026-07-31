@@ -28,7 +28,8 @@
                 {
                     "title": "체험수학",
                     "items": [
-                        { "name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html" }
+                        { "name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html" },
+                        { "name": "파이데이", "path": "https://mathday.streamlit.app/", "external": true }
                     ]
                 },
                 {
@@ -134,7 +135,10 @@
     navData.menu.forEach((group, index) => {
         let itemsHtml = '';
         group.items.forEach(item => {
-            itemsHtml += `<li><a class="dropdown-item" href="${rootPath}${item.path}">${item.name}</a></li>`;
+            const isExternal = item.external || (item.path && item.path.startsWith('http'));
+            const href = isExternal ? item.path : `${rootPath}${item.path}`;
+            const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
+            itemsHtml += `<li><a class="dropdown-item" href="${href}"${target}>${item.name}</a></li>`;
         });
 
         menuHtml += `
