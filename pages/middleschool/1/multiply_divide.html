@@ -417,10 +417,26 @@ body {
         let totalAttempts = 0;
         let questionStartTime = 0;
         let isChecking = false;
+        let wrongCount = 0;
+        let currentSignHint = "";
+        let currentPowerHint = "";
 
         // 레벨별 정오답 추적 (6단계)
         let levelBreakdown = {};
         let currentProblemLevel = 1;
+
+        function evaluateFraction(str) {
+            if (!str) return null;
+            if (str.includes('/')) {
+                const parts = str.split('/');
+                const num = parseFloat(parts[0]);
+                const den = parseFloat(parts[1]);
+                if (den === 0 || isNaN(num) || isNaN(den)) return null;
+                return num / den;
+            }
+            const val = parseFloat(str);
+            return isNaN(val) ? null : val;
+        }
 
         function resetLevelBreakdown() {
             levelBreakdown = {};
@@ -629,6 +645,9 @@ body {
         function initGame() {
             score = 0; combo = 0; maxCombo = 0; level = 1; lives = 5;
             totalTimeMs = 0; solvedCount = 0; totalAttempts = 0; isChecking = false;
+            wrongCount = 0;
+            currentSignHint = "";
+            currentPowerHint = "";
             resetLevelBreakdown();
             updateUI();
             generateQuestion();
@@ -690,6 +709,9 @@ body {
         // =====================================================================
         function generateQuestion() {
             currentInput = ""; inputBox.innerText = ""; inputBox.classList.remove('shake');
+            wrongCount = 0;
+            currentSignHint = "";
+            currentPowerHint = "";
             hintMsg.innerText = "※ 분수는 1/2 형식의 기약분수로 입력하세요.";
             hintMsg.classList.add('text-muted');
             hintMsg.classList.remove('text-primary', 'fw-bold');
@@ -725,6 +747,11 @@ body {
                 qHtml = `<span>${signA}</span> <span class="mx-1 text-primary">×</span> <span>${signB}</span>`;
                 ansStr = (a * b).toString();
                 hintMsg.style.opacity = 0;
+                
+                let sA = a < 0 ? '(-)' : '(+)';
+                let sB = b < 0 ? '(-)' : '(+)';
+                let rS = (a * b) < 0 ? '(-)' : '(+)';
+                currentSignHint = `${sA} × ${sB} = ${rS} 입니다.`;
             }
             else if (problemType === 2) {
                 // Lv.2 분수의 곱셈
@@ -735,6 +762,11 @@ body {
                 qHtml = `${createFractionHTML(n1, d1, true)} <span class="mx-1 text-primary">×</span> ${createFractionHTML(n2, d2, false)}`;
                 ansStr = simplify(n1 * n2, d1 * d2);
                 hintMsg.style.opacity = 1;
+
+                let sA = n1 < 0 ? '(-)' : '(+)';
+                let sB = n2 < 0 ? '(-)' : '(+)';
+                let rS = (n1 * n2) < 0 ? '(-)' : '(+)';
+                currentSignHint = `${sA} × ${sB} = ${rS} 입니다.`;
             }
             else if (problemType === 3) {
                 // Lv.3 거듭제곱
@@ -750,6 +782,14 @@ body {
                              </span>`;
                     let val = Math.pow(base, exp);
                     ansStr = (isParens && exp % 2 === 0) ? val.toString() : (-val).toString();
+
+                    if (isParens) {
+                        currentSignHint = exp % 2 === 0 ? "(음수)의 짝수 제곱은 (+) 입니다." : "(음수)의 홀수 제곱은 (-) 입니다.";
+                        currentPowerHint = `(-${base})<sup>${exp}</sup>은 (-${base})를 ${exp}번 곱한 것입니다.`;
+                    } else {
+                        currentSignHint = `-(거듭제곱) 형태는 거듭제곱을 먼저 계산하므로 (-) 입니다.`;
+                        currentPowerHint = `-${base}<sup>${exp}</sup>은 ${base}<sup>${exp}</sup>에 -를 붙인 것입니다. (즉, -(${base}를 ${exp}번 곱한 것)입니다.)`;
+                    }
                 } else {
                     let d = getRandomInt(2, 4);
                     let n = getRandomInt(1, d - 1);
@@ -769,6 +809,14 @@ body {
                     let bot = Math.pow(d, exp);
                     if (isNeg && exp % 2 !== 0) top = -top;
                     ansStr = simplify(top, bot);
+
+                    if (isNeg) {
+                        currentSignHint = exp % 2 === 0 ? "(음수)의 짝수 제곱은 (+) 입니다." : "(음수)의 홀수 제곱은 (-) 입니다.";
+                        currentPowerHint = `(-${n}/${d})<sup>${exp}</sup>은 (-${n}/${d})를 ${exp}번 곱한 것입니다.`;
+                    } else {
+                        currentSignHint = "(양수)의 거듭제곱은 (+) 입니다.";
+                        currentPowerHint = `(${n}/${d})<sup>${exp}</sup>은 (${n}/${d})를 ${exp}번 곱한 것입니다.`;
+                    }
                 }
                 hintMsg.style.opacity = 1;
             }
@@ -783,6 +831,11 @@ body {
                     let signB = b > 0 ? `${b}` : `(${b})`;
                     qHtml = `<span>${signA}</span> <span class="mx-1 text-primary">÷</span> <span>${signB}</span>`;
                     ansStr = simplify(a, b);
+
+                    let sA = a < 0 ? '(-)' : '(+)';
+                    let sB = b < 0 ? '(-)' : '(+)';
+                    let rS = (a * b) < 0 ? '(-)' : '(+)';
+                    currentSignHint = `${sA} ÷ ${sB} = ${rS} 입니다.`;
                 } else {
                     let d1 = getRandomInt(2, 6);
                     let d2 = getRandomInt(2, 6);
@@ -790,6 +843,11 @@ body {
                     let n2 = getRandomInt(1, d2 - 1) * (Math.random() < 0.5 ? 1 : -1);
                     qHtml = `${createFractionHTML(n1, d1, true)} <span class="mx-1 text-primary">÷</span> ${createFractionHTML(n2, d2, false)}`;
                     ansStr = simplify(n1 * d2, d1 * n2);
+
+                    let sA = n1 < 0 ? '(-)' : '(+)';
+                    let sB = n2 < 0 ? '(-)' : '(+)';
+                    let rS = (n1 * n2) < 0 ? '(-)' : '(+)';
+                    currentSignHint = `${sA} ÷ ${sB} = ${rS} 입니다.`;
                 }
                 hintMsg.style.opacity = 1;
             }
@@ -855,6 +913,11 @@ body {
                     let isMul = Math.random() < 0.5;
                     qHtml = `${createFractionHTML(n1, d1, true)} <span class="mx-1 text-primary">${isMul ? '×' : '÷'}</span> ${createFractionHTML(n2, d2, false)}`;
                     ansStr = isMul ? simplify(n1 * n2, d1 * d2) : simplify(n1 * d2, d1 * n2);
+
+                    let sA = n1 < 0 ? '(-)' : '(+)';
+                    let sB = n2 < 0 ? '(-)' : '(+)';
+                    let rS = (n1 * n2) < 0 ? '(-)' : '(+)';
+                    currentSignHint = `${sA} ${isMul ? '×' : '÷'} ${sB} = ${rS} 입니다.`;
                 } else {
                     let isPow1 = Math.random() < 0.5;
                     let term1 = genTerm(isPow1, true);
@@ -864,6 +927,11 @@ body {
                     qHtml = `${term1.html} <span class="mx-1 text-primary">${isMul ? '×' : '÷'}</span> ${term2.html}`;
                     ansStr = isMul ? simplify(term1.valN * term2.valN, term1.valD * term2.valD)
                                    : simplify(term1.valN * term2.valD, term1.valD * term2.valN);
+
+                    let sA = term1.valN < 0 ? '(-)' : '(+)';
+                    let sB = term2.valN < 0 ? '(-)' : '(+)';
+                    let rS = (term1.valN * term2.valN) < 0 ? '(-)' : '(+)';
+                    currentSignHint = `${sA} ${isMul ? '×' : '÷'} ${sB} = ${rS} 입니다.`;
                 }
             }
             else if (problemType === 6) {
@@ -898,6 +966,7 @@ body {
                     let bottom = d1 * d2;
                     ansStr = simplify(top, bottom);
                 }
+                currentSignHint = "";
             }
 
             qHtml += `<span class="ms-2 text-secondary">= ?</span>`;
@@ -949,6 +1018,7 @@ body {
                 combo = 0;
                 lives--;
                 levelBreakdown[currentProblemLevel].wrong++;
+                wrongCount++;
                 updateUI();
 
                 if (lives <= 0) {
@@ -960,11 +1030,42 @@ body {
                 inputBox.classList.remove('shake');
                 void inputBox.offsetWidth;
                 inputBox.classList.add('shake');
+                let userWrongInput = currentInput;
                 currentInput = ""; inputBox.innerText = "";
 
-                feedbackMsg.innerText = "앗, 다시 계산해볼까요? 😅";
-                feedbackMsg.classList.remove('opacity-0', 'text-success');
-                feedbackMsg.classList.add('opacity-100', 'text-danger');
+                if (evaluateFraction(userWrongInput) !== null && 
+                    evaluateFraction(userWrongInput) === evaluateFraction(expectedAnswer) && 
+                    userWrongInput !== expectedAnswer) {
+                    hintMsg.style.opacity = 1;
+                    hintMsg.innerHTML = `💡 힌트: 계산 결과를 약분하여 기약분수 형태로 입력하세요.`;
+                    hintMsg.classList.remove('text-muted');
+                    hintMsg.classList.add('text-primary', 'fw-bold');
+                } 
+                else if (wrongCount >= 2) {
+                    if (currentProblemLevel === 3 && 
+                        evaluateFraction(userWrongInput) !== null && 
+                        Math.abs(evaluateFraction(userWrongInput)) !== Math.abs(evaluateFraction(expectedAnswer)) && 
+                        currentPowerHint !== "") {
+                        hintMsg.style.opacity = 1;
+                        hintMsg.innerHTML = `💡 힌트: ${currentPowerHint}`;
+                        hintMsg.classList.remove('text-muted');
+                        hintMsg.classList.add('text-primary', 'fw-bold');
+                    }
+                    else if ((userWrongInput.startsWith('-') !== expectedAnswer.startsWith('-')) && currentSignHint !== "") {
+                        hintMsg.style.opacity = 1;
+                        hintMsg.innerHTML = `💡 힌트: ${currentSignHint}`;
+                        hintMsg.classList.remove('text-muted');
+                        hintMsg.classList.add('text-primary', 'fw-bold');
+                    } else {
+                        feedbackMsg.innerText = "앗, 다시 계산해볼까요? 😅";
+                        feedbackMsg.classList.remove('opacity-0', 'text-success');
+                        feedbackMsg.classList.add('opacity-100', 'text-danger');
+                    }
+                } else {
+                    feedbackMsg.innerText = "앗, 다시 계산해볼까요? 😅";
+                    feedbackMsg.classList.remove('opacity-0', 'text-success');
+                    feedbackMsg.classList.add('opacity-100', 'text-danger');
+                }
 
                 setTimeout(() => {
                     feedbackMsg.classList.remove('opacity-100');
@@ -1091,7 +1192,7 @@ body {
 
             bestList.forEach((r, i) => {
                 const maxLevel = LEVEL_TITLES[Math.min((r.maxLevel||1)-1, 5)].split(' ')[0];
-                const tier = r.score >= 36 ? '상' : (r.score >= 20 ? '중' : '하');
+                const tier = r.score >= 28 ? '상' : (r.score >= 14 ? '중' : '하');
                 const playCount = allByNickname[r.nickname].length;
                 const lvlTotals = {};
                 for(let lv=1;lv<=TOTAL_LEVELS;lv++) lvlTotals[lv]={s:0,w:0};
@@ -1116,7 +1217,7 @@ body {
             for(let lv=1;lv<=TOTAL_LEVELS;lv++) detailHeader.push(`${LEVEL_SHORT[lv-1]} 맞음`, `${LEVEL_SHORT[lv-1]} 틀림`, `${LEVEL_SHORT[lv-1]} 정답률(%)`);
             const detailData = [detailHeader];
             bestList.forEach(r => {
-                const tier = r.score >= 36 ? '상' : (r.score >= 20 ? '중' : '하');
+                const tier = r.score >= 28 ? '상' : (r.score >= 14 ? '중' : '하');
                 const lvlTotals = {};
                 for(let lv=1;lv<=TOTAL_LEVELS;lv++) lvlTotals[lv]={s:0,w:0};
                 allByNickname[r.nickname].forEach(rec => {
@@ -1205,8 +1306,8 @@ body {
 
             sorted.forEach((r, i) => {
                 const rankHtml = i < 3 ? `<span class="rank-badge rank-${i+1}">${['🥇','🥈','🥉'][i]}</span>` : i+1;
-                const tierClass = r.score >= 36 ? 'tier-high' : (r.score >= 20 ? 'tier-mid' : 'tier-low');
-                const tierLabel = r.score >= 36 ? '상' : (r.score >= 20 ? '중' : '하');
+                const tierClass = r.score >= 28 ? 'tier-high' : (r.score >= 14 ? 'tier-mid' : 'tier-low');
+                const tierLabel = r.score >= 28 ? '상' : (r.score >= 14 ? '중' : '하');
                 html += `<tr style="cursor:pointer;" data-nickname="${r.nickname}">
                     <td>${rankHtml}</td><td class="fw-bold">${r.nickname}</td>
                     <td class="text-center text-primary fw-bold">${r.score}</td>
@@ -1300,13 +1401,13 @@ body {
         }
 
         function renderTierGroups(bestList) {
-            const tH = 36, tM = 20;
+            const tH = 28, tM = 14;
             const groups = {h:[], m:[], l:[]};
             bestList.forEach(r => { if(r.score>=tH) groups.h.push(r); else if(r.score>=tM) groups.m.push(r); else groups.l.push(r); });
             const configs = [
-                {k:'h', l:'🟢 상위 그룹', d:`점수 36점 이상`, bc:'tier-high', co:'#22c55e'},
-                {k:'m', l:'🟡 중위 그룹', d:`점수 20~35점`, bc:'tier-mid', co:'#eab308'},
-                {k:'l', l:'🔴 하위 그룹', d:`점수 19점 이하`, bc:'tier-low', co:'#ef4444'}
+                {k:'h', l:'🟢 상위 그룹', d:`점수 28점 이상`, bc:'tier-high', co:'#22c55e'},
+                {k:'m', l:'🟡 중위 그룹', d:`점수 14~27점`, bc:'tier-mid', co:'#eab308'},
+                {k:'l', l:'🔴 하위 그룹', d:`점수 13점 이하`, bc:'tier-low', co:'#ef4444'}
             ];
             let html = '';
             configs.forEach(c => {
