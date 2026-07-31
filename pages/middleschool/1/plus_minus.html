@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="../../../css/navbar.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
 
@@ -971,16 +972,17 @@ body {
             });
             const bestList = Object.values(bestMap).sort(sortRecords);
 
-            let csvContent = "\uFEFF"; 
-            csvContent += "순위,닉네임,점수,최고레벨,정답률(%),평균풀이속도(초),최고콤보,총풀이수,티어,플레이횟수,Lv.1 정답률,Lv.2 정답률,Lv.3 정답률,Lv.4 정답률\n";
-            
+            // ===== 시트 1: 전체 랭킹 =====
+            const rankingData = [[
+                '순위', '닉네임', '점수', '최고레벨', '정답률(%)', '평균풀이속도(초)',
+                '최고콤보', '총풀이수', '티어', '플레이횟수',
+                'Lv.1 정답률(%)', 'Lv.2 정답률(%)', 'Lv.3 정답률(%)', 'Lv.4 정답률(%)'
+            ]];
+
             bestList.forEach((r, i) => {
-                const rank = i + 1;
-                const nickname = `"${r.nickname}"`;
                 const maxLevel = LEVEL_TITLES[Math.min((r.maxLevel||1)-1, 3)].split(' ')[0];
-                const tier = r.score >= 50 ? "상" : (r.score >= 25 ? "중" : "하");
+                const tier = r.score >= 50 ? '상' : (r.score >= 25 ? '중' : '하');
                 const playCount = allByNickname[r.nickname].length;
-                
                 const lvlTotals = {1:{s:0,w:0},2:{s:0,w:0},3:{s:0,w:0},4:{s:0,w:0}};
                 allByNickname[r.nickname].forEach(rec => {
                     if (rec.levelBreakdown) {
@@ -992,21 +994,53 @@ body {
                 });
                 const lvStats = [1,2,3,4].map(lv => {
                     const t = lvlTotals[lv].s + lvlTotals[lv].w;
-                    return t > 0 ? Math.round((lvlTotals[lv].s/t)*100) + '%' : '-';
+                    return t > 0 ? Math.round((lvlTotals[lv].s/t)*100) : '-';
                 });
-                
-                csvContent += `${rank},${nickname},${r.score},${maxLevel},${r.accuracy||0},${r.avgTime||0},${r.maxCombo||0},${r.totalSolved||0},${tier},${playCount},${lvStats[0]},${lvStats[1]},${lvStats[2]},${lvStats[3]}\n`;
+                rankingData.push([
+                    i+1, r.nickname, r.score, maxLevel,
+                    r.accuracy||0, r.avgTime||0, r.maxCombo||0, r.totalSolved||0,
+                    tier, playCount, lvStats[0], lvStats[1], lvStats[2], lvStats[3]
+                ]);
             });
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `정수와_유리수_랭킹_${new Date().toISOString().slice(0,10)}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+
+            // ===== 시트 2: 레벨별 누적 성적 상세 =====
+            const detailData = [[
+                '닉네임', '티어',
+                'Lv.1 맞음', 'Lv.1 틀림', 'Lv.1 정답률(%)',
+                'Lv.2 맞음', 'Lv.2 틀림', 'Lv.2 정답률(%)',
+                'Lv.3 맞음', 'Lv.3 틀림', 'Lv.3 정답률(%)',
+                'Lv.4 맞음', 'Lv.4 틀림', 'Lv.4 정답률(%)'
+            ]];
+            bestList.forEach(r => {
+                const tier = r.score >= 50 ? '상' : (r.score >= 25 ? '중' : '하');
+                const lvlTotals = {1:{s:0,w:0},2:{s:0,w:0},3:{s:0,w:0},4:{s:0,w:0}};
+                allByNickname[r.nickname].forEach(rec => {
+                    if (rec.levelBreakdown) {
+                        for(let lv=1; lv<=4; lv++) {
+                            const d = rec.levelBreakdown[lv];
+                            if(d) { lvlTotals[lv].s += d.solved||0; lvlTotals[lv].w += d.wrong||0; }
+                        }
+                    }
+                });
+                const row = [r.nickname, tier];
+                for(let lv=1; lv<=4; lv++) {
+                    const t = lvlTotals[lv].s + lvlTotals[lv].w;
+                    const acc = t > 0 ? Math.round((lvlTotals[lv].s/t)*100) : '-';
+                    row.push(lvlTotals[lv].s, lvlTotals[lv].w, acc);
+                }
+                detailData.push(row);
+            });
+
+            // ===== xlsx 생성 =====
+            const wb = XLSX.utils.book_new();
+            const ws1 = XLSX.utils.aoa_to_sheet(rankingData);
+            const ws2 = XLSX.utils.aoa_to_sheet(detailData);
+            // 열 너비 설정
+            ws1['!cols'] = [8,14,8,12,10,14,10,10,8,12,14,14,14,14].map(w=>({wch:w}));
+            ws2['!cols'] = [14,8,10,10,14,10,10,14,10,10,14,10,10,14].map(w=>({wch:w}));
+            XLSX.utils.book_append_sheet(wb, ws1, '전체 랭킹');
+            XLSX.utils.book_append_sheet(wb, ws2, '레벨별 상세');
+            XLSX.writeFile(wb, `정수와_유리수_랭킹_${new Date().toISOString().slice(0,10)}.xlsx`);
         });
 
         document.getElementById('btn-delete-all').addEventListener('click', async () => {
