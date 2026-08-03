@@ -123,7 +123,7 @@
                         </h4>
                         <p class="text-muted small">모인 데이터를 바탕으로 인공지능을 훈련시키고 문장의 감성을 분석해보세요!</p>
 
-                        <button id="btn-train-ai" class="btn btn-primary fw-bold mb-4">▶️ 수집된 데이터로 AI 학습 시작하기</button>
+                        <button id="btn-train-ai" class="btn btn-secondary fw-bold mb-4" disabled>🔒 선생님이 기계학습을 아직 활성화하지 않았습니다</button>
                         <p id="train-status" class="text-success fw-bold d-none">학습 완료! 이제 아래에서 문장을 테스트해보세요.</p>
 
                         <div class="input-group input-group-lg mt-2">
@@ -172,7 +172,12 @@
                             </div>
                         </div>
 
-                        <h5 class="fw-bold mb-3">🗂️ 수집된 데이터 현황</h5>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold mb-0">🗂️ 수집된 데이터 현황</h5>
+                            <button id="btn-toggle-ml" class="btn btn-outline-secondary btn-sm fw-bold" disabled>
+                                🔒 기계학습 비활성화
+                            </button>
+                        </div>
                         <div id="admin-words-container" class="border rounded p-3 bg-light overflow-auto mb-4"
                             style="height: 200px;">
                             <span class="text-muted">방을 선택하면 데이터가 표시됩니다.</span>
@@ -236,6 +241,9 @@
         let currentUnsubscribe = null; // 실시간 리스너 해제용
         let wordsData = []; // AI 학습을 위한 로컬 배열
         let adminWordsData = []; // 대시보드용 데이터
+        let mlEnabled = false; // 기계학습 활성화 상태
+        let mlUnsubscribe = null; // 학생용 mlEnabled 리스너 해제용
+        let adminMlUnsubscribe = null; // 대시보드용 mlEnabled 리스너 해제용
         let net = new brain.NeuralNetwork(); // Brain.js 일반 신경망 (확률 반환 지원)
         let adminNet = new brain.NeuralNetwork(); // 대시보드용 신경망
 
@@ -372,6 +380,31 @@
 
                 // 실시간 데이터 동기화 시작
                 startStudentRealtimeSync();
+
+                // mlEnabled 실시간 감시 → 학습 버튼 제어
+                if (mlUnsubscribe) mlUnsubscribe();
+                mlUnsubscribe = onSnapshot(doc(db, "rooms", code), (docSnap) => {
+                    if (docSnap.exists()) {
+                        mlEnabled = docSnap.data().mlEnabled === true;
+                        const btnTrain = document.getElementById('btn-train-ai');
+                        if (mlEnabled) {
+                            btnTrain.disabled = false;
+                            btnTrain.classList.remove('btn-secondary');
+                            btnTrain.classList.add('btn-primary');
+                            btnTrain.innerHTML = '▶️ 수집된 데이터로 AI 학습 시작하기';
+                        } else {
+                            btnTrain.disabled = true;
+                            btnTrain.classList.remove('btn-primary');
+                            btnTrain.classList.add('btn-secondary');
+                            btnTrain.innerHTML = '🔒 선생님이 기계학습을 아직 활성화하지 않았습니다';
+                            // 학습 완료 상태도 초기화
+                            document.getElementById('train-status').classList.add('d-none');
+                            document.getElementById('ai-test-input').disabled = true;
+                            document.getElementById('btn-test-ai').disabled = true;
+                            document.getElementById('ai-result-area').classList.add('d-none');
+                        }
+                    }
+                });
             } else {
                 await customAlert("알림", "존재하지 않는 방 코드입니다.");
             }
@@ -621,6 +654,34 @@
         });
 
         // 2. 드롭다운 선택 시 해당 방 실시간 모니터링
+        // 기계학습 토글 버튼 이벤트
+        document.getElementById('btn-toggle-ml').addEventListener('click', async () => {
+            const select = document.getElementById('admin-room-select');
+            const roomCode = select.value;
+            if (!roomCode) return;
+
+            const newState = !mlEnabled;
+            try {
+                await setDoc(doc(db, "rooms", roomCode), { mlEnabled: newState }, { merge: true });
+            } catch (error) {
+                console.error(error);
+                await customAlert("오류", "기계학습 상태 변경에 실패했습니다.");
+            }
+        });
+
+        // 대시보드 토글 버튼 UI 업데이트 함수
+        function updateMlToggleUI(enabled) {
+            mlEnabled = enabled;
+            const btn = document.getElementById('btn-toggle-ml');
+            if (enabled) {
+                btn.className = 'btn btn-success btn-sm fw-bold';
+                btn.innerHTML = '✅ 기계학습 활성화됨';
+            } else {
+                btn.className = 'btn btn-outline-secondary btn-sm fw-bold';
+                btn.innerHTML = '🔒 기계학습 비활성화';
+            }
+        }
+
         document.getElementById('admin-room-select').addEventListener('change', (e) => {
             const code = e.target.value;
             if (!code) return;
@@ -629,6 +690,17 @@
 
             // 이전 방의 실시간 연결을 끊음 (비용 및 혼선 방지)
             if (currentUnsubscribe) currentUnsubscribe();
+            if (adminMlUnsubscribe) adminMlUnsubscribe();
+
+            // 토글 버튼 활성화
+            document.getElementById('btn-toggle-ml').disabled = false;
+
+            // mlEnabled 실시간 리스너
+            adminMlUnsubscribe = onSnapshot(doc(db, "rooms", code), (docSnap) => {
+                if (docSnap.exists()) {
+                    updateMlToggleUI(docSnap.data().mlEnabled === true);
+                }
+            });
 
             // 새 방에 실시간 리스너 연결
             const qWords = query(collection(db, "rooms", code, "words"), orderBy("createdAt", "desc"));
