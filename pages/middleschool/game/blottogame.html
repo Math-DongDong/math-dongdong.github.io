@@ -84,6 +84,21 @@
         .history-table td { text-align: center; vertical-align: middle; }
         .history-table .rank-1 { background: linear-gradient(135deg, #fff8dc, #ffe066); font-weight: 900; color: #b45309; }
         .history-table .rank-last { background: #fff0f0; color: #888; }
+
+        /* 1등 강조 (game over) */
+        @keyframes winner-glow {
+            0%, 100% { box-shadow: 0 0 12px 3px rgba(255, 193, 7, 0.5); border-color: #ffc107; }
+            50%       { box-shadow: 0 0 28px 8px rgba(255, 193, 7, 0.9); border-color: #ff9800; }
+        }
+        .player-card.winner {
+            background: linear-gradient(135deg, #fffde7, #fff8dc) !important;
+            border: 3px solid #ffc107 !important;
+            transform: scale(1.04);
+            animation: winner-glow 1.8s ease-in-out infinite;
+            z-index: 5;
+        }
+        .player-card.winner .winner-crown { font-size: 2rem; display: block; animation: pop 0.5s ease; }
+        .player-card.winner .winner-score { font-size: 2rem; font-weight: 900; color: #b45309; }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -643,9 +658,17 @@
                     roundStatusHtml = `<div class="text-muted mt-2" style="font-size:1.1rem;" id="deploy-display-${nickname}">... 대기 중 ...</div>`;
                 }
 
+                const isGameOver = (roomState.status === 'finished');
+                const winnerExtra = (isGameOver && isTop) ? `
+                    <div class="text-center mt-2">
+                        <span class="winner-crown">🍑</span>
+                        <div class="winner-score">${p.score}점</div>
+                        <div class="text-warning fw-bold" style="font-size:0.9rem;">🥇 최종 우승!</div>
+                    </div>` : '';
+
                 html += `
                 <div class="col-md-4 col-sm-6">
-                    <div class="card bg-white p-3 player-card h-100" id="admin-card-${nickname}">
+                    <div class="card p-3 player-card h-100${isGameOver && isTop ? ' winner' : ''}" id="admin-card-${nickname}">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h5 class="fw-bold mb-0 text-dark">${nickname} ${badgeHtml}</h5>
                         </div>
@@ -657,6 +680,7 @@
                             <div class="small fw-bold text-secondary mb-1">[ ${currentRound} 라운드 출전 ]</div>
                             ${roundStatusHtml}
                         </div>
+                        ${winnerExtra}
                     </div>
                 </div>`;
             });
@@ -738,12 +762,19 @@
             const currentRound = roomState.currentRound;
             const maxRounds = roomSettings.maxRounds;
 
-            // ▶ 첩 번째 클릭: 현재 라운드 데이터 수집 시작
+            // ▶ 첫 번째 클릭: 현재 라운드 데이터 수집 및 및 랜덤 셔플
             if (revealIndex === -1) {
                 currentRoundDeployments = Object.values(playersData)
                     .filter(p => p.nickname && p.rounds[currentRound] !== undefined)
                     .sort((a, b) => (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0))
                     .map(p => ({ nickname: p.nickname, deployed: p.rounds[currentRound] }));
+
+                // Fisher-Yates 셈플 - 매번 다른 순서로 공개
+                for (let i = currentRoundDeployments.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [currentRoundDeployments[i], currentRoundDeployments[j]] = [currentRoundDeployments[j], currentRoundDeployments[i]];
+                }
+
                 isAnimating = true; // re-render 차단
                 revealIndex = 0;
             } else {
