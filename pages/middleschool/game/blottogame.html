@@ -369,7 +369,9 @@
 
         let isEditingDeploy = false;
         let lastSeenRound = 0;
-        let isAnimating = false; // 카드 공개 연출 중 렌더링 방지용
+        let isAnimating = false; // DB 업데이트/5초 대기 중 렌더링 방지용
+        let revealIndex = -1;           // 현재까지 공개된 카드 인덱스 (-1: 언제 0이전)
+        let currentRoundDeployments = []; // 현재 라운드 공개용 데이터
 
         // UI 영역
         const sectionLanding = document.getElementById('landing-section');
@@ -728,111 +730,93 @@
         function electricityHtml(html) { return html; }
 
 
-        // 다음 라운드 처리 및 순차 공개 애니메이션 연출
+        // 한 명씩 결과 공개 및 라운드 종료 처리
         document.getElementById('btn-next-round').addEventListener('click', async () => {
-            if (isAnimating) return;
-            isAnimating = true;
+            const btnNext = document.getElementById('btn-next-round');
+            if (btnNext.disabled) return; // 이중 클릭 방지
 
             const currentRound = roomState.currentRound;
             const maxRounds = roomSettings.maxRounds;
 
-            // 실제 제출자 데이터만 수집
-            let roundDeployments = []; 
-            for (let nickname in playersData) {
-                const player = playersData[nickname];
-                if (player.nickname) {
-                    const deployed = player.rounds[currentRound] || 0;
-                    roundDeployments.push({ nickname, deployed });
-                }
+            // ▶ 첩 번째 클릭: 현재 라운드 데이터 수집 시작
+            if (revealIndex === -1) {
+                currentRoundDeployments = Object.values(playersData)
+                    .filter(p => p.nickname && p.rounds[currentRound] !== undefined)
+                    .sort((a, b) => (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0))
+                    .map(p => ({ nickname: p.nickname, deployed: p.rounds[currentRound] }));
+                isAnimating = true; // re-render 차단
+                revealIndex = 0;
+            } else {
+                revealIndex++;
             }
 
-            const btnNext = document.getElementById('btn-next-round');
+            // 현재 인덱스 학생 카드 공개
             btnNext.disabled = true;
-            btnNext.textContent = "결과 공개 중...";
-            btnNext.className = "btn btn-info fw-bold text-white";
+            const pData = currentRoundDeployments[revealIndex];
+            const card = document.getElementById(`admin-card-${pData.nickname}`);
+            const display = document.getElementById(`deploy-display-${pData.nickname}`);
 
-            // --- 1. 순차 공개 애니메이션 ---
-            for (let i = 0; i < roundDeployments.length; i++) {
-                const pData = roundDeployments[i];
-                const card = document.getElementById(`admin-card-${pData.nickname}`);
-                const display = document.getElementById(`deploy-display-${pData.nickname}`);
-                
-                if (card && display) {
-                    card.classList.add('revealing');
-                    display.innerHTML = `<span class="reveal-badge text-danger pop">⚔️ ${pData.deployed} 명 !!</span>`;
-                }
-                
-                // 1.2초 대기
-                await new Promise(resolve => setTimeout(resolve, 1200));
-                if (card) card.classList.remove('revealing');
+            if (card && display) {
+                card.classList.add('revealing');
+                display.innerHTML = `<span class="reveal-badge text-danger pop">⚔️ ${pData.deployed}명</span>`;
+                await new Promise(resolve => setTimeout(resolve, 500));
+                card.classList.remove('revealing');
             }
 
-            // 마지막 카드 공개 후 5초 카운트다운
-            for (let sec = 5; sec >= 1; sec--) {
-                btnNext.textContent = `${sec}초 후 점수 반영...`;
-                btnNext.className = "btn btn-warning fw-bold";
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-            btnNext.textContent = "점수 계산 중...";
-            btnNext.className = "btn btn-info fw-bold text-white";
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const isLast = revealIndex >= currentRoundDeployments.length - 1;
 
-            // --- 2. 점수 계산 ---
-            // 실제 참여 인원 수(teamsCount)를 기반으로 부여 (동점 처리 포함)
-            const teamsCount = roundDeployments.length; 
-            roundDeployments.sort((a, b) => b.deployed - a.deployed);
+            if (!isLast) {
+                // 다음 학생이 더 있음 → 버튼 다시 활성화
+                const remaining = currentRoundDeployments.length - revealIndex - 1;
+                btnNext.textContent = `다음 공개 (${revealIndex + 1}/${currentRoundDeployments.length})`;
+                btnNext.className = "btn btn-primary fw-bold";
+                btnNext.disabled = false;
+            } else {
+                // 마지막 학생 공개 완료 → 5초 조용히 대기 후 점수 반영
+                btnNext.textContent = "점수 반영 중...";
+                btnNext.className = "btn btn-secondary fw-bold";
 
-            let currentRank = 1;
-            let previousDeployed = -1;
-            let skippedRanks = 0;
-            let scoreUpdates = {}; 
+                await new Promise(resolve => setTimeout(resolve, 5000));
 
-            for (let i = 0; i < roundDeployments.length; i++) {
-                const deployed = roundDeployments[i].deployed;
-                if (deployed === previousDeployed) {
-                    skippedRanks++;
-                } else {
-                    currentRank = currentRank + skippedRanks;
-                    skippedRanks = 1;
+                // ── 점수 계산 ──
+                const teamsCount = currentRoundDeployments.length;
+                const sorted = [...currentRoundDeployments].sort((a, b) => b.deployed - a.deployed);
+                let rank = 1, prevDep = -1, skipped = 0;
+                const scoreUpdates = {};
+                for (const item of sorted) {
+                    if (item.deployed === prevDep) { skipped++; }
+                    else { rank = rank + skipped; skipped = 1; }
+                    scoreUpdates[item.nickname] = Math.max(0, teamsCount - rank);
+                    prevDep = item.deployed;
                 }
 
-                const earnedScore = Math.max(0, teamsCount - currentRank);
-                scoreUpdates[roundDeployments[i].nickname] = earnedScore;
-                previousDeployed = deployed;
-            }
-
-            // --- 3. DB 업데이트 일괄 실행 ---
-            try {
-                for (let i = 0; i < roundDeployments.length; i++) {
-                    const nickname = roundDeployments[i].nickname;
-                    const player = playersData[nickname];
-                    const deployed = roundDeployments[i].deployed;
-                    const newRemaining = Math.max(0, player.remaining - deployed);
-                    const newScore = player.score + (scoreUpdates[nickname] || 0);
-
-                    await updateDoc(doc(db, "blotto_rooms", currentRoomCode, "players", nickname), {
-                        remaining: newRemaining,
-                        score: newScore
+                // ── DB 업데이트 ──
+                try {
+                    for (const { nickname } of currentRoundDeployments) {
+                        const player = playersData[nickname];
+                        const deployed = player.rounds[currentRound] || 0;
+                        const newRemaining = Math.max(0, player.remaining - deployed);
+                        const newScore = player.score + (scoreUpdates[nickname] || 0);
+                        await updateDoc(doc(db, "blotto_rooms", currentRoomCode, "players", nickname), {
+                            remaining: newRemaining,
+                            score: newScore
+                        });
+                    }
+                    const nextStatus = currentRound >= maxRounds ? "finished" : "playing";
+                    await updateDoc(doc(db, "blotto_rooms", currentRoomCode), {
+                        "state.currentRound": currentRound + 1,
+                        "state.status": nextStatus
                     });
+                } catch (err) {
+                    console.error(err);
+                    await customAlert("오류", "라운드 처리 중 문제가 발생했습니다.");
+                } finally {
+                    // 상태 리셋 후 정상 렌더링 재개
+                    revealIndex = -1;
+                    currentRoundDeployments = [];
+                    isAnimating = false;
+                    renderAdminBoard();
                 }
-
-                let nextStatus = "playing";
-                if (currentRound >= maxRounds) {
-                    nextStatus = "finished";
-                }
-
-                await updateDoc(doc(db, "blotto_rooms", currentRoomCode), {
-                    "state.currentRound": currentRound + 1,
-                    "state.status": nextStatus
-                });
-
-            } catch (err) {
-                console.error(err);
-                await customAlert("오류", "라운드 처리 중 문제가 발생했습니다.");
-            } finally {
-                // 연출 및 처리 종료. 상태 업데이트 수신 시 정상적으로 다시 렌더링됨
-                isAnimating = false;
-                renderAdminBoard(); 
             }
         });
 
@@ -918,10 +902,12 @@
             const myData = playersData[currentNickname];
             const currentRound = roomState.currentRound;
 
-            let deployCount = parseInt(document.getElementById('student-deploy-input').value);
+            const rawInput = document.getElementById('student-deploy-input').value.trim();
+            // 빈 값이면 0으로 처리, 아니면 정수 제한
+            let deployCount = rawInput === '' ? 0 : parseInt(rawInput, 10);
 
-            if (isNaN(deployCount) || deployCount < 0 || !Number.isInteger(deployCount)) {
-                return await customAlert("알림", "출전할 병사 수를 0 이상의 정수로 입력하세요. (0명 출전 가능)");
+            if (isNaN(deployCount) || deployCount < 0) {
+                return await customAlert("알림", "출전할 병사 수를 올바르게 입력하세요.");
             }
             if (deployCount > myData.remaining) {
                 return await customAlert("알림", "남은 병사 수보다 많이 출전시킬 수 없습니다.");
