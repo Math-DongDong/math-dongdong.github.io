@@ -66,6 +66,17 @@
             color: #92400e;
             font-weight: 900;
         }
+
+        /* 학생 카드 디자인 */
+        .player-card { transition: all 0.3s ease; border-radius: 12px; border: 2px solid #e9ecef; }
+        .player-card.revealing { transform: scale(1.05); box-shadow: 0 10px 25px rgba(13, 110, 253, 0.25); border-color: #0d6efd !important; z-index: 10; }
+        .reveal-badge { transition: all 0.5s; font-size: 1.5rem; font-weight: 900; }
+        @keyframes pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -179,14 +190,9 @@
                             <button id="btn-next-round" class="btn btn-warning fw-bold" disabled>결과 확인</button>
                         </div>
 
-                        <table class="table table-bordered blotto-table" id="admin-table">
-                            <thead class="table-light" id="admin-thead">
-                                <!-- 동적 생성: 모둠/닉네임 -->
-                            </thead>
-                            <tbody id="admin-tbody">
-                                <!-- 동적 생성: 현재병사, 점수, 라운드별 출전 -->
-                            </tbody>
-                        </table>
+                        <div id="admin-cards-container" class="row g-3 justify-content-center">
+                            <!-- 동적 생성: 학생 카드들 -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -345,6 +351,7 @@
 
         let isEditingDeploy = false;
         let lastSeenRound = 0;
+        let isAnimating = false; // 카드 공개 연출 중 렌더링 방지용
 
         // UI 영역
         const sectionLanding = document.getElementById('landing-section');
@@ -574,96 +581,71 @@
 
         function renderAdminBoard() {
             if (!roomSettings || !roomState) return;
+            if (isAnimating) return; // 연출 중일 때는 화면 갱신 방지
 
-            const thead = document.getElementById('admin-thead');
-            const tbody = document.getElementById('admin-tbody');
+            const container = document.getElementById('admin-cards-container');
             const currentRound = roomState.currentRound;
             const maxRounds = roomSettings.maxRounds;
 
             document.getElementById('admin-current-round-text').textContent = currentRound;
 
-            // 플레이어 목록 배열 (가입순 정렬)
-            const playersList = Object.values(playersData).sort((a, b) => {
-                return (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0);
-            });
-            const playerNames = playersList.map(p => p.nickname);
+            // 플레이어 목록 배열 (가입순 정렬) - 실제 닉네임이 있는 플레이어만 필터링
+            const playersList = Object.values(playersData)
+                .filter(p => !!p.nickname)
+                .sort((a, b) => (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0));
 
-            // 헤더 생성 (모둠/닉네임)
-            let theadHtml = `<tr><th>모둠</th>`;
-            for (let i = 0; i < roomSettings.teamsCount; i++) {
-                if (playerNames[i]) {
-                    theadHtml += `<th>${playerNames[i]}</th>`;
-                } else {
-                    theadHtml += `<th class="text-muted">(대기중)</th>`;
-                }
-            }
-            theadHtml += `</tr>`;
-            thead.innerHTML = electricityHtml(theadHtml);
-
-            // 본문 생성
-            let tbodyHtml = ``;
-
-            // 현재 병사 행
-            tbodyHtml += `<tr><th>현재 병사</th>`;
-            for (let i = 0; i < roomSettings.teamsCount; i++) {
-                if (playerNames[i]) {
-                    tbodyHtml += `<td class="fs-5 fw-bold text-success">${playersList[i].remaining}</td>`;
-                } else {
-                    tbodyHtml += `<td>-</td>`;
-                }
-            }
-            tbodyHtml += `</tr>`;
-
-            // 점수 행
             // 1등 점수 구하기
-            const scores = playersList.filter((_, i) => !!playerNames[i]).map(p => p.score || 0);
+            const scores = playersList.map(p => p.score || 0);
             const maxScore = scores.length > 0 ? Math.max(...scores) : -Infinity;
 
-            tbodyHtml += `<tr><th>점수</th>`;
-            for (let i = 0; i < roomSettings.teamsCount; i++) {
-                if (playerNames[i]) {
-                    const isTop = maxScore > 0 && playersList[i].score === maxScore;
-                    if (isTop) {
-                        tbodyHtml += `<td class="score-top-col"><span class="score-badge">🥇 ${playersList[i].score}</span></td>`;
-                    } else {
-                        tbodyHtml += `<td class="fs-5 fw-bold text-primary">${playersList[i].score}</td>`;
-                    }
-                } else {
-                    tbodyHtml += `<td>-</td>`;
-                }
-            }
-            tbodyHtml += `</tr>`;
-
-            // 각 라운드 행
+            let html = ``;
             let allSubmittedCurrentRound = true;
             let joinedPlayersCount = playersList.length;
 
-            for (let r = 1; r <= maxRounds; r++) {
-                tbodyHtml += `<tr class="round-row"><th>${r}라운드</th>`;
-
-                for (let i = 0; i < roomSettings.teamsCount; i++) {
-                    if (playerNames[i]) {
-                        const playerRoundData = playersList[i].rounds[r];
-                        if (playerRoundData !== undefined) {
-                            // 현재 진행중인 라운드라면 숫자를 바로 안보여주고 체크 표시 (모두 내면 그때 공개? 아니면 그냥 엑셀처럼 공개?
-                            // 블로토 게임 특성상 모두 내기 전까지는 숨겨야 함
-                            if (r === currentRound && roomState.status === "playing") {
-                                tbodyHtml += `<td><span class="submitted-check">✔ 완료</span></td>`;
-                            } else {
-                                tbodyHtml += `<td>${playerRoundData}</td>`;
-                            }
-                        } else {
-                            tbodyHtml += `<td></td>`;
-                            if (r === currentRound) allSubmittedCurrentRound = false;
-                        }
+            playersList.forEach(p => {
+                const nickname = p.nickname;
+                const isTop = (maxScore > 0 && p.score === maxScore);
+                const badgeHtml = isTop ? `<span class="badge bg-warning text-dark fs-6 ms-2">🥇 1위</span>` : '';
+                
+                const currentSubmitted = p.rounds[currentRound];
+                let roundStatusHtml = ``;
+                
+                if (currentSubmitted !== undefined) {
+                    if (currentRound <= maxRounds && roomState.status === "playing") {
+                        // 모두 제출 전까지는 숫자를 숨김
+                        roundStatusHtml = `<div class="text-success fw-bold mt-2" style="font-size:1.2rem;" id="deploy-display-${nickname}">✔ 제출 완료</div>`;
                     } else {
-                        tbodyHtml += `<td></td>`;
+                        // 결과가 이미 공개된(완료된) 게임 상태
+                        roundStatusHtml = `<div class="text-primary fw-bold mt-2" style="font-size:1.5rem;">⚔️ ${currentSubmitted} 명</div>`;
                     }
+                } else {
+                    if (currentRound <= maxRounds) allSubmittedCurrentRound = false;
+                    roundStatusHtml = `<div class="text-muted mt-2" style="font-size:1.1rem;" id="deploy-display-${nickname}">... 대기 중 ...</div>`;
                 }
-                tbodyHtml += `</tr>`;
+
+                html += `
+                <div class="col-md-4 col-sm-6">
+                    <div class="card bg-white p-3 player-card h-100" id="admin-card-${nickname}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="fw-bold mb-0 text-dark">${nickname} ${badgeHtml}</h5>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted small mb-3">
+                            <span>점수: <b class="text-primary fs-6">${p.score}</b> 점</span>
+                            <span>남은 병사: <b class="text-success fs-6">${p.remaining}</b> 명</span>
+                        </div>
+                        <div class="text-center bg-light rounded py-3">
+                            <div class="small fw-bold text-secondary mb-1">[ ${currentRound} 라운드 출전 ]</div>
+                            ${roundStatusHtml}
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            if (playersList.length === 0) {
+                html = `<div class="col-12 text-center text-muted py-5 fs-5">아직 입장한 모둠이 없습니다.</div>`;
             }
 
-            tbody.innerHTML = electricityHtml(tbodyHtml);
+            container.innerHTML = electricityHtml(html);
 
             // 다음 라운드 버튼 활성화 로직
             const btnNext = document.getElementById('btn-next-round');
@@ -672,9 +654,8 @@
                 btnNext.textContent = "게임 종료";
                 btnNext.className = "btn btn-secondary fw-bold";
             } else if (joinedPlayersCount > 1 && allSubmittedCurrentRound) {
-                // 혼자서는 못넘어가게 (테스트시 불편하면 joinedPlayersCount > 0 로 변경)
                 btnNext.disabled = false;
-                btnNext.textContent = "라운드 결과 처리 (다음으로)";
+                btnNext.textContent = "라운드 결과 확인";
                 btnNext.className = "btn btn-success fw-bold";
             } else {
                 btnNext.disabled = true;
@@ -683,59 +664,82 @@
             }
         }
 
-        // HTML 이스케이프가 아닌 단순 HTML 래퍼 (문법 오류 방지용 래퍼 함수)
+        // HTML 이스케이프가 아닌 단순 HTML 래퍼
         function electricityHtml(html) { return html; }
 
 
-        // 다음 라운드 처리 (점수 계산 및 차감)
+        // 다음 라운드 처리 및 순차 공개 애니메이션 연출
         document.getElementById('btn-next-round').addEventListener('click', async () => {
+            if (isAnimating) return;
+            isAnimating = true;
+
             const currentRound = roomState.currentRound;
             const maxRounds = roomSettings.maxRounds;
-            const teamsCount = roomSettings.teamsCount;
 
-            // 현재 라운드 데이터 모으기
-            let roundDeployments = []; // { nickname, deployed }
-
+            // 실제 제출자 데이터만 수집
+            let roundDeployments = []; 
             for (let nickname in playersData) {
                 const player = playersData[nickname];
-                const deployed = player.rounds[currentRound] || 0;
-                roundDeployments.push({ nickname, deployed });
+                if (player.nickname) {
+                    const deployed = player.rounds[currentRound] || 0;
+                    roundDeployments.push({ nickname, deployed });
+                }
             }
 
-            // 출전 병사 수 내림차순 정렬
+            const btnNext = document.getElementById('btn-next-round');
+            btnNext.disabled = true;
+            btnNext.textContent = "결과 공개 중...";
+            btnNext.className = "btn btn-info fw-bold text-white";
+
+            // --- 1. 순차 공개 애니메이션 ---
+            for (let i = 0; i < roundDeployments.length; i++) {
+                const pData = roundDeployments[i];
+                const card = document.getElementById(`admin-card-${pData.nickname}`);
+                const display = document.getElementById(`deploy-display-${pData.nickname}`);
+                
+                if (card && display) {
+                    card.classList.add('revealing');
+                    display.innerHTML = `<span class="reveal-badge text-danger pop">⚔️ ${pData.deployed} 명 !!</span>`;
+                }
+                
+                // 1.2초 대기
+                await new Promise(resolve => setTimeout(resolve, 1200));
+                if (card) card.classList.remove('revealing');
+            }
+
+            btnNext.textContent = "점수 계산 중...";
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // --- 2. 점수 계산 ---
+            // 실제 참여 인원 수(teamsCount)를 기반으로 부여 (동점 처리 포함)
+            const teamsCount = roundDeployments.length; 
             roundDeployments.sort((a, b) => b.deployed - a.deployed);
 
-            // 순위에 따른 점수 부여 (1등: 참여모둠개수-1 점)
-            // 동점자 처리: 병사 수가 같으면 동일하게 높은 순위 적용
             let currentRank = 1;
             let previousDeployed = -1;
             let skippedRanks = 0;
-
-            let scoreUpdates = {}; // nickname -> addedScore
+            let scoreUpdates = {}; 
 
             for (let i = 0; i < roundDeployments.length; i++) {
                 const deployed = roundDeployments[i].deployed;
                 if (deployed === previousDeployed) {
-                    // 동점
                     skippedRanks++;
                 } else {
                     currentRank = currentRank + skippedRanks;
                     skippedRanks = 1;
                 }
 
-                // 점수 = 참여모둠 수 - 순위 (만약 팀 수가 부족하게 들어왔어도, 설정된 전체 모둠 수 기준으로 할지 현재 참여 인원 기준으로 할지)
-                // 엑셀 원본은 '설정된 참여모둠 수' 기준이므로 teamsCount 사용
                 const earnedScore = Math.max(0, teamsCount - currentRank);
                 scoreUpdates[roundDeployments[i].nickname] = earnedScore;
                 previousDeployed = deployed;
             }
 
-            // DB 업데이트 일괄 실행
+            // --- 3. DB 업데이트 일괄 실행 ---
             try {
-                // 플레이어별 점수 및 남은 병사 수 갱신
-                for (let nickname in playersData) {
+                for (let i = 0; i < roundDeployments.length; i++) {
+                    const nickname = roundDeployments[i].nickname;
                     const player = playersData[nickname];
-                    const deployed = player.rounds[currentRound] || 0;
+                    const deployed = roundDeployments[i].deployed;
                     const newRemaining = Math.max(0, player.remaining - deployed);
                     const newScore = player.score + (scoreUpdates[nickname] || 0);
 
@@ -745,7 +749,6 @@
                     });
                 }
 
-                // 방 라운드 갱신
                 let nextStatus = "playing";
                 if (currentRound >= maxRounds) {
                     nextStatus = "finished";
@@ -759,6 +762,10 @@
             } catch (err) {
                 console.error(err);
                 await customAlert("오류", "라운드 처리 중 문제가 발생했습니다.");
+            } finally {
+                // 연출 및 처리 종료. 상태 업데이트 수신 시 정상적으로 다시 렌더링됨
+                isAnimating = false;
+                renderAdminBoard(); 
             }
         });
 
