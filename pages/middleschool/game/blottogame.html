@@ -77,6 +77,13 @@
             100% { transform: scale(1); opacity: 1; }
         }
         .pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        /* 라운드 기록 테이블 */
+        .history-table { font-size: 0.88rem; }
+        .history-table th { background-color: #f8f9fa; font-weight: 700; text-align: center; vertical-align: middle; }
+        .history-table td { text-align: center; vertical-align: middle; }
+        .history-table .rank-1 { background: linear-gradient(135deg, #fff8dc, #ffe066); font-weight: 900; color: #b45309; }
+        .history-table .rank-last { background: #fff0f0; color: #888; }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -192,6 +199,17 @@
 
                         <div id="admin-cards-container" class="row g-3 justify-content-center">
                             <!-- 동적 생성: 학생 카드들 -->
+                        </div>
+
+                        <!-- 라운드별 기록 테이블 -->
+                        <div id="admin-history-area" class="mt-4" style="display:none;">
+                            <h6 class="fw-bold text-secondary mb-2">📋 라운드별 출전 기록</h6>
+                            <div class="table-responsive">
+                                <table class="table table-bordered history-table" id="admin-history-table">
+                                    <thead id="admin-history-thead"></thead>
+                                    <tbody id="admin-history-tbody"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -647,6 +665,48 @@
 
             container.innerHTML = electricityHtml(html);
 
+            // ── 라운드별 기록 테이블 렌더링 ──
+            const historyArea = document.getElementById('admin-history-area');
+            const historyThead = document.getElementById('admin-history-thead');
+            const historyTbody = document.getElementById('admin-history-tbody');
+
+            // 공개된 라운드(현재 라운드보다 이전)만 표시
+            const revealedRounds = [];
+            for (let r = 1; r < currentRound && r <= maxRounds; r++) revealedRounds.push(r);
+
+            if (revealedRounds.length > 0 && playersList.length > 0) {
+                historyArea.style.display = 'block';
+
+                // 헤더: 라운드 | 닉네임1 | 닉네임2 ...
+                let theadHtml = '<tr><th>라운드</th>';
+                playersList.forEach(p => { theadHtml += `<th>${p.nickname}</th>`; });
+                theadHtml += '</tr>';
+                historyThead.innerHTML = theadHtml;
+
+                let tbodyHtml = '';
+                revealedRounds.forEach(r => {
+                    // 해당 라운드 출전 수 배열
+                    const deploys = playersList.map(p => (p.rounds && p.rounds[r] !== undefined) ? p.rounds[r] : '-');
+                    const numericDeploys = deploys.filter(v => v !== '-').map(Number);
+                    const maxDeploy = numericDeploys.length > 0 ? Math.max(...numericDeploys) : null;
+                    const minDeploy = numericDeploys.length > 0 ? Math.min(...numericDeploys) : null;
+
+                    tbodyHtml += `<tr><th>${r}라운드</th>`;
+                    deploys.forEach(v => {
+                        let cls = '';
+                        if (v !== '-') {
+                            if (Number(v) === maxDeploy && maxDeploy !== minDeploy) cls = 'rank-1';
+                            else if (Number(v) === minDeploy && maxDeploy !== minDeploy) cls = 'rank-last';
+                        }
+                        tbodyHtml += `<td class="${cls}">${v !== '-' ? v + '명' : '-'}</td>`;
+                    });
+                    tbodyHtml += '</tr>';
+                });
+                historyTbody.innerHTML = tbodyHtml;
+            } else {
+                historyArea.style.display = 'none';
+            }
+
             // 다음 라운드 버튼 활성화 로직
             const btnNext = document.getElementById('btn-next-round');
             if (roomState.status === "finished" || currentRound > maxRounds) {
@@ -655,7 +715,7 @@
                 btnNext.className = "btn btn-secondary fw-bold";
             } else if (joinedPlayersCount > 1 && allSubmittedCurrentRound) {
                 btnNext.disabled = false;
-                btnNext.textContent = "라운드 결과 확인";
+                btnNext.textContent = "한명씩 결과 확인";
                 btnNext.className = "btn btn-success fw-bold";
             } else {
                 btnNext.disabled = true;
@@ -707,8 +767,15 @@
                 if (card) card.classList.remove('revealing');
             }
 
+            // 마지막 카드 공개 후 5초 카운트다운
+            for (let sec = 5; sec >= 1; sec--) {
+                btnNext.textContent = `${sec}초 후 점수 반영...`;
+                btnNext.className = "btn btn-warning fw-bold";
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
             btnNext.textContent = "점수 계산 중...";
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            btnNext.className = "btn btn-info fw-bold text-white";
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             // --- 2. 점수 계산 ---
             // 실제 참여 인원 수(teamsCount)를 기반으로 부여 (동점 처리 포함)
@@ -853,8 +920,8 @@
 
             let deployCount = parseInt(document.getElementById('student-deploy-input').value);
 
-            if (isNaN(deployCount) || deployCount < 0) {
-                return await customAlert("알림", "출전할 병사 수를 올바르게 입력하세요.");
+            if (isNaN(deployCount) || deployCount < 0 || !Number.isInteger(deployCount)) {
+                return await customAlert("알림", "출전할 병사 수를 0 이상의 정수로 입력하세요. (0명 출전 가능)");
             }
             if (deployCount > myData.remaining) {
                 return await customAlert("알림", "남은 병사 수보다 많이 출전시킬 수 없습니다.");
