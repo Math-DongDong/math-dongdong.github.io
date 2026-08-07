@@ -214,6 +214,7 @@
         let points = []; 
         let isShapeClosed = false; 
         let closingType = 'line'; // 마지막 닫힘 연결 유형
+        let closingP3 = null; 
 
         // 실시간 호(Arc) 대기 및 하이라이트 감지 상태 변수
         let isPendingArc = false;
@@ -333,6 +334,41 @@
             return pts;
         }
 
+        // 세 점을 지나는 동적 원호 산출 함수
+        function getDynamicArcPoints(p1, p2, p3, numSegments = 32) {
+            const A = p1, B = p2, C = p3;
+            const D = 2 * (A.x * (B.y - C.y) + B.x * (C.y - A.y) + C.x * (A.y - B.y));
+            if (Math.abs(D) < 0.001) return [p2]; 
+
+            const Ux = ((A.x*A.x + A.y*A.y) * (B.y - C.y) + (B.x*B.x + B.y*B.y) * (C.y - A.y) + (C.x*C.x + C.y*C.y) * (A.y - B.y)) / D;
+            const Uy = ((A.x*A.x + A.y*A.y) * (C.x - B.x) + (B.x*B.x + B.y*B.y) * (A.x - C.x) + (C.x*C.x + C.y*C.y) * (B.x - A.x)) / D;
+            const center = { x: Ux, y: Uy };
+            
+            const r = Math.sqrt(Math.pow(A.x - Ux, 2) + Math.pow(A.y - Uy, 2));
+
+            const angle1 = Math.atan2(A.y - Uy, A.x - Ux);
+            const angle2 = Math.atan2(B.y - Uy, B.x - Ux);
+            const angle3 = Math.atan2(C.y - Uy, C.x - Ux);
+
+            let diff = angle2 - angle1;
+            while (diff < 0) diff += Math.PI * 2; 
+            
+            let a3 = angle3 - angle1;
+            while (a3 < 0) a3 += Math.PI * 2;
+            
+            if (a3 > diff) {
+                diff = diff - Math.PI * 2; 
+            }
+            
+            const pts = [];
+            for (let j = 1; j <= numSegments; j++) {
+                const t = j / numSegments;
+                const angle = angle1 + diff * t;
+                pts.push({ x: center.x + r * Math.cos(angle), y: center.y + r * Math.sin(angle) });
+            }
+            return pts;
+        }
+
         // 현재 마우스 각도에 따라 짧은 원(minor)인지 긴 원(major)인지 정밀 식별
         function getSelectedArcType(p1, p2, mousePos) {
             const dx = p2.x - p1.x;
@@ -385,6 +421,9 @@
                     if (p2.type === 'minor-arc' || p2.type === 'major-arc') {
                         const pts = getArcPoints(p1, p2, p2.type);
                         pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    } else if (p2.type === 'dynamic-arc') {
+                        const pts = getDynamicArcPoints(p1, p2, p2.p3);
+                        pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
                     } else {
                         ctx.lineTo(p2.x, p2.y);
                     }
@@ -396,6 +435,10 @@
                     const p2 = points[0];
                     if (closingType === 'minor-arc' || closingType === 'major-arc') {
                         const pts = getArcPoints(p1, p2, closingType);
+                        pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                        ctx.closePath();
+                    } else if (closingType === 'dynamic-arc') {
+                        const pts = getDynamicArcPoints(p1, p2, closingP3);
                         pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
                         ctx.closePath();
                     } else {
@@ -442,48 +485,25 @@
                 if (isPendingArc) {
                     const p1 = pendingP1;
                     const p2 = pendingP2;
+                    const p3 = currentMousePos;
 
-                    const minorPts = getArcPoints(p1, p2, 'minor-arc');
-                    const majorPts = getArcPoints(p1, p2, 'major-arc');
-                    const selectedType = getSelectedArcType(p1, p2, currentMousePos);
+                    const pts = getDynamicArcPoints(p1, p2, p3);
 
-                    // 1. 짧은 원 가이드
                     ctx.save();
                     ctx.beginPath();
                     ctx.moveTo(p1.x, p1.y);
-                    minorPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
-                    if (selectedType === 'minor-arc') {
-                        ctx.strokeStyle = '#007bff';
-                        ctx.lineWidth = 3;
-                    } else {
-                        ctx.strokeStyle = '#94a3b8';
-                        ctx.lineWidth = 1.5;
-                        ctx.setLineDash([5, 5]);
-                    }
+                    pts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    ctx.strokeStyle = '#007bff';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([5, 5]);
                     ctx.stroke();
                     ctx.restore();
 
-                    // 2. 긴 원 가이드
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.moveTo(p1.x, p1.y);
-                    majorPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
-                    if (selectedType === 'major-arc') {
-                        ctx.strokeStyle = '#007bff';
-                        ctx.lineWidth = 3;
-                    } else {
-                        ctx.strokeStyle = '#94a3b8';
-                        ctx.lineWidth = 1.5;
-                        ctx.setLineDash([5, 5]);
-                    }
-                    ctx.stroke();
-                    ctx.restore();
-
-                    // 3. 안내 텍스트 가이드
+                    // 안내 텍스트 가이드
                     ctx.save();
                     ctx.fillStyle = '#2563eb';
                     ctx.font = 'bold 13px Pretendard';
-                    ctx.fillText(selectedType === 'minor-arc' ? '짧은 원 (클릭하여 선택)' : '긴 원 (클릭하여 선택)', currentMousePos.x + 15, currentMousePos.y + 15);
+                    ctx.fillText('마우스를 이동하여 곡률을 조절 후 클릭 (확정)', currentMousePos.x + 15, currentMousePos.y + 15);
                     ctx.restore();
                 } else {
                     // 마우스를 클릭하기 전 예비 가이드라인
@@ -566,15 +586,15 @@
                 return;
             }
 
-            // 1. 대기상태(Pending)인 경우: 한 번 더 클릭하여 호 종류 결정
+            // 1. 대기상태(Pending)인 경우: 한 번 더 클릭하여 곡률 확정
             if (isPendingArc) {
-                const selectedType = getSelectedArcType(pendingP1, pendingP2, pos);
                 if (isClosingClick) {
                     isShapeClosed = true;
-                    closingType = selectedType;
+                    closingType = 'dynamic-arc';
+                    closingP3 = { x: pos.x, y: pos.y };
                     revolveButton.disabled = false;
                 } else {
-                    points.push({ x: pendingP2.x, y: pendingP2.y, type: selectedType });
+                    points.push({ x: pendingP2.x, y: pendingP2.y, type: 'dynamic-arc', p3: { x: pos.x, y: pos.y } });
                 }
                 isPendingArc = false;
                 isClosingClick = false;
@@ -629,6 +649,11 @@
                     pts.forEach(pt => {
                         interpolatedPoints.push(new THREE.Vector2(pt.x - centerX, -(pt.y - centerY)));
                     });
+                } else if (p2.type === 'dynamic-arc') {
+                    const pts = getDynamicArcPoints(p1, p2, p2.p3);
+                    pts.forEach(pt => {
+                        interpolatedPoints.push(new THREE.Vector2(pt.x - centerX, -(pt.y - centerY)));
+                    });
                 } else {
                     interpolatedPoints.push(new THREE.Vector2(p2.x - centerX, -(p2.y - centerY)));
                 }
@@ -640,6 +665,11 @@
                 const p2 = points[0];
                 if (closingType === 'minor-arc' || closingType === 'major-arc') {
                     const pts = getArcPoints(p1, p2, closingType);
+                    pts.forEach(pt => {
+                        interpolatedPoints.push(new THREE.Vector2(pt.x - centerX, -(pt.y - centerY)));
+                    });
+                } else if (closingType === 'dynamic-arc') {
+                    const pts = getDynamicArcPoints(p1, p2, closingP3);
                     pts.forEach(pt => {
                         interpolatedPoints.push(new THREE.Vector2(pt.x - centerX, -(pt.y - centerY)));
                     });
@@ -752,7 +782,7 @@
 
         resetButton.addEventListener('click', () => {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            points = []; isShapeClosed = false; closingType = 'line'; threeApp = null; animationFrameId = null;
+            points = []; isShapeClosed = false; closingType = 'line'; closingP3 = null; threeApp = null; animationFrameId = null;
             isGenerating = false; currentAngle = 0;
             isPendingArc = false; isClosingClick = false; pendingP1 = null; pendingP2 = null;
             circleCenter = null;
