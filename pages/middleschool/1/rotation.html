@@ -125,7 +125,7 @@
                         </h5>
                         <p class="text-secondary small mb-2">
                             회전축(빨간 점선) 오른쪽에 좌표를 클릭하여 평면도형을 그립니다. 
-                            <strong>[선분]과 [원의 일부]를 선택하여 자유롭게 조합할 수 있습니다.</strong>
+                            <strong>[선분]과 [원의 일부]를 조합하거나, [원]을 독립적으로 그릴 수 있습니다.</strong>
                         </p>
 
                         <!-- 그리기 도구 선택 (선분 / 원의 일부) -->
@@ -134,12 +134,17 @@
                             <div class="btn-group w-100" role="group" aria-label="그리기 모드">
                                 <input type="radio" class="btn-check" name="drawMode" id="modeLine" autocomplete="off" checked>
                                 <label class="btn btn-outline-primary fw-bold" for="modeLine">
-                                    <i class="bi bi-slash-lg"></i> 선분 (직선)
+                                    <i class="bi bi-slash-lg"></i> 선분
                                 </label>
 
                                 <input type="radio" class="btn-check" name="drawMode" id="modeArc" autocomplete="off">
                                 <label class="btn btn-outline-primary fw-bold" for="modeArc">
-                                    <i class="bi bi-circle-half"></i> 원의 일부 (곡선)
+                                    <i class="bi bi-circle-half"></i> 원의 일부
+                                </label>
+
+                                <input type="radio" class="btn-check" name="drawMode" id="modeCircle" autocomplete="off">
+                                <label class="btn btn-outline-primary fw-bold" for="modeCircle">
+                                    <i class="bi bi-circle"></i> 원
                                 </label>
                             </div>
                         </div>
@@ -204,6 +209,7 @@
 
         const modeLine = document.getElementById('modeLine');
         const modeArc = document.getElementById('modeArc');
+        const modeCircle = document.getElementById('modeCircle');
 
         let points = []; 
         let isShapeClosed = false; 
@@ -215,8 +221,9 @@
         let pendingP1 = null;
         let pendingP2 = null;
         let currentMousePos = { x: 0, y: 0 };
+        let circleCenter = null;
 
-        let currentDrawMode = 'line'; // 현재 그리기 상태 ('line' 또는 'arc')
+        let currentDrawMode = 'line'; // 현재 그리기 상태 ('line', 'arc', 'circle')
         let threeApp = null; 
         let animationFrameId = null; 
         let isGenerating = false; 
@@ -232,8 +239,9 @@
         const globalClippingPlanes = []; 
 
         // 그리기 도구 선택 리스너
-        modeLine.addEventListener('change', () => { currentDrawMode = 'line'; });
-        modeArc.addEventListener('change', () => { currentDrawMode = 'arc'; });
+        modeLine.addEventListener('change', () => { currentDrawMode = 'line'; circleCenter = null; });
+        modeArc.addEventListener('change', () => { currentDrawMode = 'arc'; circleCenter = null; });
+        modeCircle.addEventListener('change', () => { currentDrawMode = 'circle'; circleCenter = null; });
 
         function resizeCanvas() {
             const { width, height } = canvasWrapper.getBoundingClientRect();
@@ -398,8 +406,36 @@
             }
             ctx.stroke();
 
+            // 원 그리기 모드에서의 실시간 가이드 렌더링
+            if (!isShapeClosed && currentDrawMode === 'circle' && circleCenter) {
+                const mousePos = currentMousePos;
+                const centerX = drawingCanvas.width / 2;
+                const offsetX = mousePos.x - centerX;
+                const snappedOffsetX = Math.round(offsetX / GRID_SIZE) * GRID_SIZE;
+                const snappedX = centerX + snappedOffsetX;
+                const snappedY = Math.round(mousePos.y / GRID_SIZE) * GRID_SIZE;
+
+                const dx = snappedX - circleCenter.x;
+                const dy = snappedY - circleCenter.y;
+                const r = Math.sqrt(dx*dx + dy*dy);
+                
+                ctx.save();
+                ctx.strokeStyle = 'rgba(0, 123, 255, 0.4)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.arc(circleCenter.x, circleCenter.y, r, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+                
+                ctx.beginPath();
+                ctx.fillStyle = '#28a745';
+                ctx.arc(circleCenter.x, circleCenter.y, POINT_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
             // 가이드라인 및 선택 점선 실시간 렌더링
-            if (!isShapeClosed && points.length > 0) {
+            if (!isShapeClosed && points.length > 0 && currentDrawMode !== 'circle') {
                 const lastPt = points[points.length - 1];
 
                 if (isPendingArc) {
@@ -498,6 +534,36 @@
             const snappedOffsetX = Math.round(offsetX / GRID_SIZE) * GRID_SIZE;
             const snappedX = centerX + snappedOffsetX;
             const snappedY = Math.round(mouseY / GRID_SIZE) * GRID_SIZE;
+
+            if (currentDrawMode === 'circle') {
+                if (!circleCenter) {
+                    points = [];
+                    isPendingArc = false;
+                    circleCenter = { x: snappedX, y: snappedY };
+                } else {
+                    const dx = snappedX - circleCenter.x;
+                    const dy = snappedY - circleCenter.y;
+                    const r = Math.sqrt(dx*dx + dy*dy);
+                    if (r > 0) {
+                        points = [];
+                        const numSegments = 32;
+                        for (let i = 0; i < numSegments; i++) {
+                            const angle = (i / numSegments) * Math.PI * 2;
+                            points.push({
+                                x: circleCenter.x + r * Math.cos(angle),
+                                y: circleCenter.y + r * Math.sin(angle),
+                                type: (i === 0) ? 'start' : 'line'
+                            });
+                        }
+                        isShapeClosed = true;
+                        closingType = 'line';
+                        circleCenter = null;
+                        revolveButton.disabled = false;
+                    }
+                }
+                draw2DShape();
+                return;
+            }
 
             // 1. 대기상태(Pending)인 경우: 한 번 더 클릭하여 호 종류 결정
             if (isPendingArc) {
@@ -674,6 +740,7 @@
             // 그리기 옵션 잠금
             modeLine.disabled = true;
             modeArc.disabled = true;
+            modeCircle.disabled = true;
 
             drawingCanvas.style.display = 'none';
             threeCanvas.style.display = 'block';
@@ -687,6 +754,7 @@
             points = []; isShapeClosed = false; closingType = 'line'; threeApp = null; animationFrameId = null;
             isGenerating = false; currentAngle = 0;
             isPendingArc = false; isClosingClick = false; pendingP1 = null; pendingP2 = null;
+            circleCenter = null;
             threeCanvas.style.display = 'none';
             drawingCanvas.style.display = 'block';
             clippingControlsUI.style.display = 'none';
@@ -694,6 +762,7 @@
             // 그리기 모드 복구 및 활성화
             modeLine.disabled = false;
             modeArc.disabled = false;
+            modeCircle.disabled = false;
             modeLine.checked = true;
             currentDrawMode = 'line';
 
