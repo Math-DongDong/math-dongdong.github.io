@@ -888,6 +888,33 @@
         async function enterWaitingRoom() {
             navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
             document.getElementById('waiting-nickname-display').textContent = currentNickname;
+            
+            try {
+                const playerSnap = await getDoc(doc(db, "gomoku_rooms", currentRoomCode, "players", currentNickname));
+                if (playerSnap.exists()) {
+                    const data = playerSnap.data();
+                    const w = data.wins || 0;
+                    const l = data.losses || 0;
+                    const rate = (w + l === 0) ? 0 : Math.round((w / (w + l)) * 100);
+                    
+                    const recordHtml = `<div class="d-inline-flex align-items-center bg-white rounded-pill px-3 py-1 border shadow-sm">
+                                        <span class="text-success fw-bold me-2">${w}승</span>
+                                        <span class="text-danger fw-bold me-2">${l}패</span>
+                                        <span class="text-muted small">(승률 ${rate}%)</span>
+                                      </div>`;
+                    
+                    let displayEl = document.getElementById('waiting-record-display');
+                    if (displayEl) {
+                        displayEl.innerHTML = recordHtml;
+                    } else {
+                        const titleEl = document.getElementById('waiting-nickname-display');
+                        titleEl.insertAdjacentHTML('afterend', `<div id="waiting-record-display" class="mb-4 mt-2">${recordHtml}</div>`);
+                    }
+                }
+            } catch (e) {
+                console.error("전적 불러오기 실패:", e);
+            }
+
             showSection(sectionWaiting);
 
             // 대기열에 등록
@@ -1128,7 +1155,7 @@
                 const px = PADDING + (x + HALF_N) * CELL_SIZE;
                 const py = PADDING + (HALF_N - y) * CELL_SIZE; // y축 반전
 
-                const isWin = winStones.some(ws => ws[0] === x && ws[1] === y);
+                const isWin = winStones.some(ws => ws.x === x && ws.y === y);
                 const isLast = matchData?.moves && matchData.moves.length > 0 &&
                     matchData.moves[matchData.moves.length - 1].x === x &&
                     matchData.moves[matchData.moves.length - 1].y === y;
@@ -1457,9 +1484,9 @@
                 }
 
                 if (stones.length >= WIN_COUNT) {
-                    // 연속된 돌 좌표를 정렬해서 반환
+                    // 연속된 돌 좌표를 정렬해서 반환 (객체 배열)
                     stones.sort((a, b) => a.x - b.x || a.y - b.y);
-                    return stones.slice(0, WIN_COUNT).map(s => [s.x, s.y]);
+                    return stones.slice(0, WIN_COUNT);
                 }
             }
             return null;
