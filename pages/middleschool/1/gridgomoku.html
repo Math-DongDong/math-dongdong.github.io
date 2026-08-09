@@ -109,22 +109,7 @@
             box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
         }
 
-        /* 타이머 */
-        .timer-badge {
-            font-size: 0.85rem;
-            font-weight: 700;
-            min-width: 36px;
-            text-align: center;
-        }
-
-        .timer-badge.urgent {
-            animation: timerBlink 0.5s ease-in-out infinite alternate;
-        }
-
-        @keyframes timerBlink {
-            from { opacity: 1; }
-            to   { opacity: 0.4; }
-        }
+        /* 타이머 관련 기존 CSS 제거됨 */
 
         /* 가로 룰렛 스타일 입력 폼 */
         .roulette-input-row {
@@ -407,15 +392,11 @@
             <div class="row justify-content-center g-3">
                 <div class="col-lg-8">
                     <!-- 플레이어 정보 (가로 2등분) -->
-                    <div class="player-bars-row">
+                    <div class="player-bars-row mb-2">
                         <div class="player-info-bar" id="player-bar-black">
                             <div>
                                 <span class="stone-indicator black me-2"></span>
                                 <span class="fw-bold" id="player-name-black">흑돌</span>
-                            </div>
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="badge timer-badge bg-warning text-dark" id="timer-black">15</span>
-                                <span class="badge bg-dark" id="player-turn-black">차례</span>
                             </div>
                         </div>
                         <div class="player-info-bar" id="player-bar-white">
@@ -423,11 +404,12 @@
                                 <span class="stone-indicator white me-2"></span>
                                 <span class="fw-bold" id="player-name-white">백돌</span>
                             </div>
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="badge timer-badge bg-warning text-dark" id="timer-white">15</span>
-                                <span class="badge bg-secondary" id="player-turn-white">대기</span>
-                            </div>
                         </div>
+                    </div>
+
+                    <!-- 턴 타이머 프로그레스 바 -->
+                    <div class="progress mb-3 shadow-sm" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+                        <div id="timer-progress-bar" class="progress-bar bg-primary" role="progressbar" style="width: 100%; transition: width 0.1s linear, background-color 0.3s ease;"></div>
                     </div>
 
                     <!-- 좌표 입력 + 두기 버튼 (같은 줄) -->
@@ -1201,6 +1183,8 @@
         }
 
         let timerInterval = null;
+        let localTurnStartTime = Date.now();
+        let lastMoveCount = -1;
 
         function startGameSync() {
             if (unsubMatch) unsubMatch();
@@ -1209,11 +1193,26 @@
             document.getElementById('game-result-area').classList.add('d-none');
             document.getElementById('game-input-area').classList.remove('d-none');
 
-            timerInterval = setInterval(checkTimer, 1000);
+            lastMoveCount = -1;
+            localTurnStartTime = Date.now();
+            timerInterval = setInterval(checkTimer, 100);
 
             unsubMatch = onSnapshot(doc(db, "gomoku_rooms", currentRoomCode, "matches", currentMatchId), (docSnap) => {
                 if (!docSnap.exists()) return;
                 matchData = docSnap.data();
+
+                const currentMoveCount = matchData.moves ? matchData.moves.length : 0;
+                if (lastMoveCount === -1) {
+                    lastMoveCount = currentMoveCount;
+                    if (matchData.lastMoveTime) {
+                        localTurnStartTime = matchData.lastMoveTime.toMillis ? matchData.lastMoveTime.toMillis() : Date.now();
+                    } else {
+                        localTurnStartTime = Date.now();
+                    }
+                } else if (currentMoveCount !== lastMoveCount) {
+                    localTurnStartTime = Date.now();
+                    lastMoveCount = currentMoveCount;
+                }
 
                 // 보드 상태 재구성
                 boardState = {};
@@ -1240,28 +1239,20 @@
             const isBlackTurn = moveCount % 2 === 0;
             const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
 
-            let remain = 15;
-            if (matchData.lastMoveTime) {
-                const lastTime = matchData.lastMoveTime.toMillis ? matchData.lastMoveTime.toMillis() : Date.now();
-                const elapsed = Math.floor((Date.now() - lastTime) / 1000);
-                remain = Math.max(0, 15 - elapsed);
-            }
+            const elapsed = (Date.now() - localTurnStartTime) / 1000;
+            const remain = Math.max(0, 30 - elapsed);
+            const percent = (remain / 30) * 100;
 
-            const timerBlack = document.getElementById('timer-black');
-            const timerWhite = document.getElementById('timer-white');
-            
-            if (isBlackTurn) {
-                timerBlack.textContent = remain;
-                timerWhite.textContent = '15';
-                if (remain <= 5) timerBlack.classList.add('urgent');
-                else timerBlack.classList.remove('urgent');
-                timerWhite.classList.remove('urgent');
-            } else {
-                timerWhite.textContent = remain;
-                timerBlack.textContent = '15';
-                if (remain <= 5) timerWhite.classList.add('urgent');
-                else timerWhite.classList.remove('urgent');
-                timerBlack.classList.remove('urgent');
+            const progressBar = document.getElementById('timer-progress-bar');
+            if (progressBar) {
+                progressBar.style.width = percent + '%';
+                if (remain <= 10) {
+                    progressBar.classList.remove('bg-primary');
+                    progressBar.classList.add('bg-danger');
+                } else {
+                    progressBar.classList.remove('bg-danger');
+                    progressBar.classList.add('bg-primary');
+                }
             }
 
             // 내 차례인데 시간이 다 되면 턴 강제 넘김
@@ -1307,10 +1298,9 @@
                 if (timerInterval) clearInterval(timerInterval);
                 barBlack.classList.remove('active-turn');
                 barWhite.classList.remove('active-turn');
-                document.getElementById('player-turn-black').textContent = '';
-                document.getElementById('player-turn-white').textContent = '';
-                document.getElementById('timer-black').textContent = '-';
-                document.getElementById('timer-white').textContent = '-';
+                
+                const progressBar = document.getElementById('timer-progress-bar');
+                if (progressBar) progressBar.style.width = '0%';
 
                 // 승리 돌 표시
                 if (matchData.winLine) {
@@ -1380,7 +1370,10 @@
             const moveCount = matchData.moves ? matchData.moves.length : 0;
             const isBlackTurn = moveCount % 2 === 0;
             const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
-            if (!isMyTurn) return;
+            
+            // 턴이 아니거나 시간이 만료된 경우 방지
+            const elapsed = (Date.now() - localTurnStartTime) / 1000;
+            if (!isMyTurn || elapsed >= 30) return;
 
             const rX = document.getElementById('roulette-x');
             const rY = document.getElementById('roulette-y');
