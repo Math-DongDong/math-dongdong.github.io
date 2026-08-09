@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { getDatabase } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js";
 
 const firebaseConfig = {
@@ -22,6 +23,7 @@ const dbSentiment = getFirestore(app, "sentimentanalysis");
 const dbBlotto = getFirestore(app, "blottogame");
 const dbPlusMinus = getFirestore(app, "plusminus");
 const dbMultiplyDivide = getFirestore(app, "multiplydivide");
-const dbGridGomoku = getFirestore(app, "gridgomoku");
+const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
 
-export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide, dbGridGomoku };
+export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide, rtdbGridGomoku };
+
