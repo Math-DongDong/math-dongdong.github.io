@@ -22,5 +22,6 @@ const dbSentiment = getFirestore(app, "sentimentanalysis");
 const dbBlotto = getFirestore(app, "blottogame");
 const dbPlusMinus = getFirestore(app, "plusminus");
 const dbMultiplyDivide = getFirestore(app, "multiplydivide");
+const dbGridGomoku = getFirestore(app, "gridgomoku");
 
-export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide };
+export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide, dbGridGomoku };

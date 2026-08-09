@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>좌표평면 오목</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 공통 CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <link rel="stylesheet" href="../../../css/common-app.css">
+
+    <style>
+        /* ─── 오목판 스타일 ─── */
+        .gomoku-board-wrapper {
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            max-width: 100%;
+        }
+
+        .gomoku-board {
+            position: relative;
+            background: #f5e6c8;
+            border: 2px solid #8B6914;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        /* 돌 스타일 */
+        .stone {
+            position: absolute;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            transition: transform 0.15s ease;
+        }
+
+        .stone.black {
+            background: radial-gradient(circle at 35% 35%, #555, #111);
+        }
+
+        .stone.white {
+            background: radial-gradient(circle at 35% 35%, #fff, #ccc);
+            border: 1px solid #aaa;
+        }
+
+        .stone.last-move {
+            box-shadow: 0 0 0 3px #ff4444, 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .stone.win-stone {
+            animation: winPulse 0.8s ease-in-out infinite alternate;
+        }
+
+        @keyframes winPulse {
+            from {
+                box-shadow: 0 0 0 3px #ffd700, 0 0 8px #ffd700;
+            }
+
+            to {
+                box-shadow: 0 0 0 5px #ffd700, 0 0 16px #ffd700;
+            }
+        }
+
+        @keyframes stoneDrop {
+            0% {
+                transform: translate(-50%, -50%) scale(0);
+                opacity: 0;
+            }
+
+            60% {
+                transform: translate(-50%, -50%) scale(1.15);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .stone.drop {
+            animation: stoneDrop 0.3s ease-out forwards;
+        }
+
+        /* 좌표 입력 폼 */
+        .coord-input-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .coord-input-group input {
+            width: 80px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        /* 플레이어 정보 표시 */
+        .player-info-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: #fff;
+            border: 2px solid #e9ecef;
+            margin-bottom: 12px;
+        }
+
+        .player-info-bar .stone-indicator {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .player-info-bar .stone-indicator.black {
+            background: radial-gradient(circle at 35% 35%, #555, #111);
+        }
+
+        .player-info-bar .stone-indicator.white {
+            background: radial-gradient(circle at 35% 35%, #fff, #ccc);
+            border: 1px solid #aaa;
+        }
+
+        .player-info-bar.active-turn {
+            border-color: #0d6efd;
+            background: #e7f1ff;
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+        }
+
+        /* 관리자 대전 카드 */
+        .match-card {
+            border-radius: 12px;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+
+        .match-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 접속 상태 뱃지 */
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.online {
+            background: #28a745;
+        }
+
+        .status-dot.away {
+            background: #ffc107;
+        }
+
+        .status-dot.offline {
+            background: #dc3545;
+        }
+
+        /* 대기실 */
+        .waiting-spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid #e9ecef;
+            border-top: 5px solid #0d6efd;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 승패 기록 테이블 */
+        .record-table th {
+            background-color: #f8f9fa;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .record-table td {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .win-rate-bar {
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .win-rate-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
+                        id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 상단 네비게이션바 -->
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <!-- 현재 접속 중인 방 정보 -->
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info">대기 중</span>
+        </div>
+
+        <!-- ==================== 1. 랜딩 페이지 ==================== -->
+        <div id="landing-section" class="section-container active-section text-center py-5">
+            <h1 class="fw-bold mb-4">📐 좌표평면 오목</h1>
+            <p class="text-muted mb-5">좌표를 입력하여 좌표평면 위에서 오목 대결을 펼쳐보세요!</p>
+
+            <div class="row justify-content-center g-4">
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 h-100 border-0 rounded-4">
+                        <h4 class="fw-bold mb-3">🧑‍🎓 학생: 게임 입장</h4>
+                        <input type="text" id="join-room-code"
+                            class="form-control form-control-lg text-center mb-2 fw-bold" placeholder="방 코드 4자리 입력"
+                            oninput="this.value = this.value.toUpperCase();">
+                        <input type="text" id="join-nickname" class="form-control form-control-lg text-center mb-3"
+                            placeholder="닉네임 (예: 동동)" maxlength="10">
+                        <button id="btn-join-room" class="btn btn-primary btn-lg w-100 fw-bold">방 입장하기</button>
+                    </div>
+                </div>
+
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 h-100 border-0 rounded-4 bg-light">
+                        <h4 class="fw-bold mb-3">👨‍🏫 대시보드 열기</h4>
+                        <p class="text-muted small">새로운 게임 방을 개설하거나 기존 방의 대시보드를 엽니다.</p>
+                        <button id="btn-admin-dash" class="btn btn-dark btn-lg w-100 fw-bold mt-auto">대시보드 열기</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 관리자 대시보드 ==================== -->
+        <div id="admin-section" class="section-container">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                <h2 class="fw-bold mb-0">👨‍🏫 좌표평면 오목 대시보드</h2>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <select id="admin-room-select" class="form-select w-auto me-2">
+                        <option value="">방을 선택하세요</option>
+                    </select>
+                    <span class="fs-5 fw-bold text-primary me-3" id="admin-active-room"></span>
+                    <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
+                    <button id="btn-delete-room" class="btn btn-danger fw-bold">현재 방 삭제하기</button>
+                </div>
+            </div>
+
+            <!-- 방 생성 설정 -->
+            <div class="row g-4" id="admin-settings-area" style="display: none;">
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <h5 class="fw-bold mb-3">⚙️ 게임 설정</h5>
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-4">
+                                <label class="form-label">좌표평면 크기 (N×N)</label>
+                                <select id="setting-board-size" class="form-select">
+                                    <option value="10">10×10 (-5~5)</option>
+                                    <option value="14" selected>14×14 (-7~7)</option>
+                                    <option value="18">18×18 (-9~9)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">승리 조건 (연속 몇 개)</label>
+                                <select id="setting-win-count" class="form-select">
+                                    <option value="4">4목</option>
+                                    <option value="5" selected>5목</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <button id="btn-confirm-create" class="btn btn-success w-100 fw-bold btn-lg">방
+                                    개설하기</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 관리 현황판 -->
+            <div class="row g-4 mt-2" id="admin-board-area" style="display: none;">
+                <!-- 참가자 현황 -->
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                            <h5 class="fw-bold mb-0">👥 참가자 현황</h5>
+                            <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                        </div>
+                        <div id="admin-players-container" class="row g-3">
+                            <!-- 동적: 학생 카드 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 대전 현황 -->
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <h5 class="fw-bold mb-3">⚔️ 대전 현황</h5>
+                        <div id="admin-matches-container" class="row g-3">
+                            <!-- 동적: 대전 카드 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 승패 기록 -->
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <h5 class="fw-bold mb-3">🏆 승패 기록</h5>
+                        <div class="table-responsive">
+                            <table class="table table-bordered record-table" id="admin-record-table">
+                                <thead>
+                                    <tr>
+                                        <th>순위</th>
+                                        <th>닉네임</th>
+                                        <th>승</th>
+                                        <th>패</th>
+                                        <th>승률</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-record-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 학생 대기방 ==================== -->
+        <div id="waiting-section" class="section-container">
+            <div class="row justify-content-center">
+                <div class="col-md-6 text-center">
+                    <div class="card shadow-sm border-0 rounded-4 p-5">
+                        <h3 class="fw-bold mb-2 text-primary" id="waiting-nickname-display">닉네임</h3>
+                        <p class="text-muted mb-4">상대를 기다리고 있습니다...</p>
+                        <div class="waiting-spinner"></div>
+                        <p class="text-muted small">다른 학생이 입장하면 자동으로 게임이 시작됩니다.</p>
+                        <div class="mt-3">
+                            <span class="badge bg-light text-dark fs-6" id="waiting-count">대기 중: 1명</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 4. 학생 게임 화면 ==================== -->
+        <div id="game-section" class="section-container">
+            <div class="row justify-content-center g-3">
+                <div class="col-lg-8">
+                    <!-- 플레이어 정보 -->
+                    <div class="player-info-bar" id="player-bar-black">
+                        <div>
+                            <span class="stone-indicator black me-2"></span>
+                            <span class="fw-bold" id="player-name-black">흑돌</span>
+                        </div>
+                        <span class="badge bg-dark" id="player-turn-black">차례</span>
+                    </div>
+                    <div class="player-info-bar" id="player-bar-white">
+                        <div>
+                            <span class="stone-indicator white me-2"></span>
+                            <span class="fw-bold" id="player-name-white">백돌</span>
+                        </div>
+                        <span class="badge bg-secondary" id="player-turn-white">대기</span>
+                    </div>
+
+                    <!-- 오목판 -->
+                    <div class="gomoku-board-wrapper mt-3">
+                        <canvas id="gomoku-canvas"></canvas>
+                    </div>
+
+                    <!-- 좌표 입력 -->
+                    <div class="card shadow-sm border-0 rounded-4 p-3 mt-3" id="game-input-area">
+                        <div class="coord-input-group">
+                            <span class="fw-bold text-muted">(</span>
+                            <input type="number" id="input-x" class="form-control" placeholder="x">
+                            <span class="fw-bold text-muted">,</span>
+                            <input type="number" id="input-y" class="form-control" placeholder="y">
+                            <span class="fw-bold text-muted">)</span>
+                            <button id="btn-place-stone" class="btn btn-primary fw-bold px-4">두기</button>
+                        </div>
+                        <p class="text-muted small text-center mt-2 mb-0" id="game-status-text">
+                            좌표를 입력하고 돌을 놓으세요.
+                        </p>
+                    </div>
+
+                    <!-- 게임 결과 -->
+                    <div class="card shadow-sm border-0 rounded-4 p-4 mt-3 text-center d-none" id="game-result-area">
+                        <h2 class="fw-bold mb-2" id="game-result-title"></h2>
+                        <p class="text-muted" id="game-result-desc"></p>
+                        <button id="btn-back-to-waiting" class="btn btn-primary fw-bold px-4">대기실로 돌아가기</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import { dbGridGomoku as db } from "../../../js/firebase-config.js";
+        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
+        import {
+            collection, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc,
+            serverTimestamp, query, orderBy, deleteDoc, deleteField
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+        // =====================================================================
+        // 공통 유틸리티 (모달)
+        // =====================================================================
+        let customModalInstance = null;
+
+        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
+            return new Promise((resolve) => {
+                if (!customModalInstance) {
+                    customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
+                }
+                document.getElementById('customModalTitle').innerHTML = title;
+                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
+                if (isPrompt) {
+                    let type = isPassword ? 'password' : 'text';
+                    let extraAttrs = isPassword ? 'style="ime-mode: disabled;" placeholder="영문 입력"' : '';
+                    bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3" id="customModalInput" ${extraAttrs}>`;
+                }
+                document.getElementById('customModalBody').innerHTML = bodyHtml;
+
+                const btnCancel = document.getElementById('customModalCancel');
+                const btnConfirm = document.getElementById('customModalConfirm');
+                const customModal = document.getElementById('customModal');
+
+                if (isPrompt || isConfirm) { btnCancel.classList.remove('d-none'); }
+                else { btnCancel.classList.add('d-none'); }
+
+                let resolveValue = null;
+
+                const handleConfirm = () => {
+                    resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true;
+                    customModalInstance.hide();
+                };
+                const handleCancel = () => { resolveValue = isConfirm ? false : null; customModalInstance.hide(); };
+                const handleHidden = () => {
+                    btnConfirm.removeEventListener('click', handleConfirm);
+                    btnCancel.removeEventListener('click', handleCancel);
+                    customModal.removeEventListener('hidden.bs.modal', handleHidden);
+                    if (isPrompt) {
+                        const input = document.getElementById('customModalInput');
+                        if (input) input.removeEventListener('keypress', handleEnter);
+                    }
+                    resolve(resolveValue);
+                };
+                const handleEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); } };
+
+                btnConfirm.addEventListener('click', handleConfirm);
+                btnCancel.addEventListener('click', handleCancel);
+                customModal.addEventListener('hidden.bs.modal', handleHidden);
+                customModalInstance.show();
+
+                if (isPrompt) {
+                    customModal.addEventListener('shown.bs.modal', function onShown() {
+                        const input = document.getElementById('customModalInput');
+                        if (input) { input.focus(); input.addEventListener('keypress', handleEnter); }
+                        customModal.removeEventListener('shown.bs.modal', onShown);
+                    });
+                }
+            });
+        }
+
+        const customAlert = (title, message) => showCustomModal(title, message, false);
+        const customPrompt = (title, message, isPassword = false) => showCustomModal(title, message, true, isPassword);
+        const customConfirm = (title, message) => showCustomModal(title, message, false, false, true);
+
+        // =====================================================================
+        // 전역 상태
+        // =====================================================================
+        let currentRoomCode = null;
+        let currentNickname = null;
+        let currentMatchId = null;
+        let myColor = null; // 'black' or 'white'
+
+        let unsubRoom = null;
+        let unsubPlayers = null;
+        let unsubMatch = null;
+        let unsubWaiting = null;
+        let heartbeatInterval = null;
+
+        let roomSettings = null;
+        let playersData = {};
+        let matchData = null;
+        let boardState = {}; // "x,y" -> "black"/"white"
+        let winStones = []; // 승리 돌 좌표
+
+        // UI 영역
+        const sectionLanding = document.getElementById('landing-section');
+        const sectionAdmin = document.getElementById('admin-section');
+        const sectionWaiting = document.getElementById('waiting-section');
+        const sectionGame = document.getElementById('game-section');
+        const navRoomInfo = document.getElementById('nav-room-info');
+
+        function showSection(section) {
+            [sectionLanding, sectionAdmin, sectionWaiting, sectionGame].forEach(s => s.classList.remove('active-section'));
+            section.classList.add('active-section');
+        }
+
+        // =====================================================================
+        // 1. 랜딩 페이지
+        // =====================================================================
+
+        // 관리자 대시보드
+        document.getElementById('btn-admin-dash').addEventListener('click', async () => {
+            const code = await customPrompt("선생님 대시보드", "대시보드에 접속하려면 접속 코드를 입력하세요.", true);
+            if (code !== ADMIN_ACCESS_CODE) {
+                if (code !== null) await customAlert("접속 실패", "접속코드가 틀렸습니다.");
+                return;
+            }
+            showSection(sectionAdmin);
+            document.getElementById('admin-settings-area').style.display = 'block';
+            document.getElementById('admin-board-area').style.display = 'none';
+            loadAdminRooms();
+        });
+
+        // 방 만들기 버튼
+        document.getElementById('btn-create-room').addEventListener('click', () => {
+            document.getElementById('admin-settings-area').style.display = 'block';
+            document.getElementById('admin-board-area').style.display = 'none';
+            document.getElementById('admin-active-room').textContent = "";
+            cleanupSubscriptions();
+        });
+
+        // 방 개설 확인
+        document.getElementById('btn-confirm-create').addEventListener('click', async () => {
+            const boardSize = parseInt(document.getElementById('setting-board-size').value);
+            const winCount = parseInt(document.getElementById('setting-win-count').value);
+            const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+            try {
+                await setDoc(doc(db, "gomoku_rooms", roomCode), {
+                    settings: { boardSize, winCount },
+                    createdAt: serverTimestamp()
+                });
+                await customAlert("방 생성 완료", `게임이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]<br>학생들에게 코드를 안내해 주세요.`);
+                startAdminMonitoring(roomCode);
+            } catch (error) {
+                console.error(error);
+                await customAlert("오류", "방 생성에 실패했습니다.");
+            }
+        });
+
+        // 학생 입장
+        document.getElementById('btn-join-room').addEventListener('click', async () => {
+            const code = document.getElementById('join-room-code').value.toUpperCase().trim();
+            const nickname = document.getElementById('join-nickname').value.trim();
+            if (!code || !nickname) return await customAlert("알림", "방 코드와 닉네임을 모두 입력하세요.");
+
+            const roomRef = doc(db, "gomoku_rooms", code);
+            const docSnap = await getDoc(roomRef);
+            if (!docSnap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
+
+            currentRoomCode = code;
+            currentNickname = nickname;
+            roomSettings = docSnap.data().settings;
+
+            // 플레이어 등록 또는 재접속
+            const playerRef = doc(db, "gomoku_rooms", code, "players", nickname);
+            const playerSnap = await getDoc(playerRef);
+            if (!playerSnap.exists()) {
+                await setDoc(playerRef, {
+                    nickname, wins: 0, losses: 0, status: 'online',
+                    lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp()
+                });
+            } else {
+                await updateDoc(playerRef, { status: 'online', lastHeartbeat: serverTimestamp() });
+            }
+
+            // 하트비트 시작
+            startHeartbeat();
+
+            // 기존 진행 중 매치 확인
+            const existingMatch = await findMyActiveMatch();
+            if (existingMatch) {
+                currentMatchId = existingMatch.id;
+                myColor = existingMatch.data.player1 === nickname ? 'black' : 'white';
+                matchData = existingMatch.data;
+                navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
+                showSection(sectionGame);
+                startGameSync();
+                return;
+            }
+
+            // 대기열 진입
+            enterWaitingRoom();
+        });
+
+        // =====================================================================
+        // 하트비트 (접속 상태 감지)
+        // =====================================================================
+        function startHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            updateHeartbeat();
+            heartbeatInterval = setInterval(updateHeartbeat, 10000); // 10초마다
+
+            // 페이지 가시성 변화 감지
+            document.addEventListener('visibilitychange', handleVisibility);
+            window.addEventListener('beforeunload', handleUnload);
+        }
+
+        async function updateHeartbeat() {
+            if (!currentRoomCode || !currentNickname) return;
+            try {
+                await updateDoc(doc(db, "gomoku_rooms", currentRoomCode, "players", currentNickname), {
+                    lastHeartbeat: serverTimestamp(),
+                    status: document.hidden ? 'away' : 'online'
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        function handleVisibility() {
+            if (!currentRoomCode || !currentNickname) return;
+            updateDoc(doc(db, "gomoku_rooms", currentRoomCode, "players", currentNickname), {
+                status: document.hidden ? 'away' : 'online',
+                lastHeartbeat: serverTimestamp()
+            }).catch(() => { });
+        }
+
+        function handleUnload() {
+            if (!currentRoomCode || !currentNickname) return;
+            // 동기적 방식은 제한적이므로 navigator.sendBeacon 사용 불가 (Firestore)
+            // 하트비트 타임아웃으로 대체
+        }
+
+        // =====================================================================
+        // 2. 관리자 대시보드
+        // =====================================================================
+        async function loadAdminRooms() {
+            const q = query(collection(db, "gomoku_rooms"), orderBy("createdAt", "desc"));
+            const snapshot = await getDocs(q);
+            const select = document.getElementById('admin-room-select');
+            select.innerHTML = '<option value="">방을 선택하세요</option>';
+            snapshot.forEach(docSnap => {
+                const option = document.createElement('option');
+                option.value = docSnap.id;
+                option.textContent = `[${docSnap.id}]`;
+                select.appendChild(option);
+            });
+        }
+
+        document.getElementById('admin-room-select').addEventListener('change', (e) => {
+            const code = e.target.value;
+            if (!code) {
+                document.getElementById('admin-settings-area').style.display = 'block';
+                document.getElementById('admin-board-area').style.display = 'none';
+                document.getElementById('admin-active-room').textContent = "";
+                cleanupSubscriptions();
+                return;
+            }
+            startAdminMonitoring(code);
+        });
+
+        document.getElementById('btn-delete-room').addEventListener('click', async () => {
+            const select = document.getElementById('admin-room-select');
+            const roomCode = select.value;
+            if (!roomCode) return await customAlert("알림", "삭제할 방을 선택해 주세요.");
+
+            const confirmed = await customConfirm("방 삭제 확인",
+                `[ <b class="text-danger">${roomCode}</b> ] 방을 정말로 삭제하시겠습니까?<br><small class="text-muted">삭제된 데이터는 복구할 수 없습니다.</small>`);
+            if (!confirmed) return;
+
+            try {
+                // 하위 컬렉션 삭제 (players, matches, waiting)
+                for (const sub of ['players', 'matches', 'waiting']) {
+                    const snap = await getDocs(collection(db, "gomoku_rooms", roomCode, sub));
+                    const promises = [];
+                    snap.forEach(d => promises.push(deleteDoc(doc(db, "gomoku_rooms", roomCode, sub, d.id))));
+                    await Promise.all(promises);
+                }
+                await deleteDoc(doc(db, "gomoku_rooms", roomCode));
+                cleanupSubscriptions();
+                document.getElementById('admin-active-room').textContent = "";
+                document.getElementById('admin-settings-area').style.display = 'block';
+                document.getElementById('admin-board-area').style.display = 'none';
+                await loadAdminRooms();
+                await customAlert("삭제 완료", "방이 삭제되었습니다.");
+            } catch (error) {
+                console.error(error);
+                await customAlert("오류", "방 삭제 중 오류가 발생했습니다.");
+            }
+        });
+
+        let unsubAdminPlayers = null;
+        let unsubAdminMatches = null;
+        let adminPlayersData = {};
+        let adminMatchesData = {};
+
+        function startAdminMonitoring(roomCode) {
+            currentRoomCode = roomCode;
+            document.getElementById('admin-settings-area').style.display = 'none';
+            document.getElementById('admin-board-area').style.display = 'block';
+            document.getElementById('admin-active-room').innerHTML = `현재 방 코드: <span class="badge bg-primary fs-5">${roomCode}</span>`;
+
+            const select = document.getElementById('admin-room-select');
+            if (select && !select.querySelector(`option[value="${roomCode}"]`)) {
+                const option = document.createElement('option');
+                option.value = roomCode;
+                option.textContent = `[${roomCode}]`;
+                select.appendChild(option);
+            }
+            select.value = roomCode;
+
+            if (unsubAdminPlayers) unsubAdminPlayers();
+            if (unsubAdminMatches) unsubAdminMatches();
+
+            // 방 설정 로드
+            getDoc(doc(db, "gomoku_rooms", roomCode)).then(snap => {
+                if (snap.exists()) roomSettings = snap.data().settings;
+            });
+
+            // 플레이어 구독
+            unsubAdminPlayers = onSnapshot(collection(db, "gomoku_rooms", roomCode, "players"), (snapshot) => {
+                adminPlayersData = {};
+                snapshot.forEach(d => { adminPlayersData[d.id] = d.data(); });
+                renderAdminBoard();
+            });
+
+            // 매치 구독
+            unsubAdminMatches = onSnapshot(collection(db, "gomoku_rooms", roomCode, "matches"), (snapshot) => {
+                adminMatchesData = {};
+                snapshot.forEach(d => { adminMatchesData[d.id] = d.data(); });
+                renderAdminBoard();
+            });
+        }
+
+        function getPlayerStatus(player) {
+            if (!player.lastHeartbeat) return { label: '알 수 없음', cls: 'offline' };
+            const lastBeat = player.lastHeartbeat.toMillis ? player.lastHeartbeat.toMillis() : 0;
+            const diff = Date.now() - lastBeat;
+            if (diff > 60000) return { label: '접속 끊김', cls: 'offline' };
+            if (player.status === 'away') return { label: '다른 화면', cls: 'away' };
+            return { label: '접속 중', cls: 'online' };
+        }
+
+        function renderAdminBoard() {
+            const playersList = Object.entries(adminPlayersData)
+                .sort((a, b) => (a[1].joinedAt?.toMillis() || 0) - (b[1].joinedAt?.toMillis() || 0));
+
+            document.getElementById('admin-player-count').textContent = `${playersList.length}명 접속`;
+
+            // ── 참가자 현황 ──
+            const playersContainer = document.getElementById('admin-players-container');
+            if (playersList.length === 0) {
+                playersContainer.innerHTML = '<div class="col-12 text-center text-muted py-4 fs-5">아직 입장한 학생이 없습니다.</div>';
+            } else {
+                let html = '';
+                playersList.forEach(([id, p]) => {
+                    const status = getPlayerStatus(p);
+                    const totalGames = (p.wins || 0) + (p.losses || 0);
+                    const winRate = totalGames > 0 ? Math.round((p.wins || 0) / totalGames * 100) : 0;
+
+                    // 현재 매치 찾기
+                    let matchInfo = '대기 중';
+                    for (const [mId, m] of Object.entries(adminMatchesData)) {
+                        if (m.status === 'playing' && (m.player1 === id || m.player2 === id)) {
+                            const opponent = m.player1 === id ? m.player2 : m.player1;
+                            matchInfo = `<span class="text-primary fw-bold">vs ${opponent}</span>`;
+                            break;
+                        }
+                    }
+
+                    html += `
+                    <div class="col-md-4 col-sm-6">
+                        <div class="card p-3 border rounded-4 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="fw-bold mb-0">${p.nickname || id}</h6>
+                                <div class="d-flex align-items-center gap-1">
+                                    <span class="status-dot ${status.cls}"></span>
+                                    <small class="text-muted">${status.label}</small>
+                                </div>
+                            </div>
+                            <div class="small text-muted mb-2">
+                                상태: ${matchInfo}
+                            </div>
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>승 <b class="text-success">${p.wins || 0}</b> / 패 <b class="text-danger">${p.losses || 0}</b></span>
+                                <span>승률 <b>${winRate}%</b></span>
+                            </div>
+                            <div class="win-rate-bar"><div class="fill" style="width:${winRate}%"></div></div>
+                            ${status.cls === 'offline' ? `<button class="btn btn-outline-danger btn-sm mt-2 btn-kick" data-id="${id}">강퇴</button>` : ''}
+                        </div>
+                    </div>`;
+                });
+                playersContainer.innerHTML = html;
+
+                // 강퇴 버튼 이벤트
+                playersContainer.querySelectorAll('.btn-kick').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const playerId = btn.dataset.id;
+                        const confirmed = await customConfirm("강퇴 확인", `<b>${playerId}</b> 학생을 강퇴하시겠습니까?`);
+                        if (!confirmed) return;
+                        try {
+                            // 진행 중인 매치 종료
+                            for (const [mId, m] of Object.entries(adminMatchesData)) {
+                                if (m.status === 'playing' && (m.player1 === playerId || m.player2 === playerId)) {
+                                    const winner = m.player1 === playerId ? m.player2 : m.player1;
+                                    await updateDoc(doc(db, "gomoku_rooms", currentRoomCode, "matches", mId), {
+                                        status: 'finished', winner, endReason: 'kick'
+                                    });
+                                    // 상대방 승리 기록
+                                    const winnerRef = doc(db, "gomoku_rooms", currentRoomCode, "players", winner);
+                                    const winnerSnap = await getDoc(winnerRef);
+                                    if (winnerSnap.exists()) {
+                                        await updateDoc(winnerRef, { wins: (winnerSnap.data().wins || 0) + 1 });
+                                    }
+                                }
+                            }
+                            // 대기열에서 제거
+                            try { await deleteDoc(doc(db, "gomoku_rooms", currentRoomCode, "waiting", playerId)); } catch (e) { }
+                            // 플레이어 삭제
+                            await deleteDoc(doc(db, "gomoku_rooms", currentRoomCode, "players", playerId));
+                            await customAlert("완료", `${playerId} 학생이 강퇴되었습니다.`);
+                        } catch (e) {
+                            console.error(e);
+                            await customAlert("오류", "강퇴 처리 중 오류가 발생했습니다.");
+                        }
+                    });
+                });
+            }
+
+            // ── 대전 현황 ──
+            const matchesContainer = document.getElementById('admin-matches-container');
+            const activeMatches = Object.entries(adminMatchesData).filter(([_, m]) => m.status === 'playing');
+            if (activeMatches.length === 0) {
+                matchesContainer.innerHTML = '<div class="col-12 text-center text-muted py-3">진행 중인 대전이 없습니다.</div>';
+            } else {
+                let html = '';
+                activeMatches.forEach(([mId, m]) => {
+                    const moveCount = m.moves ? m.moves.length : 0;
+                    const currentTurn = moveCount % 2 === 0 ? m.player1 : m.player2;
+                    html += `
+                    <div class="col-md-4 col-sm-6">
+                        <div class="card p-3 match-card h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="fw-bold">⚔️ 대전</span>
+                                <small class="text-muted">${moveCount}수</small>
+                            </div>
+                            <div class="text-center py-2">
+                                <span class="fw-bold text-dark">${m.player1}</span>
+                                <span class="stone-indicator black mx-1" style="width:16px;height:16px;"></span>
+                                <span class="text-muted mx-2">vs</span>
+                                <span class="stone-indicator white mx-1" style="width:16px;height:16px;border:1px solid #aaa;"></span>
+                                <span class="fw-bold text-dark">${m.player2}</span>
+                            </div>
+                            <div class="text-center small text-muted mt-1">
+                                현재 차례: <b class="text-primary">${currentTurn}</b>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                matchesContainer.innerHTML = html;
+            }
+
+            // ── 승패 기록 ──
+            const recordTbody = document.getElementById('admin-record-tbody');
+            const sorted = [...playersList].sort((a, b) => {
+                const aWins = a[1].wins || 0, bWins = b[1].wins || 0;
+                const aTotal = aWins + (a[1].losses || 0), bTotal = bWins + (b[1].losses || 0);
+                const aRate = aTotal > 0 ? aWins / aTotal : 0;
+                const bRate = bTotal > 0 ? bWins / bTotal : 0;
+                if (bWins !== aWins) return bWins - aWins;
+                return bRate - aRate;
+            });
+
+            let tbodyHtml = '';
+            sorted.forEach(([id, p], idx) => {
+                const total = (p.wins || 0) + (p.losses || 0);
+                const rate = total > 0 ? Math.round((p.wins || 0) / total * 100) : 0;
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+                tbodyHtml += `<tr>
+                    <td class="fw-bold">${medal}</td>
+                    <td class="fw-bold">${p.nickname || id}</td>
+                    <td class="text-success fw-bold">${p.wins || 0}</td>
+                    <td class="text-danger fw-bold">${p.losses || 0}</td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2 justify-content-center">
+                            <div class="win-rate-bar flex-grow-1" style="max-width:80px"><div class="fill" style="width:${rate}%"></div></div>
+                            <b>${rate}%</b>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+            recordTbody.innerHTML = tbodyHtml || '<tr><td colspan="5" class="text-muted">기록이 없습니다.</td></tr>';
+        }
+
+        // =====================================================================
+        // 3. 대기방 & 자동 매칭
+        // =====================================================================
+        async function enterWaitingRoom() {
+            navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
+            document.getElementById('waiting-nickname-display').textContent = currentNickname;
+            showSection(sectionWaiting);
+
+            // 대기열에 등록
+            await setDoc(doc(db, "gomoku_rooms", currentRoomCode, "waiting", currentNickname), {
+                nickname: currentNickname,
+                joinedAt: serverTimestamp()
+            });
+
+            // 대기열 실시간 구독
+            if (unsubWaiting) unsubWaiting();
+            unsubWaiting = onSnapshot(
+                query(collection(db, "gomoku_rooms", currentRoomCode, "waiting"), orderBy("joinedAt", "asc")),
+                async (snapshot) => {
+                    const waitingList = [];
+                    snapshot.forEach(d => waitingList.push({ id: d.id, ...d.data() }));
+
+                    document.getElementById('waiting-count').textContent = `대기 중: ${waitingList.length}명`;
+
+                    // 매칭 시도: 자신이 리스트에서 가장 첫 번째일 때만 매치 생성 (중복 방지)
+                    if (waitingList.length >= 2) {
+                        const first = waitingList[0];
+                        const second = waitingList[1];
+
+                        // 내가 first일 때만 매치 생성
+                        if (first.id === currentNickname) {
+                            try {
+                                const matchId = `${Date.now()}_${first.id}_${second.id}`;
+                                const boardSize = roomSettings?.boardSize || 14;
+                                await setDoc(doc(db, "gomoku_rooms", currentRoomCode, "matches", matchId), {
+                                    player1: first.id,
+                                    player2: second.id,
+                                    moves: [],
+                                    boardSize: boardSize,
+                                    winCount: roomSettings?.winCount || 5,
+                                    status: 'playing',
+                                    currentTurn: 'black',
+                                    createdAt: serverTimestamp()
+                                });
+
+                                // 대기열에서 제거
+                                await deleteDoc(doc(db, "gomoku_rooms", currentRoomCode, "waiting", first.id));
+                                await deleteDoc(doc(db, "gomoku_rooms", currentRoomCode, "waiting", second.id));
+                            } catch (e) {
+                                console.error('매치 생성 오류:', e);
+                            }
+                        }
+                    }
+
+                    // 내가 매치에 배정되었는지 확인
+                    const myMatch = await findMyActiveMatch();
+                    if (myMatch) {
+                        if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
+                        currentMatchId = myMatch.id;
+                        myColor = myMatch.data.player1 === currentNickname ? 'black' : 'white';
+                        matchData = myMatch.data;
+                        showSection(sectionGame);
+                        startGameSync();
+                    }
+                }
+            );
+        }
+
+        async function findMyActiveMatch() {
+            const matchesSnap = await getDocs(collection(db, "gomoku_rooms", currentRoomCode, "matches"));
+            let found = null;
+            matchesSnap.forEach(d => {
+                const data = d.data();
+                if (data.status === 'playing' &&
+                    (data.player1 === currentNickname || data.player2 === currentNickname)) {
+                    found = { id: d.id, data };
+                }
+            });
+            return found;
+        }
+
+        // =====================================================================
+        // 4. 게임 (오목)
+        // =====================================================================
+        const canvas = document.getElementById('gomoku-canvas');
+        const ctx = canvas.getContext('2d');
+        let CELL_SIZE = 32;
+        let BOARD_N = 14;
+        let HALF_N = 7;
+        let WIN_COUNT = 5;
+        let PADDING = 40;
+
+        function initBoard() {
+            BOARD_N = matchData?.boardSize || roomSettings?.boardSize || 14;
+            WIN_COUNT = matchData?.winCount || roomSettings?.winCount || 5;
+            HALF_N = Math.floor(BOARD_N / 2);
+
+            // 반응형 셀 크기
+            const maxWidth = Math.min(window.innerWidth - 40, 600);
+            CELL_SIZE = Math.max(24, Math.floor((maxWidth - PADDING * 2) / BOARD_N));
+            const canvasSize = BOARD_N * CELL_SIZE + PADDING * 2;
+            canvas.width = canvasSize;
+            canvas.height = canvasSize;
+            canvas.style.width = canvasSize + 'px';
+            canvas.style.height = canvasSize + 'px';
+
+            // 좌표 입력 범위 설정
+            document.getElementById('input-x').min = -HALF_N;
+            document.getElementById('input-x').max = HALF_N;
+            document.getElementById('input-y').min = -HALF_N;
+            document.getElementById('input-y').max = HALF_N;
+        }
+
+        function drawBoard() {
+            const size = canvas.width;
+            ctx.clearRect(0, 0, size, size);
+
+            // 배경
+            ctx.fillStyle = '#f5e6c8';
+            ctx.fillRect(0, 0, size, size);
+
+            ctx.strokeStyle = '#8B6914';
+            ctx.lineWidth = 1;
+            ctx.font = `bold ${Math.max(10, CELL_SIZE * 0.35)}px Pretendard Variable, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // 격자선 & 좌표 레이블
+            for (let i = 0; i <= BOARD_N; i++) {
+                const coord = i - HALF_N;
+                const px = PADDING + i * CELL_SIZE;
+
+                // 세로선
+                ctx.beginPath();
+                ctx.moveTo(px, PADDING);
+                ctx.lineTo(px, PADDING + BOARD_N * CELL_SIZE);
+                if (coord === 0) { ctx.lineWidth = 2; ctx.strokeStyle = '#333'; }
+                else { ctx.lineWidth = 0.5; ctx.strokeStyle = '#8B6914'; }
+                ctx.stroke();
+
+                // 가로선
+                const py = PADDING + (BOARD_N - i) * CELL_SIZE; // y축은 위로 증가
+                ctx.beginPath();
+                ctx.moveTo(PADDING, py);
+                ctx.lineTo(PADDING + BOARD_N * CELL_SIZE, py);
+                if (coord === 0) { ctx.lineWidth = 2; ctx.strokeStyle = '#333'; }
+                else { ctx.lineWidth = 0.5; ctx.strokeStyle = '#8B6914'; }
+                ctx.stroke();
+
+                // X축 레이블 (하단)
+                ctx.fillStyle = '#666';
+                ctx.fillText(coord.toString(), px, PADDING + BOARD_N * CELL_SIZE + 18);
+
+                // Y축 레이블 (좌측) — py 위치 사용
+                ctx.fillText(coord.toString(), PADDING - 20, py);
+            }
+
+            // 원점 표시
+            const ox = PADDING + HALF_N * CELL_SIZE;
+            const oy = PADDING + HALF_N * CELL_SIZE;
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(ox, oy, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 돌 그리기
+            const stoneRadius = Math.max(10, CELL_SIZE * 0.4);
+            for (const [key, color] of Object.entries(boardState)) {
+                const [x, y] = key.split(',').map(Number);
+                const px = PADDING + (x + HALF_N) * CELL_SIZE;
+                const py = PADDING + (HALF_N - y) * CELL_SIZE; // y축 반전
+
+                const isWin = winStones.some(ws => ws[0] === x && ws[1] === y);
+                const isLast = matchData?.moves && matchData.moves.length > 0 &&
+                    matchData.moves[matchData.moves.length - 1].x === x &&
+                    matchData.moves[matchData.moves.length - 1].y === y;
+
+                // 돌 그림자
+                ctx.beginPath();
+                ctx.arc(px + 2, py + 2, stoneRadius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                ctx.fill();
+
+                // 돌
+                const grad = ctx.createRadialGradient(
+                    px - stoneRadius * 0.3, py - stoneRadius * 0.3, stoneRadius * 0.1,
+                    px, py, stoneRadius
+                );
+                if (color === 'black') {
+                    grad.addColorStop(0, '#555');
+                    grad.addColorStop(1, '#111');
+                } else {
+                    grad.addColorStop(0, '#fff');
+                    grad.addColorStop(1, '#ccc');
+                }
+                ctx.beginPath();
+                ctx.arc(px, py, stoneRadius, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                if (color === 'white') {
+                    ctx.strokeStyle = '#aaa';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                // 마지막 수 표시
+                if (isLast && !isWin) {
+                    ctx.beginPath();
+                    ctx.arc(px, py, stoneRadius + 3, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#ff4444';
+                    ctx.lineWidth = 2.5;
+                    ctx.stroke();
+                }
+
+                // 승리 돌 표시
+                if (isWin) {
+                    ctx.beginPath();
+                    ctx.arc(px, py, stoneRadius + 3, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#ffd700';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function startGameSync() {
+            if (unsubMatch) unsubMatch();
+
+            document.getElementById('game-result-area').classList.add('d-none');
+            document.getElementById('game-input-area').classList.remove('d-none');
+
+            unsubMatch = onSnapshot(doc(db, "gomoku_rooms", currentRoomCode, "matches", currentMatchId), (docSnap) => {
+                if (!docSnap.exists()) return;
+                matchData = docSnap.data();
+
+                // 보드 상태 재구성
+                boardState = {};
+                winStones = [];
+                if (matchData.moves) {
+                    matchData.moves.forEach((m, i) => {
+                        const color = i % 2 === 0 ? 'black' : 'white';
+                        boardState[`${m.x},${m.y}`] = color;
+                    });
+                }
+
+                initBoard();
+                drawBoard();
+                updateGameUI();
+            });
+        }
+
+        function updateGameUI() {
+            if (!matchData) return;
+
+            const p1 = matchData.player1;
+            const p2 = matchData.player2;
+            const moveCount = matchData.moves ? matchData.moves.length : 0;
+            const isBlackTurn = moveCount % 2 === 0;
+
+            document.getElementById('player-name-black').textContent = `${p1} (흑)`;
+            document.getElementById('player-name-white').textContent = `${p2} (백)`;
+
+            const barBlack = document.getElementById('player-bar-black');
+            const barWhite = document.getElementById('player-bar-white');
+
+            if (matchData.status === 'finished') {
+                barBlack.classList.remove('active-turn');
+                barWhite.classList.remove('active-turn');
+                document.getElementById('player-turn-black').textContent = '';
+                document.getElementById('player-turn-white').textContent = '';
+
+                // 승리 돌 표시
+                if (matchData.winLine) {
+                    winStones = matchData.winLine;
+                    drawBoard();
+                }
+
+                // 결과 표시
+                document.getElementById('game-input-area').classList.add('d-none');
+                const resultArea = document.getElementById('game-result-area');
+                resultArea.classList.remove('d-none');
+
+                if (matchData.winner === currentNickname) {
+                    document.getElementById('game-result-title').innerHTML = '🎉 승리!';
+                    document.getElementById('game-result-desc').textContent = '축하합니다! 대전에서 승리했습니다.';
+                } else if (matchData.winner) {
+                    document.getElementById('game-result-title').innerHTML = '😢 패배';
+                    document.getElementById('game-result-desc').textContent = `${matchData.winner} 학생이 승리했습니다.`;
+                } else {
+                    document.getElementById('game-result-title').innerHTML = '🤝 무승부';
+                    document.getElementById('game-result-desc').textContent = '좌표평면이 가득 찼습니다.';
+                }
+
+                if (matchData.endReason === 'kick') {
+                    document.getElementById('game-result-desc').textContent = '상대방이 강퇴되어 게임이 종료되었습니다.';
+                }
+                return;
+            }
+
+            if (isBlackTurn) {
+                barBlack.classList.add('active-turn');
+                barWhite.classList.remove('active-turn');
+                document.getElementById('player-turn-black').textContent = '🔥 차례';
+                document.getElementById('player-turn-black').className = 'badge bg-danger';
+                document.getElementById('player-turn-white').textContent = '대기';
+                document.getElementById('player-turn-white').className = 'badge bg-secondary';
+            } else {
+                barBlack.classList.remove('active-turn');
+                barWhite.classList.add('active-turn');
+                document.getElementById('player-turn-black').textContent = '대기';
+                document.getElementById('player-turn-black').className = 'badge bg-secondary';
+                document.getElementById('player-turn-white').textContent = '🔥 차례';
+                document.getElementById('player-turn-white').className = 'badge bg-danger';
+            }
+
+            const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
+            const btnPlace = document.getElementById('btn-place-stone');
+            const statusText = document.getElementById('game-status-text');
+
+            if (isMyTurn) {
+                btnPlace.disabled = false;
+                btnPlace.className = 'btn btn-primary fw-bold px-4';
+                statusText.textContent = '내 차례입니다! 좌표를 입력하고 돌을 놓으세요.';
+                statusText.className = 'text-primary small text-center mt-2 mb-0 fw-bold';
+            } else {
+                btnPlace.disabled = true;
+                btnPlace.className = 'btn btn-secondary fw-bold px-4';
+                statusText.textContent = '상대방의 차례입니다. 잠시 기다려주세요...';
+                statusText.className = 'text-muted small text-center mt-2 mb-0';
+            }
+        }
+
+        // 돌 두기
+        document.getElementById('btn-place-stone').addEventListener('click', async () => {
+            if (!matchData || matchData.status !== 'playing') return;
+
+            const moveCount = matchData.moves ? matchData.moves.length : 0;
+            const isBlackTurn = moveCount % 2 === 0;
+            const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
+            if (!isMyTurn) return;
+
+            const xInput = document.getElementById('input-x');
+            const yInput = document.getElementById('input-y');
+            const x = parseInt(xInput.value);
+            const y = parseInt(yInput.value);
+
+            if (isNaN(x) || isNaN(y)) {
+                return await customAlert("알림", "좌표를 정확히 입력하세요.");
+            }
+            if (x < -HALF_N || x > HALF_N || y < -HALF_N || y > HALF_N) {
+                return await customAlert("범위 초과", `좌표는 -${HALF_N} ~ ${HALF_N} 범위여야 합니다.`);
+            }
+            if (boardState[`${x},${y}`]) {
+                return await customAlert("알림", "이미 돌이 놓인 위치입니다.");
+            }
+
+            const newMoves = [...(matchData.moves || []), { x, y }];
+            const newColor = isBlackTurn ? 'black' : 'white';
+
+            // 승리 판정
+            boardState[`${x},${y}`] = newColor;
+            const winResult = checkWin(x, y, newColor);
+
+            try {
+                const matchRef = doc(db, "gomoku_rooms", currentRoomCode, "matches", currentMatchId);
+
+                if (winResult) {
+                    await updateDoc(matchRef, {
+                        moves: newMoves,
+                        status: 'finished',
+                        winner: currentNickname,
+                        winLine: winResult
+                    });
+                    // 승패 기록 업데이트
+                    const loser = matchData.player1 === currentNickname ? matchData.player2 : matchData.player1;
+                    const winnerRef = doc(db, "gomoku_rooms", currentRoomCode, "players", currentNickname);
+                    const loserRef = doc(db, "gomoku_rooms", currentRoomCode, "players", loser);
+                    const [winnerSnap, loserSnap] = await Promise.all([getDoc(winnerRef), getDoc(loserRef)]);
+                    if (winnerSnap.exists()) await updateDoc(winnerRef, { wins: (winnerSnap.data().wins || 0) + 1 });
+                    if (loserSnap.exists()) await updateDoc(loserRef, { losses: (loserSnap.data().losses || 0) + 1 });
+                } else if (newMoves.length >= (BOARD_N + 1) * (BOARD_N + 1)) {
+                    // 모든 교차점이 채워진 경우 (무승부)
+                    await updateDoc(matchRef, { moves: newMoves, status: 'finished', winner: null });
+                } else {
+                    await updateDoc(matchRef, {
+                        moves: newMoves,
+                        currentTurn: isBlackTurn ? 'white' : 'black'
+                    });
+                }
+
+                xInput.value = '';
+                yInput.value = '';
+                xInput.focus();
+            } catch (e) {
+                console.error(e);
+                delete boardState[`${x},${y}`];
+                await customAlert("오류", "돌을 놓는 중 오류가 발생했습니다.");
+            }
+        });
+
+        // Enter 키로 돌 두기
+        document.getElementById('input-x').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); document.getElementById('input-y').focus(); }
+        });
+        document.getElementById('input-y').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-place-stone').click(); }
+        });
+
+        // 승리 판정
+        function checkWin(x, y, color) {
+            const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
+
+            for (const [dx, dy] of directions) {
+                let stones = [{ x, y }]; // 현재 돌 포함
+
+                // 양방향 탐색
+                for (const sign of [1, -1]) {
+                    for (let step = 1; step < WIN_COUNT; step++) {
+                        const nx = x + dx * sign * step;
+                        const ny = y + dy * sign * step;
+                        if (boardState[`${nx},${ny}`] === color) {
+                            stones.push({ x: nx, y: ny });
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                if (stones.length >= WIN_COUNT) {
+                    // 연속된 돌 좌표를 정렬해서 반환
+                    stones.sort((a, b) => a.x - b.x || a.y - b.y);
+                    return stones.slice(0, WIN_COUNT).map(s => [s.x, s.y]);
+                }
+            }
+            return null;
+        }
+
+        // 대기실로 돌아가기
+        document.getElementById('btn-back-to-waiting').addEventListener('click', () => {
+            if (unsubMatch) { unsubMatch(); unsubMatch = null; }
+            currentMatchId = null;
+            matchData = null;
+            myColor = null;
+            boardState = {};
+            winStones = [];
+            enterWaitingRoom();
+        });
+
+        // =====================================================================
+        // 캔버스 클릭으로도 돌 두기
+        // =====================================================================
+        canvas.addEventListener('click', (e) => {
+            if (!matchData || matchData.status !== 'playing') return;
+
+            const moveCount = matchData.moves ? matchData.moves.length : 0;
+            const isBlackTurn = moveCount % 2 === 0;
+            const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
+            if (!isMyTurn) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+
+            // 가장 가까운 교차점 계산
+            const gridX = Math.round((clickX - PADDING) / CELL_SIZE) - HALF_N;
+            const gridY = HALF_N - Math.round((clickY - PADDING) / CELL_SIZE);
+
+            if (gridX < -HALF_N || gridX > HALF_N || gridY < -HALF_N || gridY > HALF_N) return;
+
+            // 입력칸에 좌표 채우기
+            document.getElementById('input-x').value = gridX;
+            document.getElementById('input-y').value = gridY;
+        });
+
+        // =====================================================================
+        // 구독 정리
+        // =====================================================================
+        function cleanupSubscriptions() {
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+            if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+            if (unsubMatch) { unsubMatch(); unsubMatch = null; }
+            if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
+            if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
+            if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
+        }
+
+        // 윈도우 리사이즈 시 보드 재렌더링
+        window.addEventListener('resize', () => {
+            if (matchData) {
+                initBoard();
+                drawBoard();
+            }
+        });
+
+    </script>
+</body>
+
+</html>
