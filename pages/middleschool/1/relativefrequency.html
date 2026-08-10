@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>어떻게 비교할까? (상대도수)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <link rel="stylesheet" href="../../../css/common-app.css">
+
+    <style>
+        .rps-btn {
+            font-size: 3rem;
+            width: 100px;
+            height: 100px;
+            border-radius: 20px;
+            margin: 10px;
+            transition: transform 0.2s;
+        }
+        .rps-btn:hover {
+            transform: scale(1.1);
+        }
+        .rps-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 네비게이션바 -->
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <!-- 방 정보 표시 -->
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info">대기 중</span>
+        </div>
+
+        <!-- ==================== 1. 랜딩 페이지 ==================== -->
+        <div id="landing-section" class="section-container active-section text-center py-5">
+            <h1 class="fw-bold mb-4">✌️✊✋ 상대도수 가위바위보</h1>
+            <p class="text-muted mb-5">컴퓨터와 가위바위보를 하고 나의 상대도수를 확인해보세요!</p>
+            <div class="row justify-content-center">
+                <div class="col-md-5">
+                    <div class="card shadow-sm p-4 mb-4 border-0 rounded-4">
+                        <h4 class="fw-bold mb-3">🧑‍🎓 게임 입장하기</h4>
+                        <input type="text" id="join-room-code" class="form-control form-control-lg text-center mb-2 fw-bold" placeholder="방 코드 4자리 입력" oninput="this.value = this.value.toUpperCase();">
+                        <input type="text" id="join-nickname" class="form-control form-control-lg text-center mb-3" placeholder="닉네임 (예: 동동)" maxlength="10">
+                        <button id="btn-join-room" class="btn btn-primary btn-lg w-100 fw-bold mb-2">방 입장하기</button>
+                        <button id="btn-admin-dash" class="btn btn-dark btn-lg w-100 fw-bold">대시보드 열기</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 학생 화면 ==================== -->
+        <div id="student-section" class="section-container" style="display: none;">
+            <div class="row justify-content-center">
+                <div class="col-md-8 text-center">
+                    <h2 class="fw-bold mb-4" id="student-title">가위바위보!</h2>
+                    
+                    <div class="card shadow-sm border-0 rounded-4 p-4 mb-4 bg-light">
+                        <h4 id="game-status-text" class="fw-bold text-primary mb-3">선택해주세요!</h4>
+                        <div class="d-flex justify-content-center mb-4">
+                            <button class="btn btn-outline-dark rps-btn" data-choice="scissors">✌️</button>
+                            <button class="btn btn-outline-dark rps-btn" data-choice="rock">✊</button>
+                            <button class="btn btn-outline-dark rps-btn" data-choice="paper">✋</button>
+                        </div>
+                        
+                        <div id="computer-choice-area" class="d-none">
+                            <h5>컴퓨터의 선택: <span id="computer-choice-icon" class="fs-1"></span></h5>
+                            <h3 id="round-result-text" class="fw-bold mt-2"></h3>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <h4 class="fw-bold mb-3">내 기록</h4>
+                        <div class="row text-center fw-bold fs-5">
+                            <div class="col-3 text-success">승: <span id="score-win">0</span></div>
+                            <div class="col-3 text-secondary">무: <span id="score-draw">0</span></div>
+                            <div class="col-3 text-danger">패: <span id="score-lose">0</span></div>
+                            <div class="col-3 text-primary">총: <span id="score-total">0</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 관리자 대시보드 ==================== -->
+        <div id="admin-section" class="section-container" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                <h2 class="fw-bold mb-0">👨‍🏫 가위바위보 대시보드</h2>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <select id="admin-room-select" class="form-select w-auto me-2">
+                        <option value="">방을 선택하세요</option>
+                    </select>
+                    <span class="fs-5 fw-bold text-primary me-3" id="admin-active-room"></span>
+                    <button id="btn-create-room" class="btn btn-primary fw-bold">새 방 만들기</button>
+                    <button id="btn-delete-room" class="btn btn-danger fw-bold">현재 방 삭제</button>
+                </div>
+            </div>
+
+            <div id="admin-board-area" class="row g-4 mt-2" style="display: none;">
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold mb-0">📊 학생 현황</h5>
+                            <div>
+                                <button id="btn-end-game" class="btn btn-warning fw-bold me-2">가위바위보 종료</button>
+                                <button id="btn-draw-10" class="btn btn-success fw-bold" disabled>10명 뽑기 (결과 확인)</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover text-center align-middle" id="admin-players-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>이름</th>
+                                        <th>승</th>
+                                        <th>무</th>
+                                        <th>패</th>
+                                        <th>총 횟수</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- 동적 렌더링 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 10명 뽑기 결과 영역 -->
+                <div class="col-12" id="draw-result-area" style="display: none;">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 border-success">
+                        <h4 class="fw-bold text-success mb-3">🎉 추출된 10명의 데이터</h4>
+                        <div class="table-responsive">
+                            <table class="table table-bordered text-center align-middle">
+                                <thead class="table-success">
+                                    <tr>
+                                        <th>이름</th>
+                                        <th>승</th>
+                                        <th>무</th>
+                                        <th>패</th>
+                                        <th>총 횟수</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="draw-result-tbody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import { ref, set, get, update, onValue, remove, child } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
+
+        // DOM 요소
+        const landingSection = document.getElementById('landing-section');
+        const studentSection = document.getElementById('student-section');
+        const adminSection = document.getElementById('admin-section');
+        
+        // 커스텀 모달
+        const customModal = new bootstrap.Modal(document.getElementById('customModal'));
+        const modalTitle = document.getElementById('customModalTitle');
+        const modalBody = document.getElementById('customModalBody');
+        const modalConfirmBtn = document.getElementById('customModalConfirm');
+        const modalCancelBtn = document.getElementById('customModalCancel');
+
+        function showAlert(title, message, onConfirm = null) {
+            modalTitle.textContent = title;
+            modalBody.innerHTML = `<p>${message}</p>`;
+            modalCancelBtn.classList.add('d-none');
+            
+            modalConfirmBtn.onclick = () => {
+                customModal.hide();
+                if (onConfirm) onConfirm();
+            };
+            customModal.show();
+        }
+
+        // 상태 변수
+        let currentRoom = null;
+        let currentUser = null;
+        let isTeacher = false;
+        let myScore = { wins: 0, draws: 0, losses: 0, total: 0 };
+        let activeRoomRef = null;
+
+        // 화면 전환
+        function showSection(section) {
+            landingSection.style.display = 'none';
+            studentSection.style.display = 'none';
+            adminSection.style.display = 'none';
+            section.style.display = 'block';
+        }
+
+        // ================== 랜딩 페이지 ==================
+        document.getElementById('btn-join-room').addEventListener('click', async () => {
+            const roomCode = document.getElementById('join-room-code').value.trim();
+            const nickname = document.getElementById('join-nickname').value.trim();
+
+            if (!roomCode || !nickname) {
+                showAlert('입력 오류', '방 코드와 닉네임을 모두 입력해주세요.');
+                return;
+            }
+
+            const roomRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}`);
+            const snapshot = await get(roomRef);
+            
+            if (!snapshot.exists()) {
+                showAlert('입장 실패', '존재하지 않는 방입니다.');
+                return;
+            }
+
+            const roomData = snapshot.val();
+            if (roomData.status === 'finished') {
+                showAlert('입장 불가', '이미 종료된 게임입니다.');
+                return;
+            }
+
+            // 학생 데이터 초기화
+            const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
+            const playerSnap = await get(playerRef);
+            
+            if (playerSnap.exists()) {
+                myScore = playerSnap.val();
+            } else {
+                myScore = { wins: 0, draws: 0, losses: 0, total: 0 };
+                await set(playerRef, myScore);
+            }
+
+            currentRoom = roomCode;
+            currentUser = nickname;
+            document.getElementById('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
+            
+            updateStudentScoreUI();
+            showSection(studentSection);
+            listenToRoomStatus();
+        });
+
+        document.getElementById('btn-admin-dash').addEventListener('click', () => {
+            isTeacher = true;
+            document.getElementById('nav-room-info').textContent = '대시보드 (관리자)';
+            showSection(adminSection);
+            loadAdminRooms();
+        });
+
+        // ================== 학생 화면 ==================
+        const rpsChoices = ['scissors', 'rock', 'paper'];
+        const rpsIcons = { 'scissors': '✌️', 'rock': '✊', 'paper': '✋' };
+
+        document.querySelectorAll('.rps-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                if(!currentRoom || !currentUser) return;
+                
+                const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
+                if(roomSnap.exists() && roomSnap.val().status === 'finished') {
+                    showAlert('알림', '선생님이 게임을 종료했습니다!');
+                    return;
+                }
+
+                const myChoice = e.currentTarget.getAttribute('data-choice');
+                const computerChoice = rpsChoices[Math.floor(Math.random() * rpsChoices.length)];
+                
+                document.getElementById('computer-choice-area').classList.remove('d-none');
+                document.getElementById('computer-choice-icon').textContent = rpsIcons[computerChoice];
+
+                let resultText = '';
+                if (myChoice === computerChoice) {
+                    resultText = '무승부!';
+                    myScore.draws++;
+                } else if (
+                    (myChoice === 'scissors' && computerChoice === 'paper') ||
+                    (myChoice === 'rock' && computerChoice === 'scissors') ||
+                    (myChoice === 'paper' && computerChoice === 'rock')
+                ) {
+                    resultText = '승리! 🎉';
+                    myScore.wins++;
+                } else {
+                    resultText = '패배... 😢';
+                    myScore.losses++;
+                }
+                
+                myScore.total++;
+                document.getElementById('round-result-text').textContent = resultText;
+                
+                updateStudentScoreUI();
+                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), myScore);
+            });
+        });
+
+        function updateStudentScoreUI() {
+            document.getElementById('score-win').textContent = myScore.wins;
+            document.getElementById('score-draw').textContent = myScore.draws;
+            document.getElementById('score-lose').textContent = myScore.losses;
+            document.getElementById('score-total').textContent = myScore.total;
+        }
+
+        function listenToRoomStatus() {
+            if(!currentRoom || isTeacher) return;
+            const statusRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/status`);
+            onValue(statusRef, (snapshot) => {
+                const status = snapshot.val();
+                if (status === 'finished') {
+                    document.getElementById('game-status-text').textContent = '게임이 종료되었습니다!';
+                    document.querySelectorAll('.rps-btn').forEach(btn => btn.disabled = true);
+                }
+            });
+        }
+
+        // ================== 관리자 화면 ==================
+        function generateRoomCode() {
+            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 4; i++) {
+                result += characters.charAt(Math.floor(Math.random() * characters.length));
+            }
+            return result;
+        }
+
+        async function loadAdminRooms() {
+            const roomsRef = ref(rtdbRelativeFrequency, 'rooms');
+            onValue(roomsRef, (snapshot) => {
+                const select = document.getElementById('admin-room-select');
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">방을 선택하세요</option>';
+                
+                if (snapshot.exists()) {
+                    snapshot.forEach((childSnap) => {
+                        const code = childSnap.key;
+                        const option = document.createElement('option');
+                        option.value = code;
+                        option.textContent = `${code} 방`;
+                        select.appendChild(option);
+                    });
+                }
+                if(currentValue && snapshot.child(currentValue).exists()) {
+                    select.value = currentValue;
+                }
+            });
+        }
+
+        document.getElementById('btn-create-room').addEventListener('click', async () => {
+            const code = generateRoomCode();
+            await set(ref(rtdbRelativeFrequency, `rooms/${code}`), {
+                status: 'playing',
+                createdAt: Date.now()
+            });
+            showAlert('방 생성', `새로운 방(${code})이 생성되었습니다.`);
+            document.getElementById('admin-room-select').value = code;
+            document.getElementById('admin-room-select').dispatchEvent(new Event('change'));
+        });
+
+        document.getElementById('btn-delete-room').addEventListener('click', () => {
+            if (!currentRoom) return;
+            modalTitle.textContent = '방 삭제';
+            modalBody.innerHTML = `<p>${currentRoom} 방을 정말 삭제하시겠습니까?</p>`;
+            modalCancelBtn.classList.remove('d-none');
+            
+            modalConfirmBtn.onclick = async () => {
+                await remove(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
+                customModal.hide();
+                currentRoom = null;
+                document.getElementById('admin-active-room').textContent = '';
+                document.getElementById('admin-board-area').style.display = 'none';
+            };
+            customModal.show();
+        });
+
+        document.getElementById('admin-room-select').addEventListener('change', (e) => {
+            const selected = e.target.value;
+            if (!selected) {
+                document.getElementById('admin-board-area').style.display = 'none';
+                currentRoom = null;
+                return;
+            }
+            currentRoom = selected;
+            document.getElementById('admin-active-room').textContent = `${currentRoom} 방`;
+            document.getElementById('admin-board-area').style.display = 'block';
+            document.getElementById('draw-result-area').style.display = 'none';
+            
+            listenToAdminRoom();
+        });
+
+        let allPlayersData = [];
+        
+        function listenToAdminRoom() {
+            if(!currentRoom || !isTeacher) return;
+            
+            if(activeRoomRef) {
+                // If there was an active room listener, we would turn it off in a more complete implementation.
+            }
+            
+            const roomRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}`);
+            onValue(roomRef, (snapshot) => {
+                if(!snapshot.exists()) return;
+                
+                const data = snapshot.val();
+                if(data.status === 'finished') {
+                    document.getElementById('btn-end-game').disabled = true;
+                    document.getElementById('btn-end-game').textContent = '종료됨';
+                    document.getElementById('btn-draw-10').disabled = false;
+                } else {
+                    document.getElementById('btn-end-game').disabled = false;
+                    document.getElementById('btn-end-game').textContent = '가위바위보 종료';
+                    document.getElementById('btn-draw-10').disabled = true;
+                }
+
+                const tbody = document.querySelector('#admin-players-table tbody');
+                tbody.innerHTML = '';
+                allPlayersData = [];
+                
+                if (data.players) {
+                    Object.keys(data.players).forEach(nickname => {
+                        const score = data.players[nickname];
+                        allPlayersData.push({ nickname, ...score });
+                        
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="fw-bold">${nickname}</td>
+                            <td class="text-success">${score.wins}</td>
+                            <td class="text-secondary">${score.draws}</td>
+                            <td class="text-danger">${score.losses}</td>
+                            <td class="fw-bold text-primary">${score.total}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            });
+        }
+
+        document.getElementById('btn-end-game').addEventListener('click', async () => {
+            if(!currentRoom) return;
+            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { status: 'finished' });
+            showAlert('종료 완료', '게임이 종료되었습니다. 이제 10명을 추출할 수 있습니다.');
+        });
+
+        document.getElementById('btn-draw-10').addEventListener('click', () => {
+            if (allPlayersData.length === 0) {
+                showAlert('알림', '참여한 학생이 없습니다.');
+                return;
+            }
+            
+            // 10명 뽑기 (게임 총 횟수 많은/적은 친구 섞어서)
+            // 전략: total 기준 정렬 -> 상위 3명, 하위 3명 고정, 나머지에서 4명 랜덤 (만약 10명 이하면 전부 다 표시)
+            let selected = [];
+            
+            if (allPlayersData.length <= 10) {
+                selected = [...allPlayersData];
+            } else {
+                const sorted = [...allPlayersData].sort((a, b) => b.total - a.total);
+                const top3 = sorted.slice(0, 3);
+                const bottom3 = sorted.slice(sorted.length - 3);
+                const middle = sorted.slice(3, sorted.length - 3);
+                
+                // 섞기
+                for (let i = middle.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [middle[i], middle[j]] = [middle[j], middle[i]];
+                }
+                
+                selected = [...top3, ...bottom3, ...middle.slice(0, 4)];
+            }
+            
+            // 이름순이나 무작위로 다시 섞어 출력 (상하위 노출 방지)
+            for (let i = selected.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [selected[i], selected[j]] = [selected[j], selected[i]];
+            }
+
+            const tbody = document.getElementById('draw-result-tbody');
+            tbody.innerHTML = '';
+            
+            selected.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="fw-bold">${p.nickname}</td>
+                    <td class="text-success">${p.wins}</td>
+                    <td class="text-secondary">${p.draws}</td>
+                    <td class="text-danger">${p.losses}</td>
+                    <td class="fw-bold text-primary">${p.total}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            document.getElementById('draw-result-area').style.display = 'block';
+            document.getElementById('draw-result-area').scrollIntoView({ behavior: 'smooth' });
+        });
+
+    </script>
+</body>
+</html>

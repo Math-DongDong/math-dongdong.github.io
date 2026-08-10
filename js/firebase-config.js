@@ -24,6 +24,7 @@ const dbBlotto = getFirestore(app, "blottogame");
 const dbPlusMinus = getFirestore(app, "plusminus");
 const dbMultiplyDivide = getFirestore(app, "multiplydivide");
 const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
+const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
 
-export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide, rtdbGridGomoku };
+export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide, rtdbGridGomoku, rtdbRelativeFrequency };
 
