@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 편집 도구</title>
+    <meta name="description" content="PDF 합치기, 분할, 반복 분할을 브라우저에서 안전하게 처리하는 무료 PDF 편집 도구입니다.">
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <!-- PDF-lib, JSZip, FileSaver.js -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #333;
+        }
+        .container-main {
+            max-width: 960px;
+            margin: 30px auto;
+            padding: 0 15px;
+        }
+        .card-custom {
+            background: #fff;
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+            padding: 28px;
+            margin-bottom: 20px;
+        }
+        /* Tab styles */
+        .nav-tabs .nav-link {
+            color: #6c757d;
+            font-weight: 500;
+            border: none;
+            border-bottom: 3px solid transparent;
+            padding: 10px 20px;
+        }
+        .nav-tabs .nav-link.active {
+            color: #0d6efd;
+            border-color: #0d6efd;
+            background: transparent;
+        }
+        .nav-tabs {
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 24px;
+        }
+        /* File table */
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .file-table th {
+            background-color: #f1f3f5;
+            padding: 10px 12px;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+        }
+        .file-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+        }
+        .file-table tbody tr:focus-within {
+            background-color: #e8f0fe;
+            outline: none;
+        }
+        .file-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .file-table .range-input {
+            font-size: 0.88rem;
+        }
+        /* Preview */
+        .preview-section {
+            margin-top: 20px;
+        }
+        .preview-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .preview-frame {
+            width: 100%;
+            height: 520px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+        }
+        .preview-placeholder {
+            width: 100%;
+            height: 520px;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #adb5bd;
+        }
+        .preview-placeholder i {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+        /* Status badge */
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 20px;
+        }
+        /* Spinner overlay */
+        .processing-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.75);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <!-- 공통 네비게이션바 -->
+    <div id="navbar-container"></div>
+
+    <main class="container-main">
+        <h1 class="h3 mb-1 fw-bold"><i class="bi bi-file-earmark-pdf text-danger"></i> PDF 편집 도구</h1>
+        <p class="text-muted mb-4 small">모든 PDF 처리는 브라우저 내에서 안전하게 실행됩니다. 파일이 서버로 전송되지 않습니다.</p>
+
+        <!-- Feature Tabs -->
+        <ul class="nav nav-tabs" id="pdfTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="merge-tab" data-bs-toggle="tab" data-bs-target="#merge" type="button" role="tab">
+                    <i class="bi bi-plus-square-dotted"></i> PDF 합치기
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="split-tab" data-bs-toggle="tab" data-bs-target="#split" type="button" role="tab">
+                    <i class="bi bi-scissors"></i> PDF 분할
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="repeat-split-tab" data-bs-toggle="tab" data-bs-target="#repeat-split" type="button" role="tab">
+                    <i class="bi bi-collection"></i> PDF 반복 분할
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="pdfTabsContent">
+
+            <!-- ===== 1. PDF 합치기 탭 ===== -->
+            <div class="tab-pane fade show active" id="merge" role="tabpanel" aria-labelledby="merge-tab">
+                <div class="card-custom">
+                    <div class="mb-3">
+                        <label for="mergeFiles" class="form-label fw-semibold">합칠 PDF 파일 선택 <span class="text-muted fw-normal small">(여러 개 선택 가능)</span></label>
+                        <input class="form-control" type="file" id="mergeFiles" accept="application/pdf" multiple>
+                    </div>
+
+                    <!-- 파일 테이블 -->
+                    <div id="mergeTableWrapper" class="d-none mb-3">
+                        <div class="table-responsive">
+                            <table class="file-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40px;">#</th>
+                                        <th>파일명</th>
+                                        <th style="width:80px;">총 쪽수</th>
+                                        <th style="width:220px;">합칠 범위 <span class="text-muted fw-normal" style="font-size:0.8rem;">(예: 1-3, 5 / 빈칸=전체)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mergeTableBody"></tbody>
+                            </table>
+                        </div>
+                        <p class="text-muted small mt-1 mb-0"><i class="bi bi-keyboard"></i> 범위 입력칸에서 <kbd>↑</kbd><kbd>↓</kbd> 키로 행 이동</p>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success d-none" id="btnMergeDownload"><i class="bi bi-download"></i> 병합 파일 다운로드</button>
+                    </div>
+
+                    <!-- 미리보기 -->
+                    <div class="preview-section">
+                        <div class="preview-label"><i class="bi bi-eye"></i> 미리보기</div>
+                        <div id="mergePreviewPlaceholder" class="preview-placeholder">
+                            <i class="bi bi-file-earmark-plus"></i>
+                            <span>PDF 파일을 선택하면 미리보기가 표시됩니다</span>
+                        </div>
+                        <div id="mergePreviewWrapper" class="d-none position-relative">
+                            <iframe id="mergePreviewFrame" class="preview-frame"></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== 2. PDF 분할 탭 ===== -->
+            <div class="tab-pane fade" id="split" role="tabpanel" aria-labelledby="split-tab">
+                <div class="card-custom">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-7">
+                            <label for="splitFile" class="form-label fw-semibold">분할할 PDF 파일 선택</label>
+                            <input class="form-control" type="file" id="splitFile" accept="application/pdf">
+                        </div>
+                        <div class="col-md-5">
+                            <label for="splitRange" class="form-label fw-semibold">추출할 페이지 범위</label>
+                            <input type="text" class="form-control" id="splitRange" placeholder="예: 1, 3-5, 7" disabled>
+                            <div class="form-text" id="splitPageCount"></div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mb-3">
+                        <button class="btn btn-success d-none" id="btnSplitDownload"><i class="bi bi-download"></i> 추출 파일 다운로드</button>
+                    </div>
+
+                    <!-- 미리보기 -->
+                    <div class="preview-section">
+                        <div class="preview-label"><i class="bi bi-eye"></i> 미리보기</div>
+                        <div id="splitPreviewPlaceholder" class="preview-placeholder">
+                            <i class="bi bi-file-earmark-plus"></i>
+                            <span>PDF 파일을 선택하면 미리보기가 표시됩니다</span>
+                        </div>
+                        <div id="splitPreviewWrapper" class="d-none position-relative">
+                            <iframe id="splitPreviewFrame" class="preview-frame"></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== 3. PDF 반복 분할 탭 ===== -->
+            <div class="tab-pane fade" id="repeat-split" role="tabpanel" aria-labelledby="repeat-split-tab">
+                <div class="card-custom">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-7">
+                            <label for="repeatSplitFile" class="form-label fw-semibold">분할할 PDF 파일 선택</label>
+                            <input class="form-control" type="file" id="repeatSplitFile" accept="application/pdf">
+                            <div class="form-text" id="repeatPageCount"></div>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="chunkSize" class="form-label fw-semibold">분할 단위 (쪽)</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="chunkSize" min="1" value="3">
+                                <span class="input-group-text">쪽마다</span>
+                            </div>
+                            <div class="form-text" id="chunkPreviewText"></div>
+                        </div>
+                    </div>
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle"></i> 분할된 파일들이 하나의 <strong>ZIP 파일</strong>로 다운로드됩니다.
+                    </div>
+                    <button class="btn btn-primary" id="btnRepeatSplit"><i class="bi bi-file-zip"></i> 분할 후 ZIP 다운로드</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 공통 JS -->
+    <script src="../../js/navbar.js"></script>
+    <script src="../../js/firebase-config.js"></script>
+
+    <script>
+        const { PDFDocument } = PDFLib;
+
+        // =====================================================
+        // 공통 유틸
+        // =====================================================
+        function parsePageRange(rangeStr, maxPages) {
+            if (!rangeStr || rangeStr.trim() === '') {
+                return Array.from({ length: maxPages }, (_, i) => i + 1);
+            }
+            const pages = new Set();
+            const parts = rangeStr.split(',');
+            for (let part of parts) {
+                part = part.trim();
+                if (part.includes('-')) {
+                    let [start, end] = part.split('-').map(Number);
+                    if (!isNaN(start) && !isNaN(end)) {
+                        start = Math.max(1, start);
+                        end = Math.min(maxPages, end);
+                        for (let i = start; i <= end; i++) pages.add(i);
+                    }
+                } else {
+                    const p = Number(part);
+                    if (!isNaN(p) && p >= 1 && p <= maxPages) pages.add(p);
+                }
+            }
+            return Array.from(pages).sort((a, b) => a - b);
+        }
+
+        // debounce 헬퍼: 연속 입력 시 마지막 입력 후 delay ms 뒤에만 실행
+        function debounce(fn, delay) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn(...args), delay);
+            };
+        }
+
+        // iframe에 PDF bytes를 표시
+        let mergeObjectUrl = null;
+        let splitObjectUrl = null;
+
+        function showPreview(iframeId, wrapperId, placeholderId, pdfBytes) {
+            const wrapper = document.getElementById(wrapperId);
+            const placeholder = document.getElementById(placeholderId);
+            const iframe = document.getElementById(iframeId);
+
+            // 이전 Object URL 해제 (메모리 누수 방지)
+            if (iframeId === 'mergePreviewFrame' && mergeObjectUrl) URL.revokeObjectURL(mergeObjectUrl);
+            if (iframeId === 'splitPreviewFrame' && splitObjectUrl) URL.revokeObjectURL(splitObjectUrl);
+
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+
+            if (iframeId === 'mergePreviewFrame') mergeObjectUrl = url;
+            if (iframeId === 'splitPreviewFrame') splitObjectUrl = url;
+
+            iframe.src = url;
+            wrapper.classList.remove('d-none');
+            placeholder.classList.add('d-none');
+        }
+
+        // =====================================================
+        // 1. PDF 합치기
+        // =====================================================
+        let mergeFilesArray = [];
+        let mergedPdfBytes = null;
+        // 각 파일의 PDFDocument 객체 캐시 (페이지수 표시용)
+        let mergePdfCache = {};
+
+        async function buildMergePreview() {
+            if (mergeFilesArray.length === 0) return;
+            try {
+                const mergedPdf = await PDFDocument.create();
+                for (let i = 0; i < mergeFilesArray.length; i++) {
+                    const file = mergeFilesArray[i];
+                    const rangeInput = document.getElementById(`mergeRange_${i}`);
+                    const rangeStr = rangeInput ? rangeInput.value : '';
+
+                    let pdf = mergePdfCache[i];
+                    if (!pdf) {
+                        const ab = await file.arrayBuffer();
+                        pdf = await PDFDocument.load(ab);
+                        mergePdfCache[i] = pdf;
+                    }
+
+                    const maxPages = pdf.getPageCount();
+                    const pagesToCopy = parsePageRange(rangeStr, maxPages).map(p => p - 1);
+                    if (pagesToCopy.length > 0) {
+                        const copied = await mergedPdf.copyPages(pdf, pagesToCopy);
+                        copied.forEach(page => mergedPdf.addPage(page));
+                    }
+                }
+                mergedPdfBytes = await mergedPdf.save();
+                showPreview('mergePreviewFrame', 'mergePreviewWrapper', 'mergePreviewPlaceholder', mergedPdfBytes);
+                document.getElementById('btnMergeDownload').classList.remove('d-none');
+            } catch (err) {
+                console.error('합치기 오류:', err);
+            }
+        }
+
+        const debouncedMergePreview = debounce(buildMergePreview, 600);
+
+        // 키보드 위아래 화살표로 행 간 range input 이동
+        function addArrowKeyNav(input) {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const tbody = document.getElementById('mergeTableBody');
+                    const inputs = Array.from(tbody.querySelectorAll('input.range-input'));
+                    const idx = inputs.indexOf(e.target);
+                    const nextIdx = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
+                    if (nextIdx >= 0 && nextIdx < inputs.length) {
+                        inputs[nextIdx].focus();
+                        inputs[nextIdx].select();
+                    }
+                }
+            });
+        }
+
+        document.getElementById('mergeFiles').addEventListener('change', async function (e) {
+            mergeFilesArray = Array.from(e.target.files);
+            mergePdfCache = {};
+            mergedPdfBytes = null;
+
+            const tbody = document.getElementById('mergeTableBody');
+            tbody.innerHTML = '';
+            document.getElementById('mergeTableWrapper').classList.toggle('d-none', mergeFilesArray.length === 0);
+            document.getElementById('btnMergeDownload').classList.add('d-none');
+
+            // 테이블 행 생성 + 페이지수 비동기 로드
+            for (let i = 0; i < mergeFilesArray.length; i++) {
+                const file = mergeFilesArray[i];
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-center text-muted">${i + 1}</td>
+                    <td class="text-truncate" style="max-width:260px;" title="${file.name}">${file.name}</td>
+                    <td class="text-center" id="mergePgCount_${i}"><span class="spinner-border spinner-border-sm text-secondary"></span></td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm range-input" id="mergeRange_${i}" placeholder="전체">
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                const rangeInput = tr.querySelector(`#mergeRange_${i}`);
+                rangeInput.addEventListener('input', debouncedMergePreview);
+                addArrowKeyNav(rangeInput);
+
+                // 비동기로 페이지 수 로드
+                (async (fileIdx, f) => {
+                    try {
+                        const ab = await f.arrayBuffer();
+                        const pdf = await PDFDocument.load(ab);
+                        mergePdfCache[fileIdx] = pdf;
+                        document.getElementById(`mergePgCount_${fileIdx}`).textContent = `${pdf.getPageCount()} 쪽`;
+                    } catch {
+                        document.getElementById(`mergePgCount_${fileIdx}`).textContent = '?';
+                    }
+                    // 마지막 파일 로드 완료 시 미리보기 갱신
+                    if (fileIdx === mergeFilesArray.length - 1) {
+                        buildMergePreview();
+                    }
+                })(i, file);
+            }
+        });
+
+        document.getElementById('btnMergeDownload').addEventListener('click', () => {
+            if (mergedPdfBytes) {
+                saveAs(new Blob([mergedPdfBytes], { type: 'application/pdf' }), 'merged_document.pdf');
+            }
+        });
+
+
+        // =====================================================
+        // 2. PDF 분할
+        // =====================================================
+        let splitPdfDoc = null;
+        let splitPdfBytes = null;
+
+        async function buildSplitPreview() {
+            if (!splitPdfDoc) return;
+            const rangeStr = document.getElementById('splitRange').value;
+            const maxPages = splitPdfDoc.getPageCount();
+            const pagesToExtract = parsePageRange(rangeStr, maxPages).map(p => p - 1);
+
+            if (pagesToExtract.length === 0) return;
+            try {
+                const newPdf = await PDFDocument.create();
+                const copied = await newPdf.copyPages(splitPdfDoc, pagesToExtract);
+                copied.forEach(page => newPdf.addPage(page));
+                splitPdfBytes = await newPdf.save();
+                showPreview('splitPreviewFrame', 'splitPreviewWrapper', 'splitPreviewPlaceholder', splitPdfBytes);
+                document.getElementById('btnSplitDownload').classList.remove('d-none');
+            } catch (err) {
+                console.error('분할 미리보기 오류:', err);
+            }
+        }
+
+        const debouncedSplitPreview = debounce(buildSplitPreview, 600);
+
+        document.getElementById('splitFile').addEventListener('change', async function (e) {
+            splitPdfDoc = null;
+            splitPdfBytes = null;
+            document.getElementById('splitRange').disabled = true;
+            document.getElementById('splitRange').value = '';
+            document.getElementById('splitPageCount').textContent = '';
+            document.getElementById('btnSplitDownload').classList.add('d-none');
+
+            if (e.target.files.length === 0) return;
+            try {
+                const ab = await e.target.files[0].arrayBuffer();
+                splitPdfDoc = await PDFDocument.load(ab);
+                const total = splitPdfDoc.getPageCount();
+                document.getElementById('splitPageCount').textContent = `총 ${total} 쪽`;
+                document.getElementById('splitRange').disabled = false;
+                document.getElementById('splitRange').placeholder = `예: 1-${total}`;
+                // 기본값 = 전체 → 빈 문자열로 두면 parsePageRange가 전체 반환
+                buildSplitPreview();
+            } catch (err) {
+                console.error(err);
+                alert('PDF 파일을 불러오는 중 오류가 발생했습니다.');
+            }
+        });
+
+        document.getElementById('splitRange').addEventListener('input', debouncedSplitPreview);
+
+        document.getElementById('btnSplitDownload').addEventListener('click', () => {
+            if (splitPdfBytes) {
+                saveAs(new Blob([splitPdfBytes], { type: 'application/pdf' }), 'split_document.pdf');
+            }
+        });
+
+
+        // =====================================================
+        // 3. PDF 반복 분할 (ZIP)
+        // =====================================================
+        let repeatPdfDoc = null;
+        let repeatFileName = '';
+
+        document.getElementById('repeatSplitFile').addEventListener('change', async function (e) {
+            repeatPdfDoc = null;
+            document.getElementById('repeatPageCount').textContent = '';
+            document.getElementById('chunkPreviewText').textContent = '';
+            if (e.target.files.length === 0) return;
+            try {
+                repeatFileName = e.target.files[0].name;
+                const ab = await e.target.files[0].arrayBuffer();
+                repeatPdfDoc = await PDFDocument.load(ab);
+                const total = repeatPdfDoc.getPageCount();
+                document.getElementById('repeatPageCount').textContent = `총 ${total} 쪽`;
+                updateChunkPreview();
+            } catch (err) {
+                console.error(err);
+                alert('PDF 파일을 불러오는 중 오류가 발생했습니다.');
+            }
+        });
+
+        function updateChunkPreview() {
+            if (!repeatPdfDoc) return;
+            const size = parseInt(document.getElementById('chunkSize').value, 10);
+            if (isNaN(size) || size < 1) return;
+            const total = repeatPdfDoc.getPageCount();
+            const fileCount = Math.ceil(total / size);
+            document.getElementById('chunkPreviewText').textContent = `→ 총 ${fileCount}개의 파일로 분할됩니다`;
+        }
+
+        document.getElementById('chunkSize').addEventListener('input', updateChunkPreview);
+
+        document.getElementById('btnRepeatSplit').addEventListener('click', async () => {
+            if (!repeatPdfDoc) return alert('분할할 PDF 파일을 선택해주세요.');
+            const chunkSize = parseInt(document.getElementById('chunkSize').value, 10);
+            if (isNaN(chunkSize) || chunkSize < 1) return alert('올바른 분할 쪽수를 입력해주세요.');
+
+            const btn = document.getElementById('btnRepeatSplit');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 처리 중...';
+            btn.disabled = true;
+
+            try {
+                const maxPages = repeatPdfDoc.getPageCount();
+                const zip = new JSZip();
+                const baseName = repeatFileName.replace(/\.pdf$/i, '');
+
+                for (let i = 0; i < maxPages; i += chunkSize) {
+                    const end = Math.min(i + chunkSize, maxPages);
+                    const pagesToCopy = [];
+                    for (let j = i; j < end; j++) pagesToCopy.push(j);
+
+                    const newPdf = await PDFDocument.create();
+                    const copied = await newPdf.copyPages(repeatPdfDoc, pagesToCopy);
+                    copied.forEach(page => newPdf.addPage(page));
+                    const bytes = await newPdf.save();
+
+                    const fileName = `${baseName}_${i + 1}-${end}.pdf`;
+                    zip.file(fileName, bytes);
+                }
+
+                const zipBlob = await zip.generateAsync({ type: 'blob' });
+                saveAs(zipBlob, `split_${baseName}.zip`);
+            } catch (err) {
+                console.error(err);
+                alert('PDF 반복 분할 중 오류가 발생했습니다.');
+            } finally {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

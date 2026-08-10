@@ -85,7 +85,8 @@
                 {
                     "title": "업무자동화",
                     "items": [
-                        { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" }
+                        { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" },
+                        { "name": "PDF 편집", "path": "pages/automation/work/pdfedit.html" }
                     ]
                 },
                 {
