@@ -35,17 +35,18 @@ math-dongdong.github.io/
 ├── css/                    # 공통 스타일시트
 ├── js/                     # 공통 자바스크립트
 └── pages/
-    ├── middleschool/       # 중학 수학 콘텐츠
     ├── aimath/             # 인공지능 수학 콘텐츠
-    └── automation/         # 업무 자동화 도구
+    ├── automation/         # 업무자동화 콘텐츠
+    └── middleschool/       # 중학 수학 콘텐츠
 ```
 
 ---
 
 ## 🚀 시작하기
 
-`index.html` 파일을 브라우저로 열거나, GitHub Pages를 통해 온라인에서 바로 이용할 수 있습니다.
+`GitHub Pages를 통해 온라인에서 바로 이용할 수 있습니다.
 
+https://math-dongdong.github.io/
 
 ---
 
