@@ -13,10 +13,11 @@
     <!-- 공통 CSS -->
     <link rel="stylesheet" href="../../../css/navbar.css">
 
-    <!-- PDF-lib, JSZip, FileSaver.js -->
+    <!-- PDF-lib, JSZip, FileSaver.js, SortableJS -->
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
     <style>
         body {
@@ -183,6 +184,7 @@
                             <table class="file-table">
                                 <thead>
                                     <tr>
+                                        <th style="width:30px;" class="text-center"><i class="bi bi-arrows-move text-muted" title="순서 변경"></i></th>
                                         <th style="width:40px;">#</th>
                                         <th>파일명</th>
                                         <th style="width:80px;">총 쪽수</th>
@@ -192,7 +194,7 @@
                                 <tbody id="mergeTableBody"></tbody>
                             </table>
                         </div>
-                        <p class="text-muted small mt-1 mb-0"><i class="bi bi-keyboard"></i> 범위 입력칸에서 <kbd>↑</kbd><kbd>↓</kbd> 키로 행 이동</p>
+                        <p class="text-muted small mt-1 mb-0"><i class="bi bi-grip-vertical"></i> 아이콘을 드래그하여 순서 변경 | <i class="bi bi-keyboard"></i> 범위 입력칸에서 <kbd>↑</kbd><kbd>↓</kbd> 키로 행 이동</p>
                     </div>
 
                     <div class="d-flex gap-2">
@@ -350,20 +352,34 @@
         // 각 파일의 PDFDocument 객체 캐시 (페이지수 표시용)
         let mergePdfCache = {};
 
+        // 행 번호(#) 갱신 유틸
+        function updateMergeRowNumbers() {
+            const rows = document.querySelectorAll('#mergeTableBody tr');
+            rows.forEach((tr, index) => {
+                const numTd = tr.querySelector('.row-number');
+                if (numTd) numTd.textContent = index + 1;
+            });
+        }
+
         async function buildMergePreview() {
             if (mergeFilesArray.length === 0) return;
             try {
                 const mergedPdf = await PDFDocument.create();
-                for (let i = 0; i < mergeFilesArray.length; i++) {
-                    const file = mergeFilesArray[i];
-                    const rangeInput = document.getElementById(`mergeRange_${i}`);
+                const rows = document.querySelectorAll('#mergeTableBody tr');
+
+                for (let tr of rows) {
+                    const fileIdx = parseInt(tr.dataset.fileIndex, 10);
+                    const file = mergeFilesArray[fileIdx];
+                    if (!file) continue;
+
+                    const rangeInput = tr.querySelector('.range-input');
                     const rangeStr = rangeInput ? rangeInput.value : '';
 
-                    let pdf = mergePdfCache[i];
+                    let pdf = mergePdfCache[fileIdx];
                     if (!pdf) {
                         const ab = await file.arrayBuffer();
                         pdf = await PDFDocument.load(ab);
-                        mergePdfCache[i] = pdf;
+                        mergePdfCache[fileIdx] = pdf;
                     }
 
                     const maxPages = pdf.getPageCount();
@@ -382,6 +398,16 @@
         }
 
         const debouncedMergePreview = debounce(buildMergePreview, 600);
+
+        // SortableJS 드래그 앤 드롭 초기화
+        new Sortable(document.getElementById('mergeTableBody'), {
+            handle: '.drag-handle',
+            animation: 150,
+            onEnd: function () {
+                updateMergeRowNumbers();
+                buildMergePreview();
+            }
+        });
 
         // 키보드 위아래 화살표로 행 간 range input 이동
         function addArrowKeyNav(input) {
@@ -414,8 +440,10 @@
             for (let i = 0; i < mergeFilesArray.length; i++) {
                 const file = mergeFilesArray[i];
                 const tr = document.createElement('tr');
+                tr.dataset.fileIndex = i;
                 tr.innerHTML = `
-                    <td class="text-center text-muted">${i + 1}</td>
+                    <td class="text-center text-muted drag-handle" style="cursor: grab;"><i class="bi bi-grip-vertical"></i></td>
+                    <td class="text-center text-muted row-number">${i + 1}</td>
                     <td class="text-truncate" style="max-width:260px;" title="${file.name}">${file.name}</td>
                     <td class="text-center" id="mergePgCount_${i}"><span class="spinner-border spinner-border-sm text-secondary"></span></td>
                     <td>
