@@ -362,7 +362,13 @@
                     <div class="card shadow-sm border-0 rounded-4 p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <h5 class="fw-bold mb-0">👥 참가자 및 대전 현황</h5>
-                            <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="form-check form-switch fs-6 mb-0">
+                                    <input class="form-check-input" type="checkbox" id="admin-computer-toggle">
+                                    <label class="form-check-label fw-bold text-secondary" for="admin-computer-toggle">컴퓨터 추가</label>
+                                </div>
+                                <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                            </div>
                         </div>
                         <div class="table-responsive">
                             <table class="table table-bordered record-table" id="admin-record-table">
@@ -552,6 +558,9 @@
         let unsubMatch = null;
         let unsubWaiting = null;
         let heartbeatInterval = null;
+        let waitingInterval = null;
+        let computerMoveTimeout = null;
+        let localJoinedTime = 0;
 
         let roomSettings = null;
         let playersData = {};
@@ -638,6 +647,15 @@
             currentRoomCode = code;
             currentNickname = nickname;
             roomSettings = snap.val().settings;
+            
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+            const rRef = roomRef(code);
+            const rCallback = onValue(rRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    roomSettings = snapshot.val().settings;
+                }
+            });
+            unsubRoom = () => off(rRef, 'value', rCallback);
 
             // 플레이어 등록 또는 재접속
             const pSnap = await get(playerRef(code, nickname));
@@ -786,11 +804,33 @@
 
             if (unsubAdminPlayers) { off(playersCollRef(currentRoomCode)); unsubAdminPlayers = null; }
             if (unsubAdminMatches) { off(matchesCollRef(currentRoomCode)); unsubAdminMatches = null; }
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
 
-            // 방 설정 로드
-            get(roomRef(roomCode)).then(snap => {
-                if (snap.exists()) roomSettings = snap.val().settings;
+            // 방 설정 실시간 로드
+            const rRef = roomRef(roomCode);
+            const rCallback = onValue(rRef, (snapshot) => {
+                if (snapshot.exists() && snapshot.val().settings) {
+                    roomSettings = snapshot.val().settings;
+                    const compToggle = document.getElementById('admin-computer-toggle');
+                    if (compToggle) compToggle.checked = !!roomSettings.computerMatchEnabled;
+                }
             });
+            unsubRoom = () => off(rRef, 'value', rCallback);
+            
+            // 컴퓨터 추가 토글 이벤트 바인딩 (1회만)
+            const compToggle = document.getElementById('admin-computer-toggle');
+            if (compToggle && !compToggle.dataset.bound) {
+                compToggle.dataset.bound = 'true';
+                compToggle.addEventListener('change', async (e) => {
+                    if (!currentRoomCode) return;
+                    try {
+                        await update(roomRef(currentRoomCode), { 'settings/computerMatchEnabled': e.target.checked });
+                    } catch(err) {
+                        console.error("토글 변경 실패:", err);
+                        e.target.checked = !e.target.checked;
+                    }
+                });
+            }
 
             // 플레이어 구독
             const pRef = playersCollRef(roomCode);
@@ -953,6 +993,10 @@
             }
 
             showSection(sectionWaiting);
+            
+            localJoinedTime = Date.now();
+            if (waitingInterval) clearInterval(waitingInterval);
+            waitingInterval = setInterval(checkComputerMatch, 1000);
 
             // 대기열에 등록
             await set(waitingRef(currentRoomCode, currentNickname), {
@@ -1043,6 +1087,7 @@
                 const myMatch = await findMyActiveMatch();
                 if (myMatch) {
                     if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
+                    if (waitingInterval) { clearInterval(waitingInterval); waitingInterval = null; }
                     currentMatchId = myMatch.id;
                     myColor = myMatch.data.player1 === currentNickname ? 'black' : 'white';
                     matchData = myMatch.data;
@@ -1051,6 +1096,48 @@
                 }
             });
             unsubWaiting = () => off(wRef, 'value', wCallback);
+        }
+
+        async function checkComputerMatch() {
+            if (currentMatchId) return; 
+            if (!roomSettings?.computerMatchEnabled) return;
+            
+            const waitTime = (Date.now() - localJoinedTime) / 1000;
+            if (waitTime < 30) return;
+            
+            const wRef = query(waitingCollRef(currentRoomCode), orderByChild('joinedAt'));
+            const snap = await get(wRef);
+            if (!snap.exists()) return;
+            
+            const waitingList = [];
+            snap.forEach(childSnap => {
+                waitingList.push({ id: childSnap.key, ...childSnap.val() });
+            });
+            
+            if (waitingList.length === 0) return;
+            const first = waitingList[0];
+            
+            if (first.id === currentNickname) {
+                try {
+                    const matchId = `${Date.now()}_${first.id}_COMPUTER`;
+                    const boardSize = roomSettings?.boardSize || 14;
+                    await set(matchRef(currentRoomCode, matchId), {
+                        player1: first.id,
+                        player2: 'COMPUTER',
+                        moves: [],
+                        boardSize: boardSize,
+                        winCount: roomSettings?.winCount || 5,
+                        status: 'playing',
+                        currentTurn: 'black',
+                        createdAt: serverTimestamp(),
+                        lastMoveTime: serverTimestamp()
+                    });
+                    await update(playerRef(currentRoomCode, first.id), { lastOpponent: 'COMPUTER' });
+                    await remove(waitingRef(currentRoomCode, first.id));
+                } catch (e) {
+                    console.error('컴퓨터 매치 생성 오류:', e);
+                }
+            }
         }
 
         async function findMyActiveMatch() {
@@ -1339,6 +1426,23 @@
                 drawBoard();
                 updateGameUI();
                 checkTimer(); // 업데이트 시 즉시 타이머 반영
+                
+                // 컴퓨터 차례 확인
+                if (matchData.status === 'playing' && (matchData.player1 === 'COMPUTER' || matchData.player2 === 'COMPUTER')) {
+                    const moveCount = matchData.moves ? matchData.moves.length : 0;
+                    const isBlackTurn = moveCount % 2 === 0;
+                    const computerColor = matchData.player1 === 'COMPUTER' ? 'black' : 'white';
+                    const currentTurnColor = isBlackTurn ? 'black' : 'white';
+                    
+                    if (computerColor === currentTurnColor && myColor !== computerColor) {
+                        if (!computerMoveTimeout) {
+                            computerMoveTimeout = setTimeout(() => {
+                                playComputerMove();
+                                computerMoveTimeout = null;
+                            }, 1000);
+                        }
+                    }
+                }
             });
             unsubMatch = () => off(mRef, 'value', mCallback);
         }
@@ -1473,6 +1577,136 @@
             }
         }
 
+        async function executeMove(x, y) {
+            if (!matchData || matchData.status !== 'playing') return;
+            
+            const moveCount = matchData.moves ? matchData.moves.length : 0;
+            const isBlackTurn = moveCount % 2 === 0;
+            const newColor = isBlackTurn ? 'black' : 'white';
+            const newMoves = [...(matchData.moves || []), { x, y }];
+            
+            boardState[`${x},${y}`] = newColor;
+            const winResult = checkWin(x, y, newColor);
+            
+            try {
+                const mRef = matchRef(currentRoomCode, currentMatchId);
+                
+                if (winResult) {
+                    const winnerId = isBlackTurn ? matchData.player1 : matchData.player2;
+                    await update(mRef, {
+                        moves: newMoves,
+                        status: 'finished',
+                        winner: winnerId,
+                        winLine: winResult,
+                        lastMoveTime: serverTimestamp()
+                    });
+                    
+                    if (winnerId !== 'COMPUTER') {
+                        const winnerRef = playerRef(currentRoomCode, winnerId);
+                        const winnerSnap = await get(winnerRef);
+                        if (winnerSnap.exists()) await update(winnerRef, { wins: (winnerSnap.val().wins || 0) + 1 });
+                    }
+                    const loserId = isBlackTurn ? matchData.player2 : matchData.player1;
+                    if (loserId !== 'COMPUTER') {
+                        const loserRef = playerRef(currentRoomCode, loserId);
+                        const loserSnap = await get(loserRef);
+                        if (loserSnap.exists()) await update(loserRef, { losses: (loserSnap.val().losses || 0) + 1 });
+                    }
+                } else if (newMoves.length >= (BOARD_N + 1) * (BOARD_N + 1)) {
+                    await update(mRef, { moves: newMoves, status: 'finished', winner: null, lastMoveTime: serverTimestamp() });
+                } else {
+                    await update(mRef, {
+                        moves: newMoves,
+                        currentTurn: isBlackTurn ? 'white' : 'black',
+                        lastMoveTime: serverTimestamp()
+                    });
+                }
+            } catch (e) {
+                delete boardState[`${x},${y}`];
+                throw e;
+            }
+        }
+
+        async function playComputerMove() {
+            if (!matchData || matchData.status !== 'playing') return;
+            const moves = matchData.moves || [];
+            const moveCount = moves.length;
+            const isBlackTurn = moveCount % 2 === 0;
+            const computerColor = matchData.player1 === 'COMPUTER' ? 'black' : 'white';
+            const currentTurnColor = isBlackTurn ? 'black' : 'white';
+            
+            if (computerColor !== currentTurnColor) return;
+            
+            if (moves.length === 0) {
+                await executeMove(0, 0);
+                return;
+            }
+            
+            let targetX, targetY;
+            let found = false;
+            
+            const directions = [
+                [-1, -1], [0, -1], [1, -1],
+                [-1, 0],           [1, 0],
+                [-1, 1],  [0, 1],  [1, 1]
+            ];
+            
+            const humanColor = computerColor === 'black' ? 'white' : 'black';
+            
+            for (let i = moves.length - 1; i >= 0; i--) {
+                const moveColor = i % 2 === 0 ? 'black' : 'white';
+                if (moveColor === humanColor && !moves[i].pass) {
+                    const hx = moves[i].x;
+                    const hy = moves[i].y;
+                    
+                    let availableSpots = [];
+                    for (const [dx, dy] of directions) {
+                        const nx = hx + dx;
+                        const ny = hy + dy;
+                        if (nx >= -HALF_N && nx <= HALF_N && ny >= -HALF_N && ny <= HALF_N) {
+                            if (!boardState[`${nx},${ny}`]) {
+                                availableSpots.push({x: nx, y: ny});
+                            }
+                        }
+                    }
+                    
+                    if (availableSpots.length > 0) {
+                        const pick = availableSpots[Math.floor(Math.random() * availableSpots.length)];
+                        targetX = pick.x;
+                        targetY = pick.y;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!found) {
+                let allEmpty = [];
+                for(let nx = -HALF_N; nx <= HALF_N; nx++) {
+                    for(let ny = -HALF_N; ny <= HALF_N; ny++) {
+                        if (!boardState[`${nx},${ny}`]) {
+                            allEmpty.push({x: nx, y: ny});
+                        }
+                    }
+                }
+                if (allEmpty.length > 0) {
+                    const pick = allEmpty[Math.floor(Math.random() * allEmpty.length)];
+                    targetX = pick.x;
+                    targetY = pick.y;
+                }
+            }
+            
+            if (targetX !== undefined && targetY !== undefined) {
+                try {
+                    await executeMove(targetX, targetY);
+                } catch(e) {
+                    console.error("컴퓨터 착수 실패:", e);
+                }
+            } else {
+                 passTurnDueToTimeout();
+            }
+        }
+
         // 돌 두기
         document.getElementById('btn-place-stone').addEventListener('click', async () => {
             if (!matchData || matchData.status !== 'playing') return;
@@ -1481,7 +1715,6 @@
             const isBlackTurn = moveCount % 2 === 0;
             const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
 
-            // 턴이 아니거나 시간이 만료된 경우 방지
             const elapsed = (Date.now() - localTurnStartTime) / 1000;
             if (!isMyTurn || elapsed >= 30) return;
 
@@ -1500,48 +1733,12 @@
                 return await customAlert("알림", "이미 돌이 놓인 위치입니다.");
             }
 
-            const newMoves = [...(matchData.moves || []), { x, y }];
-            const newColor = isBlackTurn ? 'black' : 'white';
-
-            // 승리 판정
-            boardState[`${x},${y}`] = newColor;
-            const winResult = checkWin(x, y, newColor);
-
             try {
-                const mRef = matchRef(currentRoomCode, currentMatchId);
-
-                if (winResult) {
-                    await update(mRef, {
-                        moves: newMoves,
-                        status: 'finished',
-                        winner: currentNickname,
-                        winLine: winResult,
-                        lastMoveTime: serverTimestamp()
-                    });
-                    // 승패 기록 업데이트
-                    const loser = matchData.player1 === currentNickname ? matchData.player2 : matchData.player1;
-                    const winnerRef = playerRef(currentRoomCode, currentNickname);
-                    const loserRef = playerRef(currentRoomCode, loser);
-                    const [winnerSnap, loserSnap] = await Promise.all([get(winnerRef), get(loserRef)]);
-                    if (winnerSnap.exists()) await update(winnerRef, { wins: (winnerSnap.val().wins || 0) + 1 });
-                    if (loserSnap.exists()) await update(loserRef, { losses: (loserSnap.val().losses || 0) + 1 });
-                } else if (newMoves.length >= (BOARD_N + 1) * (BOARD_N + 1)) {
-                    // 모든 교차점이 채워진 경우 (무승부)
-                    await update(mRef, { moves: newMoves, status: 'finished', winner: null, lastMoveTime: serverTimestamp() });
-                } else {
-                    await update(mRef, {
-                        moves: newMoves,
-                        currentTurn: isBlackTurn ? 'white' : 'black',
-                        lastMoveTime: serverTimestamp()
-                    });
-                }
-
-                // 다음 입력을 위해 0으로 리셋
+                await executeMove(x, y);
                 setRouletteValue(rX, 0);
                 setRouletteValue(rY, 0);
             } catch (e) {
                 console.error(e);
-                delete boardState[`${x},${y}`];
                 await customAlert("오류", "돌을 놓는 중 오류가 발생했습니다.");
             }
         });
@@ -1579,6 +1776,7 @@
         document.getElementById('btn-back-to-waiting').addEventListener('click', () => {
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (computerMoveTimeout) { clearTimeout(computerMoveTimeout); computerMoveTimeout = null; }
             currentMatchId = null;
             matchData = null;
             myColor = null;
@@ -1597,6 +1795,8 @@
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
+            if (waitingInterval) { clearInterval(waitingInterval); waitingInterval = null; }
+            if (computerMoveTimeout) { clearTimeout(computerMoveTimeout); computerMoveTimeout = null; }
             if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
             if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
         }
