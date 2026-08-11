@@ -19,12 +19,11 @@ const appCheck = initializeAppCheck(app, {
   isTokenAutoRefreshEnabled: true
 });
 
-const dbSentiment = getFirestore(app, "sentimentanalysis");
-const dbBlotto = getFirestore(app, "blottogame");
-const dbPlusMinus = getFirestore(app, "plusminus");
-const dbMultiplyDivide = getFirestore(app, "multiplydivide");
+const db = getFirestore(app);
+const rtdbBlotto = getDatabase(app, "https://blottogame.asia-southeast1.firebasedatabase.app/");
+const rtdbSentiment = getDatabase(app, "https://sentimentanalysis.asia-southeast1.firebasedatabase.app/");
 const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
 const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
 
-export { app, dbSentiment, dbBlotto, dbPlusMinus, dbMultiplyDivide, rtdbGridGomoku, rtdbRelativeFrequency };
+export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency };
 

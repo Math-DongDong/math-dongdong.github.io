@@ -219,12 +219,11 @@
 
     <!-- 스크립트 로직 -->
     <script type="module">
-        import { dbSentiment as db } from "../../../js/firebase-config.js";
+        import { rtdbSentiment as db } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
         import {
-            collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc,
-            serverTimestamp, query, orderBy, deleteDoc
-        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+            ref, set, get, child, push, onValue, update, remove, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
         // 텍스트를 신경망이 처리할 수 있는 숫자 빈도수 객체로 변환하는 함수
         function encodeText(text) {
@@ -352,7 +351,7 @@
             const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
 
             try {
-                await setDoc(doc(db, "rooms", roomCode), {
+                await set(ref(db, "rooms/" + roomCode), {
                     topic: topic,
                     createdAt: serverTimestamp()
                 });
@@ -378,12 +377,12 @@
             const code = document.getElementById('room-code-input').value.toUpperCase().trim();
             if (code.length === 0) return await customAlert("알림", "코드를 입력하세요.");
 
-            const roomRef = doc(db, "rooms", code);
-            const docSnap = await getDoc(roomRef);
+            const roomRef = ref(db, "rooms/" + code);
+            const docSnap = await get(roomRef);
 
             if (docSnap.exists()) {
                 currentRoomCode = code;
-                navRoomInfo.textContent = `현재 방: ${code} (${docSnap.data().topic})`;
+                navRoomInfo.textContent = `현재 방: ${code} (${docSnap.val().topic})`;
 
                 sectionLanding.classList.remove('active-section');
                 sectionStudent.classList.add('active-section');
@@ -393,9 +392,9 @@
 
                 // mlEnabled 실시간 감시 → 학습 버튼 제어
                 if (mlUnsubscribe) mlUnsubscribe();
-                mlUnsubscribe = onSnapshot(doc(db, "rooms", code), (docSnap) => {
+                mlUnsubscribe = onValue(ref(db, "rooms/" + code), (docSnap) => {
                     if (docSnap.exists()) {
-                        mlEnabled = docSnap.data().mlEnabled === true;
+                        mlEnabled = docSnap.val().mlEnabled === true;
                         const btnTrain = document.getElementById('btn-train-ai');
                         if (mlEnabled) {
                             btnTrain.disabled = false;
@@ -441,16 +440,16 @@
 
         // 데이터 실시간 동기화
         function startStudentRealtimeSync() {
-            const wordsRef = collection(db, "rooms", currentRoomCode, "words");
+            const wordsRef = ref(db, "rooms/" + currentRoomCode + "/words");
 
-            onSnapshot(wordsRef, (snapshot) => {
+            onValue(wordsRef, (snapshot) => {
                 wordsData = [];
                 const container = document.getElementById('words-container');
                 container.innerHTML = "";
 
                 snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    data.id = docSnap.id;
+                    const data = docSnap.val();
+                    data.id = docSnap.key;
                     wordsData.push(data);
                 });
 
@@ -483,13 +482,13 @@
             if (action === null) return; // 취소
             if (action === '삭제') {
                 try {
-                    await deleteDoc(doc(db, "rooms", roomCode, "words", wordId));
+                    await remove(ref(db, "rooms/" + roomCode + "/words/" + wordId));
                 } catch (error) {
                     console.error(error);
                 }
             } else if (action.trim() !== '') {
                 try {
-                    await setDoc(doc(db, "rooms", roomCode, "words", wordId), { text: action.trim() }, { merge: true });
+                    await update(ref(db, "rooms/" + roomCode + "/words/" + wordId), { text: action.trim() });
                 } catch (error) {
                     console.error(error);
                 }
@@ -509,7 +508,7 @@
             }
 
             try {
-                await addDoc(collection(db, "rooms", currentRoomCode, "words"), {
+                await push(ref(db, "rooms/" + currentRoomCode + "/words"), {
                     text: word,
                     sentiment: sentiment,
                     createdAt: serverTimestamp()
@@ -609,7 +608,7 @@
             select.innerHTML = '<option value="">방을 선택하세요</option>'; // 초기화
 
             snapshot.forEach(docSnap => {
-                const data = docSnap.data();
+                const data = docSnap.val();
                 const option = document.createElement('option');
                 option.value = docSnap.id;
                 option.textContent = `[${docSnap.id}] ${data.topic}`;
@@ -634,16 +633,8 @@
             if (!confirmed) return;
 
             try {
-                // 해당 방의 words 하위 컬렉션 삭제
-                const wordsSnap = await getDocs(collection(db, "rooms", roomCode, "words"));
-                const deletePromises = [];
-                wordsSnap.forEach(docSnap => {
-                    deletePromises.push(deleteDoc(doc(db, "rooms", roomCode, "words", docSnap.id)));
-                });
-                await Promise.all(deletePromises);
-
-                // 방 문서 삭제
-                await deleteDoc(doc(db, "rooms", roomCode));
+                // RTDB에서는 부모 경로를 지우면 하위 경로도 한 번에 지워짐
+                await remove(ref(db, "rooms/" + roomCode));
 
                 // 실시간 리스너 해제 및 UI 초기화
                 if (currentUnsubscribe) {
@@ -672,7 +663,7 @@
 
             const newState = !mlEnabled;
             try {
-                await setDoc(doc(db, "rooms", roomCode), { mlEnabled: newState }, { merge: true });
+                await set(ref(db, "rooms/" + roomCode), { mlEnabled: newState }, { merge: true });
             } catch (error) {
                 console.error(error);
                 await customAlert("오류", "기계학습 상태 변경에 실패했습니다.");
@@ -706,21 +697,21 @@
             document.getElementById('btn-toggle-ml').disabled = false;
 
             // mlEnabled 실시간 리스너
-            adminMlUnsubscribe = onSnapshot(doc(db, "rooms", code), (docSnap) => {
+            adminMlUnsubscribe = onValue(ref(db, "rooms/" + code), (docSnap) => {
                 if (docSnap.exists()) {
-                    updateMlToggleUI(docSnap.data().mlEnabled === true);
+                    updateMlToggleUI(docSnap.val().mlEnabled === true);
                 }
             });
 
             // 새 방에 실시간 리스너 연결
-            const qWords = query(collection(db, "rooms", code, "words"), orderBy("createdAt", "desc"));
+            const qWords = ref(db, "rooms/" + code + "/words");
 
-            currentUnsubscribe = onSnapshot(qWords, (snapshot) => {
+            currentUnsubscribe = onValue(qWords, (snapshot) => {
                 adminWordsData = [];
                 const container = document.getElementById('admin-words-container');
                 container.innerHTML = "";
 
-                if (snapshot.empty) {
+                if (!snapshot.exists()) {
                     container.innerHTML = '<span class="text-muted">등록된 단어가 없습니다.</span>';
                     document.getElementById('admin-ai-section').style.display = 'none';
                     return;
@@ -729,8 +720,8 @@
                 document.getElementById('admin-ai-section').style.display = 'block';
 
                 snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    data.id = docSnap.id;
+                    const data = docSnap.val();
+                    data.id = docSnap.key;
                     adminWordsData.push(data);
                 });
 

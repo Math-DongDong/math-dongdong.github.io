@@ -339,12 +339,11 @@
 
     <!-- 스크립트 로직 -->
     <script type="module">
-        import { dbBlotto as db } from "../../../js/firebase-config.js";
+        import { rtdbBlotto as db } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
         import {
-            collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc, updateDoc,
-            serverTimestamp, query, orderBy, deleteDoc
-        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+            ref, set, get, child, push, onValue, update, remove, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
         // =====================================================================
         // 공통 유틸리티 (모달)
@@ -497,7 +496,7 @@
 
             try {
                 // 방 기본 정보 생성
-                await setDoc(doc(db, "blotto_rooms", roomCode), {
+                await set(ref(db, "blotto_rooms/" + roomCode), {
                     settings: {
                         teamsCount: teams,
                         maxSoldiers: soldiers,
@@ -526,30 +525,30 @@
 
             if (!code || !nickname) return await customAlert("알림", "방 코드와 닉네임을 모두 입력하세요.");
 
-            const roomRef = doc(db, "blotto_rooms", code);
-            const docSnap = await getDoc(roomRef);
+            const roomRef = ref(db, "blotto_rooms/" + code);
+            const docSnap = await get(roomRef);
 
             if (!docSnap.exists()) {
                 return await customAlert("알림", "존재하지 않는 방 코드입니다.");
             }
 
-            const roomData = docSnap.data();
+            const roomData = docSnap.val();
             const teamsMax = roomData.settings.teamsCount;
 
             // 이미 있는 닉네임인지 확인 (재접속)
-            const playerRef = doc(db, "blotto_rooms", code, "players", nickname);
-            const playerSnap = await getDoc(playerRef);
+            const playerRef = ref(db, "blotto_rooms/" + code + "/players/" + nickname);
+            const playerSnap = await get(playerRef);
 
             if (!playerSnap.exists()) {
                 // 신규 접속인 경우 인원 수 체크
-                const playersCol = collection(db, "blotto_rooms", code, "players");
-                const currentPlayersSnap = await getDocs(playersCol);
+                const playersCol = ref(db, "blotto_rooms/" + code + "/players");
+                const currentPlayersSnap = await get(playersCol);
                 if (currentPlayersSnap.size >= teamsMax) {
                     return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
                 }
 
                 // 플레이어 데이터 생성
-                await setDoc(playerRef, {
+                await set(playerRef, {
                     nickname: nickname,
                     score: 0,
                     remaining: roomData.settings.maxSoldiers,
@@ -592,35 +591,41 @@
             if (unsubPlayers) unsubPlayers();
 
             // 방 정보 구독
-            unsubRoom = onSnapshot(doc(db, "blotto_rooms", roomCode), (docSnap) => {
+            unsubRoom = onValue(ref(db, "blotto_rooms/" + roomCode), (docSnap) => {
                 if (docSnap.exists()) {
-                    roomSettings = docSnap.data().settings;
-                    roomState = docSnap.data().state;
+                    roomSettings = docSnap.val().settings;
+                    roomState = docSnap.val().state;
                     renderAdminBoard();
                 }
             });
 
             // 플레이어 정보 구독
-            unsubPlayers = onSnapshot(collection(db, "blotto_rooms", roomCode, "players"), (snapshot) => {
+            unsubPlayers = onValue(ref(db, "blotto_rooms/" + roomCode + "/players"), (snapshot) => {
                 playersData = {};
                 snapshot.forEach(doc => {
-                    playersData[doc.id] = doc.data();
+                    playersData[doc.key] = doc.val();
                 });
                 renderAdminBoard();
             });
         }
 
         async function loadAdminRooms() {
-            const q = query(collection(db, "blotto_rooms"), orderBy("createdAt", "desc"));
-            const snapshot = await getDocs(q);
+            const snapshot = await get(ref(db, "blotto_rooms"));
             const select = document.getElementById('admin-room-select');
             select.innerHTML = '<option value="">방을 선택하세요</option>';
-            snapshot.forEach(docSnap => {
-                const option = document.createElement('option');
-                option.value = docSnap.id;
-                option.textContent = `[${docSnap.id}]`;
-                select.appendChild(option);
-            });
+            const rooms = [];
+            if (snapshot.exists()) {
+                snapshot.forEach(docSnap => {
+                    rooms.push({ id: docSnap.key, data: docSnap.val() });
+                });
+                rooms.sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
+                rooms.forEach(room => {
+                    const option = document.createElement('option');
+                    option.value = room.id;
+                    option.textContent = `[${room.id}]`;
+                    select.appendChild(option);
+                });
+            }
         }
 
         document.getElementById('admin-room-select').addEventListener('change', (e) => {
@@ -652,16 +657,8 @@
             if (!confirmed) return;
 
             try {
-                // players 하위 컬렉션 삭제
-                const playersSnap = await getDocs(collection(db, "blotto_rooms", roomCode, "players"));
-                const deletePromises = [];
-                playersSnap.forEach(docSnap => {
-                    deletePromises.push(deleteDoc(doc(db, "blotto_rooms", roomCode, "players", docSnap.id)));
-                });
-                await Promise.all(deletePromises);
-
-                // 방 문서 삭제
-                await deleteDoc(doc(db, "blotto_rooms", roomCode));
+                // RTDB에서는 부모 경로를 지우면 하위도 모두 삭제됨
+                await remove(ref(db, "blotto_rooms/" + roomCode));
 
                 if (unsubRoom) { unsubRoom(); unsubRoom = null; }
                 if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
@@ -691,7 +688,7 @@
             // 플레이어 목록 배열 (가입순 정렬) - 실제 닉네임이 있는 플레이어만 필터링
             const playersList = Object.values(playersData)
                 .filter(p => !!p.nickname)
-                .sort((a, b) => (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0));
+                .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
 
             // 1등 점수 구하기
             const scores = playersList.map(p => p.score || 0);
@@ -830,7 +827,7 @@
             if (revealIndex === -1) {
                 currentRoundDeployments = Object.values(playersData)
                     .filter(p => p.nickname && p.rounds[currentRound] !== undefined)
-                    .sort((a, b) => (a.joinedAt?.toMillis() || 0) - (b.joinedAt?.toMillis() || 0))
+                    .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0))
                     .map(p => ({ nickname: p.nickname, deployed: p.rounds[currentRound] }));
 
                 // Fisher-Yates 셈플 - 매번 다른 순서로 공개
@@ -924,18 +921,18 @@
             document.getElementById('student-nickname-display').textContent = currentNickname;
 
             // 방 정보 구독 (라운드 진행 상황 파악)
-            unsubRoom = onSnapshot(doc(db, "blotto_rooms", currentRoomCode), (docSnap) => {
+            unsubRoom = onValue(ref(db, "blotto_rooms/" + currentRoomCode), (docSnap) => {
                 if (docSnap.exists()) {
-                    roomSettings = docSnap.data().settings;
-                    roomState = docSnap.data().state;
+                    roomSettings = docSnap.val().settings;
+                    roomState = docSnap.val().state;
                     updateStudentUI();
                 }
             });
 
             // 내 정보 구독 (잔여 병사 등 갱신)
-            unsubPlayers = onSnapshot(doc(db, "blotto_rooms", currentRoomCode, "players", currentNickname), (docSnap) => {
+            unsubPlayers = onValue(ref(db, "blotto_rooms/" + currentRoomCode + "/players/" + currentNickname), (docSnap) => {
                 if (docSnap.exists()) {
-                    playersData[currentNickname] = docSnap.data();
+                    playersData[currentNickname] = docSnap.val();
                     updateStudentUI();
                 }
             });
@@ -1009,9 +1006,9 @@
             }
 
             try {
-                const playerRef = doc(db, "blotto_rooms", currentRoomCode, "players", currentNickname);
+                const playerRef = ref(db, "blotto_rooms/" + currentRoomCode + "/players/" + currentNickname);
                 // rounds 맵 업데이트
-                await setDoc(playerRef, {
+                await set(playerRef, {
                     rounds: {
                         [currentRound]: deployCount
                     }
