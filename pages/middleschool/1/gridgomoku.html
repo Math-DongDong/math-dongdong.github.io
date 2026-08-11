@@ -546,15 +546,17 @@
 
         let unsubRoom = null;
         let unsubPlayers = null;
+        let unsubAllPlayers = null; // 대기실 내 전체 플레이어 상태 구독용
         let unsubMatch = null;
         let unsubWaiting = null;
+
         let heartbeatInterval = null;
         let waitingInterval = null;
         let computerMoveTimeout = null;
         let localJoinedTime = 0;
 
         let roomSettings = null;
-        let playersData = {};
+        let playersData = {}; // 학생 로컬에서 유지하는 방 전체 플레이어 정보
         let matchData = null;
         let boardState = {};
         let winStones = [];
@@ -649,7 +651,7 @@
                 await update(playerRef(code, nickname), { status: 'online', lastHeartbeat: serverTimestamp() });
             }
 
-            // 강퇴 감지 리스너 (플레이어 데이터가 삭제되면 첫 화면으로 이동)
+            // 본인 강퇴 감지 리스너
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             const myPRef = playerRef(code, nickname);
             const myPCallback = onValue(myPRef, (playerSnap) => {
@@ -948,6 +950,17 @@
             navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
             document.getElementById('waiting-nickname-display').textContent = currentNickname;
 
+            // 방 전체 플레이어 정보 실시간 캐싱 (매칭 시 빠른 조회 및 주도자 판별용)
+            if (unsubAllPlayers) { unsubAllPlayers(); unsubAllPlayers = null; }
+            const allPRef = playersCollRef(currentRoomCode);
+            const allPCallback = onValue(allPRef, (snapshot) => {
+                playersData = {};
+                if (snapshot.exists()) {
+                    playersData = snapshot.val();
+                }
+            });
+            unsubAllPlayers = () => off(allPRef, 'value', allPCallback);
+
             try {
                 const pSnap = await get(playerRef(currentRoomCode, currentNickname));
                 if (pSnap.exists()) {
@@ -1006,6 +1019,7 @@
             isMatching = true;
 
             try {
+                // 이미 나와 매칭된 방이 생겼는지 확인
                 const myMatch = await findMyActiveMatch();
                 if (myMatch) {
                     if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
@@ -1022,7 +1036,6 @@
 
                 const waitTimeSec = Math.floor((Date.now() - localJoinedTime) / 1000);
                 const waitingCountEl = document.getElementById('waiting-count');
-                const first = currentWaitingList[0];
 
                 if (currentWaitingList.length >= 2) {
                     if (waitTimeSec < 10) {
@@ -1037,31 +1050,38 @@
                     waitingCountEl.className = "badge bg-light text-dark fs-6";
                 }
 
-                if (first.id === currentNickname) {
-                    const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
-
-                    // 자신이 존재하지 않거나 접속 중(online)이 아니면 매칭 주도 권한 포기
-                    if (!myPlayerSnap.exists() || myPlayerSnap.val().status !== 'online') {
-                        isMatching = false;
-                        return;
+                // 🌟 진짜 매칭 주도자 찾기: 순서대로 돌면서 현재 'online'인 가장 앞선 사람
+                let activeInitiator = null;
+                for (const p of currentWaitingList) {
+                    const pData = playersData[p.id];
+                    if (pData && pData.status === 'online') {
+                        activeInitiator = p;
+                        break;
                     }
+                }
 
-                    const myLastOpponent = myPlayerSnap.val().lastOpponent || null;
+                if (!activeInitiator) {
+                    isMatching = false;
+                    return; // 방 안에 온라인인 사람이 한 명도 없다면 보류
+                }
+
+                // 내가 가장 먼저 들어온 온라인 유저(주도자)일 때만 이하의 매칭 권한을 가짐
+                if (activeInitiator.id === currentNickname) {
+                    const myPlayerSnapData = playersData[currentNickname];
+                    const myLastOpponent = myPlayerSnapData ? (myPlayerSnapData.lastOpponent || null) : null;
 
                     let matchPartner = null;
                     let isComputer = false;
                     let oldOpponent = null;
 
-                    for (let i = 1; i < currentWaitingList.length; i++) {
+                    // 1단계: 완전히 새로운 상대 찾기 (캐싱된 playersData 활용)
+                    for (let i = 0; i < currentWaitingList.length; i++) {
                         const candidate = currentWaitingList[i];
-                        const candidateSnap = await get(playerRef(currentRoomCode, candidate.id));
+                        if (candidate.id === currentNickname) continue; // 본인 제외
 
-                        if (!candidateSnap.exists()) continue;
-
-                        const candidateData = candidateSnap.val();
-
-                        // 상대방이 접속 중(online)일 때만 매칭 후보로 선정
-                        if (candidateData.status !== 'online') continue;
+                        const candidateData = playersData[candidate.id];
+                        // 🌟 상대방이 접속 중(online)일 때만 매칭 후보로 선정
+                        if (!candidateData || candidateData.status !== 'online') continue;
 
                         const candidateLastOpponent = candidateData.lastOpponent || null;
 
@@ -1078,13 +1098,15 @@
                         waitingCountEl.className = "badge bg-info text-dark fs-6";
                     }
 
+                    // 2단계: 새로운 상대가 없고 이전 상대만 있는데, 20초가 지났다면 어쩔 수 없이 재매칭
                     if (!matchPartner && oldOpponent && waitTimeSec >= 20) {
                         matchPartner = oldOpponent;
                     }
 
-                    // 컴퓨터 매칭 제한 (전체 방에서 1대의 컴퓨터만 게임 가능)
+                    // 3단계: 컴퓨터 매칭 제한 (전체 방에서 1대의 컴퓨터만 게임 가능)
                     let isComputerAvailable = true;
-                    if (!matchPartner && currentWaitingList.length === 1 && roomSettings?.computerMatchEnabled && waitTimeSec >= 20) {
+                    // 대기열에 나를 제외한 온라인 유저가 없고 20초가 지났다면
+                    if (!matchPartner && currentWaitingList.length >= 1 && roomSettings?.computerMatchEnabled && waitTimeSec >= 20) {
                         const matchesSnap = await get(matchesCollRef(currentRoomCode));
                         if (matchesSnap.exists()) {
                             const matches = matchesSnap.val();
@@ -1101,13 +1123,14 @@
                         }
                     }
 
+                    // 🌟 4단계: 파트너가 결정되면 모든 데이터를 한 번에 업데이트 (원자적 업데이트)
                     if (matchPartner) {
-                        const matchId = `${Date.now()}_${first.id}_${matchPartner.id}`;
+                        const matchId = `${Date.now()}_${activeInitiator.id}_${matchPartner.id}`;
                         const boardSize = roomSettings?.boardSize || 14;
                         const updates = {};
 
                         updates[`matches/${matchId}`] = {
-                            player1: first.id,
+                            player1: activeInitiator.id,
                             player2: matchPartner.id,
                             moves: [],
                             boardSize: boardSize,
@@ -1118,12 +1141,12 @@
                             lastMoveTime: serverTimestamp()
                         };
 
-                        updates[`players/${first.id}/lastOpponent`] = matchPartner.id;
+                        updates[`players/${activeInitiator.id}/lastOpponent`] = matchPartner.id;
                         if (!isComputer) {
-                            updates[`players/${matchPartner.id}/lastOpponent`] = first.id;
+                            updates[`players/${matchPartner.id}/lastOpponent`] = activeInitiator.id;
                         }
 
-                        updates[`waiting/${first.id}`] = null;
+                        updates[`waiting/${activeInitiator.id}`] = null;
                         if (!isComputer) {
                             updates[`waiting/${matchPartner.id}`] = null;
                         }
@@ -1135,12 +1158,13 @@
                         }
                     }
                 } else {
+                    // 내가 주도자가 아닐 때의 화면 UI 처리
                     const myIdx = currentWaitingList.findIndex(p => p.id === currentNickname);
-                    if (myIdx > 0) {
-                        const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
-                        const myLastOpponent = myPlayerSnap.exists() ? (myPlayerSnap.val().lastOpponent || null) : null;
+                    if (myIdx >= 0) {
+                        const myPlayerSnapData = playersData[currentNickname];
+                        const myLastOpponent = myPlayerSnapData ? (myPlayerSnapData.lastOpponent || null) : null;
 
-                        if (first.id === myLastOpponent) {
+                        if (activeInitiator.id === myLastOpponent) {
                             waitingCountEl.textContent = `매칭 진행 중...`;
                             waitingCountEl.className = "badge bg-warning text-dark fs-6";
                         } else {
@@ -1775,6 +1799,7 @@
         function cleanupSubscriptions() {
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+            if (unsubAllPlayers) { unsubAllPlayers(); unsubAllPlayers = null; }
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
             if (waitingInterval) { clearInterval(waitingInterval); waitingInterval = null; }
