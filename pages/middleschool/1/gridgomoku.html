@@ -954,7 +954,7 @@
         }
 
         // =====================================================================
-        // 3. 대기방 & 스마트 자동 매칭 (원자적 업데이트 적용)
+        // 3. 대기방 & 스마트 20초 매칭 대기 시스템
         // =====================================================================
         let currentWaitingList = [];
         let isMatching = false; // 동시 실행 방지 자물쇠
@@ -1028,22 +1028,7 @@
             try {
                 const waitTimeSec = Math.floor((Date.now() - localJoinedTime) / 1000);
                 const waitingCountEl = document.getElementById('waiting-count');
-
                 const first = currentWaitingList[0];
-
-                // UI 안내 상태 업데이트
-                if (currentWaitingList.length >= 2) {
-                    if (waitTimeSec < 10) {
-                        waitingCountEl.textContent = `새로운 상대를 찾는 중... (대기: ${currentWaitingList.length}명)`;
-                        waitingCountEl.className = "badge bg-warning text-dark fs-6";
-                    } else {
-                        waitingCountEl.textContent = `매칭 진행 중!`;
-                        waitingCountEl.className = "badge bg-info text-dark fs-6";
-                    }
-                } else {
-                    waitingCountEl.textContent = `대기 중: 1명`;
-                    waitingCountEl.className = "badge bg-light text-dark fs-6";
-                }
 
                 // 🌟 가장 오래 기다린 1번(방장)만 매칭 권한을 가짐
                 if (first.id === currentNickname) {
@@ -1052,6 +1037,7 @@
 
                     let matchPartner = null;
                     let isComputer = false;
+                    let oldOpponent = null;
 
                     // 1단계: 완전히 새로운 상대 찾기
                     for (let i = 1; i < currentWaitingList.length; i++) {
@@ -1059,20 +1045,37 @@
                         const candidateSnap = await get(playerRef(currentRoomCode, candidate.id));
                         const candidateLastOpponent = candidateSnap.exists() ? (candidateSnap.val().lastOpponent || null) : null;
 
-                        // 서로의 이전 상대가 아닌 경우 즉시 매칭!
+                        // 서로의 이전 상대가 아닌 경우 즉시 매칭을 위해 저장
                         if (candidate.id !== myLastOpponent && currentNickname !== candidateLastOpponent) {
                             matchPartner = candidate;
                             break;
+                        } else {
+                            // 이전 상대인 경우 후순위 매칭을 위해 따로 기억해둠
+                            if (!oldOpponent) oldOpponent = candidate;
                         }
                     }
 
-                    // 2단계: 새로운 상대가 없고 이전 상대만 있는데, 10초가 지났다면 어쩔 수 없이 재매칭
-                    if (!matchPartner && currentWaitingList.length >= 2 && waitTimeSec >= 10) {
-                        matchPartner = currentWaitingList[1];
+                    // UI 상태 텍스트 업데이트
+                    if (matchPartner) {
+                        waitingCountEl.textContent = `새로운 상대와 매칭 진행 중!`;
+                        waitingCountEl.className = "badge bg-info text-dark fs-6";
+                    } else if (oldOpponent) {
+                        let remain = Math.max(0, 20 - waitTimeSec);
+                        waitingCountEl.textContent = `다른 상대를 찾는 중... (그대로 매칭까지 ${remain}초)`;
+                        waitingCountEl.className = "badge bg-warning text-dark fs-6";
+                    } else {
+                        let remain = Math.max(0, 20 - waitTimeSec);
+                        waitingCountEl.textContent = `대기 중: 1명 (컴퓨터 매칭까지 ${remain}초)`;
+                        waitingCountEl.className = "badge bg-light text-dark fs-6";
                     }
 
-                    // 3단계: 나 혼자인데 30초가 지났다면 컴퓨터와 매칭
-                    if (!matchPartner && currentWaitingList.length === 1 && roomSettings?.computerMatchEnabled && waitTimeSec >= 30) {
+                    // 2단계: 새로운 상대가 없고 이전 상대만 있는데, 20초가 지났다면 어쩔 수 없이 재매칭
+                    if (!matchPartner && oldOpponent && waitTimeSec >= 20) {
+                        matchPartner = oldOpponent;
+                    }
+
+                    // 3단계: 나 혼자인데 20초가 지났다면 컴퓨터와 매칭
+                    if (!matchPartner && currentWaitingList.length === 1 && roomSettings?.computerMatchEnabled && waitTimeSec >= 20) {
                         matchPartner = { id: 'COMPUTER' };
                         isComputer = true;
                     }
@@ -1108,16 +1111,33 @@
                             updates[`waiting/${matchPartner.id}`] = null;
                         }
 
-                        // 위 3가지 작업을 단 하나의 트랜잭션으로 DB에 쏨! (에러나면 전부 취소됨)
+                        // 하나의 트랜잭션으로 DB에 쏨! (에러나면 전부 취소됨)
                         try {
                             await update(ref(db, `gomoku_rooms/${currentRoomCode}`), updates);
                         } catch (err) {
                             console.error('원자적 업데이트 에러:', err);
                         }
                     }
+                } else {
+                    // 내가 방장(1번 대기자)이 아닐 때의 화면 UI 처리
+                    const myIdx = currentWaitingList.findIndex(p => p.id === currentNickname);
+                    if (myIdx > 0) {
+                        const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
+                        const myLastOpponent = myPlayerSnap.exists() ? (myPlayerSnap.val().lastOpponent || null) : null;
+
+                        // 현재 대기방 1번 사람이 내 이전 상대인지 확인
+                        if (first.id === myLastOpponent) {
+                            let remain = Math.max(0, 20 - waitTimeSec);
+                            waitingCountEl.textContent = `다른 상대를 찾는 중... (그대로 매칭까지 ${remain}초)`;
+                            waitingCountEl.className = "badge bg-warning text-dark fs-6";
+                        } else {
+                            waitingCountEl.textContent = `매칭 대기 중... (대기순위: ${myIdx + 1})`;
+                            waitingCountEl.className = "badge bg-light text-dark fs-6";
+                        }
+                    }
                 }
 
-                // 내가 방장이든 아니든, 나를 포함한 게임이 개설되었는지 최종 확인
+                // 내가 매치에 배정되었는지 실시간으로 확인
                 const myMatch = await findMyActiveMatch();
                 if (myMatch) {
                     if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
