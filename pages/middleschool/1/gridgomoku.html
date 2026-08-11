@@ -125,8 +125,6 @@
             box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
         }
 
-        /* 타이머 관련 기존 CSS 제거됨 */
-
         /* 가로 룰렛 스타일 입력 폼 */
         .roulette-input-row {
             display: flex;
@@ -474,7 +472,6 @@
             push, child, serverTimestamp, query, orderByChild
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
-
         // =====================================================================
         // 공통 유틸리티 (모달)
         // =====================================================================
@@ -545,7 +542,7 @@
         let currentRoomCode = null;
         let currentNickname = null;
         let currentMatchId = null;
-        let myColor = null; // 'black' or 'white'
+        let myColor = null;
 
         let unsubRoom = null;
         let unsubPlayers = null;
@@ -559,10 +556,9 @@
         let roomSettings = null;
         let playersData = {};
         let matchData = null;
-        let boardState = {}; // "x,y" -> "black"/"white"
-        let winStones = []; // 승리 돌 좌표
+        let boardState = {};
+        let winStones = [];
 
-        // UI 영역
         const sectionLanding = document.getElementById('landing-section');
         const sectionAdmin = document.getElementById('admin-section');
         const sectionWaiting = document.getElementById('waiting-section');
@@ -574,9 +570,6 @@
             section.classList.add('active-section');
         }
 
-        // =====================================================================
-        // RTDB 헬퍼 함수
-        // =====================================================================
         function roomRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}`); }
         function playerRef(roomCode, nickname) { return ref(db, `gomoku_rooms/${roomCode}/players/${nickname}`); }
         function matchRef(roomCode, matchId) { return ref(db, `gomoku_rooms/${roomCode}/matches/${matchId}`); }
@@ -588,8 +581,6 @@
         // =====================================================================
         // 1. 랜딩 페이지
         // =====================================================================
-
-        // 관리자 대시보드
         document.getElementById('btn-admin-dash').addEventListener('click', async () => {
             const code = await customPrompt("선생님 대시보드", "대시보드에 접속하려면 접속 코드를 입력하세요.", true);
             if (code !== ADMIN_ACCESS_CODE) {
@@ -602,7 +593,6 @@
             loadAdminRooms();
         });
 
-        // 방 만들기 버튼
         document.getElementById('btn-create-room').addEventListener('click', () => {
             document.getElementById('admin-settings-area').style.display = 'block';
             document.getElementById('admin-board-area').style.display = 'none';
@@ -610,10 +600,9 @@
             cleanupSubscriptions();
         });
 
-        // 방 개설 확인
         document.getElementById('btn-confirm-create').addEventListener('click', async () => {
-            const boardSize = 14; // 고정
-            const winCount = 5; // 고정
+            const boardSize = 14;
+            const winCount = 5;
             const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
 
             try {
@@ -629,7 +618,6 @@
             }
         });
 
-        // 학생 입장
         document.getElementById('btn-join-room').addEventListener('click', async () => {
             const code = document.getElementById('join-room-code').value.toUpperCase().trim();
             const nickname = document.getElementById('join-nickname').value.trim();
@@ -651,7 +639,6 @@
             });
             unsubRoom = () => off(rRef, 'value', rCallback);
 
-            // 플레이어 등록 또는 재접속
             const pSnap = await get(playerRef(code, nickname));
             if (!pSnap.exists()) {
                 await set(playerRef(code, nickname), {
@@ -662,10 +649,20 @@
                 await update(playerRef(code, nickname), { status: 'online', lastHeartbeat: serverTimestamp() });
             }
 
-            // 하트비트 시작
+            // 강퇴 감지 리스너 (플레이어 데이터가 삭제되면 첫 화면으로 쫓아냄)
+            if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+            const myPRef = playerRef(code, nickname);
+            const myPCallback = onValue(myPRef, (playerSnap) => {
+                if (!playerSnap.exists() && currentRoomCode === code) {
+                    customAlert("알림", "방에서 강퇴되었습니다.").then(() => {
+                        window.location.reload();
+                    });
+                }
+            });
+            unsubPlayers = () => off(myPRef, 'value', myPCallback);
+
             startHeartbeat();
 
-            // 기존 진행 중 매치 확인
             const existingMatch = await findMyActiveMatch();
             if (existingMatch) {
                 currentMatchId = existingMatch.id;
@@ -677,7 +674,6 @@
                 return;
             }
 
-            // 대기열 진입
             enterWaitingRoom();
         });
 
@@ -687,9 +683,8 @@
         function startHeartbeat() {
             if (heartbeatInterval) clearInterval(heartbeatInterval);
             updateHeartbeat();
-            heartbeatInterval = setInterval(updateHeartbeat, 10000); // 10초마다
+            heartbeatInterval = setInterval(updateHeartbeat, 10000);
 
-            // 페이지 가시성 변화 감지
             document.addEventListener('visibilitychange', handleVisibility);
             window.addEventListener('beforeunload', handleUnload);
         }
@@ -701,7 +696,7 @@
                     lastHeartbeat: serverTimestamp(),
                     status: document.hidden ? 'away' : 'online'
                 });
-            } catch (e) { /* ignore */ }
+            } catch (e) { }
         }
 
         function handleVisibility() {
@@ -714,7 +709,6 @@
 
         function handleUnload() {
             if (!currentRoomCode || !currentNickname) return;
-            // 하트비트 타임아웃으로 대체
         }
 
         // =====================================================================
@@ -726,7 +720,6 @@
             select.innerHTML = '<option value="">방을 선택하세요</option>';
             if (snap.exists()) {
                 const rooms = snap.val();
-                // createdAt 기준 내림차순 정렬
                 const sortedKeys = Object.keys(rooms).sort((a, b) => {
                     const aTime = rooms[a].createdAt || 0;
                     const bTime = rooms[b].createdAt || 0;
@@ -758,8 +751,7 @@
             const roomCode = select.value;
             if (!roomCode) return await customAlert("알림", "삭제할 방을 선택해 주세요.");
 
-            const confirmed = await customConfirm("방 삭제 확인",
-                `[ <b class="text-danger">${roomCode}</b> ] 방을 정말로 삭제하시겠습니까?<br><small class="text-muted">삭제된 데이터는 복구할 수 없습니다.</small>`);
+            const confirmed = await customConfirm("방 삭제 확인", `[ <b class="text-danger">${roomCode}</b> ] 방을 정말로 삭제하시겠습니까?<br><small class="text-muted">삭제된 데이터는 복구할 수 없습니다.</small>`);
             if (!confirmed) return;
 
             try {
@@ -800,7 +792,6 @@
             if (unsubAdminMatches) { off(matchesCollRef(currentRoomCode)); unsubAdminMatches = null; }
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
 
-            // 방 설정 실시간 로드
             const rRef = roomRef(roomCode);
             const rCallback = onValue(rRef, (snapshot) => {
                 if (snapshot.exists() && snapshot.val().settings) {
@@ -811,7 +802,6 @@
             });
             unsubRoom = () => off(rRef, 'value', rCallback);
 
-            // 컴퓨터 추가 토글 이벤트 바인딩 (1회만)
             const compToggle = document.getElementById('admin-computer-toggle');
             if (compToggle && !compToggle.dataset.bound) {
                 compToggle.dataset.bound = 'true';
@@ -820,13 +810,11 @@
                     try {
                         await update(roomRef(currentRoomCode), { 'settings/computerMatchEnabled': e.target.checked });
                     } catch (err) {
-                        console.error("토글 변경 실패:", err);
                         e.target.checked = !e.target.checked;
                     }
                 });
             }
 
-            // 플레이어 구독
             const pRef = playersCollRef(roomCode);
             const pCallback = onValue(pRef, (snapshot) => {
                 adminPlayersData = {};
@@ -838,7 +826,6 @@
             });
             unsubAdminPlayers = () => off(pRef, 'value', pCallback);
 
-            // 매치 구독
             const mRef = matchesCollRef(roomCode);
             const mCallback = onValue(mRef, (snapshot) => {
                 adminMatchesData = {};
@@ -872,7 +859,6 @@
                 return;
             }
 
-            // 승률 순 정렬
             const sorted = [...playersList].sort((a, b) => {
                 const aWins = a[1].wins || 0, bWins = b[1].wins || 0;
                 const aTotal = aWins + (a[1].losses || 0), bTotal = bWins + (b[1].losses || 0);
@@ -923,7 +909,6 @@
             });
             recordTbody.innerHTML = tbodyHtml;
 
-            // 강퇴 버튼 이벤트 등록
             recordTbody.querySelectorAll('.btn-kick').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const playerId = btn.dataset.id;
@@ -957,13 +942,12 @@
         // 3. 대기방 & 스마트 20초 매칭 대기 시스템
         // =====================================================================
         let currentWaitingList = [];
-        let isMatching = false; // 동시 실행 방지 자물쇠
+        let isMatching = false;
 
         async function enterWaitingRoom() {
             navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
             document.getElementById('waiting-nickname-display').textContent = currentNickname;
 
-            // 전적 표시
             try {
                 const pSnap = await get(playerRef(currentRoomCode, currentNickname));
                 if (pSnap.exists()) {
@@ -991,12 +975,11 @@
             showSection(sectionWaiting);
 
             localJoinedTime = Date.now();
-            isMatching = false; // 자물쇠 초기화
+            isMatching = false;
 
             if (waitingInterval) clearInterval(waitingInterval);
             waitingInterval = setInterval(attemptSmartMatch, 1000);
 
-            // 대기열에 등록
             await set(waitingRef(currentRoomCode, currentNickname), {
                 nickname: currentNickname,
                 joinedAt: serverTimestamp()
@@ -1017,16 +1000,12 @@
             unsubWaiting = () => off(wRef, 'value', wCallback);
         }
 
-        // 스마트 매칭 코어 함수
         async function attemptSmartMatch() {
-            // 이미 매칭 진행 중이거나, 다른 매칭 로직이 실행 중이면 차단 (자물쇠)
             if (currentMatchId || isMatching) return;
 
-            isMatching = true; // 매칭 작업 시작 (잠금)
+            isMatching = true;
 
             try {
-                // 🌟 [수정됨] 1. 가장 먼저 내가 매칭된 게임이 있는지 확인! 
-                // 방장(1번)이 나를 대기열에서 지웠더라도, 매치 방이 생성되었다면 바로 끌려감
                 const myMatch = await findMyActiveMatch();
                 if (myMatch) {
                     if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
@@ -1036,17 +1015,15 @@
                     matchData = myMatch.data;
                     showSection(sectionGame);
                     startGameSync();
-                    return; // 매칭 완료 시 아래 로직은 실행하지 않고 즉시 종료
+                    return;
                 }
 
-                // 2. 매칭된 방이 없고 대기열도 비어있다면 종료
                 if (currentWaitingList.length === 0) return;
 
                 const waitTimeSec = Math.floor((Date.now() - localJoinedTime) / 1000);
                 const waitingCountEl = document.getElementById('waiting-count');
                 const first = currentWaitingList[0];
 
-                // UI 안내 상태 업데이트
                 if (currentWaitingList.length >= 2) {
                     if (waitTimeSec < 10) {
                         waitingCountEl.textContent = `새로운 상대를 찾는 중... (대기: ${currentWaitingList.length}명)`;
@@ -1056,12 +1033,10 @@
                         waitingCountEl.className = "badge bg-info text-dark fs-6";
                     }
                 } else {
-                    let remain = Math.max(0, 20 - waitTimeSec);
                     waitingCountEl.textContent = `대기 중: 1명`;
                     waitingCountEl.className = "badge bg-light text-dark fs-6";
                 }
 
-                // 🌟 가장 오래 기다린 1번(방장)만 매칭 권한을 가짐
                 if (first.id === currentNickname) {
                     const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
                     const myLastOpponent = myPlayerSnap.exists() ? (myPlayerSnap.val().lastOpponent || null) : null;
@@ -1070,46 +1045,52 @@
                     let isComputer = false;
                     let oldOpponent = null;
 
-                    // 1단계: 완전히 새로운 상대 찾기
                     for (let i = 1; i < currentWaitingList.length; i++) {
                         const candidate = currentWaitingList[i];
                         const candidateSnap = await get(playerRef(currentRoomCode, candidate.id));
                         const candidateLastOpponent = candidateSnap.exists() ? (candidateSnap.val().lastOpponent || null) : null;
 
-                        // 서로의 이전 상대가 아닌 경우 즉시 매칭을 위해 저장
                         if (candidate.id !== myLastOpponent && currentNickname !== candidateLastOpponent) {
                             matchPartner = candidate;
                             break;
                         } else {
-                            // 이전 상대인 경우 후순위 매칭을 위해 따로 기억해둠
                             if (!oldOpponent) oldOpponent = candidate;
                         }
                     }
 
-                    // UI 상태 텍스트 업데이트
                     if (matchPartner) {
                         waitingCountEl.textContent = `매칭 진행 중...`;
                         waitingCountEl.className = "badge bg-info text-dark fs-6";
                     }
 
-                    // 2단계: 새로운 상대가 없고 이전 상대만 있는데, 20초가 지났다면 어쩔 수 없이 재매칭
                     if (!matchPartner && oldOpponent && waitTimeSec >= 20) {
                         matchPartner = oldOpponent;
                     }
 
-                    // 3단계: 나 혼자인데 20초가 지났다면 컴퓨터와 매칭
+                    // 컴퓨터 매칭 제한 (최대 1명만 컴퓨터와 진행 가능)
+                    let isComputerAvailable = true;
                     if (!matchPartner && currentWaitingList.length === 1 && roomSettings?.computerMatchEnabled && waitTimeSec >= 20) {
-                        matchPartner = { id: 'COMPUTER' };
-                        isComputer = true;
+                        const matchesSnap = await get(matchesCollRef(currentRoomCode));
+                        if (matchesSnap.exists()) {
+                            const matches = matchesSnap.val();
+                            for (const mId in matches) {
+                                if (matches[mId].status === 'playing' && (matches[mId].player1 === 'COMPUTER' || matches[mId].player2 === 'COMPUTER')) {
+                                    isComputerAvailable = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if (isComputerAvailable) {
+                            matchPartner = { id: 'COMPUTER' };
+                            isComputer = true;
+                        }
                     }
 
-                    // 🌟 4단계: 파트너가 결정되면 모든 데이터를 한 번에 업데이트 (원자적 업데이트)
                     if (matchPartner) {
                         const matchId = `${Date.now()}_${first.id}_${matchPartner.id}`;
                         const boardSize = roomSettings?.boardSize || 14;
                         const updates = {};
 
-                        // ① 새로운 게임 방(매치) 개설 데이터
                         updates[`matches/${matchId}`] = {
                             player1: first.id,
                             player2: matchPartner.id,
@@ -1122,13 +1103,11 @@
                             lastMoveTime: serverTimestamp()
                         };
 
-                        // ② 상대방 기억 데이터 기록 (lastOpponent)
                         updates[`players/${first.id}/lastOpponent`] = matchPartner.id;
                         if (!isComputer) {
                             updates[`players/${matchPartner.id}/lastOpponent`] = first.id;
                         }
 
-                        // ③ 대기방에서 완벽하게 삭제
                         updates[`waiting/${first.id}`] = null;
                         if (!isComputer) {
                             updates[`waiting/${matchPartner.id}`] = null;
@@ -1141,7 +1120,6 @@
                         }
                     }
                 } else {
-                    // 내가 방장(1번 대기자)이 아닐 때의 화면 UI 처리
                     const myIdx = currentWaitingList.findIndex(p => p.id === currentNickname);
                     if (myIdx > 0) {
                         const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
@@ -1159,7 +1137,7 @@
             } catch (error) {
                 console.error("매칭 중 에러 발생:", error);
             } finally {
-                isMatching = false; // 모든 작업 완료 후 자물쇠 풀기
+                isMatching = false;
             }
         }
 
@@ -1190,12 +1168,10 @@
         let WIN_COUNT = 5;
         let PADDING = 40;
 
-        // 룰렛 초기화 함수
         function initRoulette() {
             const rxInner = document.querySelector('#roulette-x .roulette-inner');
             const ryInner = document.querySelector('#roulette-y .roulette-inner');
 
-            // 기존 아이템 제거 (패딩 제외)
             if (rxInner) rxInner.querySelectorAll('.coord-item').forEach(e => e.remove());
             if (ryInner) ryInner.querySelectorAll('.coord-item').forEach(e => e.remove());
 
@@ -1213,11 +1189,9 @@
             const rxWrapper = document.getElementById('roulette-x');
             const ryWrapper = document.getElementById('roulette-y');
 
-            // 스크롤 이벤트 연결
             setupRouletteScroll(rxWrapper);
             setupRouletteScroll(ryWrapper);
 
-            // 초기 위치(0)로 세팅
             setTimeout(() => {
                 setRouletteValue(rxWrapper, 0);
                 setRouletteValue(ryWrapper, 0);
@@ -1228,7 +1202,7 @@
             wrapper.addEventListener('scroll', () => {
                 const items = wrapper.querySelectorAll('.coord-item');
                 const scrollLeft = wrapper.scrollLeft;
-                const itemWidth = 30; // .roulette-item 너비
+                const itemWidth = 30;
 
                 const selectedIndex = Math.round(scrollLeft / itemWidth);
 
@@ -1266,13 +1240,11 @@
             }
         }
 
-
         function initBoard() {
             BOARD_N = matchData?.boardSize || roomSettings?.boardSize || 14;
             WIN_COUNT = matchData?.winCount || roomSettings?.winCount || 5;
             HALF_N = Math.floor(BOARD_N / 2);
 
-            // 반응형 셀 크기
             const maxWidth = Math.min(window.innerWidth - 40, 600);
             CELL_SIZE = Math.max(24, Math.floor((maxWidth - PADDING * 2) / BOARD_N));
             const canvasSize = BOARD_N * CELL_SIZE + PADDING * 2;
@@ -1288,7 +1260,6 @@
             const size = canvas.width;
             ctx.clearRect(0, 0, size, size);
 
-            // 배경
             ctx.fillStyle = '#f5e6c8';
             ctx.fillRect(0, 0, size, size);
 
@@ -1298,12 +1269,10 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            // 격자선 & 좌표 레이블
             for (let i = 0; i <= BOARD_N; i++) {
                 const coord = i - HALF_N;
                 const px = PADDING + i * CELL_SIZE;
 
-                // 세로선
                 ctx.beginPath();
                 ctx.moveTo(px, PADDING);
                 ctx.lineTo(px, PADDING + BOARD_N * CELL_SIZE);
@@ -1311,8 +1280,7 @@
                 else { ctx.lineWidth = 0.5; ctx.strokeStyle = '#8B6914'; }
                 ctx.stroke();
 
-                // 가로선
-                const py = PADDING + (BOARD_N - i) * CELL_SIZE; // y축은 위로 증가
+                const py = PADDING + (BOARD_N - i) * CELL_SIZE;
                 ctx.beginPath();
                 ctx.moveTo(PADDING, py);
                 ctx.lineTo(PADDING + BOARD_N * CELL_SIZE, py);
@@ -1320,15 +1288,11 @@
                 else { ctx.lineWidth = 0.5; ctx.strokeStyle = '#8B6914'; }
                 ctx.stroke();
 
-                // X축 레이블 (하단)
                 ctx.fillStyle = '#666';
                 ctx.fillText(coord.toString(), px, PADDING + BOARD_N * CELL_SIZE + 18);
-
-                // Y축 레이블 (좌측) — py 위치 사용
                 ctx.fillText(coord.toString(), PADDING - 20, py);
             }
 
-            // 원점 표시
             const ox = PADDING + HALF_N * CELL_SIZE;
             const oy = PADDING + HALF_N * CELL_SIZE;
             ctx.fillStyle = '#333';
@@ -1336,12 +1300,11 @@
             ctx.arc(ox, oy, 4, 0, Math.PI * 2);
             ctx.fill();
 
-            // 돌 그리기
             const stoneRadius = Math.max(10, CELL_SIZE * 0.4);
             for (const [key, color] of Object.entries(boardState)) {
                 const [x, y] = key.split(',').map(Number);
                 const px = PADDING + (x + HALF_N) * CELL_SIZE;
-                const py = PADDING + (HALF_N - y) * CELL_SIZE; // y축 반전
+                const py = PADDING + (HALF_N - y) * CELL_SIZE;
 
                 const isWin = winStones.some(ws => ws.x === x && ws.y === y);
                 const movesArr = matchData?.moves || [];
@@ -1349,13 +1312,11 @@
                     movesArr[movesArr.length - 1].x === x &&
                     movesArr[movesArr.length - 1].y === y;
 
-                // 돌 그림자
                 ctx.beginPath();
                 ctx.arc(px + 2, py + 2, stoneRadius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';
                 ctx.fill();
 
-                // 돌
                 const grad = ctx.createRadialGradient(
                     px - stoneRadius * 0.3, py - stoneRadius * 0.3, stoneRadius * 0.1,
                     px, py, stoneRadius
@@ -1378,7 +1339,6 @@
                     ctx.stroke();
                 }
 
-                // 마지막 수 표시
                 if (isLast && !isWin) {
                     ctx.beginPath();
                     ctx.arc(px, py, stoneRadius + 3, 0, Math.PI * 2);
@@ -1387,7 +1347,6 @@
                     ctx.stroke();
                 }
 
-                // 승리 돌 표시
                 if (isWin) {
                     ctx.beginPath();
                     ctx.arc(px, py, stoneRadius + 3, 0, Math.PI * 2);
@@ -1418,7 +1377,6 @@
                 if (!snapshot.exists()) return;
                 matchData = snapshot.val();
 
-                // RTDB에서 moves는 배열이지만 빈 배열은 저장 안 될 수 있음
                 if (!matchData.moves) matchData.moves = [];
 
                 const currentMoveCount = matchData.moves.length;
@@ -1434,12 +1392,11 @@
                     lastMoveCount = currentMoveCount;
                 }
 
-                // 보드 상태 재구성
                 boardState = {};
                 winStones = [];
                 if (matchData.moves) {
                     matchData.moves.forEach((m, i) => {
-                        if (m.pass) return; // 시간 초과로 턴이 넘겨진 경우
+                        if (m.pass) return;
                         const color = i % 2 === 0 ? 'black' : 'white';
                         boardState[`${m.x},${m.y}`] = color;
                     });
@@ -1448,9 +1405,8 @@
                 initBoard();
                 drawBoard();
                 updateGameUI();
-                checkTimer(); // 업데이트 시 즉시 타이머 반영
+                checkTimer();
 
-                // 컴퓨터 차례 확인
                 if (matchData.status === 'playing' && (matchData.player1 === 'COMPUTER' || matchData.player2 === 'COMPUTER')) {
                     const moveCount = matchData.moves ? matchData.moves.length : 0;
                     const isBlackTurn = moveCount % 2 === 0;
@@ -1493,7 +1449,6 @@
                 }
             }
 
-            // 내 차례인데 시간이 다 되면 턴 강제 넘김
             if (isMyTurn && remain === 0) {
                 passTurnDueToTimeout();
             }
@@ -1501,7 +1456,6 @@
 
         async function passTurnDueToTimeout() {
             if (!matchData || matchData.status !== 'playing') return;
-            // 중복 실행 방지
             const moveCount = matchData.moves ? matchData.moves.length : 0;
             const isBlackTurn = moveCount % 2 === 0;
             const isMyTurn = (isBlackTurn && myColor === 'black') || (!isBlackTurn && myColor === 'white');
@@ -1539,13 +1493,21 @@
                 const progressBar = document.getElementById('timer-progress-bar');
                 if (progressBar) progressBar.style.width = '0%';
 
-                // 승리 돌 표시
                 if (matchData.winLine) {
                     winStones = matchData.winLine;
                     drawBoard();
                 }
 
-                // 결과 표시
+                // 강퇴되어 게임이 종료된 경우 남은 승자의 빠른 복귀 처리
+                if (matchData.endReason === 'kick') {
+                    if (matchData.winner === currentNickname) {
+                        customAlert('🎉 승리!', '상대방이 접속을 종료하거나 강퇴되어 승리했습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                            document.getElementById('btn-back-to-waiting').click();
+                        });
+                    }
+                    return;
+                }
+
                 document.getElementById('game-input-area').classList.add('d-none');
                 const resultArea = document.getElementById('game-result-area');
                 resultArea.classList.remove('d-none');
@@ -1561,9 +1523,6 @@
                     document.getElementById('game-result-desc').textContent = '좌표평면이 가득 찼습니다.';
                 }
 
-                if (matchData.endReason === 'kick') {
-                    document.getElementById('game-result-desc').textContent = '상대방이 강퇴되어 게임이 종료되었습니다.';
-                }
                 return;
             }
 
@@ -1722,7 +1681,6 @@
             }
         }
 
-        // 돌 두기
         document.getElementById('btn-place-stone').addEventListener('click', async () => {
             if (!matchData || matchData.status !== 'playing') return;
 
@@ -1758,14 +1716,12 @@
             }
         });
 
-        // 승리 판정
         function checkWin(x, y, color) {
             const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
 
             for (const [dx, dy] of directions) {
-                let stones = [{ x, y }]; // 현재 돌 포함
+                let stones = [{ x, y }];
 
-                // 양방향 탐색
                 for (const sign of [1, -1]) {
                     for (let step = 1; step < WIN_COUNT; step++) {
                         const nx = x + dx * sign * step;
@@ -1779,7 +1735,6 @@
                 }
 
                 if (stones.length >= WIN_COUNT) {
-                    // 연속된 돌 좌표를 정렬해서 반환 (객체 배열)
                     stones.sort((a, b) => a.x - b.x || a.y - b.y);
                     return stones.slice(0, WIN_COUNT);
                 }
@@ -1787,7 +1742,6 @@
             return null;
         }
 
-        // 대기실로 돌아가기
         document.getElementById('btn-back-to-waiting').addEventListener('click', () => {
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
@@ -1799,8 +1753,6 @@
             winStones = [];
             enterWaitingRoom();
         });
-
-
 
         // =====================================================================
         // 구독 정리
@@ -1816,7 +1768,6 @@
             if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
         }
 
-        // 윈도우 리사이즈 시 보드 재렌더링
         window.addEventListener('resize', () => {
             if (matchData) {
                 initBoard();
