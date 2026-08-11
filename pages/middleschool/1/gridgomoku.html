@@ -1039,7 +1039,14 @@
 
                 if (first.id === currentNickname) {
                     const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
-                    const myLastOpponent = myPlayerSnap.exists() ? (myPlayerSnap.val().lastOpponent || null) : null;
+
+                    // 자신이 존재하지 않거나 접속 중(online)이 아니면 매칭 주도 권한 포기
+                    if (!myPlayerSnap.exists() || myPlayerSnap.val().status !== 'online') {
+                        isMatching = false;
+                        return;
+                    }
+
+                    const myLastOpponent = myPlayerSnap.val().lastOpponent || null;
 
                     let matchPartner = null;
                     let isComputer = false;
@@ -1048,7 +1055,15 @@
                     for (let i = 1; i < currentWaitingList.length; i++) {
                         const candidate = currentWaitingList[i];
                         const candidateSnap = await get(playerRef(currentRoomCode, candidate.id));
-                        const candidateLastOpponent = candidateSnap.exists() ? (candidateSnap.val().lastOpponent || null) : null;
+
+                        if (!candidateSnap.exists()) continue;
+
+                        const candidateData = candidateSnap.val();
+
+                        // 상대방이 접속 중(online)일 때만 매칭 후보로 선정
+                        if (candidateData.status !== 'online') continue;
+
+                        const candidateLastOpponent = candidateData.lastOpponent || null;
 
                         if (candidate.id !== myLastOpponent && currentNickname !== candidateLastOpponent) {
                             matchPartner = candidate;
