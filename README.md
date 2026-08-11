@@ -44,9 +44,7 @@ math-dongdong.github.io/
 
 ## 🚀 시작하기
 
-`GitHub Pages를 통해 온라인에서 바로 이용할 수 있습니다.
-
-https://math-dongdong.github.io/
+[GitHub Pages](https://math-dongdong.github.io/)를 통해 온라인에서 바로 이용할 수 있습니다.
 
 ---
 
