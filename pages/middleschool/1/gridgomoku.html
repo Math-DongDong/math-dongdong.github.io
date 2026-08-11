@@ -1021,14 +1021,45 @@
         async function attemptSmartMatch() {
             // 이미 매칭 진행 중이거나, 다른 매칭 로직이 실행 중이면 차단 (자물쇠)
             if (currentMatchId || isMatching) return;
-            if (currentWaitingList.length === 0) return;
 
             isMatching = true; // 매칭 작업 시작 (잠금)
 
             try {
+                // 🌟 [수정됨] 1. 가장 먼저 내가 매칭된 게임이 있는지 확인! 
+                // 방장(1번)이 나를 대기열에서 지웠더라도, 매치 방이 생성되었다면 바로 끌려감
+                const myMatch = await findMyActiveMatch();
+                if (myMatch) {
+                    if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
+                    if (waitingInterval) { clearInterval(waitingInterval); waitingInterval = null; }
+                    currentMatchId = myMatch.id;
+                    myColor = myMatch.data.player1 === currentNickname ? 'black' : 'white';
+                    matchData = myMatch.data;
+                    showSection(sectionGame);
+                    startGameSync();
+                    return; // 매칭 완료 시 아래 로직은 실행하지 않고 즉시 종료
+                }
+
+                // 2. 매칭된 방이 없고 대기열도 비어있다면 종료
+                if (currentWaitingList.length === 0) return;
+
                 const waitTimeSec = Math.floor((Date.now() - localJoinedTime) / 1000);
                 const waitingCountEl = document.getElementById('waiting-count');
                 const first = currentWaitingList[0];
+
+                // UI 안내 상태 업데이트
+                if (currentWaitingList.length >= 2) {
+                    if (waitTimeSec < 10) {
+                        waitingCountEl.textContent = `새로운 상대를 찾는 중... (대기: ${currentWaitingList.length}명)`;
+                        waitingCountEl.className = "badge bg-warning text-dark fs-6";
+                    } else {
+                        waitingCountEl.textContent = `매칭 진행 중!`;
+                        waitingCountEl.className = "badge bg-info text-dark fs-6";
+                    }
+                } else {
+                    let remain = Math.max(0, 20 - waitTimeSec);
+                    waitingCountEl.textContent = `대기 중: 1명 (컴퓨터 매칭까지 ${remain}초)`;
+                    waitingCountEl.className = "badge bg-light text-dark fs-6";
+                }
 
                 // 🌟 가장 오래 기다린 1번(방장)만 매칭 권한을 가짐
                 if (first.id === currentNickname) {
@@ -1063,10 +1094,6 @@
                         let remain = Math.max(0, 20 - waitTimeSec);
                         waitingCountEl.textContent = `다른 상대를 찾는 중... (그대로 매칭까지 ${remain}초)`;
                         waitingCountEl.className = "badge bg-warning text-dark fs-6";
-                    } else {
-                        let remain = Math.max(0, 20 - waitTimeSec);
-                        waitingCountEl.textContent = `대기 중: 1명 (컴퓨터 매칭까지 ${remain}초)`;
-                        waitingCountEl.className = "badge bg-light text-dark fs-6";
                     }
 
                     // 2단계: 새로운 상대가 없고 이전 상대만 있는데, 20초가 지났다면 어쩔 수 없이 재매칭
@@ -1105,13 +1132,12 @@
                             updates[`players/${matchPartner.id}/lastOpponent`] = first.id;
                         }
 
-                        // ③ 대기방에서 완벽하게 삭제 (유령 데이터 방지)
+                        // ③ 대기방에서 완벽하게 삭제
                         updates[`waiting/${first.id}`] = null;
                         if (!isComputer) {
                             updates[`waiting/${matchPartner.id}`] = null;
                         }
 
-                        // 하나의 트랜잭션으로 DB에 쏨! (에러나면 전부 취소됨)
                         try {
                             await update(ref(db, `gomoku_rooms/${currentRoomCode}`), updates);
                         } catch (err) {
@@ -1125,7 +1151,6 @@
                         const myPlayerSnap = await get(playerRef(currentRoomCode, currentNickname));
                         const myLastOpponent = myPlayerSnap.exists() ? (myPlayerSnap.val().lastOpponent || null) : null;
 
-                        // 현재 대기방 1번 사람이 내 이전 상대인지 확인
                         if (first.id === myLastOpponent) {
                             let remain = Math.max(0, 20 - waitTimeSec);
                             waitingCountEl.textContent = `다른 상대를 찾는 중... (그대로 매칭까지 ${remain}초)`;
@@ -1136,22 +1161,10 @@
                         }
                     }
                 }
-
-                // 내가 매치에 배정되었는지 실시간으로 확인
-                const myMatch = await findMyActiveMatch();
-                if (myMatch) {
-                    if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
-                    if (waitingInterval) { clearInterval(waitingInterval); waitingInterval = null; }
-                    currentMatchId = myMatch.id;
-                    myColor = myMatch.data.player1 === currentNickname ? 'black' : 'white';
-                    matchData = myMatch.data;
-                    showSection(sectionGame);
-                    startGameSync();
-                }
             } catch (error) {
                 console.error("매칭 중 에러 발생:", error);
             } finally {
-                isMatching = false; // 모든 작업 완료 후 자물쇠 확실히 풀기
+                isMatching = false; // 모든 작업 완료 후 자물쇠 풀기
             }
         }
 
