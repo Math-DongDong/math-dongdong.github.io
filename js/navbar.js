@@ -64,8 +64,7 @@
                         { "name": "🔘 그레이 필터", "path": "pages/aimath/image/grayscale.html" },
                         { "name": "💡 밝기 조절", "path": "pages/aimath/image/brightness_adjust.html" },
                         { "name": "➕ 이미지의 합성", "path": "pages/aimath/image/matrix_composite.html" },
-                        { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" },
-
+                        { "name": "✍️ 손글씨 인식", "path": "pages/aimath/image/hammingdistance.html" }
                     ]
                 },
                 {
@@ -74,10 +73,8 @@
                         { "name": "👜 텍스트 데이터의 표현과 주제어", "path": "pages/aimath/text/textexpression.html" },
                         { "name": "🧮 유용한 정보 찾기", "path": "pages/aimath/text/textconversion.html" },
                         { "name": "💬 텍스트 감성 분석", "path": "pages/aimath/text/sentimentanalysis.html" }
-
                     ]
                 }
-
             ]
         },
         "automation": {
@@ -93,13 +90,22 @@
                 {
                     "title": "학생관리",
                     "items": [
-                        { "name": "학생관리 앱", "path": "pages/automation/student/appsheet.html" },
+                        { "name": "학생관리 앱", "path": "pages/automation/student/appsheet.html" }
                     ]
                 }
-
             ]
         }
     };
+
+    // 다른 스크립트(index.html 등)에서 접근할 수 있도록 전역 객체로 참조 설정
+    window.NAVBAR_DATA = NAVBAR_DATA;
+
+    const scriptTag = document.currentScript;
+
+    // data-no-render="true" 속성이 있으면 네비바 HTML 생성을 수행하지 않음 (index.html 전용)
+    if (scriptTag && scriptTag.getAttribute('data-no-render') === 'true') {
+        return;
+    }
 
     // 2. 현재 실행 중인 HTML 파일의 경로를 기반으로 루트 경로 계산
     const normalizedPath = decodeURIComponent(window.location.pathname).replace(/\\/g, '/');
@@ -116,8 +122,7 @@
         rootPath = './';
     }
 
-    // 3. 네비게이션 타입 결정 (속성 지정 우선 -> 경로 분석 자동 감지)
-    const scriptTag = document.currentScript;
+    // 3. 네비게이션 타입 결정
     let navType = scriptTag ? scriptTag.getAttribute('data-type') : null;
 
     if (!navType) {
@@ -206,4 +211,3 @@
         });
     });
 })();
-

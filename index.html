@@ -252,106 +252,116 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- 프로젝트 경로상의 js/navbar.js 정확히 연결 -->
-    <script src="./js/navbar.js"></script>
+    <!-- data-no-render="true" 옵션으로 메인 페이지 하단 네비바 생성 방지 -->
+    <script src="./js/navbar.js" data-no-render="true"></script>
 
     <!-- 검색 & QR 생성 전용 실시간 제어 스크립트 -->
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            function initNavbarSearch() {
-                // NAVBAR_DATA 로딩 대기
-                if (!window.NAVBAR_DATA) {
-                    setTimeout(initNavbarSearch, 100);
+        function initNavbarSearch() {
+            // NAVBAR_DATA 로딩 대기
+            if (!window.NAVBAR_DATA) {
+                setTimeout(initNavbarSearch, 50);
+                return;
+            }
+
+            const datalist = document.getElementById('app-datalist');
+            const searchInput = document.getElementById('app-search-input');
+            const resultArea = document.getElementById('search-result-area');
+            const placeholderMsg = document.getElementById('search-placeholder-msg');
+            const selectedTitle = document.getElementById('selected-app-title');
+            const qrImg = document.getElementById('qr-code-img');
+            const goLinkBtn = document.getElementById('btn-go-link');
+
+            if (!searchInput) return;
+
+            const allItems = [];
+
+            // NAVBAR_DATA 내 모든 카테고리의 items 수집
+            Object.values(window.NAVBAR_DATA).forEach(nav => {
+                if (nav.menu && Array.isArray(nav.menu)) {
+                    nav.menu.forEach(group => {
+                        if (group.items && Array.isArray(group.items)) {
+                            group.items.forEach(item => {
+                                allItems.push({
+                                    groupTitle: group.title,
+                                    name: item.name,
+                                    path: item.path,
+                                    external: item.external || false
+                                });
+                            });
+                        }
+                    });
+                }
+            });
+
+            // 자동완성 datalist 항목 생성
+            datalist.innerHTML = '';
+            allItems.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.name;
+                option.label = `[${item.groupTitle}]`;
+                datalist.appendChild(option);
+            });
+
+            // 실시간 검색 처리 함수
+            function handleSearch() {
+                const query = searchInput.value.trim().toLowerCase();
+                if (!query) {
+                    resultArea.style.display = 'none';
+                    placeholderMsg.style.display = 'block';
+                    placeholderMsg.innerHTML = `<i class="bi bi-qr-code-scan fs-3 text-secondary d-block mb-1"></i>검색창에 키워드를 입력하면<br><b>바로가기</b>와 <b>QR코드</b>가 생성됩니다.`;
                     return;
                 }
 
-                const datalist = document.getElementById('app-datalist');
-                const searchInput = document.getElementById('app-search-input');
-                const resultArea = document.getElementById('search-result-area');
-                const placeholderMsg = document.getElementById('search-placeholder-msg');
-                const selectedTitle = document.getElementById('selected-app-title');
-                const qrImg = document.getElementById('qr-code-img');
-                const goLinkBtn = document.getElementById('btn-go-link');
+                // 이름 또는 카테고리와 매칭되는 항목 탐색
+                const matched = allItems.find(item =>
+                    item.name.toLowerCase() === query ||
+                    item.name.toLowerCase().includes(query) ||
+                    item.groupTitle.toLowerCase().includes(query)
+                );
 
-                const allItems = [];
-
-                // NAVBAR_DATA 내 모든 카테고리의 items 수집
-                Object.values(window.NAVBAR_DATA).forEach(nav => {
-                    if (nav.menu && Array.isArray(nav.menu)) {
-                        nav.menu.forEach(group => {
-                            if (group.items && Array.isArray(group.items)) {
-                                group.items.forEach(item => {
-                                    allItems.push({
-                                        groupTitle: group.title,
-                                        name: item.name,
-                                        path: item.path,
-                                        external: item.external || false
-                                    });
-                                });
-                            }
-                        });
-                    }
-                });
-
-                // 자동완성 datalist 항목 생성
-                datalist.innerHTML = '';
-                allItems.forEach(item => {
-                    const option = document.createElement('option');
-                    option.value = item.name;
-                    option.label = `[${item.groupTitle}]`;
-                    datalist.appendChild(option);
-                });
-
-                // 실시간 검색 처리 함수
-                function handleSearch() {
-                    const query = searchInput.value.trim().toLowerCase();
-                    if (!query) {
-                        resultArea.style.display = 'none';
-                        placeholderMsg.style.display = 'block';
-                        placeholderMsg.innerHTML = `<i class="bi bi-qr-code-scan fs-3 text-secondary d-block mb-1"></i>검색창에 키워드를 입력하면<br><b>바로가기</b>와 <b>QR코드</b>가 생성됩니다.`;
-                        return;
+                if (matched) {
+                    // URL 경로 산출 (상대경로 / 절대경로 / 외부링크 대응)
+                    let fullUrl = matched.path;
+                    if (!matched.external && !matched.path.startsWith('http')) {
+                        fullUrl = new URL(matched.path, window.location.href).href;
                     }
 
-                    // 이름 키워드와 매칭되는 항목 탐색
-                    const matched = allItems.find(item => item.name.toLowerCase().includes(query));
-
-                    if (matched) {
-                        // URL 경로 산출 (상대경로 / 절대경로 / 외부링크 대응)
-                        let fullUrl = matched.path;
-                        if (!matched.external && !matched.path.startsWith('http')) {
-                            fullUrl = new URL(matched.path, window.location.href).href;
-                        }
-
-                        // UI 업데이트
-                        selectedTitle.textContent = `[${matched.groupTitle}] ${matched.name}`;
-                        goLinkBtn.href = fullUrl;
-                        if (matched.external) {
-                            goLinkBtn.setAttribute('target', '_blank');
-                            goLinkBtn.setAttribute('rel', 'noopener noreferrer');
-                        } else {
-                            goLinkBtn.removeAttribute('target');
-                            goLinkBtn.removeAttribute('rel');
-                        }
-
-                        // QR 코드 실시간 생성 API
-                        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fullUrl)}`;
-
-                        resultArea.style.display = 'block';
-                        placeholderMsg.style.display = 'none';
+                    // UI 업데이트
+                    selectedTitle.textContent = `[${matched.groupTitle}] ${matched.name}`;
+                    goLinkBtn.href = fullUrl;
+                    if (matched.external) {
+                        goLinkBtn.setAttribute('target', '_blank');
+                        goLinkBtn.setAttribute('rel', 'noopener noreferrer');
                     } else {
-                        resultArea.style.display = 'none';
-                        placeholderMsg.style.display = 'block';
-                        placeholderMsg.innerHTML = `<i class="bi bi-exclamation-circle text-warning fs-4 d-block mb-1"></i>'<b class="text-dark">${searchInput.value}</b>' 검색 결과가 없습니다.`;
+                        goLinkBtn.removeAttribute('target');
+                        goLinkBtn.removeAttribute('rel');
                     }
-                }
 
-                // 이벤트 바인딩
-                searchInput.addEventListener('input', handleSearch);
-                searchInput.addEventListener('change', handleSearch);
+                    // 고화질 QR 코드 실시간 생성 API
+                    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fullUrl)}`;
+
+                    resultArea.style.display = 'block';
+                    placeholderMsg.style.display = 'none';
+                } else {
+                    resultArea.style.display = 'none';
+                    placeholderMsg.style.display = 'block';
+                    placeholderMsg.innerHTML = `<i class="bi bi-exclamation-circle text-warning fs-4 d-block mb-1"></i>'<b class="text-dark">${searchInput.value}</b>' 검색 결과가 없습니다.`;
+                }
             }
 
+            // 이벤트 바인딩
+            searchInput.addEventListener('input', handleSearch);
+            searchInput.addEventListener('change', handleSearch);
+            searchInput.addEventListener('keyup', handleSearch);
+        }
+
+        // DOM 로딩 상태 판별 후 초기화 실행 (로컬 환경 호환성 극대화)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initNavbarSearch);
+        } else {
             initNavbarSearch();
-        });
+        }
     </script>
 </body>
 
