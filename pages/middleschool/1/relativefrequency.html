@@ -286,7 +286,7 @@
     </main>
 
     <script type="module">
-        import { ref, set, get, update, onValue, remove, off } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import { ref, set, get, update, onValue, remove, off, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
 
@@ -366,6 +366,8 @@
         let matchUnsub = null;
         let currentMatchUnsub = null;
         let currentMatchId = null;
+        let currentMatchData = null;
+        let heartbeatInterval = null;
         let isPlayer1 = false;
         let opponentName = "";
         let isResolvingMatch = false;
@@ -374,6 +376,70 @@
         function showSection(sectionId) {
             sections.forEach(id => document.getElementById(id).style.display = 'none');
             document.getElementById(sectionId).style.display = 'block';
+        }
+
+        // =====================================================================
+        // 하트비트 및 접속 상태 관리
+        // =====================================================================
+        function startHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            updateHeartbeat();
+            heartbeatInterval = setInterval(updateHeartbeat, 10000);
+
+            document.removeEventListener('visibilitychange', handleVisibility);
+            document.addEventListener('visibilitychange', handleVisibility);
+        }
+
+        async function updateHeartbeat() {
+            if (!currentRoom || !currentUser) return;
+            try {
+                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), {
+                    lastHeartbeat: serverTimestamp(),
+                    status: document.hidden ? 'away' : 'online'
+                });
+            } catch (e) { }
+        }
+
+        function handleVisibility() {
+            if (!currentRoom || !currentUser) return;
+            const isHidden = document.hidden;
+            update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), {
+                status: isHidden ? 'away' : 'online',
+                lastHeartbeat: serverTimestamp()
+            }).catch(() => { });
+
+            if (isHidden && currentMatchId && currentMatchData && currentMatchData.status === 'playing') {
+                const winnerId = isPlayer1 ? currentMatchData.p2 : currentMatchData.p1;
+
+                const mRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`);
+                update(mRef, {
+                    status: 'finished',
+                    winner: winnerId,
+                    endReason: 'visibility_hidden'
+                }).then(async () => {
+                    const myPlayerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`);
+                    const mySnap = await get(myPlayerRef);
+                    if (mySnap.exists()) {
+                        const val = mySnap.val();
+                        await update(myPlayerRef, {
+                            losses: (val.losses || 0) + 1,
+                            total: (val.total || 0) + 1
+                        });
+                    }
+
+                    if (winnerId) {
+                        const winnerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${winnerId}`);
+                        const winnerSnap = await get(winnerRef);
+                        if (winnerSnap.exists()) {
+                            const wVal = winnerSnap.val();
+                            await update(winnerRef, {
+                                wins: (wVal.wins || 0) + 1,
+                                total: (wVal.total || 0) + 1
+                            });
+                        }
+                    }
+                }).catch(e => console.error(e));
+            }
         }
 
         // =====================================================================
@@ -410,6 +476,8 @@
             document.getElementById('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
             document.getElementById('waiting-nickname-display').textContent = nickname;
 
+            startHeartbeat();
+
             updateStudentScoreUI();
             listenToRoomStatus();
             enterWaitingRoom();
@@ -435,6 +503,23 @@
 
         async function enterWaitingRoom() {
             if (!currentRoom || !currentUser) return;
+
+            if (currentMatchUnsub) {
+                off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), 'value', currentMatchUnsub);
+                currentMatchUnsub = null;
+            }
+            currentMatchId = null;
+            currentMatchData = null;
+
+            // 전적 최신화
+            try {
+                const playerSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`));
+                if (playerSnap.exists()) {
+                    myScore = playerSnap.val();
+                    updateStudentScoreUI();
+                }
+            } catch (e) { }
+
             showSection('waiting-section');
             document.getElementById('waiting-count').textContent = '대기 중...';
 
@@ -500,6 +585,7 @@
 
         function handleMatchFound(matchId, m) {
             currentMatchId = matchId;
+            currentMatchData = m;
             isPlayer1 = (m.p1 === currentUser);
             opponentName = isPlayer1 ? m.p2 : m.p1;
             isResolvingMatch = false;
@@ -519,6 +605,26 @@
             currentMatchUnsub = onValue(currentMatchRef, (snap) => {
                 if (!snap.exists()) return;
                 const match = snap.val();
+                currentMatchData = match;
+
+                if (match.status === 'finished') {
+                    if (match.endReason === 'visibility_hidden') {
+                        if (currentMatchUnsub) {
+                            off(currentMatchRef, 'value', currentMatchUnsub);
+                            currentMatchUnsub = null;
+                        }
+                        if (match.winner === currentUser) {
+                            customAlert('🎉 승리!', '상대방이 다른 화면으로 이동하여 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                                enterWaitingRoom();
+                            });
+                        } else if (match.winner && match.winner !== currentUser) {
+                            customAlert('😢 패배', '게임 진행 중 다른 화면으로 이동하여 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                                enterWaitingRoom();
+                            });
+                        }
+                        return;
+                    }
+                }
 
                 if (match.status === 'playing') {
                     if (match.p1_choice && match.p2_choice) {
