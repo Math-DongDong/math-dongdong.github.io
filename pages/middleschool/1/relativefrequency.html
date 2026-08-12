@@ -158,7 +158,7 @@
 
                     <div class="card shadow-sm border-0 rounded-4 p-4 mb-4 bg-light">
                         <h4 id="game-status-text" class="fw-bold text-primary mb-3">선택해주세요!</h4>
-                        <div class="d-flex justify-content-center mb-4">
+                        <div class="d-flex justify-content-center mb-4" id="rps-btn-container">
                             <button class="btn btn-outline-dark rps-btn" data-choice="scissors">✌️</button>
                             <button class="btn btn-outline-dark rps-btn" data-choice="rock">✊</button>
                             <button class="btn btn-outline-dark rps-btn" data-choice="paper">✋</button>
@@ -520,7 +520,6 @@
                         }
                     } else if (match.p1_choice === "" && match.p2_choice === "") {
                         isResolvingMatch = false;
-                        document.getElementById('game-status-text').textContent = '무승부! 다시 선택해주세요.';
                         document.querySelectorAll('.rps-btn').forEach(btn => {
                             btn.disabled = false;
                             btn.classList.remove('active');
@@ -627,6 +626,12 @@
             if (!currentRoom || isTeacher) return;
             const statusRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/status`);
             onValue(statusRef, (snapshot) => {
+                if (!snapshot.exists()) {
+                    alert('방이 삭제되어 첫 화면으로 이동합니다.');
+                    location.reload();
+                    return;
+                }
+
                 if (snapshot.val() === 'finished') {
                     if (waitingUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`), 'value', waitingUnsub);
                     if (matchUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches`), 'value', matchUnsub);
@@ -634,7 +639,7 @@
 
                     document.getElementById('game-status-text').textContent = '게임이 종료되었습니다!';
                     document.getElementById('waiting-count').textContent = '게임 종료됨';
-                    document.querySelectorAll('.rps-btn').forEach(btn => btn.disabled = true);
+                    document.getElementById('rps-btn-container').style.display = 'none';
 
                     if (document.getElementById('waiting-section').style.display === 'block') {
                         showSection('student-section');
@@ -642,7 +647,12 @@
                         document.getElementById('computer-choice-area').classList.add('d-none');
                         document.getElementById('game-status-text').textContent = '선생님이 가위바위보를 종료했습니다.';
                     }
+                }
+            });
 
+            const drawRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/drawComplete`);
+            onValue(drawRef, (snapshot) => {
+                if (snapshot.exists() && snapshot.val() === true) {
                     document.getElementById('feedback-area').style.display = 'block';
                 }
             });
@@ -656,9 +666,8 @@
                 text: text,
                 timestamp: Date.now()
             });
-            await customAlert("제출 완료", "성공적으로 제출되었습니다!");
-            document.getElementById('btn-submit-feedback').disabled = true;
-            document.getElementById('btn-submit-feedback').textContent = "제출 완료";
+            await customAlert("제출 완료", "성공적으로 제출/수정 되었습니다!");
+            document.getElementById('btn-submit-feedback').textContent = "의견 수정하기";
         });
 
         // =====================================================================
@@ -858,6 +867,9 @@
 
             document.getElementById('draw-result-area').style.display = 'block';
             document.getElementById('draw-result-area').scrollIntoView({ behavior: 'smooth' });
+
+            // 학생들에게 피드백 입력창을 보여주도록 신호 전송
+            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { drawComplete: true });
         });
 
         // 승률 계산 버튼 이벤트
