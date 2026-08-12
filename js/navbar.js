@@ -18,7 +18,7 @@
                         { "name": "균형을 잡아라", "path": "pages/middleschool/1/equation.html" },
                         { "name": "좌표평면 오목", "path": "pages/middleschool/1/gridgomoku.html" },
                         { "name": "회전체 탐구", "path": "pages/middleschool/1/rotation.html" },
-                        { "name": "어떻게 비교할까?", "path": "pages/middleschool/1/relativefrequency.html" }
+                        { "name": "가위바위보", "path": "pages/middleschool/1/relativefrequency.html" }
                     ]
                 },
                 {
