@@ -703,10 +703,34 @@
 
         function handleVisibility() {
             if (!currentRoomCode || !currentNickname) return;
+            const isHidden = document.hidden;
             update(playerRef(currentRoomCode, currentNickname), {
-                status: document.hidden ? 'away' : 'online',
+                status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
             }).catch(() => { });
+
+            if (isHidden && currentMatchId && matchData && matchData.status === 'playing') {
+                const isPlayer1 = matchData.player1 === currentNickname;
+                const winnerId = isPlayer1 ? matchData.player2 : matchData.player1;
+                
+                const mRef = matchRef(currentRoomCode, currentMatchId);
+                update(mRef, {
+                    status: 'finished',
+                    winner: winnerId,
+                    endReason: 'visibility_hidden',
+                    lastMoveTime: serverTimestamp()
+                }).then(async () => {
+                    const myPlayerRef = playerRef(currentRoomCode, currentNickname);
+                    const mySnap = await get(myPlayerRef);
+                    if (mySnap.exists()) await update(myPlayerRef, { losses: (mySnap.val().losses || 0) + 1 });
+                    
+                    if (winnerId !== 'COMPUTER') {
+                        const winnerRef = playerRef(currentRoomCode, winnerId);
+                        const winnerSnap = await get(winnerRef);
+                        if (winnerSnap.exists()) await update(winnerRef, { wins: (winnerSnap.val().wins || 0) + 1 });
+                    }
+                }).catch(e => console.error(e));
+            }
         }
 
         function handleUnload() {
@@ -1541,6 +1565,19 @@
                 if (matchData.endReason === 'kick') {
                     if (matchData.winner === currentNickname) {
                         customAlert('🎉 승리!', '상대방이 접속을 종료하거나 강퇴되어 승리했습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                            document.getElementById('btn-back-to-waiting').click();
+                        });
+                    }
+                    return;
+                }
+
+                if (matchData.endReason === 'visibility_hidden') {
+                    if (matchData.winner === currentNickname) {
+                        customAlert('🎉 승리!', '상대방이 다른 화면으로 이동하여 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                            document.getElementById('btn-back-to-waiting').click();
+                        });
+                    } else if (matchData.winner && matchData.winner !== currentNickname) {
+                        customAlert('😢 패배', '게임 진행 중 다른 화면으로 이동하여 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     }
