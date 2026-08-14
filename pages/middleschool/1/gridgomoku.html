@@ -537,8 +537,16 @@
         const customConfirm = (title, message) => showCustomModal(title, message, false, false, true);
 
         // =====================================================================
-        // 전역 상태
+        // 전역 상태 및 게임 상수
         // =====================================================================
+        // 데이터베이스에 저장할 필요 없는 불변 상수 (게임 설정)
+        const BOARD_N = 14;
+        const HALF_N = 7;
+        const WIN_COUNT = 5;
+        const PADDING = 40;
+
+        let CELL_SIZE = 32;
+
         let currentRoomCode = null;
         let currentNickname = null;
         let currentMatchId = null;
@@ -546,7 +554,7 @@
 
         let unsubRoom = null;
         let unsubPlayers = null;
-        let unsubAllPlayers = null; // 대기실 내 전체 플레이어 상태 구독용
+        let unsubAllPlayers = null;
         let unsubMatch = null;
         let unsubWaiting = null;
 
@@ -555,8 +563,8 @@
         let computerMoveTimeout = null;
         let localJoinedTime = 0;
 
-        let roomSettings = null;
-        let playersData = {}; // 학생 로컬에서 유지하는 방 전체 플레이어 정보
+        let roomSettings = null; // 컴퓨터 추가 허용 여부 등 저장
+        let playersData = {};
         let matchData = null;
         let boardState = {};
         let winStones = [];
@@ -603,13 +611,11 @@
         });
 
         document.getElementById('btn-confirm-create').addEventListener('click', async () => {
-            const boardSize = 14;
-            const winCount = 5;
             const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
 
             try {
                 await set(roomRef(roomCode), {
-                    settings: { boardSize, winCount },
+                    settings: { computerMatchEnabled: false }, // boardSize, winCount 등 불필요한 설정 제거
                     createdAt: serverTimestamp()
                 });
                 await customAlert("방 생성 완료", `게임이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]<br>학생들에게 코드를 안내해 주세요.`);
@@ -712,7 +718,7 @@
             if (isHidden && currentMatchId && matchData && matchData.status === 'playing') {
                 const isPlayer1 = matchData.player1 === currentNickname;
                 const winnerId = isPlayer1 ? matchData.player2 : matchData.player1;
-                
+
                 const mRef = matchRef(currentRoomCode, currentMatchId);
                 update(mRef, {
                     status: 'finished',
@@ -723,7 +729,7 @@
                     const myPlayerRef = playerRef(currentRoomCode, currentNickname);
                     const mySnap = await get(myPlayerRef);
                     if (mySnap.exists()) await update(myPlayerRef, { losses: (mySnap.val().losses || 0) + 1 });
-                    
+
                     if (winnerId !== 'COMPUTER') {
                         const winnerRef = playerRef(currentRoomCode, winnerId);
                         const winnerSnap = await get(winnerRef);
@@ -800,7 +806,18 @@
         let adminMatchesData = {};
 
         function startAdminMonitoring(roomCode) {
+            // 1. 이전 방의 관리자용 리스너를 확실히 해제
+            if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
+            if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+
+            // 2. 이전 방 데이터 초기화 (다른 방 데이터가 화면에 남아 덮어쓰여지는 현상 방지)
+            adminPlayersData = {};
+            adminMatchesData = {};
+
+            // 3. 새 방 코드로 업데이트
             currentRoomCode = roomCode;
+
             document.getElementById('admin-settings-area').style.display = 'none';
             document.getElementById('admin-board-area').style.display = 'block';
             document.getElementById('admin-active-room').innerHTML = `현재 방 코드: <span class="badge bg-primary fs-5">${roomCode}</span>`;
@@ -813,10 +830,6 @@
                 select.appendChild(option);
             }
             select.value = roomCode;
-
-            if (unsubAdminPlayers) { off(playersCollRef(currentRoomCode)); unsubAdminPlayers = null; }
-            if (unsubAdminMatches) { off(matchesCollRef(currentRoomCode)); unsubAdminMatches = null; }
-            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
 
             const rRef = roomRef(roomCode);
             const rCallback = onValue(rRef, (snapshot) => {
@@ -1074,7 +1087,7 @@
                     waitingCountEl.className = "badge bg-light text-dark fs-6";
                 }
 
-                // 🌟 진짜 매칭 주도자 찾기: 순서대로 돌면서 현재 'online'인 가장 앞선 사람
+                // 진짜 매칭 주도자 찾기: 순서대로 돌면서 현재 'online'인 가장 앞선 사람
                 let activeInitiator = null;
                 for (const p of currentWaitingList) {
                     const pData = playersData[p.id];
@@ -1104,7 +1117,6 @@
                         if (candidate.id === currentNickname) continue; // 본인 제외
 
                         const candidateData = playersData[candidate.id];
-                        // 🌟 상대방이 접속 중(online)일 때만 매칭 후보로 선정
                         if (!candidateData || candidateData.status !== 'online') continue;
 
                         const candidateLastOpponent = candidateData.lastOpponent || null;
@@ -1147,18 +1159,16 @@
                         }
                     }
 
-                    // 🌟 4단계: 파트너가 결정되면 모든 데이터를 한 번에 업데이트 (원자적 업데이트)
+                    // 🌟 4단계: 파트너가 결정되면 불필요한 설정은 빼고 생성
                     if (matchPartner) {
                         const matchId = `${Date.now()}_${activeInitiator.id}_${matchPartner.id}`;
-                        const boardSize = roomSettings?.boardSize || 14;
                         const updates = {};
 
+                        // boardSize, winCount 필드 저장하지 않음 (전역 상수로 대체)
                         updates[`matches/${matchId}`] = {
                             player1: activeInitiator.id,
                             player2: matchPartner.id,
                             moves: [],
-                            boardSize: boardSize,
-                            winCount: roomSettings?.winCount || 5,
                             status: 'playing',
                             currentTurn: 'black',
                             createdAt: serverTimestamp(),
@@ -1225,11 +1235,6 @@
         // =====================================================================
         const canvas = document.getElementById('gomoku-canvas');
         const ctx = canvas.getContext('2d');
-        let CELL_SIZE = 32;
-        let BOARD_N = 14;
-        let HALF_N = 7;
-        let WIN_COUNT = 5;
-        let PADDING = 40;
 
         function initRoulette() {
             const rxInner = document.querySelector('#roulette-x .roulette-inner');
@@ -1304,10 +1309,7 @@
         }
 
         function initBoard() {
-            BOARD_N = matchData?.boardSize || roomSettings?.boardSize || 14;
-            WIN_COUNT = matchData?.winCount || roomSettings?.winCount || 5;
-            HALF_N = Math.floor(BOARD_N / 2);
-
+            // 전역 상수를 직접 활용하므로 DB에서 읽어오는 로직 삭제
             const maxWidth = Math.min(window.innerWidth - 40, 600);
             CELL_SIZE = Math.max(24, Math.floor((maxWidth - PADDING * 2) / BOARD_N));
             const canvasSize = BOARD_N * CELL_SIZE + PADDING * 2;
