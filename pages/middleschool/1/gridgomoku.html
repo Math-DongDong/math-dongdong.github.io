@@ -539,7 +539,6 @@
         // =====================================================================
         // 전역 상태 및 게임 상수
         // =====================================================================
-        // 데이터베이스에 저장할 필요 없는 불변 상수 (게임 설정)
         const BOARD_N = 14;
         const HALF_N = 7;
         const WIN_COUNT = 5;
@@ -558,12 +557,16 @@
         let unsubMatch = null;
         let unsubWaiting = null;
 
+        let unsubOpponent = null; // 게임 중 상대방 상태 실시간 감지용 리스너
+        let opponentLastHeartbeatValue = null;
+        let opponentHeartbeatLocalTime = Date.now();
+
         let heartbeatInterval = null;
         let waitingInterval = null;
         let computerMoveTimeout = null;
         let localJoinedTime = 0;
 
-        let roomSettings = null; // 컴퓨터 추가 허용 여부 등 저장
+        let roomSettings = null;
         let playersData = {};
         let matchData = null;
         let boardState = {};
@@ -615,7 +618,7 @@
 
             try {
                 await set(roomRef(roomCode), {
-                    settings: { computerMatchEnabled: false }, // boardSize, winCount 등 불필요한 설정 제거
+                    settings: { computerMatchEnabled: false },
                     createdAt: serverTimestamp()
                 });
                 await customAlert("방 생성 완료", `게임이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]<br>학생들에게 코드를 안내해 주세요.`);
@@ -657,7 +660,6 @@
                 await update(playerRef(code, nickname), { status: 'online', lastHeartbeat: serverTimestamp() });
             }
 
-            // 본인 강퇴 감지 리스너
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             const myPRef = playerRef(code, nickname);
             const myPCallback = onValue(myPRef, (playerSnap) => {
@@ -707,7 +709,6 @@
             } catch (e) { }
         }
 
-        // 다른 화면(탭 이동 등) 시 상태만 업데이트하고 게임은 유지함
         function handleVisibility() {
             if (!currentRoomCode || !currentNickname) return;
             const isHidden = document.hidden;
@@ -715,13 +716,13 @@
                 status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
             }).catch(() => { });
+            // 다른 탭으로 이동해도 강제 몰수패를 즉시 주지 않도록 로직 제거
         }
 
-        // 브라우저가 완전히 닫히거나 새로고침되는 등 접속이 끊길 때 처리
         function handleUnload() {
             if (!currentRoomCode || !currentNickname) return;
 
-            // 접속이 끊길 때 진행 중인 게임이 있다면 상대방에게 몰수승 부여
+            // 접속이 완전히 끊길 때만 즉시 몰수승/패 처리
             if (currentMatchId && matchData && matchData.status === 'playing') {
                 const isPlayer1 = matchData.player1 === currentNickname;
                 const winnerId = isPlayer1 ? matchData.player2 : matchData.player1;
@@ -730,7 +731,7 @@
                 update(mRef, {
                     status: 'finished',
                     winner: winnerId,
-                    endReason: 'offline', // 사유: 오프라인(접속끊김)
+                    endReason: 'offline',
                     lastMoveTime: serverTimestamp()
                 }).then(async () => {
                     const myPlayerRef = playerRef(currentRoomCode, currentNickname);
@@ -809,16 +810,13 @@
         let adminMatchesData = {};
 
         function startAdminMonitoring(roomCode) {
-            // 1. 이전 방의 관리자용 리스너를 확실히 해제
             if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
             if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
 
-            // 2. 이전 방 데이터 초기화
             adminPlayersData = {};
             adminMatchesData = {};
 
-            // 3. 새 방 코드로 업데이트
             currentRoomCode = roomCode;
 
             document.getElementById('admin-settings-area').style.display = 'none';
@@ -990,7 +988,6 @@
             navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
             document.getElementById('waiting-nickname-display').textContent = currentNickname;
 
-            // 방 전체 플레이어 정보 실시간 캐싱
             if (unsubAllPlayers) { unsubAllPlayers(); unsubAllPlayers = null; }
             const allPRef = playersCollRef(currentRoomCode);
             const allPCallback = onValue(allPRef, (snapshot) => {
@@ -1224,6 +1221,32 @@
         }
 
         // =====================================================================
+        // 게임 내 오프라인 감지하여 몰수승 부여하는 강제종료 로직
+        // =====================================================================
+        async function triggerOfflineForfeit(opponentId) {
+            if (!matchData || matchData.status !== 'playing') return;
+            try {
+                const mRef = matchRef(currentRoomCode, currentMatchId);
+                await update(mRef, {
+                    status: 'finished',
+                    winner: currentNickname,
+                    endReason: 'offline', // 사유: 접속 끊김(오프라인)
+                    lastMoveTime: serverTimestamp()
+                });
+
+                const myPlayerRef = playerRef(currentRoomCode, currentNickname);
+                const mySnap = await get(myPlayerRef);
+                if (mySnap.exists()) await update(myPlayerRef, { wins: (mySnap.val().wins || 0) + 1 });
+
+                if (opponentId !== 'COMPUTER') {
+                    const oppRef = playerRef(currentRoomCode, opponentId);
+                    const oppSnap = await get(oppRef);
+                    if (oppSnap.exists()) await update(oppRef, { losses: (oppSnap.val().losses || 0) + 1 });
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // =====================================================================
         // 4. 게임 (오목)
         // =====================================================================
         const canvas = document.getElementById('gomoku-canvas');
@@ -1422,6 +1445,10 @@
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (timerInterval) clearInterval(timerInterval);
 
+            // 이전 상대방 상태 모니터링 초기화
+            if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
+            opponentLastHeartbeatValue = null;
+
             document.getElementById('game-result-area').classList.add('d-none');
             document.getElementById('game-input-area').classList.remove('d-none');
 
@@ -1464,6 +1491,26 @@
                 updateGameUI();
                 checkTimer();
 
+                // 🌟 게임 중 상대방 상태 감시 리스너 부착 (최초 1회)
+                if (!unsubOpponent && matchData.status === 'playing') {
+                    const opponentId = matchData.player1 === currentNickname ? matchData.player2 : matchData.player1;
+                    if (opponentId !== 'COMPUTER') {
+                        const oppRef = playerRef(currentRoomCode, opponentId);
+                        const oppCallback = onValue(oppRef, (snap) => {
+                            if (snap.exists() && typeof snap.val().lastHeartbeat === 'number') {
+                                const newHb = snap.val().lastHeartbeat;
+                                if (newHb !== opponentLastHeartbeatValue) {
+                                    opponentLastHeartbeatValue = newHb;
+                                    opponentHeartbeatLocalTime = Date.now(); // 하트비트가 갱신된 현재 로컬 시간 기록
+                                }
+                            } else if (!snap.exists()) {
+                                opponentHeartbeatLocalTime = 0; // 데이터가 삭제되면 즉시 만료 처리
+                            }
+                        });
+                        unsubOpponent = () => off(oppRef, 'value', oppCallback);
+                    }
+                }
+
                 if (matchData.status === 'playing' && (matchData.player1 === 'COMPUTER' || matchData.player2 === 'COMPUTER')) {
                     const moveCount = matchData.moves ? matchData.moves.length : 0;
                     const isBlackTurn = moveCount % 2 === 0;
@@ -1485,6 +1532,19 @@
 
         function checkTimer() {
             if (!matchData || matchData.status !== 'playing') return;
+
+            // 🌟 실시간 접속 끊김 감지 및 몰수승 처리 (1분 이상 방치 시)
+            if (unsubOpponent) {
+                const elapsedSinceHeartbeat = Date.now() - opponentHeartbeatLocalTime;
+                // 하트비트 갱신이 65초 이상 멈췄다면 (60초 초과 감지)
+                if (elapsedSinceHeartbeat > 65000) {
+                    const opponentId = matchData.player1 === currentNickname ? matchData.player2 : matchData.player1;
+                    unsubOpponent(); // 중복 방지를 위해 리스너 해제
+                    unsubOpponent = null;
+                    triggerOfflineForfeit(opponentId);
+                    return; // 타이머 로직 중단
+                }
+            }
 
             const moveCount = matchData.moves ? matchData.moves.length : 0;
             const isBlackTurn = moveCount % 2 === 0;
@@ -1555,24 +1615,23 @@
                     drawBoard();
                 }
 
-                // 게임 중 상대가 강퇴된 경우 즉시 복귀 처리
                 if (matchData.endReason === 'kick') {
                     if (matchData.winner === currentNickname) {
-                        customAlert('🎉 승리!', '상대방이 접속을 종료하거나 강퇴되어 승리했습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                        customAlert('🎉 승리!', '상대방이 강퇴되어 승리했습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     }
                     return;
                 }
 
-                // 오프라인(접속끊김) 처리
+                // 접속 끊김(오프라인) 사유 처리 안내
                 if (matchData.endReason === 'offline') {
                     if (matchData.winner === currentNickname) {
                         customAlert('🎉 승리!', '상대방의 접속이 끊겨 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     } else if (matchData.winner && matchData.winner !== currentNickname) {
-                        customAlert('😢 패배', '게임 진행 중 접속이 끊겨 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                        customAlert('😢 패배', '게임 진행 중 1분 이상 방치하여 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     }
@@ -1787,13 +1846,14 @@
             }
         });
 
-        // 🌟 정확히 5개가 연결되었을 때만 승리로 인정하는 로직 (6목 이상 무효화)
+        // 🌟 정확히 5개가 연결되었을 때만 승리로 인정하는 로직 (6개 이상의 돌이 연속되면 승리로 무효화)
         function checkWin(x, y, color) {
             const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
 
             for (const [dx, dy] of directions) {
                 let stones = [{ x, y }];
 
+                // 양방향 탐색하여 돌 끝까지 모두 세기
                 for (const sign of [1, -1]) {
                     let step = 1;
                     while (true) {
@@ -1818,6 +1878,7 @@
         }
 
         document.getElementById('btn-back-to-waiting').addEventListener('click', () => {
+            if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
             if (computerMoveTimeout) { clearTimeout(computerMoveTimeout); computerMoveTimeout = null; }
@@ -1833,6 +1894,7 @@
         // 구독 정리
         // =====================================================================
         function cleanupSubscriptions() {
+            if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             if (unsubAllPlayers) { unsubAllPlayers(); unsubAllPlayers = null; }
