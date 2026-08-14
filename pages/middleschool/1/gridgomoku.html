@@ -707,6 +707,7 @@
             } catch (e) { }
         }
 
+        // 다른 화면(탭 이동 등) 시 상태만 업데이트하고 게임은 유지함
         function handleVisibility() {
             if (!currentRoomCode || !currentNickname) return;
             const isHidden = document.hidden;
@@ -714,8 +715,14 @@
                 status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
             }).catch(() => { });
+        }
 
-            if (isHidden && currentMatchId && matchData && matchData.status === 'playing') {
+        // 브라우저가 완전히 닫히거나 새로고침되는 등 접속이 끊길 때 처리
+        function handleUnload() {
+            if (!currentRoomCode || !currentNickname) return;
+
+            // 접속이 끊길 때 진행 중인 게임이 있다면 상대방에게 몰수승 부여
+            if (currentMatchId && matchData && matchData.status === 'playing') {
                 const isPlayer1 = matchData.player1 === currentNickname;
                 const winnerId = isPlayer1 ? matchData.player2 : matchData.player1;
 
@@ -723,7 +730,7 @@
                 update(mRef, {
                     status: 'finished',
                     winner: winnerId,
-                    endReason: 'visibility_hidden',
+                    endReason: 'offline', // 사유: 오프라인(접속끊김)
                     lastMoveTime: serverTimestamp()
                 }).then(async () => {
                     const myPlayerRef = playerRef(currentRoomCode, currentNickname);
@@ -737,10 +744,6 @@
                     }
                 }).catch(e => console.error(e));
             }
-        }
-
-        function handleUnload() {
-            if (!currentRoomCode || !currentNickname) return;
         }
 
         // =====================================================================
@@ -811,7 +814,7 @@
             if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
 
-            // 2. 이전 방 데이터 초기화 (다른 방 데이터가 화면에 남아 덮어쓰여지는 현상 방지)
+            // 2. 이전 방 데이터 초기화
             adminPlayersData = {};
             adminMatchesData = {};
 
@@ -987,7 +990,7 @@
             navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
             document.getElementById('waiting-nickname-display').textContent = currentNickname;
 
-            // 방 전체 플레이어 정보 실시간 캐싱 (매칭 시 빠른 조회 및 주도자 판별용)
+            // 방 전체 플레이어 정보 실시간 캐싱
             if (unsubAllPlayers) { unsubAllPlayers(); unsubAllPlayers = null; }
             const allPRef = playersCollRef(currentRoomCode);
             const allPCallback = onValue(allPRef, (snapshot) => {
@@ -1056,7 +1059,6 @@
             isMatching = true;
 
             try {
-                // 이미 나와 매칭된 방이 생겼는지 확인
                 const myMatch = await findMyActiveMatch();
                 if (myMatch) {
                     if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
@@ -1087,7 +1089,6 @@
                     waitingCountEl.className = "badge bg-light text-dark fs-6";
                 }
 
-                // 진짜 매칭 주도자 찾기: 순서대로 돌면서 현재 'online'인 가장 앞선 사람
                 let activeInitiator = null;
                 for (const p of currentWaitingList) {
                     const pData = playersData[p.id];
@@ -1099,10 +1100,9 @@
 
                 if (!activeInitiator) {
                     isMatching = false;
-                    return; // 방 안에 온라인인 사람이 한 명도 없다면 보류
+                    return;
                 }
 
-                // 내가 가장 먼저 들어온 온라인 유저(주도자)일 때만 이하의 매칭 권한을 가짐
                 if (activeInitiator.id === currentNickname) {
                     const myPlayerSnapData = playersData[currentNickname];
                     const myLastOpponent = myPlayerSnapData ? (myPlayerSnapData.lastOpponent || null) : null;
@@ -1111,10 +1111,9 @@
                     let isComputer = false;
                     let oldOpponent = null;
 
-                    // 1단계: 완전히 새로운 상대 찾기 (캐싱된 playersData 활용)
                     for (let i = 0; i < currentWaitingList.length; i++) {
                         const candidate = currentWaitingList[i];
-                        if (candidate.id === currentNickname) continue; // 본인 제외
+                        if (candidate.id === currentNickname) continue;
 
                         const candidateData = playersData[candidate.id];
                         if (!candidateData || candidateData.status !== 'online') continue;
@@ -1134,14 +1133,11 @@
                         waitingCountEl.className = "badge bg-info text-dark fs-6";
                     }
 
-                    // 2단계: 새로운 상대가 없고 이전 상대만 있는데, 20초가 지났다면 어쩔 수 없이 재매칭
                     if (!matchPartner && oldOpponent && waitTimeSec >= 20) {
                         matchPartner = oldOpponent;
                     }
 
-                    // 3단계: 컴퓨터 매칭 제한 (전체 방에서 1대의 컴퓨터만 게임 가능)
                     let isComputerAvailable = true;
-                    // 대기열에 나를 제외한 온라인 유저가 없고 20초가 지났다면
                     if (!matchPartner && currentWaitingList.length >= 1 && roomSettings?.computerMatchEnabled && waitTimeSec >= 20) {
                         const matchesSnap = await get(matchesCollRef(currentRoomCode));
                         if (matchesSnap.exists()) {
@@ -1159,12 +1155,10 @@
                         }
                     }
 
-                    // 🌟 4단계: 파트너가 결정되면 불필요한 설정은 빼고 생성
                     if (matchPartner) {
                         const matchId = `${Date.now()}_${activeInitiator.id}_${matchPartner.id}`;
                         const updates = {};
 
-                        // boardSize, winCount 필드 저장하지 않음 (전역 상수로 대체)
                         updates[`matches/${matchId}`] = {
                             player1: activeInitiator.id,
                             player2: matchPartner.id,
@@ -1192,7 +1186,6 @@
                         }
                     }
                 } else {
-                    // 내가 주도자가 아닐 때의 화면 UI 처리
                     const myIdx = currentWaitingList.findIndex(p => p.id === currentNickname);
                     if (myIdx >= 0) {
                         const myPlayerSnapData = playersData[currentNickname];
@@ -1309,7 +1302,6 @@
         }
 
         function initBoard() {
-            // 전역 상수를 직접 활용하므로 DB에서 읽어오는 로직 삭제
             const maxWidth = Math.min(window.innerWidth - 40, 600);
             CELL_SIZE = Math.max(24, Math.floor((maxWidth - PADDING * 2) / BOARD_N));
             const canvasSize = BOARD_N * CELL_SIZE + PADDING * 2;
@@ -1573,13 +1565,14 @@
                     return;
                 }
 
-                if (matchData.endReason === 'visibility_hidden') {
+                // 오프라인(접속끊김) 처리
+                if (matchData.endReason === 'offline') {
                     if (matchData.winner === currentNickname) {
-                        customAlert('🎉 승리!', '상대방이 다른 화면으로 이동하여 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                        customAlert('🎉 승리!', '상대방의 접속이 끊겨 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     } else if (matchData.winner && matchData.winner !== currentNickname) {
-                        customAlert('😢 패배', '게임 진행 중 다른 화면으로 이동하여 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                        customAlert('😢 패배', '게임 진행 중 접속이 끊겨 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     }
@@ -1794,6 +1787,7 @@
             }
         });
 
+        // 🌟 정확히 5개가 연결되었을 때만 승리로 인정하는 로직 (6목 이상 무효화)
         function checkWin(x, y, color) {
             const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
 
@@ -1801,20 +1795,23 @@
                 let stones = [{ x, y }];
 
                 for (const sign of [1, -1]) {
-                    for (let step = 1; step < WIN_COUNT; step++) {
+                    let step = 1;
+                    while (true) {
                         const nx = x + dx * sign * step;
                         const ny = y + dy * sign * step;
                         if (boardState[`${nx},${ny}`] === color) {
                             stones.push({ x: nx, y: ny });
+                            step++;
                         } else {
                             break;
                         }
                     }
                 }
 
-                if (stones.length >= WIN_COUNT) {
+                // 돌의 개수가 '이상(>=)'이 아니라 '정확히(===)' 5개일 때만 승리로 반환
+                if (stones.length === WIN_COUNT) {
                     stones.sort((a, b) => a.x - b.x || a.y - b.y);
-                    return stones.slice(0, WIN_COUNT);
+                    return stones;
                 }
             }
             return null;
