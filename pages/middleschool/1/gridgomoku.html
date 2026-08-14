@@ -638,6 +638,27 @@
             const snap = await get(roomRef(code));
             if (!snap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
 
+            // 닉네임 중복 및 접속 상태 확인
+            const pSnap = await get(playerRef(code, nickname));
+            if (pSnap.exists()) {
+                const pData = pSnap.val();
+                const lastBeat = typeof pData.lastHeartbeat === 'number' ? pData.lastHeartbeat : 0;
+                const diff = Date.now() - lastBeat;
+
+                // 60초 이내 하트비트가 있고 'online' 상태인 경우 중복 접속 차단
+                if (diff <= 60000 && pData.status === 'online') {
+                    return await customAlert("접속 불가", "현재 사용 중인 닉네임입니다. 다른 닉네임을 사용해주세요.");
+                }
+
+                // 오프라인이나 자리비움 상태라면 덮어쓰기 허용
+                await update(playerRef(code, nickname), { status: 'online', lastHeartbeat: serverTimestamp() });
+            } else {
+                await set(playerRef(code, nickname), {
+                    nickname, wins: 0, losses: 0, status: 'online',
+                    lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp()
+                });
+            }
+
             currentRoomCode = code;
             currentNickname = nickname;
             roomSettings = snap.val().settings;
@@ -648,16 +669,6 @@
                     roomSettings = snapshot.val().settings;
                 }
             });
-
-            const pSnap = await get(playerRef(code, nickname));
-            if (!pSnap.exists()) {
-                await set(playerRef(code, nickname), {
-                    nickname, wins: 0, losses: 0, status: 'online',
-                    lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp()
-                });
-            } else {
-                await update(playerRef(code, nickname), { status: 'online', lastHeartbeat: serverTimestamp() });
-            }
 
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             unsubPlayers = onValue(playerRef(code, nickname), (playerSnap) => {
