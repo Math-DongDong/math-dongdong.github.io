@@ -550,6 +550,9 @@
         let currentMatchId = null;
         let myColor = null;
 
+        let localSessionId = null; // 세션 ID
+        let isKicked = false;      // 강제퇴장/중복접속 여부
+
         let unsubRoom = null;
         let unsubPlayers = null;
         let unsubAllPlayers = null;
@@ -638,6 +641,10 @@
             const snap = await get(roomRef(code));
             if (!snap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
 
+            // 고유 세션 ID 생성
+            localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+            isKicked = false;
+
             // 닉네임 중복 및 접속 상태 확인
             const pSnap = await get(playerRef(code, nickname));
             if (pSnap.exists()) {
@@ -650,12 +657,17 @@
                     return await customAlert("접속 불가", "현재 사용 중인 닉네임입니다. 다른 닉네임을 사용해주세요.");
                 }
 
-                // 오프라인이나 자리비움 상태라면 덮어쓰기 허용
-                await update(playerRef(code, nickname), { status: 'online', lastHeartbeat: serverTimestamp() });
+                // 오프라인이나 자리비움 상태라면 덮어쓰기 허용 (새 세션 ID 부여)
+                await update(playerRef(code, nickname), {
+                    status: 'online',
+                    lastHeartbeat: serverTimestamp(),
+                    sessionId: localSessionId
+                });
             } else {
                 await set(playerRef(code, nickname), {
                     nickname, wins: 0, losses: 0, status: 'online',
-                    lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp()
+                    lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp(),
+                    sessionId: localSessionId
                 });
             }
 
@@ -673,9 +685,21 @@
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             unsubPlayers = onValue(playerRef(code, nickname), (playerSnap) => {
                 if (!playerSnap.exists() && currentRoomCode === code) {
+                    isKicked = true;
+                    cleanupSubscriptions();
                     customAlert("알림", "방에서 강퇴되었습니다.").then(() => {
                         window.location.reload();
                     });
+                } else if (playerSnap.exists() && currentRoomCode === code) {
+                    const data = playerSnap.val();
+                    // 내 세션 ID와 DB의 세션 ID가 다르면 덮어쓰기(중복 접속) 당한 것
+                    if (data.sessionId && data.sessionId !== localSessionId) {
+                        isKicked = true;
+                        cleanupSubscriptions(); // 하트비트 등 모두 중지
+                        customAlert("중복 접속 알림", "장시간 미접속 또는 다른 기기에서 동일한 닉네임으로 접속하여 연결이 끊어졌습니다.").then(() => {
+                            window.location.reload();
+                        });
+                    }
                 }
             });
 
@@ -708,7 +732,7 @@
         }
 
         async function updateHeartbeat() {
-            if (!currentRoomCode || !currentNickname) return;
+            if (!currentRoomCode || !currentNickname || isKicked) return;
             try {
                 await update(playerRef(currentRoomCode, currentNickname), {
                     lastHeartbeat: serverTimestamp(),
@@ -718,7 +742,7 @@
         }
 
         function handleVisibility() {
-            if (!currentRoomCode || !currentNickname) return;
+            if (!currentRoomCode || !currentNickname || isKicked) return;
             const isHidden = document.hidden;
             update(playerRef(currentRoomCode, currentNickname), {
                 status: isHidden ? 'away' : 'online',
@@ -727,7 +751,7 @@
         }
 
         function handleUnload() {
-            if (!currentRoomCode || !currentNickname) return;
+            if (!currentRoomCode || !currentNickname || isKicked) return;
 
             if (currentMatchId && matchData && matchData.status === 'playing') {
                 const isPlayer1 = matchData.player1 === currentNickname;
@@ -1893,6 +1917,7 @@
         // 구독 정리
         // =====================================================================
         function cleanupSubscriptions() {
+            if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
             if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
