@@ -468,8 +468,7 @@
         import { rtdbGridGomoku as db } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
         import {
-            ref, set, get, update, remove, onValue, off,
-            push, child, serverTimestamp, query, orderByChild
+            ref, set, get, update, remove, onValue, push, child, serverTimestamp, query, orderByChild
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
         // =====================================================================
@@ -557,9 +556,11 @@
         let unsubMatch = null;
         let unsubWaiting = null;
 
-        let unsubOpponent = null; // 게임 중 상대방 상태 실시간 감지용 리스너
+        let unsubOpponent = null;
         let opponentLastHeartbeatValue = null;
         let opponentHeartbeatLocalTime = Date.now();
+        let opponentStatus = 'online';
+        let opponentAwayStartTime = 0;
 
         let heartbeatInterval = null;
         let waitingInterval = null;
@@ -642,13 +643,11 @@
             roomSettings = snap.val().settings;
 
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
-            const rRef = roomRef(code);
-            const rCallback = onValue(rRef, (snapshot) => {
+            unsubRoom = onValue(roomRef(code), (snapshot) => {
                 if (snapshot.exists()) {
                     roomSettings = snapshot.val().settings;
                 }
             });
-            unsubRoom = () => off(rRef, 'value', rCallback);
 
             const pSnap = await get(playerRef(code, nickname));
             if (!pSnap.exists()) {
@@ -661,15 +660,13 @@
             }
 
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
-            const myPRef = playerRef(code, nickname);
-            const myPCallback = onValue(myPRef, (playerSnap) => {
+            unsubPlayers = onValue(playerRef(code, nickname), (playerSnap) => {
                 if (!playerSnap.exists() && currentRoomCode === code) {
                     customAlert("알림", "방에서 강퇴되었습니다.").then(() => {
                         window.location.reload();
                     });
                 }
             });
-            unsubPlayers = () => off(myPRef, 'value', myPCallback);
 
             startHeartbeat();
 
@@ -716,13 +713,11 @@
                 status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
             }).catch(() => { });
-            // 다른 탭으로 이동해도 강제 몰수패를 즉시 주지 않도록 로직 제거
         }
 
         function handleUnload() {
             if (!currentRoomCode || !currentNickname) return;
 
-            // 접속이 완전히 끊길 때만 즉시 몰수승/패 처리
             if (currentMatchId && matchData && matchData.status === 'playing') {
                 const isPlayer1 = matchData.player1 === currentNickname;
                 const winnerId = isPlayer1 ? matchData.player2 : matchData.player1;
@@ -816,7 +811,6 @@
 
             adminPlayersData = {};
             adminMatchesData = {};
-
             currentRoomCode = roomCode;
 
             document.getElementById('admin-settings-area').style.display = 'none';
@@ -832,15 +826,13 @@
             }
             select.value = roomCode;
 
-            const rRef = roomRef(roomCode);
-            const rCallback = onValue(rRef, (snapshot) => {
+            unsubRoom = onValue(roomRef(roomCode), (snapshot) => {
                 if (snapshot.exists() && snapshot.val().settings) {
                     roomSettings = snapshot.val().settings;
                     const compToggle = document.getElementById('admin-computer-toggle');
                     if (compToggle) compToggle.checked = !!roomSettings.computerMatchEnabled;
                 }
             });
-            unsubRoom = () => off(rRef, 'value', rCallback);
 
             const compToggle = document.getElementById('admin-computer-toggle');
             if (compToggle && !compToggle.dataset.bound) {
@@ -855,8 +847,7 @@
                 });
             }
 
-            const pRef = playersCollRef(roomCode);
-            const pCallback = onValue(pRef, (snapshot) => {
+            unsubAdminPlayers = onValue(playersCollRef(roomCode), (snapshot) => {
                 adminPlayersData = {};
                 if (snapshot.exists()) {
                     const val = snapshot.val();
@@ -864,10 +855,8 @@
                 }
                 renderAdminBoard();
             });
-            unsubAdminPlayers = () => off(pRef, 'value', pCallback);
 
-            const mRef = matchesCollRef(roomCode);
-            const mCallback = onValue(mRef, (snapshot) => {
+            unsubAdminMatches = onValue(matchesCollRef(roomCode), (snapshot) => {
                 adminMatchesData = {};
                 if (snapshot.exists()) {
                     const val = snapshot.val();
@@ -875,7 +864,6 @@
                 }
                 renderAdminBoard();
             });
-            unsubAdminMatches = () => off(mRef, 'value', mCallback);
         }
 
         function getPlayerStatus(player) {
@@ -989,14 +977,12 @@
             document.getElementById('waiting-nickname-display').textContent = currentNickname;
 
             if (unsubAllPlayers) { unsubAllPlayers(); unsubAllPlayers = null; }
-            const allPRef = playersCollRef(currentRoomCode);
-            const allPCallback = onValue(allPRef, (snapshot) => {
+            unsubAllPlayers = onValue(playersCollRef(currentRoomCode), (snapshot) => {
                 playersData = {};
                 if (snapshot.exists()) {
                     playersData = snapshot.val();
                 }
             });
-            unsubAllPlayers = () => off(allPRef, 'value', allPCallback);
 
             try {
                 const pSnap = await get(playerRef(currentRoomCode, currentNickname));
@@ -1036,9 +1022,7 @@
             });
 
             if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
-            const wRef = query(waitingCollRef(currentRoomCode), orderByChild('joinedAt'));
-
-            const wCallback = onValue(wRef, (snapshot) => {
+            unsubWaiting = onValue(query(waitingCollRef(currentRoomCode), orderByChild('joinedAt')), (snapshot) => {
                 currentWaitingList = [];
                 if (snapshot.exists()) {
                     snapshot.forEach(childSnap => {
@@ -1047,7 +1031,6 @@
                 }
                 attemptSmartMatch();
             });
-            unsubWaiting = () => off(wRef, 'value', wCallback);
         }
 
         async function attemptSmartMatch() {
@@ -1230,7 +1213,7 @@
                 await update(mRef, {
                     status: 'finished',
                     winner: currentNickname,
-                    endReason: 'offline', // 사유: 접속 끊김(오프라인)
+                    endReason: 'offline',
                     lastMoveTime: serverTimestamp()
                 });
 
@@ -1445,9 +1428,10 @@
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (timerInterval) clearInterval(timerInterval);
 
-            // 이전 상대방 상태 모니터링 초기화
             if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
             opponentLastHeartbeatValue = null;
+            opponentStatus = 'online';
+            opponentAwayStartTime = 0;
 
             document.getElementById('game-result-area').classList.add('d-none');
             document.getElementById('game-input-area').classList.remove('d-none');
@@ -1457,7 +1441,7 @@
             timerInterval = setInterval(checkTimer, 100);
 
             const mRef = matchRef(currentRoomCode, currentMatchId);
-            const mCallback = onValue(mRef, (snapshot) => {
+            unsubMatch = onValue(mRef, (snapshot) => {
                 if (!snapshot.exists()) return;
                 matchData = snapshot.val();
 
@@ -1491,23 +1475,32 @@
                 updateGameUI();
                 checkTimer();
 
-                // 🌟 게임 중 상대방 상태 감시 리스너 부착 (최초 1회)
                 if (!unsubOpponent && matchData.status === 'playing') {
                     const opponentId = matchData.player1 === currentNickname ? matchData.player2 : matchData.player1;
                     if (opponentId !== 'COMPUTER') {
                         const oppRef = playerRef(currentRoomCode, opponentId);
-                        const oppCallback = onValue(oppRef, (snap) => {
-                            if (snap.exists() && typeof snap.val().lastHeartbeat === 'number') {
-                                const newHb = snap.val().lastHeartbeat;
-                                if (newHb !== opponentLastHeartbeatValue) {
-                                    opponentLastHeartbeatValue = newHb;
-                                    opponentHeartbeatLocalTime = Date.now(); // 하트비트가 갱신된 현재 로컬 시간 기록
+                        unsubOpponent = onValue(oppRef, (snap) => {
+                            if (snap.exists()) {
+                                const data = snap.val();
+
+                                if (typeof data.lastHeartbeat === 'number' && data.lastHeartbeat !== opponentLastHeartbeatValue) {
+                                    opponentLastHeartbeatValue = data.lastHeartbeat;
+                                    opponentHeartbeatLocalTime = Date.now();
+                                }
+
+                                if (data.status === 'away') {
+                                    if (opponentStatus !== 'away') {
+                                        opponentStatus = 'away';
+                                        opponentAwayStartTime = Date.now();
+                                    }
+                                } else {
+                                    opponentStatus = 'online';
+                                    opponentAwayStartTime = 0;
                                 }
                             } else if (!snap.exists()) {
-                                opponentHeartbeatLocalTime = 0; // 데이터가 삭제되면 즉시 만료 처리
+                                opponentHeartbeatLocalTime = 0;
                             }
                         });
-                        unsubOpponent = () => off(oppRef, 'value', oppCallback);
                     }
                 }
 
@@ -1527,22 +1520,21 @@
                     }
                 }
             });
-            unsubMatch = () => off(mRef, 'value', mCallback);
         }
 
         function checkTimer() {
             if (!matchData || matchData.status !== 'playing') return;
 
-            // 🌟 실시간 접속 끊김 감지 및 몰수승 처리 (1분 이상 방치 시)
             if (unsubOpponent) {
                 const elapsedSinceHeartbeat = Date.now() - opponentHeartbeatLocalTime;
-                // 하트비트 갱신이 65초 이상 멈췄다면 (60초 초과 감지)
-                if (elapsedSinceHeartbeat > 65000) {
+                const elapsedSinceAway = opponentStatus === 'away' ? (Date.now() - opponentAwayStartTime) : 0;
+
+                if (elapsedSinceHeartbeat > 65000 || (opponentStatus === 'away' && elapsedSinceAway > 65000)) {
                     const opponentId = matchData.player1 === currentNickname ? matchData.player2 : matchData.player1;
-                    unsubOpponent(); // 중복 방지를 위해 리스너 해제
+                    unsubOpponent();
                     unsubOpponent = null;
                     triggerOfflineForfeit(opponentId);
-                    return; // 타이머 로직 중단
+                    return;
                 }
             }
 
@@ -1624,10 +1616,9 @@
                     return;
                 }
 
-                // 접속 끊김(오프라인) 사유 처리 안내
                 if (matchData.endReason === 'offline') {
                     if (matchData.winner === currentNickname) {
-                        customAlert('🎉 승리!', '상대방의 접속이 끊겨 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
+                        customAlert('🎉 승리!', '상대방의 접속이 끊기거나 1분 이상 방치하여 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
                             document.getElementById('btn-back-to-waiting').click();
                         });
                     } else if (matchData.winner && matchData.winner !== currentNickname) {
@@ -1846,14 +1837,12 @@
             }
         });
 
-        // 🌟 정확히 5개가 연결되었을 때만 승리로 인정하는 로직 (6개 이상의 돌이 연속되면 승리로 무효화)
         function checkWin(x, y, color) {
             const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
 
             for (const [dx, dy] of directions) {
                 let stones = [{ x, y }];
 
-                // 양방향 탐색하여 돌 끝까지 모두 세기
                 for (const sign of [1, -1]) {
                     let step = 1;
                     while (true) {
@@ -1868,7 +1857,6 @@
                     }
                 }
 
-                // 돌의 개수가 '이상(>=)'이 아니라 '정확히(===)' 5개일 때만 승리로 반환
                 if (stones.length === WIN_COUNT) {
                     stones.sort((a, b) => a.x - b.x || a.y - b.y);
                     return stones;
