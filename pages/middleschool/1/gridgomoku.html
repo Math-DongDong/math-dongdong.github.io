@@ -552,6 +552,7 @@
 
         let localSessionId = null; // 세션 ID
         let isKicked = false;      // 강제퇴장/중복접속 여부
+        let myAwayStartTime = 0;   // 내가 화면을 떠난 시점 기록
 
         let unsubRoom = null;
         let unsubPlayers = null;
@@ -641,9 +642,9 @@
             const snap = await get(roomRef(code));
             if (!snap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
 
-            // 고유 세션 ID 생성
             localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
             isKicked = false;
+            let wasOfflineTooLong = false;
 
             // 닉네임 중복 및 접속 상태 확인
             const pSnap = await get(playerRef(code, nickname));
@@ -655,6 +656,11 @@
                 // 60초 이내 하트비트가 있고 'online' 상태인 경우 중복 접속 차단
                 if (diff <= 60000 && pData.status === 'online') {
                     return await customAlert("접속 불가", "현재 사용 중인 닉네임입니다. 다른 닉네임을 사용해주세요.");
+                }
+
+                // 장시간 오프라인 상태였을 경우 기존 게임 몰수패 처리를 위해 마킹
+                if (diff > 65000) {
+                    wasOfflineTooLong = true;
                 }
 
                 // 오프라인이나 자리비움 상태라면 덮어쓰기 허용 (새 세션 ID 부여)
@@ -692,7 +698,6 @@
                     });
                 } else if (playerSnap.exists() && currentRoomCode === code) {
                     const data = playerSnap.val();
-                    // 내 세션 ID와 DB의 세션 ID가 다르면 덮어쓰기(중복 접속) 당한 것
                     if (data.sessionId && data.sessionId !== localSessionId) {
                         isKicked = true;
                         cleanupSubscriptions(); // 하트비트 등 모두 중지
@@ -707,13 +712,42 @@
 
             const existingMatch = await findMyActiveMatch();
             if (existingMatch) {
-                currentMatchId = existingMatch.id;
-                myColor = existingMatch.data.player1 === nickname ? 'black' : 'white';
-                matchData = existingMatch.data;
-                navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
-                showSection(sectionGame);
-                startGameSync();
-                return;
+                // 장시간 끊겼다 접속한 경우 강제 몰수패 처리
+                if (wasOfflineTooLong) {
+                    const isPlayer1 = existingMatch.data.player1 === nickname;
+                    const winnerId = isPlayer1 ? existingMatch.data.player2 : existingMatch.data.player1;
+
+                    await update(matchRef(code, existingMatch.id), {
+                        status: 'finished',
+                        winner: winnerId,
+                        endReason: 'offline',
+                        lastMoveTime: serverTimestamp()
+                    });
+
+                    const mySnap = await get(playerRef(code, nickname));
+                    if (mySnap.exists()) {
+                        await update(playerRef(code, nickname), { losses: (mySnap.val().losses || 0) + 1 });
+                    }
+
+                    if (winnerId !== 'COMPUTER') {
+                        const winnerSnap = await get(playerRef(code, winnerId));
+                        if (winnerSnap.exists()) {
+                            await update(playerRef(code, winnerId), { wins: (winnerSnap.val().wins || 0) + 1 });
+                        }
+                    }
+
+                    await customAlert("몰수패", "접속이 1분 이상 끊겨 기존 게임에서 몰수패 처리되었습니다.");
+                    enterWaitingRoom();
+                    return;
+                } else {
+                    currentMatchId = existingMatch.id;
+                    myColor = existingMatch.data.player1 === nickname ? 'black' : 'white';
+                    matchData = existingMatch.data;
+                    navRoomInfo.innerHTML = `방: <b>${currentRoomCode}</b> | <b>${currentNickname}</b>`;
+                    showSection(sectionGame);
+                    startGameSync();
+                    return;
+                }
             }
 
             enterWaitingRoom();
@@ -744,6 +778,19 @@
         function handleVisibility() {
             if (!currentRoomCode || !currentNickname || isKicked) return;
             const isHidden = document.hidden;
+
+            if (isHidden) {
+                myAwayStartTime = Date.now();
+            } else {
+                // 다른 화면으로 65초 이상 나갔다가 돌아온 경우 스스로 몰수패 부여
+                if (myAwayStartTime > 0 && (Date.now() - myAwayStartTime) > 65000) {
+                    if (currentMatchId && matchData && matchData.status === 'playing') {
+                        triggerSelfForfeit();
+                    }
+                }
+                myAwayStartTime = 0;
+            }
+
             update(playerRef(currentRoomCode, currentNickname), {
                 status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
@@ -775,6 +822,33 @@
                     }
                 }).catch(e => console.error(e));
             }
+        }
+
+        // 자기 자신에게 오프라인 몰수패를 부여하는 함수
+        async function triggerSelfForfeit() {
+            if (!matchData || matchData.status !== 'playing') return;
+            try {
+                const isPlayer1 = matchData.player1 === currentNickname;
+                const winnerId = isPlayer1 ? matchData.player2 : matchData.player1;
+
+                const mRef = matchRef(currentRoomCode, currentMatchId);
+                await update(mRef, {
+                    status: 'finished',
+                    winner: winnerId,
+                    endReason: 'offline',
+                    lastMoveTime: serverTimestamp()
+                });
+
+                const myPlayerRef = playerRef(currentRoomCode, currentNickname);
+                const mySnap = await get(myPlayerRef);
+                if (mySnap.exists()) await update(myPlayerRef, { losses: (mySnap.val().losses || 0) + 1 });
+
+                if (winnerId !== 'COMPUTER') {
+                    const oppRef = playerRef(currentRoomCode, winnerId);
+                    const oppSnap = await get(oppRef);
+                    if (oppSnap.exists()) await update(oppRef, { wins: (oppSnap.val().wins || 0) + 1 });
+                }
+            } catch (e) { console.error(e); }
         }
 
         // =====================================================================
@@ -914,7 +988,9 @@
             const playersList = Object.entries(adminPlayersData)
                 .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
 
-            document.getElementById('admin-player-count').textContent = `${playersList.length}명 접속`;
+            // 접속 중인(online) 학생 수만 카운트
+            const onlineCount = playersList.filter(([id, p]) => getPlayerStatus(p).cls === 'online').length;
+            document.getElementById('admin-player-count').textContent = `${onlineCount}명 접속`;
 
             const recordTbody = document.getElementById('admin-record-tbody');
             if (playersList.length === 0) {
