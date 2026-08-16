@@ -11,6 +11,11 @@
     <link rel="apple-touch-icon" href="./assets/images/mainPage/동동이.jpg">
     <link rel="manifest" href="./manifest.json">
 
+    <!-- iOS 전용 PWA 메타 태그 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="동동">
+
     <!-- 모바일 및 반응형 웹을 위한 Bootstrap 5 CSS 적용 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons 적용 -->
@@ -52,6 +57,13 @@
             font-size: 1.1rem;
             font-weight: 400;
             letter-spacing: -0.01em;
+        }
+
+        /* 이미 앱(Standalone)으로 실행 중일 때 설치 버튼 강제 숨김 */
+        @media all and (display-mode: standalone) {
+            #btn-install-pwa {
+                display: none !important;
+            }
         }
 
         /* 카드 테두리와 부드러운 그림자 효과 설정 */
@@ -130,6 +142,27 @@
 
 <body>
 
+    <!-- iOS(아이폰) 전용 설치 안내 모달 -->
+    <div class="modal fade" id="iosInstallModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">홈 화면에 추가</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <p class="mb-3 text-dark">아이폰에서는 아래 방법으로 앱을 설치할 수 있습니다.</p>
+                    <p class="mb-2">1. 브라우저 하단의 <b>공유 버튼(<i class="bi bi-box-arrow-up"></i>)</b>을 누릅니다.</p>
+                    <p class="mb-0">2. 메뉴에서 <b>'홈 화면에 추가(<i class="bi bi-plus-square"></i>)'</b>를 선택합니다.</p>
+                </div>
+                <div class="modal-footer border-0 pt-3 flex-center">
+                    <button type="button" class="btn btn-primary rounded-3 w-100 fw-bold"
+                        data-bs-dismiss="modal">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 페이지 전체를 감싸는 컨테이너 -->
     <div class="container py-5">
 
@@ -141,7 +174,7 @@
                 <p class="page-subtitle mb-0">원하는 주제를 선택하여 바로 이동해보세요!</p>
                 <!-- PWA 설치 버튼 (기본적으로 숨김 상태 d-none) -->
                 <button id="btn-install-pwa" class="btn btn-sm btn-outline-primary rounded-pill fw-bold d-none">
-                    <i class="bi bi-plus-square"></i> 홈화면에 추가
+                    <i class="bi bi-download me-1"></i> 홈화면에 추가
                 </button>
             </div>
         </header>
@@ -281,7 +314,7 @@
     <!-- 검색 & 대형 QR 생성 및 PWA 설정 스크립트 -->
     <script>
         // ==========================================
-        // PWA 홈화면에 추가 기능
+        // PWA 홈화면에 추가 기능 (안드로이드 & 아이폰 지원)
         // ==========================================
         let deferredPrompt;
         const installBtn = document.getElementById('btn-install-pwa');
@@ -295,34 +328,39 @@
             });
         }
 
-        // 브라우저가 앱 설치 조건을 만족할 때 발생하는 이벤트
-        window.addEventListener('beforeinstallprompt', (e) => {
-            // 브라우저의 기본 설치 배너 표시 방지
-            e.preventDefault();
-            // 나중에 프롬프트를 띄우기 위해 이벤트 보관
-            deferredPrompt = e;
-            // 설치 버튼 화면에 노출
-            installBtn.classList.remove('d-none');
-        });
+        // 앱 형태로 이미 실행 중인지 확인 (설치된 상태)
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
 
-        // 설치 버튼 클릭 이벤트
-        installBtn.addEventListener('click', async () => {
-            if (deferredPrompt) {
-                // 저장해둔 설치 프롬프트 띄우기
-                deferredPrompt.prompt();
-                // 사용자의 응답 대기
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    console.log('홈화면 설치 수락');
-                } else {
-                    console.log('홈화면 설치 거부');
-                }
-                // 한 번 사용한 프롬프트 초기화
-                deferredPrompt = null;
-                // 설치 후 버튼 숨기기
-                installBtn.classList.add('d-none');
+        // 아이폰, 아이패드 (iOS) 여부 판별
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+        if (!isStandalone) {
+            if (isIOS) {
+                // [iOS] 설치 프롬프트를 미지원하므로 무조건 버튼을 띄우고 모달로 유도
+                installBtn.classList.remove('d-none');
+                installBtn.addEventListener('click', () => {
+                    const iosModal = new bootstrap.Modal(document.getElementById('iosInstallModal'));
+                    iosModal.show();
+                });
+            } else {
+                // [안드로이드/PC] 브라우저가 PWA 요건을 만족했다고 판단할 때 이벤트 발생
+                window.addEventListener('beforeinstallprompt', (e) => {
+                    e.preventDefault(); // 기본 배너 차단
+                    deferredPrompt = e; // 이벤트 저장
+                    installBtn.classList.remove('d-none'); // 버튼 노출
+                });
+
+                installBtn.addEventListener('click', async () => {
+                    if (deferredPrompt) {
+                        deferredPrompt.prompt();
+                        const { outcome } = await deferredPrompt.userChoice;
+                        if (outcome === 'accepted') console.log('홈화면 설치 수락');
+                        deferredPrompt = null;
+                        installBtn.classList.add('d-none');
+                    }
+                });
             }
-        });
+        }
 
 
         // ==========================================
