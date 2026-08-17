@@ -24,6 +24,7 @@ const rtdbBlotto = getDatabase(app, "https://blottogame.asia-southeast1.firebase
 const rtdbSentiment = getDatabase(app, "https://sentimentanalysis.asia-southeast1.firebasedatabase.app/");
 const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
 const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
+const rtdbZombieHunter = getDatabase(app, "https://zombiehunterdefense.asia-southeast1.firebasedatabase.app/");
 
-export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency };
+export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbZombieHunter };
 
