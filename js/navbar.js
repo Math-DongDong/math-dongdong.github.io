@@ -183,8 +183,12 @@
 
     // 5. navbar-container 요소가 있으면 내부 삽입, 없으면 스크립트 태그 앞 삽입
     const container = document.getElementById('navbar-container');
+    const placeholder = document.getElementById('navbar-placeholder');
+
     if (container) {
         container.innerHTML = navbarHtml;
+    } else if (placeholder) {
+        placeholder.innerHTML = navbarHtml;
     } else if (scriptTag) {
         scriptTag.insertAdjacentHTML('beforebegin', navbarHtml);
     } else {
