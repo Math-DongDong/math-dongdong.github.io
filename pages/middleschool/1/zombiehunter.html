@@ -75,6 +75,35 @@
         </div>
     </div>
 
+    <div class="modal fade" id="studentHistoryModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">📋 <span id="shModalTitle">학생</span> 님의 전체 이력</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="shModalBody">
+                    <h6 class="fw-bold mb-3">레벨별 누적 성적</h6>
+                    <div class="row g-2 mb-4" id="shModalCards"></div>
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-hover text-center align-middle mb-0" style="font-size: 0.9rem;">
+                            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                <tr>
+                                    <th>일시</th>
+                                    <th>점수</th>
+                                    <th>레벨</th>
+                                    <th>명중률</th>
+                                    <th>풀이(시도당)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="shModalTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="navbar-placeholder"></div>
 
     <!-- 1. 랜딩 섹션 -->
@@ -283,8 +312,8 @@
         // 데이터 수집용
         let currentTotalShots = 0;
         let currentHitShots = 0;
-        let currentStageHits = {1:0, 2:0, 3:0};
-        let currentStageFails = {1:0, 2:0, 3:0};
+        let currentStageHits = {1:0, 2:0, 3:0, 4:0};
+        let currentStageFails = {1:0, 2:0, 3:0, 4:0};
         let gameStartTime = 0;
 
         const canvas = document.getElementById('gameCanvas');
@@ -345,7 +374,7 @@
             currentRoomCode = code; myName = name;
             currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
             currentTotalShots = 0; currentHitShots = 0; 
-            currentStageHits = {1:0, 2:0, 3:0}; currentStageFails = {1:0, 2:0, 3:0};
+            currentStageHits = {1:0, 2:0, 3:0, 4:0}; currentStageFails = {1:0, 2:0, 3:0, 4:0};
             gameStartTime = Date.now();
 
             updateLiveStatus();
@@ -377,57 +406,57 @@
 
         function generateProblem() {
             const nZombies = Math.max(3, 6 - currentProblem);
-            const carryLimit = Math.min(2, Math.max(0, currentStage - 1));
-            const previousPatterns = problemHistory.slice(-carryLimit);
             let baseType = 'linear';
             let baseA = 1;
 
             if (currentStage === 1) {
-                baseType = 'linear';
-                baseA = [1, 2, 3, 4, 5][Math.floor(Math.random() * 5)];
+                baseType = 'linear'; baseA = [1, 2, 3, 4, 5][Math.floor(Math.random() * 5)];
             } else if (currentStage === 2) {
-                baseType = 'linear';
-                baseA = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5][Math.floor(Math.random() * 10)];
+                baseType = 'linear'; baseA = [-5, -4, -3, -2, -1][Math.floor(Math.random() * 5)];
             } else if (currentStage === 3) {
-                baseType = 'inverse';
-                baseA = [-24, -20, -18, -16, -12, 12, 16, 18, 20, 24][Math.floor(Math.random() * 10)];
+                baseType = 'inverse'; baseA = [12, 16, 18, 20, 24][Math.floor(Math.random() * 5)];
+            } else if (currentStage === 4) {
+                baseType = 'inverse'; baseA = [-24, -20, -18, -16, -12][Math.floor(Math.random() * 5)];
+            }
+
+            let mixedPoints = [];
+            currentLaserLimit = 0;
+
+            if (currentStage <= 4) {
+                const basePoints = buildCurvePoints(baseType, baseA);
+                mixedPoints = [...basePoints].sort(() => Math.random() - 0.5).slice(0, nZombies);
+                currentA = baseA;
             } else {
-                baseType = Math.random() < 0.5 ? 'linear' : 'inverse';
-                baseA = 1;
+                const numCurves = Math.random() < 0.5 ? 2 : 3;
+                currentLaserLimit = numCurves;
+                const pickedCurves = [];
+                for(let i=0; i<numCurves; i++) {
+                    const stg = Math.floor(Math.random() * 4) + 1;
+                    let t = 'linear', a = 1;
+                    if(stg===1) { t='linear'; a=[1,2,3,4,5][Math.floor(Math.random()*5)]; }
+                    if(stg===2) { t='linear'; a=[-5,-4,-3,-2,-1][Math.floor(Math.random()*5)]; }
+                    if(stg===3) { t='inverse'; a=[12,16,18,20,24][Math.floor(Math.random()*5)]; }
+                    if(stg===4) { t='inverse'; a=[-24,-20,-18,-16,-12][Math.floor(Math.random()*5)]; }
+                    pickedCurves.push({type: t, a: a});
+                }
+                pickedCurves.forEach(c => {
+                    const pts = buildCurvePoints(c.type, c.a);
+                    const sample = pts.sort(() => Math.random() - 0.5).slice(0, Math.max(2, Math.floor(nZombies/numCurves)));
+                    sample.forEach(p => {
+                        if (!mixedPoints.some(mp => mp.x === p.x && mp.y === p.y)) mixedPoints.push(p);
+                    });
+                });
+                baseType = 'linear';
+                currentA = 1;
             }
 
-            const basePoints = buildCurvePoints(baseType, baseA);
-            const mixedPoints = [...basePoints];
-
-            previousPatterns.forEach((pattern) => {
-                const sampleSize = Math.max(1, Math.min(3, Math.ceil(basePoints.length * 0.25)));
-                const extraPoints = [...pattern.points].sort(() => Math.random() - 0.5).slice(0, sampleSize);
-                extraPoints.forEach((point) => {
-                    const exists = mixedPoints.some((p) => p.x === point.x && p.y === point.y);
-                    if (!exists) mixedPoints.push(point);
-                });
-            });
-
-            if (currentStage >= 4) {
-                const otherType = baseType === 'linear' ? 'inverse' : 'linear';
-                const extraPoints = buildCurvePoints(otherType, 1).sort(() => Math.random() - 0.5).slice(0, Math.max(1, Math.ceil(nZombies / 2)));
-                extraPoints.forEach((point) => {
-                    const exists = mixedPoints.some((p) => p.x === point.x && p.y === point.y);
-                    if (!exists) mixedPoints.push(point);
-                });
-            }
-
-            currentZombies = mixedPoints.sort(() => Math.random() - 0.5).slice(0, Math.min(nZombies, mixedPoints.length)).map((point) => ({ ...point, active: true }));
-            currentA = currentStage >= 4 ? 1 : baseA;
+            currentZombies = mixedPoints.map((point) => ({ ...point, active: true }));
             currentProblemShots = 0;
-            currentLaserLimit = currentStage >= 4 ? Math.max(2, Math.ceil(currentZombies.length / 2) + 1) : 0;
             document.getElementById('aSlider').value = currentA;
             document.getElementById('aValueDisplay').innerText = currentA;
-            setFuncType(currentStage >= 4 ? 'linear' : baseType);
+            setFuncType(baseType);
             drawCanvas();
             document.getElementById('feedbackText').innerText = '';
-            problemHistory.push({ type: baseType, a: baseA, points: basePoints });
-            if (problemHistory.length > 5) problemHistory.shift();
             updateLiveStatus();
         }
 
@@ -437,9 +466,9 @@
         function updateEquationDisplay() { document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`; }
 
         function updateUI() {
-            document.getElementById('stageDisplay').innerText = currentStage < 4 ? currentStage : "4 (무한)";
+            document.getElementById('stageDisplay').innerText = currentStage < 5 ? currentStage : "5 (혼합)";
             document.getElementById('probDisplay').innerText = currentProblem;
-            document.getElementById('probTotal').innerText = currentStage < 4 ? "/5" : "";
+            document.getElementById('probTotal').innerText = currentStage < 5 ? "/5" : "";
             document.getElementById('scoreDisplay').innerText = score;
             document.getElementById('livesDisplay').innerText = '❤️'.repeat(lives) + '🖤'.repeat(5 - lives);
         }
@@ -535,17 +564,19 @@
                     const remaining = currentZombies.filter(z => z.active).length;
 
                     let conceptStage = 1;
+                    if (currentFuncType === 'linear' && currentA > 0) conceptStage = 1;
                     if (currentFuncType === 'linear' && currentA < 0) conceptStage = 2;
-                    if (currentFuncType === 'inverse') conceptStage = 3;
+                    if (currentFuncType === 'inverse' && currentA > 0) conceptStage = 3;
+                    if (currentFuncType === 'inverse' && currentA < 0) conceptStage = 4;
 
-                    if (currentStage >= 4 && currentProblemShots > currentLaserLimit && remaining > 0) {
+                    if (currentStage >= 5 && currentProblemShots >= currentLaserLimit && remaining > 0) {
                         lives--;
                         currentStageFails[conceptStage]++;
                         document.getElementById('feedbackText').innerText = `레이저 제한 초과! (${currentLaserLimit}번까지만 가능)`;
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) {
                             updateLiveStatus();
-                            const isClear = (currentStage >= 4 && currentProblem >= 5);
+                            const isClear = (currentStage >= 5 && currentProblem >= 5);
                             setTimeout(() => gameOver(isClear), 1000);
                             return;
                         }
@@ -560,7 +591,7 @@
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) { 
                             updateLiveStatus(); 
-                            const isClear = (currentStage >= 4 && currentProblem >= 5);
+                            const isClear = (currentStage >= 5 && currentProblem >= 5);
                             setTimeout(() => gameOver(isClear), 1000); 
                             return; 
                         }
@@ -574,7 +605,7 @@
 
                     if (remaining === 0) {
                         setTimeout(() => {
-                            if (currentStage < 4) {
+                            if (currentStage < 5) {
                                 if (currentProblem < 5) { currentProblem++; generateProblem(); updateUI(); }
                                 else { currentStage++; currentProblem = 1; generateProblem(); updateUI(); }
                             } else {
@@ -593,7 +624,7 @@
 
         function updateLiveStatus() {
             if (!myName || !currentRoomCode) return;
-            const isComp = (currentStage >= 4 && currentProblem >= 5);
+            const isComp = (currentStage >= 5 && currentProblem >= 5);
             const roomRef = roomDocRef(currentRoomCode);
             setDoc(roomRef, { roomCode: currentRoomCode, updatedAt: serverTimestamp() }, { merge: true });
             setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
@@ -667,7 +698,7 @@
             
             // 초기화
             currentTotalShots = 0; currentHitShots = 0; 
-            currentStageHits = {1:0, 2:0, 3:0}; currentStageFails = {1:0, 2:0, 3:0};
+            currentStageHits = {1:0, 2:0, 3:0, 4:0}; currentStageFails = {1:0, 2:0, 3:0, 4:0};
             loadHallOfFame();
         }
 
@@ -708,44 +739,46 @@
             unsubRecords = onSnapshot(recordsCollectionRef(currentAdminRoom), snap => { roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard(); });
         });
 
+        let studentModalInstance = null;
         window.showStudentModal = function(nick) {
             const s = currentStats[nick];
             if(!s) return;
-            const acc = s.ts > 0 ? Math.round((s.hs / s.ts) * 100) : 0;
-            let html = `
-                <div class="text-center mb-3">
-                    <h4 class="fw-bold text-primary">${nick} 님의 상세 기록</h4>
-                    <div class="d-flex justify-content-center gap-3 text-muted small mt-2">
-                        <span>최고 점수: ${s.ms}점</span>
-                        <span>명중률: ${acc}%</span>
-                        <span>총 시도: ${s.ts}회</span>
+            
+            document.getElementById('shModalTitle').innerText = nick;
+            
+            const myRecords = roomRecords.filter(r => r.nickname === nick).sort((a,b) => (b.playedAt?.toMillis() || 0) - (a.playedAt?.toMillis() || 0));
+            
+            let trs = myRecords.map(r => {
+                let dt = r.playedAt ? new Date(r.playedAt.toMillis()).toLocaleString() : '-';
+                let acc = r.totalShots > 0 ? Math.round((r.hitShots/r.totalShots)*100) : 0;
+                let pTime = r.totalShots > 0 ? (r.playTimeSec / r.totalShots).toFixed(1) : 0;
+                return `<tr><td>${dt}</td><td class="fw-bold text-primary">${r.score}</td><td><span class="badge bg-success">Lv.${r.maxStage}</span></td><td>${acc}%</td><td>${pTime}초</td></tr>`;
+            }).join('');
+            
+            document.getElementById('shModalTable').innerHTML = trs.length > 0 ? trs : '<tr><td colspan="5" class="text-muted">기록이 없습니다.</td></tr>';
+            
+            let cardsHtml = '';
+            const titles = ["", "Lv.1 양수 정비례", "Lv.2 음수 정비례", "Lv.3 양수 반비례", "Lv.4 음수 반비례"];
+            for(let i=1; i<=4; i++) {
+                let h = s.hits[i] || 0; let f = s.fails[i] || 0;
+                let tot = h + f;
+                let p = tot > 0 ? Math.round((h/tot)*100) : '-';
+                cardsHtml += `
+                    <div class="col-6 col-md-3">
+                        <div class="card h-100 text-center shadow-sm border-0" style="border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0;">
+                            <div class="card-body p-3">
+                                <div class="text-muted small fw-bold mb-1">${titles[i]}</div>
+                                <h4 class="fw-bold text-dark mb-1">${p === '-' ? '-' : p + '%'}</h4>
+                                <div class="small text-muted">${h}맞 / ${f}틀</div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <table class="table table-bordered text-center align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>개념 (Stage)</th>
-                            <th>맞춘 문제</th>
-                            <th>틀린 문제</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td class="fw-bold text-success">Stage 1<br><small class="text-muted">양수 정비례</small></td>
-                            <td>${s.hits[1]}</td><td>${s.fails[1]}</td>
-                        </tr>
-                        <tr>
-                            <td class="fw-bold text-warning">Stage 2<br><small class="text-muted">음수 정비례</small></td>
-                            <td>${s.hits[2]}</td><td>${s.fails[2]}</td>
-                        </tr>
-                        <tr>
-                            <td class="fw-bold text-primary">Stage 3<br><small class="text-muted">반비례</small></td>
-                            <td>${s.hits[3]}</td><td>${s.fails[3]}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            `;
-            customAlert("상세 기록", html);
+                `;
+            }
+            document.getElementById('shModalCards').innerHTML = cardsHtml;
+            
+            if(!studentModalInstance) studentModalInstance = new bootstrap.Modal(document.getElementById('studentHistoryModal'));
+            studentModalInstance.show();
         };
 
         function generateRoomCode() {
@@ -794,20 +827,20 @@
 
             let stats = {};
             roomRecords.forEach(r => {
-                if(!stats[r.nickname]) stats[r.nickname] = { pc:0, ms:0, mStg:0, ts:0, hs:0, hits:{1:0,2:0,3:0}, fails:{1:0,2:0,3:0}, comp:false, playTime:0 };
+                if(!stats[r.nickname]) stats[r.nickname] = { pc:0, ms:0, mStg:0, ts:0, hs:0, hits:{1:0,2:0,3:0,4:0}, fails:{1:0,2:0,3:0,4:0}, comp:false, playTime:0 };
                 let s = stats[r.nickname]; s.pc++;
                 if(r.score > s.ms) s.ms = r.score; if(r.maxStage > s.mStg) s.mStg = r.maxStage; if(r.isCompleted) s.comp = true;
                 s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0); s.playTime += (r.playTimeSec || 0);
-                for(let i=1;i<=3;i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
+                for(let i=1;i<=4;i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
             });
 
             roomStudents.forEach(r => {
-                if(!stats[r.nickname]) stats[r.nickname] = { pc:1, ms:0, mStg:0, ts:0, hs:0, hits:{1:0,2:0,3:0}, fails:{1:0,2:0,3:0}, comp:false, playTime:0 };
+                if(!stats[r.nickname]) stats[r.nickname] = { pc:1, ms:0, mStg:0, ts:0, hs:0, hits:{1:0,2:0,3:0,4:0}, fails:{1:0,2:0,3:0,4:0}, comp:false, playTime:0 };
                 let s = stats[r.nickname]; if(s.pc === 0) s.pc = 1;
                 if((r.score||0) > s.ms) s.ms = r.score; if((r.stage||1) > s.mStg) s.mStg = r.stage;
                 if(r.isCompleted) s.comp = true;
                 s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0); s.playTime += (r.playTimeSec || 0);
-                for(let i=1;i<=3;i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
+                for(let i=1;i<=4;i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
             });
 
             currentStats = stats;
@@ -829,7 +862,7 @@
                 return timeA - timeB;
             });
 
-            let ranks = {h:0, m:0, l:0}, totalScore = 0, totalAcc = 0, gFails = {1:0,2:0,3:0};
+            let ranks = {h:0, m:0, l:0}, totalScore = 0, totalAcc = 0, gFails = {1:0,2:0,3:0,4:0};
             let tbodyHtml = '';
             currentExcelData = [];
 
@@ -842,12 +875,13 @@
                 else ranks.l++;
 
                 totalScore += s.ms; totalAcc += acc;
-                for(let i=1;i<=3;i++) gFails[i] += s.fails[i];
+                for(let i=1;i<=4;i++) gFails[i] += s.fails[i];
 
                 let compText = "";
                 if(s.comp) compText = "모든 개념 마스터";
-                else if(s.mStg === 4) compText = "융합(Stage 4) 진행중";
-                else if(s.mStg === 3) compText = "반비례(Stage 3) 진행중";
+                else if(s.mStg === 5) compText = "혼합(Stage 5) 진행중";
+                else if(s.mStg === 4) compText = "음수 반비례(Stage 4) 진행중";
+                else if(s.mStg === 3) compText = "양수 반비례(Stage 3) 진행중";
                 else if(s.mStg === 2) compText = "음수 정비례(Stage 2) 진행중";
                 else compText = "양수 정비례(Stage 1) 진행중";
 
@@ -868,7 +902,9 @@
                     "Stage 2 맞춘문제": s.hits[2],
                     "Stage 2 틀린문제": s.fails[2],
                     "Stage 3 맞춘문제": s.hits[3],
-                    "Stage 3 틀린문제": s.fails[3]
+                    "Stage 3 틀린문제": s.fails[3],
+                    "Stage 4 맞춘문제": s.hits[4],
+                    "Stage 4 틀린문제": s.fails[4]
                 });
             });
             document.getElementById('adminTableBody').innerHTML = tbodyHtml;
@@ -878,10 +914,10 @@
             document.getElementById('dashOverview2').innerHTML = `<span class="text-success me-2">상:${ranks.h}</span> <span class="text-warning me-2">중:${ranks.m}</span> <span class="text-danger">하:${ranks.l}</span>`;
             document.getElementById('dashOverview3').innerText = `${Math.round(totalScore/tLen)}점 (${Math.round(totalAcc/tLen)}%)`;
             
-            let gMaxF = -1, gStg = 1; for(let i=1;i<=3;i++) if(gFails[i]>gMaxF){gMaxF=gFails[i]; gStg=i;}
+            let gMaxF = -1, gStg = 1; for(let i=1;i<=4;i++) if(gFails[i]>gMaxF){gMaxF=gFails[i]; gStg=i;}
             let gCon = "-";
             if(gMaxF > 0) {
-                if(gStg===1) gCon="Stage 1 (양수 정비례)"; if(gStg===2) gCon="Stage 2 (음수 정비례)"; if(gStg===3) gCon="Stage 3 (반비례)";
+                if(gStg===1) gCon="Stage 1 (양수 정비례)"; if(gStg===2) gCon="Stage 2 (음수 정비례)"; if(gStg===3) gCon="Stage 3 (양수 반비례)"; if(gStg===4) gCon="Stage 4 (음수 반비례)";
             }
             document.getElementById('dashOverview4').innerText = gCon;
         }
