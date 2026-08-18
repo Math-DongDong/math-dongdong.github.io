@@ -276,9 +276,11 @@
         let currentRoomCode = '';
         let myName = '';
         let currentStage = 1, currentProblem = 1, score = 0, lives = 5;
-        let currentFuncType = 'linear', currentA = 2;
+        let currentFuncType = 'linear', currentA = 1;
         let currentZombies = [];
         let problemHistory = [];
+        let currentProblemShots = 0;
+        let currentLaserLimit = 0;
         
         // 데이터 수집용
         let currentTotalShots = 0;
@@ -375,11 +377,23 @@
             const nZombies = Math.max(3, 6 - currentProblem);
             const carryLimit = Math.min(2, Math.max(0, currentStage - 1));
             const previousPatterns = problemHistory.slice(-carryLimit);
-            const baseType = currentStage >= 3 ? (Math.random() < 0.5 ? 'linear' : 'inverse') : 'linear';
-            const baseOptions = baseType === 'linear'
-                ? (currentStage === 1 ? [1, 2, 3, 4, 5] : [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5])
-                : [-24, -20, -18, -16, -12, 12, 16, 18, 20, 24];
-            const baseA = baseOptions[Math.floor(Math.random() * baseOptions.length)];
+            let baseType = 'linear';
+            let baseA = 1;
+
+            if (currentStage === 1) {
+                baseType = 'linear';
+                baseA = [1, 2, 3, 4, 5][Math.floor(Math.random() * 5)];
+            } else if (currentStage === 2) {
+                baseType = 'linear';
+                baseA = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5][Math.floor(Math.random() * 10)];
+            } else if (currentStage === 3) {
+                baseType = 'inverse';
+                baseA = [-24, -20, -18, -16, -12, 12, 16, 18, 20, 24][Math.floor(Math.random() * 10)];
+            } else {
+                baseType = Math.random() < 0.5 ? 'linear' : 'inverse';
+                baseA = 1;
+            }
+
             const basePoints = buildCurvePoints(baseType, baseA);
             const mixedPoints = [...basePoints];
 
@@ -392,11 +406,22 @@
                 });
             });
 
+            if (currentStage >= 4) {
+                const otherType = baseType === 'linear' ? 'inverse' : 'linear';
+                const extraPoints = buildCurvePoints(otherType, 1).sort(() => Math.random() - 0.5).slice(0, Math.max(1, Math.ceil(nZombies / 2)));
+                extraPoints.forEach((point) => {
+                    const exists = mixedPoints.some((p) => p.x === point.x && p.y === point.y);
+                    if (!exists) mixedPoints.push(point);
+                });
+            }
+
             currentZombies = mixedPoints.sort(() => Math.random() - 0.5).slice(0, Math.min(nZombies, mixedPoints.length)).map((point) => ({ ...point, active: true }));
-            currentA = baseA;
-            document.getElementById('aSlider').value = baseA;
-            document.getElementById('aValueDisplay').innerText = baseA;
-            setFuncType(baseType);
+            currentA = currentStage >= 4 ? 1 : baseA;
+            currentProblemShots = 0;
+            currentLaserLimit = currentStage >= 4 ? Math.max(2, Math.ceil(currentZombies.length / 2) + 1) : 0;
+            document.getElementById('aSlider').value = currentA;
+            document.getElementById('aValueDisplay').innerText = currentA;
+            setFuncType(currentStage >= 4 ? 'linear' : baseType);
             drawCanvas();
             document.getElementById('feedbackText').innerText = '';
             problemHistory.push({ type: baseType, a: baseA, points: basePoints });
@@ -441,9 +466,9 @@
 
             ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
             ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-            for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 4) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
+            for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-            for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 4) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
+            for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 2) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
             ctx.fillText('0', centerX - 5, centerY + 5);
             ctx.font = '22px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
@@ -490,6 +515,7 @@
         document.getElementById('fireBtn').addEventListener('click', () => {
             document.getElementById('fireBtn').disabled = true;
             currentTotalShots++;
+            currentProblemShots++;
             let animX = -GRID_LIMIT, hitCount = 0;
 
             const timer = setInterval(() => {
@@ -505,6 +531,21 @@
                     score += hitCount * 10;
                     drawCanvas(GRID_LIMIT);
                     const remaining = currentZombies.filter(z => z.active).length;
+
+                    if (currentStage >= 4 && currentProblemShots > currentLaserLimit && remaining > 0) {
+                        lives--;
+                        currentStageFails[currentStage]++;
+                        document.getElementById('feedbackText').innerText = `레이저 제한 초과! (${currentLaserLimit}번까지만 가능)`;
+                        triggerClawAnimation(); updateUI();
+                        if (lives <= 0) {
+                            updateLiveStatus();
+                            const isClear = (currentStage >= 4 && currentProblem >= 5);
+                            setTimeout(() => gameOver(isClear), 1000);
+                            return;
+                        }
+                        updateLiveStatus();
+                        return;
+                    }
 
                     if (hitCount === 0) {
                         lives--; 
@@ -530,7 +571,6 @@
                                 if (currentProblem < 5) { currentProblem++; generateProblem(); updateUI(); }
                                 else { currentStage++; currentProblem = 1; generateProblem(); updateUI(); }
                             } else {
-                                // 무한 챌린지 모드 (스테이지 고정, 문제 번호만 무한 증가)
                                 currentProblem++; generateProblem(); updateUI();
                             }
                         }, 1200);
