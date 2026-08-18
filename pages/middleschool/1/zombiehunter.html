@@ -290,31 +290,43 @@
         const scale = 20, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
         function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
+        function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
+        function studentsCollectionRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "students"); }
+        function recordsCollectionRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "records"); }
 
         // 글로벌 명예의 전당
         async function loadHallOfFame() {
             try {
-                const q = query(collection(db, "zh_global_records"), orderBy("score", "desc"), limit(20));
-                const snapshot = await getDocs(q);
+                const roomSnap = await getDocs(collection(db, "zombiehunter_records"));
                 const hofList = document.getElementById('hofList');
-                if (snapshot.empty) return hofList.innerHTML = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
-                
-                let bestMap = {};
-                snapshot.forEach(docSnap => {
-                    const d = docSnap.data();
-                    if (!bestMap[d.nickname] || d.score > bestMap[d.nickname].score) bestMap[d.nickname] = d;
-                });
-                
-                const arr = Object.values(bestMap).sort((a, b) => b.score - a.score).slice(0, 5);
+                if (roomSnap.empty) return hofList.innerHTML = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
+
+                const bestMap = {};
+                for (const roomDoc of roomSnap.docs) {
+                    const studentsSnap = await getDocs(studentsCollectionRef(roomDoc.id));
+                    studentsSnap.forEach(studentSnap => {
+                        const d = studentSnap.data();
+                        if (!d.nickname) return;
+                        const score = Number(d.score ?? 0);
+                        if (!bestMap[d.nickname] || score > Number(bestMap[d.nickname].score ?? 0)) {
+                            bestMap[d.nickname] = { ...d, roomCode: roomDoc.id, score };
+                        }
+                    });
+                }
+
+                const arr = Object.values(bestMap).sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0)).slice(0, 5);
                 let html = `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><tbody>`;
                 arr.forEach((item, idx) => {
                     let rank = `<span class="text-muted small">${idx + 1}</span>`;
                     if (idx === 0) rank = '🥇'; else if (idx === 1) rank = '🥈'; else if (idx === 2) rank = '🥉';
-                    html += `<tr><td class="text-center" style="width:15%;">${rank}</td><td class="fw-bold">${item.nickname}</td><td class="text-center fw-bold text-primary">${item.score}점</td></tr>`;
+                    html += `<tr><td class="text-center" style="width:15%;">${rank}</td><td class="fw-bold">${item.nickname}</td><td class="text-center fw-bold text-primary">${Number(item.score ?? 0)}점</td></tr>`;
                 });
                 html += `</tbody></table></div>`;
                 hofList.innerHTML = html;
-            } catch(e) {}
+            } catch (e) {
+                const hofList = document.getElementById('hofList');
+                hofList.innerHTML = '<div class="text-muted small text-center">데이터를 불러오지 못했습니다.</div>';
+            }
         }
         loadHallOfFame();
 
@@ -324,7 +336,7 @@
             const name = document.getElementById('playerName').value.trim();
             if (!code || !name) return customAlert('알림', '방 코드와 닉네임을 모두 입력해주세요!');
             
-            const roomSnap = await getDoc(doc(db, "zh_rooms", code));
+            const roomSnap = await getDoc(roomDocRef(code));
             if(!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
             
             currentRoomCode = code; myName = name;
@@ -512,10 +524,19 @@
 
         function updateLiveStatus() {
             if (!myName || !currentRoomCode) return;
-            // 스테이지 4, 5문제 돌파 시 완주(isCompleted)로 처리
             const isComp = (currentStage >= 4 && currentProblem >= 5);
-            setDoc(doc(db, `zh_rooms/${currentRoomCode}/students`, myName), {
-                score, stage: currentStage, problem: currentProblem, totalShots: currentTotalShots, hitShots: currentHitShots, stageFails: currentStageFails, isCompleted: isComp, lastActive: serverTimestamp()
+            const roomRef = roomDocRef(currentRoomCode);
+            setDoc(roomRef, { roomCode: currentRoomCode, updatedAt: serverTimestamp() }, { merge: true });
+            setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
+                nickname: myName,
+                score,
+                stage: currentStage,
+                problem: currentProblem,
+                totalShots: currentTotalShots,
+                hitShots: currentHitShots,
+                stageFails: currentStageFails,
+                isCompleted: isComp,
+                lastActive: serverTimestamp()
             }, { merge: true });
         }
 
@@ -525,11 +546,23 @@
             document.getElementById('gameoverDesc').innerText = isClear ? `기본 미션을 모두 완수하고 무한 모드(Prob ${currentProblem})까지 생존했습니다!` : "하트를 모두 소진했거나 플레이를 종료했습니다.";
             document.getElementById('finalScore').innerText = score;
             
+            const roomRef = roomDocRef(currentRoomCode);
             const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageFails: currentStageFails, playedAt: serverTimestamp() };
-            const recordRef = await addDoc(collection(db, `zh_rooms/${currentRoomCode}/records`), recordData);
-            await addDoc(collection(db, "zh_global_records"), { nickname: myName, score, playedAt: serverTimestamp() });
+            await setDoc(roomRef, { roomCode: currentRoomCode, updatedAt: serverTimestamp() }, { merge: true });
+            const recordRef = await addDoc(recordsCollectionRef(currentRoomCode), recordData);
+            await setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
+                nickname: myName,
+                score,
+                stage: currentStage,
+                problem: currentProblem,
+                totalShots: currentTotalShots,
+                hitShots: currentHitShots,
+                stageFails: currentStageFails,
+                isCompleted: isClear,
+                lastActive: serverTimestamp()
+            }, { merge: true });
 
-            const rankSnapshot = await getDocs(collection(db, `zh_rooms/${currentRoomCode}/records`));
+            const rankSnapshot = await getDocs(recordsCollectionRef(currentRoomCode));
             const allRecords = rankSnapshot.docs.map(docSnap => ({ ...docSnap.data(), id: docSnap.id }));
             allRecords.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
             const myIndex = allRecords.findIndex(item => item.id === recordRef.id || item.nickname === myName);
@@ -580,7 +613,7 @@
 
         function loadRooms() {
             if(unsubRooms) unsubRooms();
-            unsubRooms = onSnapshot(collection(db, "zh_rooms"), snap => {
+            unsubRooms = onSnapshot(collection(db, "zombiehunter_records"), snap => {
                 const select = document.getElementById('roomSelect');
                 const curr = select.value;
                 select.innerHTML = '<option value="">방을 선택하세요</option>';
@@ -594,8 +627,8 @@
             if(unsubStudents) unsubStudents(); if(unsubRecords) unsubRecords();
             if(!currentAdminRoom) { roomStudents = []; roomRecords = []; renderDashboard(); return; }
             
-            unsubStudents = onSnapshot(collection(db, `zh_rooms/${currentAdminRoom}/students`), snap => { roomStudents = []; snap.forEach(d => roomStudents.push(d.data())); renderDashboard(); });
-            unsubRecords = onSnapshot(collection(db, `zh_rooms/${currentAdminRoom}/records`), snap => { roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard(); });
+            unsubStudents = onSnapshot(studentsCollectionRef(currentAdminRoom), snap => { roomStudents = []; snap.forEach(d => roomStudents.push(d.data())); renderDashboard(); });
+            unsubRecords = onSnapshot(recordsCollectionRef(currentAdminRoom), snap => { roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard(); });
         });
 
         document.getElementById('btn-refresh').addEventListener('click', () => renderDashboard());
@@ -615,10 +648,10 @@
             let code;
             while(true) {
                 code = generateRoomCode();
-                const d = await getDoc(doc(db, "zh_rooms", code));
+                const d = await getDoc(roomDocRef(code));
                 if(!d.exists()) break;
             }
-            await setDoc(doc(db, "zh_rooms", code), { createdAt: serverTimestamp() });
+            await setDoc(roomDocRef(code), { roomCode: code, createdAt: serverTimestamp() });
             customAlert("방 생성", `새로운 방 코드는 [${code}] 입니다.`);
             document.getElementById('roomSelect').value = code;
             currentAdminRoom = code;
@@ -629,9 +662,9 @@
             if(!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
             const confirmed = await customConfirm("방 삭제", `방 [${currentAdminRoom}] 데이터를 모두 삭제하시겠습니까?`);
             if(!confirmed) return;
-            const sSnap = await getDocs(collection(db, `zh_rooms/${currentAdminRoom}/students`)); sSnap.forEach(d => deleteDoc(d.ref));
-            const rSnap = await getDocs(collection(db, `zh_rooms/${currentAdminRoom}/records`)); rSnap.forEach(d => deleteDoc(d.ref));
-            await deleteDoc(doc(db, "zh_rooms", currentAdminRoom));
+            const sSnap = await getDocs(studentsCollectionRef(currentAdminRoom)); sSnap.forEach(d => deleteDoc(d.ref));
+            const rSnap = await getDocs(recordsCollectionRef(currentAdminRoom)); rSnap.forEach(d => deleteDoc(d.ref));
+            await deleteDoc(roomDocRef(currentAdminRoom));
             customAlert("완료", "방이 삭제되었습니다.");
             document.getElementById('roomSelect').value = '';
             document.getElementById('roomSelect').dispatchEvent(new Event('change'));
