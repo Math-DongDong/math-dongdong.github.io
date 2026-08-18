@@ -288,7 +288,7 @@
     </main>
 
     <script type="module">
-        import { ref, set, get, update, onValue, remove, off, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import { ref, set, get, update, onValue, remove, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
 
@@ -420,7 +420,6 @@
                     winner: winnerId,
                     endReason: 'visibility_hidden'
                 }).then(async () => {
-                    // 점수 누락을 방지하기 위해 서버에서 원자적으로 점수를 올림 (increment 사용)
                     const myPlayerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`);
                     await update(myPlayerRef, {
                         losses: increment(1),
@@ -450,7 +449,6 @@
             const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${roomCode}`));
             if (!roomSnap.exists()) return await customAlert('입장 실패', '존재하지 않는 방입니다.');
 
-            // 학생 데이터 초기화 및 참여 기록 확인
             const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
             const playerSnap = await get(playerRef);
 
@@ -500,14 +498,14 @@
         async function enterWaitingRoom() {
             if (!currentRoom || !currentUser) return;
 
+            // 기존 매칭 리스너 확실히 종료
             if (currentMatchUnsub) {
-                off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), 'value', currentMatchUnsub);
+                currentMatchUnsub();
                 currentMatchUnsub = null;
             }
             currentMatchId = null;
             currentMatchData = null;
 
-            // 전적 최신화
             try {
                 const playerSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`));
                 if (playerSnap.exists()) {
@@ -519,11 +517,9 @@
             showSection('waiting-section');
             document.getElementById('waiting-count').textContent = '대기 중...';
 
-            // 대기열 등록
             const myWaitRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting/${currentUser}`);
             await set(myWaitRef, Date.now());
 
-            // 1. 내 매치가 생성되었는지 감시
             const matchesRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches`);
             matchUnsub = onValue(matchesRef, (snap) => {
                 if (!snap.exists()) return;
@@ -531,8 +527,10 @@
                 for (const matchId in matches) {
                     const m = matches[matchId];
                     if ((m.p1 === currentUser || m.p2 === currentUser) && m.status === 'playing' && matchId !== currentMatchId) {
-                        if (waitingUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`), 'value', waitingUnsub);
-                        if (matchUnsub) off(matchesRef, 'value', matchUnsub);
+                        
+                        // 리스너 확실히 종료
+                        if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
+                        if (matchUnsub) { matchUnsub(); matchUnsub = null; }
 
                         remove(myWaitRef);
                         handleMatchFound(matchId, m);
@@ -541,7 +539,6 @@
                 }
             });
 
-            // 2. 다른 대기자가 있는지 탐색 후 매칭 성사
             const waitingListRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`);
             waitingUnsub = onValue(waitingListRef, async (snap) => {
                 if (!snap.exists()) return;
@@ -549,10 +546,8 @@
                 if (!waiters[currentUser]) return;
 
                 const allWaiters = Object.keys(waiters).sort((a, b) => waiters[a] - waiters[b]);
-
                 document.getElementById('waiting-count').textContent = `대기 중: ${allWaiters.length}명`;
 
-                // 내가 가장 오래 기다린 사람(주도자)일 때만 매칭 실행
                 if (allWaiters.length >= 2 && allWaiters[0] === currentUser) {
                     const opponent = allWaiters[1];
 
@@ -570,7 +565,7 @@
                     };
 
                     try {
-                        if (waitingUnsub) off(waitingListRef, 'value', waitingUnsub);
+                        if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
                         await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), updates);
                     } catch (e) {
                         enterWaitingRoom();
@@ -606,7 +601,7 @@
                 if (match.status === 'finished') {
                     if (match.endReason === 'visibility_hidden') {
                         if (currentMatchUnsub) {
-                            off(currentMatchRef, 'value', currentMatchUnsub);
+                            currentMatchUnsub();
                             currentMatchUnsub = null;
                         }
                         if (match.winner === currentUser) {
@@ -676,7 +671,6 @@
 
             if (myChoice === opChoice) {
                 document.getElementById('game-status-text').textContent = '무승부! 다시 선택해주세요.';
-                // 클라이언트 중복 실행을 막기 위해 1번 플레이어(방장 역할)에서만 업데이트 수행
                 if (isPlayer1) {
                     await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { p1_choice: "", p2_choice: "" });
                 }
@@ -685,7 +679,8 @@
                 return;
             }
 
-            if (currentMatchUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), 'value', currentMatchUnsub);
+            // 리스너 해제
+            if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
 
             let resultText = '';
             const scoreUpdates = { total: increment(1) };
@@ -708,17 +703,14 @@
             document.getElementById('computer-choice-area').classList.remove('d-none');
             document.getElementById('game-status-text').textContent = '결과!';
 
-            // Firebase increment(1)을 사용해 점수 원자적 업데이트
             await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), scoreUpdates);
 
-            // 점수가 제대로 적용된 후 최신 데이터를 불러와서 화면(UI)에 반영
             const updatedSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`));
             if (updatedSnap.exists()) {
                 myScore = updatedSnap.val();
                 updateStudentScoreUI();
             }
 
-            // 모든 플레이어가 매치를 완료 처리하여 중복 방지를 위해 isPlayer1만 수행
             if (isPlayer1) {
                 update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' }).catch(() => { });
             }
@@ -766,14 +758,14 @@
                 }
 
                 if (snapshot.val() === 'finished') {
-                    if (waitingUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`), 'value', waitingUnsub);
-                    if (matchUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches`), 'value', matchUnsub);
-                    if (currentMatchUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), 'value', currentMatchUnsub);
+                    // 확실히 리스너들 종료
+                    if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
+                    if (matchUnsub) { matchUnsub(); matchUnsub = null; }
+                    if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
 
                     document.getElementById('waiting-count').textContent = '게임 종료됨';
                     document.getElementById('rps-btn-container').style.display = 'none';
 
-                    // 현재 어떤 화면에 있든 즉시 게임 종료 상태로 강제 전환
                     showSection('student-section');
                     document.getElementById('student-title').innerHTML = '게임 종료';
                     document.getElementById('computer-choice-area').classList.add('d-none');
@@ -942,7 +934,6 @@
             if (!currentRoom) return;
             await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { status: 'finished' });
 
-            // 모든 대기열 초기화 (게임 강제 종료)
             await remove(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`));
 
             await customAlert('종료 완료', '게임이 종료되었습니다. 이제 10명을 추출할 수 있습니다.');
@@ -977,7 +968,6 @@
                 [selected[i], selected[j]] = [selected[j], selected[i]];
             }
 
-            // 승률 버튼 초기화
             const thWinrate = document.getElementById('th-winrate');
             thWinrate.innerHTML = '<button class="btn btn-sm btn-outline-dark fw-bold" id="btn-reveal-winrate">??</button>';
 
@@ -999,11 +989,9 @@
             document.getElementById('draw-result-area').style.display = 'block';
             document.getElementById('draw-result-area').scrollIntoView({ behavior: 'smooth' });
 
-            // 학생들에게 피드백 입력창을 보여주도록 신호 전송
             await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { drawComplete: true });
         });
 
-        // 승률 계산 버튼 이벤트
         document.getElementById('th-winrate').addEventListener('click', (e) => {
             if (e.target.id === 'btn-reveal-winrate') {
                 document.getElementById('th-winrate').textContent = '승률';
