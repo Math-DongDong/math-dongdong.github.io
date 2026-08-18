@@ -670,14 +670,33 @@
         // 글로벌 명예의 전당
         async function loadHallOfFame() {
             try {
-                const q = query(collection(db, "zombiehunter_records"));
-                const snap = await getDocs(q);
-                let allRecs = [];
-                snap.forEach(d => {
-                    const r = d.data();
-                    if (r.bestScore !== undefined && r.bestScoreBy) allRecs.push({ name: r.bestScoreBy, score: r.bestScore, acc: r.bestAcc || 0, time: r.bestTime || 0, stage: r.bestStage || 1 });
+                const roomsSnap = await getDocs(collection(db, "zombiehunter_records"));
+                const promises = [];
+                roomsSnap.forEach(roomDoc => promises.push(getDocs(collection(db, "zombiehunter_records", roomDoc.id, "records"))));
+                const recordsSnaps = await Promise.all(promises);
+
+                let playerMap = {};
+                recordsSnaps.forEach((rs, idx) => {
+                    const roomCode = roomsSnap.docs[idx].id;
+                    rs.forEach(d => {
+                        const r = d.data();
+                        const key = `${roomCode}_${r.nickname}`;
+                        const score = r.score || 0;
+                        const acc = r.totalShots > 0 ? Math.round((r.hitShots / r.totalShots) * 100) : 0;
+                        const time = r.totalShots > 0 ? Number((r.playTimeSec / r.totalShots).toFixed(1)) : 9999;
+
+                        if (!playerMap[key]) {
+                            playerMap[key] = { name: r.nickname, score, acc, time };
+                        } else {
+                            const curr = playerMap[key];
+                            if (score > curr.score || (score === curr.score && acc > curr.acc) || (score === curr.score && acc === curr.acc && time < curr.time)) {
+                                playerMap[key] = { name: r.nickname, score, acc, time };
+                            }
+                        }
+                    });
                 });
 
+                let allRecs = Object.values(playerMap);
                 allRecs.sort((a, b) => {
                     if (b.score !== a.score) return b.score - a.score;
                     if (b.acc !== a.acc) return b.acc - a.acc;
@@ -1079,10 +1098,41 @@
                 lastActive: serverTimestamp()
             }, { merge: true });
 
-            const rankSnapshot = await getDocs(recordsCollectionRef(currentRoomCode));
-            const allRecords = rankSnapshot.docs.map(docSnap => ({ ...docSnap.data(), id: docSnap.id }));
-            allRecords.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-            const myIndex = allRecords.findIndex(item => item.id === recordRef.id || item.nickname === myName);
+            const roomsSnap = await getDocs(collection(db, "zombiehunter_records"));
+            const promises = [];
+            roomsSnap.forEach(roomDoc => promises.push(getDocs(collection(db, "zombiehunter_records", roomDoc.id, "records"))));
+            const recordsSnaps = await Promise.all(promises);
+
+            let playerMap = {};
+            recordsSnaps.forEach((rs, idx) => {
+                const roomCode = roomsSnap.docs[idx].id;
+                rs.forEach(d => {
+                    const r = d.data();
+                    const key = `${roomCode}_${r.nickname}`;
+                    const score = r.score || 0;
+                    const acc = r.totalShots > 0 ? Math.round((r.hitShots / r.totalShots) * 100) : 0;
+                    const time = r.totalShots > 0 ? Number((r.playTimeSec / r.totalShots).toFixed(1)) : 9999;
+
+                    if (!playerMap[key]) {
+                        playerMap[key] = { ...r, id: d.id, roomCode, acc, time };
+                    } else {
+                        const curr = playerMap[key];
+                        if (score > curr.score || (score === curr.score && acc > curr.acc) || (score === curr.score && acc === curr.acc && time < curr.time)) {
+                            playerMap[key] = { ...r, id: d.id, roomCode, acc, time };
+                        }
+                    }
+                });
+            });
+
+            let allRecords = Object.values(playerMap);
+            allRecords.sort((a, b) => {
+                if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0);
+                if (b.acc !== a.acc) return b.acc - a.acc;
+                return a.time - b.time;
+            });
+
+            const myKey = `${currentRoomCode}_${myName}`;
+            const myIndex = allRecords.findIndex(item => `${item.roomCode}_${item.nickname}` === myKey);
             const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
             const start = Math.max(0, safeIndex - 2);
             const end = Math.min(allRecords.length, safeIndex + 3);
@@ -1091,12 +1141,12 @@
             const myRank = safeIndex + 1;
             const totalPlayers = allRecords.length;
             const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
-            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명`;
-            document.getElementById('rankSummaryText').innerText = `${myName}님은 전체 상위 ${percentile}%에 해당합니다. ${safeIndex > 0 ? `앞으로 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.` : '현재 1위로 앞선 사람이 없습니다.'}`;
+            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명 (전체 통합)`;
+            document.getElementById('rankSummaryText').innerText = `${myName}님은 모든 방을 통틀어 상위 ${percentile}%에 해당합니다. ${safeIndex > 0 ? `바로 위에는 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.` : '현재 통합 1위로 앞선 사람이 없습니다!'}`;
 
             const rows = nearby.map((item, idx) => {
                 const rankNumber = start + idx + 1;
-                const isMe = item.id === recordRef.id || item.nickname === myName;
+                const isMe = `${item.roomCode}_${item.nickname}` === myKey;
                 const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
                 return `
                     <tr class="${isMe ? 'table-primary fw-bold' : ''}">
