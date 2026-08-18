@@ -202,14 +202,12 @@
                     </select>
                     <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
                     <button id="btn-export-excel" class="btn btn-outline-success fw-bold px-3"><i class="bi bi-file-earmark-excel"></i> 엑셀</button>
-                    <button id="btn-refresh" class="btn btn-outline-secondary fw-bold px-3"><i class="bi bi-arrow-clockwise"></i></button>
-                    <button id="adminBackBtn" class="btn btn-dark fw-bold ms-1">메인으로</button>
                 </div>
             </div>
 
             <!-- 성취도 오버뷰 -->
             <div class="row g-3 mb-4 text-center">
-                <div class="col-md-3"><div class="dash-stat-box"><div class="text-muted small fw-bold mb-1">완주율 (도달률)</div><div class="fs-4 fw-bold text-primary" id="dashOverview1">-</div></div></div>
+                <div class="col-md-3"><div class="dash-stat-box"><div class="text-muted small fw-bold mb-1">실시간 참여자 수</div><div class="fs-4 fw-bold text-primary" id="dashOverview1">-</div></div></div>
                 <div class="col-md-3"><div class="dash-stat-box"><div class="text-muted small fw-bold mb-1">성취수준 분포</div><div class="fs-6 fw-bold text-dark mt-1" id="dashOverview2">-</div></div></div>
                 <div class="col-md-3"><div class="dash-stat-box"><div class="text-muted small fw-bold mb-1">학급 평균 점수</div><div class="fs-4 fw-bold text-success" id="dashOverview3">-</div></div></div>
                 <div class="col-md-3"><div class="dash-stat-box"><div class="text-muted small fw-bold mb-1">가장 취약한 영역</div><div class="fs-6 fw-bold text-danger mt-1" id="dashOverview4">-</div></div></div>
@@ -222,9 +220,9 @@
                         <tr>
                             <th>이름</th>
                             <th>종합 성취수준</th>
-                            <th>핵심 역량 (Stage 1~4)</th>
-                            <th>최종 점수 (정답률)</th>
-                            <th>종합 오개념 진단 결과</th>
+                            <th>핵심 역량</th>
+                            <th>최종 점수 (명중률)</th>
+                            <th>평균 풀이 시간</th>
                             <th>플레이 횟수</th>
                         </tr>
                     </thead>
@@ -285,7 +283,9 @@
         // 데이터 수집용
         let currentTotalShots = 0;
         let currentHitShots = 0;
-        let currentStageFails = {1:0, 2:0, 3:0, 4:0};
+        let currentStageHits = {1:0, 2:0, 3:0};
+        let currentStageFails = {1:0, 2:0, 3:0};
+        let gameStartTime = 0;
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -344,7 +344,9 @@
             
             currentRoomCode = code; myName = name;
             currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
-            currentTotalShots = 0; currentHitShots = 0; currentStageFails = {1:0, 2:0, 3:0, 4:0};
+            currentTotalShots = 0; currentHitShots = 0; 
+            currentStageHits = {1:0, 2:0, 3:0}; currentStageFails = {1:0, 2:0, 3:0};
+            gameStartTime = Date.now();
 
             updateLiveStatus();
             generateProblem();
@@ -532,9 +534,13 @@
                     drawCanvas(GRID_LIMIT);
                     const remaining = currentZombies.filter(z => z.active).length;
 
+                    let conceptStage = 1;
+                    if (currentFuncType === 'linear' && currentA < 0) conceptStage = 2;
+                    if (currentFuncType === 'inverse') conceptStage = 3;
+
                     if (currentStage >= 4 && currentProblemShots > currentLaserLimit && remaining > 0) {
                         lives--;
-                        currentStageFails[currentStage]++;
+                        currentStageFails[conceptStage]++;
                         document.getElementById('feedbackText').innerText = `레이저 제한 초과! (${currentLaserLimit}번까지만 가능)`;
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) {
@@ -549,7 +555,7 @@
 
                     if (hitCount === 0) {
                         lives--; 
-                        if(currentStage <= 4) currentStageFails[currentStage]++;
+                        currentStageFails[conceptStage]++;
                         document.getElementById('feedbackText').innerText = '빗나갔습니다! 하트가 깎입니다.';
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) { 
@@ -559,7 +565,8 @@
                             return; 
                         }
                     } else {
-                        currentHitShots += hitCount;
+                        currentHitShots++; // 시도당 1회 명중으로 계산
+                        currentStageHits[conceptStage]++;
                         if (remaining > 0) document.getElementById('feedbackText').innerText = `일부 명중! (${remaining}마리 남음)`;
                         else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점 보너스'; }
                     }
@@ -594,9 +601,10 @@
                 score,
                 stage: currentStage,
                 problem: currentProblem,
-                totalShots: currentTotalShots,
                 hitShots: currentHitShots,
+                stageHits: currentStageHits,
                 stageFails: currentStageFails,
+                playTimeSec: Math.floor((Date.now() - gameStartTime) / 1000),
                 isCompleted: isComp,
                 lastActive: serverTimestamp()
             }, { merge: true });
@@ -609,7 +617,8 @@
             document.getElementById('finalScore').innerText = score;
             
             const roomRef = roomDocRef(currentRoomCode);
-            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageFails: currentStageFails, playedAt: serverTimestamp() };
+            const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
+            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
             await setDoc(roomRef, { roomCode: currentRoomCode, updatedAt: serverTimestamp() }, { merge: true });
             const recordRef = await addDoc(recordsCollectionRef(currentRoomCode), recordData);
             await setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
@@ -619,7 +628,9 @@
                 problem: currentProblem,
                 totalShots: currentTotalShots,
                 hitShots: currentHitShots,
+                stageHits: currentStageHits,
                 stageFails: currentStageFails,
+                playTimeSec,
                 isCompleted: isClear,
                 lastActive: serverTimestamp()
             }, { merge: true });
@@ -655,7 +666,8 @@
             document.getElementById('rankNearbyTable').innerHTML = rows || '<tr><td colspan="4" class="text-muted text-center py-3">기록이 없습니다.</td></tr>';
             
             // 초기화
-            currentTotalShots = 0; currentHitShots = 0; currentStageFails = {1:0, 2:0, 3:0, 4:0};
+            currentTotalShots = 0; currentHitShots = 0; 
+            currentStageHits = {1:0, 2:0, 3:0}; currentStageFails = {1:0, 2:0, 3:0};
             loadHallOfFame();
         }
 
@@ -670,11 +682,11 @@
             if (pwd === ADMIN_ACCESS_CODE) { showSection('admin-section'); loadRooms(); } else if (pwd !== null) customAlert("접속 실패", "코드가 틀렸습니다.");
         });
 
-        document.getElementById('adminBackBtn').addEventListener('click', () => showSection('landing-section'));
-
         let unsubRooms = null, unsubStudents = null, unsubRecords = null;
         let roomStudents = [], roomRecords = [];
         let currentAdminRoom = '';
+        let currentExcelData = [];
+        let currentStats = {};
 
         function loadRooms() {
             if(unsubRooms) unsubRooms();
@@ -696,7 +708,45 @@
             unsubRecords = onSnapshot(recordsCollectionRef(currentAdminRoom), snap => { roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard(); });
         });
 
-        document.getElementById('btn-refresh').addEventListener('click', () => renderDashboard());
+        window.showStudentModal = function(nick) {
+            const s = currentStats[nick];
+            if(!s) return;
+            const acc = s.ts > 0 ? Math.round((s.hs / s.ts) * 100) : 0;
+            let html = `
+                <div class="text-center mb-3">
+                    <h4 class="fw-bold text-primary">${nick} 님의 상세 기록</h4>
+                    <div class="d-flex justify-content-center gap-3 text-muted small mt-2">
+                        <span>최고 점수: ${s.ms}점</span>
+                        <span>명중률: ${acc}%</span>
+                        <span>총 시도: ${s.ts}회</span>
+                    </div>
+                </div>
+                <table class="table table-bordered text-center align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>개념 (Stage)</th>
+                            <th>맞춘 문제</th>
+                            <th>틀린 문제</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="fw-bold text-success">Stage 1<br><small class="text-muted">양수 정비례</small></td>
+                            <td>${s.hits[1]}</td><td>${s.fails[1]}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-warning">Stage 2<br><small class="text-muted">음수 정비례</small></td>
+                            <td>${s.hits[2]}</td><td>${s.fails[2]}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-primary">Stage 3<br><small class="text-muted">반비례</small></td>
+                            <td>${s.hits[3]}</td><td>${s.fails[3]}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+            customAlert("상세 기록", html);
+        };
 
         function generateRoomCode() {
             const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -744,22 +794,23 @@
 
             let stats = {};
             roomRecords.forEach(r => {
-                if(!stats[r.nickname]) stats[r.nickname] = { pc:0, ms:0, mStg:0, ts:0, hs:0, fails:{1:0,2:0,3:0,4:0}, comp:false };
+                if(!stats[r.nickname]) stats[r.nickname] = { pc:0, ms:0, mStg:0, ts:0, hs:0, hits:{1:0,2:0,3:0}, fails:{1:0,2:0,3:0}, comp:false, playTime:0 };
                 let s = stats[r.nickname]; s.pc++;
                 if(r.score > s.ms) s.ms = r.score; if(r.maxStage > s.mStg) s.mStg = r.maxStage; if(r.isCompleted) s.comp = true;
-                s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0);
-                for(let i=1;i<=4;i++) s.fails[i] += (r.stageFails?.[i] || 0);
+                s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0); s.playTime += (r.playTimeSec || 0);
+                for(let i=1;i<=3;i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
             });
 
             roomStudents.forEach(r => {
-                if(!stats[r.nickname]) stats[r.nickname] = { pc:1, ms:0, mStg:0, ts:0, hs:0, fails:{1:0,2:0,3:0,4:0}, comp:false };
+                if(!stats[r.nickname]) stats[r.nickname] = { pc:1, ms:0, mStg:0, ts:0, hs:0, hits:{1:0,2:0,3:0}, fails:{1:0,2:0,3:0}, comp:false, playTime:0 };
                 let s = stats[r.nickname]; if(s.pc === 0) s.pc = 1;
                 if((r.score||0) > s.ms) s.ms = r.score; if((r.stage||1) > s.mStg) s.mStg = r.stage;
                 if(r.isCompleted) s.comp = true;
-                s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0);
-                for(let i=1;i<=4;i++) s.fails[i] += (r.stageFails?.[i] || 0);
+                s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0); s.playTime += (r.playTimeSec || 0);
+                for(let i=1;i<=3;i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
             });
 
+            currentStats = stats;
             const keys = Object.keys(stats);
             if(keys.length === 0) {
                 document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
@@ -767,10 +818,22 @@
                 return;
             }
 
-            let compCount = 0, ranks = {h:0, m:0, l:0}, totalScore = 0, totalAcc = 0, gFails = {1:0,2:0,3:0,4:0};
-            let tbodyHtml = '';
+            const sortedKeys = keys.sort((a, b) => {
+                const sA = stats[a], sB = stats[b];
+                if (sA.ms !== sB.ms) return sB.ms - sA.ms;
+                const accA = sA.ts > 0 ? (sA.hs / sA.ts) : 0;
+                const accB = sB.ts > 0 ? (sB.hs / sB.ts) : 0;
+                if (accA !== accB) return accB - accA;
+                const timeA = sA.ts > 0 ? (sA.playTime / sA.ts) : 9999;
+                const timeB = sB.ts > 0 ? (sB.playTime / sB.ts) : 9999;
+                return timeA - timeB;
+            });
 
-            keys.forEach(nick => {
+            let ranks = {h:0, m:0, l:0}, totalScore = 0, totalAcc = 0, gFails = {1:0,2:0,3:0};
+            let tbodyHtml = '';
+            currentExcelData = [];
+
+            sortedKeys.forEach(nick => {
                 const s = stats[nick];
                 const acc = s.ts > 0 ? Math.round((s.hs / s.ts) * 100) : 0;
                 let tier = '하 (보충)', tBdg = 'bg-danger';
@@ -778,43 +841,57 @@
                 else if(s.mStg >= 3) { tier = '중 (보통)'; tBdg = 'bg-warning text-dark'; ranks.m++; }
                 else ranks.l++;
 
-                if(s.comp) compCount++; totalScore += s.ms; totalAcc += acc;
-                for(let i=1;i<=4;i++) gFails[i] += s.fails[i];
+                totalScore += s.ms; totalAcc += acc;
+                for(let i=1;i<=3;i++) gFails[i] += s.fails[i];
 
-                let compHtml = '';
-                for(let i=1;i<=4;i++) compHtml += (s.comp || s.mStg > i) ? '🟢 ' : (s.mStg === i ? '🔴 ' : '⚪ ');
+                let compText = "";
+                if(s.comp) compText = "모든 개념 마스터";
+                else if(s.mStg === 4) compText = "융합(Stage 4) 진행중";
+                else if(s.mStg === 3) compText = "반비례(Stage 3) 진행중";
+                else if(s.mStg === 2) compText = "음수 정비례(Stage 2) 진행중";
+                else compText = "양수 정비례(Stage 1) 진행중";
 
-                let maxF = -1, wStg = 1;
-                for(let i=1;i<=4;i++) if(s.fails[i] > maxF) { maxF = s.fails[i]; wStg = i; }
-                let concept = "개념 완성 (결손 없음)";
-                if(maxF > 2) {
-                    if(wStg===1) concept="정비례 기초 매핑 미숙"; if(wStg===2) concept="음수 기울기(a<0) 오개념";
-                    if(wStg===3) concept="반비례 곡선 성질 미파악"; if(wStg===4) concept="식별 지연 및 혼동";
-                }
+                let avgTime = s.ts > 0 ? (s.playTime / s.ts).toFixed(1) : 0;
 
-                tbodyHtml += `<tr><td class="fw-bold">${nick}</td><td><span class="badge ${tBdg} fs-6">${tier}</span></td><td style="letter-spacing:1px;">${compHtml.trim()}</td><td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td><td class="text-danger fw-bold small">${concept}</td><td><span class="badge bg-secondary">${s.pc}회</span></td></tr>`;
+                tbodyHtml += `<tr style="cursor:pointer;" onclick="showStudentModal('${nick}')"><td class="fw-bold">${nick}</td><td><span class="badge ${tBdg} fs-6">${tier}</span></td><td>${compText}</td><td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td><td><span class="fw-bold">${avgTime}초</span></td><td><span class="badge bg-secondary">${s.pc}회</span></td></tr>`;
+                
+                currentExcelData.push({
+                    "이름": nick,
+                    "종합 성취수준": tier,
+                    "핵심 역량": compText,
+                    "최종 점수": s.ms,
+                    "명중률(%)": acc,
+                    "평균 풀이 시간(초)": Number(avgTime),
+                    "플레이 횟수": s.pc,
+                    "Stage 1 맞춘문제": s.hits[1],
+                    "Stage 1 틀린문제": s.fails[1],
+                    "Stage 2 맞춘문제": s.hits[2],
+                    "Stage 2 틀린문제": s.fails[2],
+                    "Stage 3 맞춘문제": s.hits[3],
+                    "Stage 3 틀린문제": s.fails[3]
+                });
             });
             document.getElementById('adminTableBody').innerHTML = tbodyHtml;
 
             const tLen = keys.length;
-            document.getElementById('dashOverview1').innerText = `${Math.round((compCount/tLen)*100)}% (${tLen}명 중 ${compCount}명)`;
+            document.getElementById('dashOverview1').innerText = `${tLen}명`;
             document.getElementById('dashOverview2').innerHTML = `<span class="text-success me-2">상:${ranks.h}</span> <span class="text-warning me-2">중:${ranks.m}</span> <span class="text-danger">하:${ranks.l}</span>`;
             document.getElementById('dashOverview3').innerText = `${Math.round(totalScore/tLen)}점 (${Math.round(totalAcc/tLen)}%)`;
             
-            let gMaxF = -1, gStg = 1; for(let i=1;i<=4;i++) if(gFails[i]>gMaxF){gMaxF=gFails[i]; gStg=i;}
+            let gMaxF = -1, gStg = 1; for(let i=1;i<=3;i++) if(gFails[i]>gMaxF){gMaxF=gFails[i]; gStg=i;}
             let gCon = "-";
             if(gMaxF > 0) {
-                if(gStg===1) gCon="Stage 1 (기초 좌표)"; if(gStg===2) gCon="Stage 2 (음수 부호)";
-                if(gStg===3) gCon="Stage 3 (반비례)"; if(gStg===4) gCon="Stage 4 (융합 식별)";
+                if(gStg===1) gCon="Stage 1 (양수 정비례)"; if(gStg===2) gCon="Stage 2 (음수 정비례)"; if(gStg===3) gCon="Stage 3 (반비례)";
             }
             document.getElementById('dashOverview4').innerText = gCon;
         }
 
         document.getElementById('btn-export-excel').addEventListener('click', () => {
             if(!currentAdminRoom) return customAlert("알림", "방을 선택해주세요.");
-            const tb = document.getElementById('adminTableBody');
-            if(tb.innerText.includes("데이터가 없습니다")) return customAlert("알림", "데이터가 없습니다.");
-            const wb = XLSX.utils.table_to_book(document.querySelector('.table'));
+            if(currentExcelData.length === 0) return customAlert("알림", "데이터가 없습니다.");
+            const ws = XLSX.utils.json_to_sheet(currentExcelData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "평가진단");
             XLSX.writeFile(wb, `좀비헌터_평가진단_${currentAdminRoom}_${new Date().toISOString().slice(0,10)}.xlsx`);
         });
     </script>
