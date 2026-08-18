@@ -288,7 +288,7 @@
     </main>
 
     <script type="module">
-        import { ref, set, get, update, onValue, remove, off, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import { ref, set, get, update, onValue, remove, off, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
 
@@ -420,26 +420,19 @@
                     winner: winnerId,
                     endReason: 'visibility_hidden'
                 }).then(async () => {
+                    // 점수 누락을 방지하기 위해 서버에서 원자적으로 점수를 올림 (increment 사용)
                     const myPlayerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`);
-                    const mySnap = await get(myPlayerRef);
-                    if (mySnap.exists()) {
-                        const val = mySnap.val();
-                        await update(myPlayerRef, {
-                            losses: (val.losses || 0) + 1,
-                            total: (val.total || 0) + 1
-                        });
-                    }
+                    await update(myPlayerRef, {
+                        losses: increment(1),
+                        total: increment(1)
+                    });
 
                     if (winnerId) {
                         const winnerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${winnerId}`);
-                        const winnerSnap = await get(winnerRef);
-                        if (winnerSnap.exists()) {
-                            const wVal = winnerSnap.val();
-                            await update(winnerRef, {
-                                wins: (wVal.wins || 0) + 1,
-                                total: (wVal.total || 0) + 1
-                            });
-                        }
+                        await update(winnerRef, {
+                            wins: increment(1),
+                            total: increment(1)
+                        });
                     }
                 }).catch(e => console.error(e));
             }
@@ -683,7 +676,10 @@
 
             if (myChoice === opChoice) {
                 document.getElementById('game-status-text').textContent = '무승부! 다시 선택해주세요.';
-                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { p1_choice: "", p2_choice: "" });
+                // 클라이언트 중복 실행을 막기 위해 1번 플레이어(방장 역할)에서만 업데이트 수행
+                if (isPlayer1) {
+                    await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { p1_choice: "", p2_choice: "" });
+                }
                 matchResolutionInFlight = false;
                 isResolvingMatch = false;
                 return;
@@ -692,19 +688,19 @@
             if (currentMatchUnsub) off(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), 'value', currentMatchUnsub);
 
             let resultText = '';
+            const scoreUpdates = { total: increment(1) };
+
             if (
                 (myChoice === 'scissors' && opChoice === 'paper') ||
                 (myChoice === 'rock' && opChoice === 'scissors') ||
                 (myChoice === 'paper' && opChoice === 'rock')
             ) {
                 resultText = '승리! 🎉';
-                myScore.wins = (myScore.wins || 0) + 1;
+                scoreUpdates.wins = increment(1);
             } else {
                 resultText = '패배... 😢';
-                myScore.losses = (myScore.losses || 0) + 1;
+                scoreUpdates.losses = increment(1);
             }
-
-            myScore.total = (myScore.total || 0) + 1;
 
             document.getElementById('my-choice-icon').textContent = rpsIcons[myChoice];
             document.getElementById('computer-choice-icon').textContent = rpsIcons[opChoice];
@@ -712,13 +708,20 @@
             document.getElementById('computer-choice-area').classList.remove('d-none');
             document.getElementById('game-status-text').textContent = '결과!';
 
-            updateStudentScoreUI();
+            // Firebase increment(1)을 사용해 점수 원자적 업데이트
+            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), scoreUpdates);
 
-            // 점수 업데이트
-            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), myScore);
+            // 점수가 제대로 적용된 후 최신 데이터를 불러와서 화면(UI)에 반영
+            const updatedSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`));
+            if (updatedSnap.exists()) {
+                myScore = updatedSnap.val();
+                updateStudentScoreUI();
+            }
 
-            // 모든 플레이어가 매치를 완료 처리하여 중복 카운트 방지
-            update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' }).catch(() => { });
+            // 모든 플레이어가 매치를 완료 처리하여 중복 방지를 위해 isPlayer1만 수행
+            if (isPlayer1) {
+                update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' }).catch(() => { });
+            }
 
             setTimeout(() => {
                 get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/status`)).then(snap => {
