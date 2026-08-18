@@ -20,7 +20,7 @@
         .active-section { display: block; }
 
         /* Landing */
-        .landing-card { max-width: 480px; margin: 2rem auto; border-radius: 16px; padding: 2rem; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .landing-card { max-width: 480px; margin: 0 auto; }
 
         /* Game Header & Layout */
         .game-top-header { max-width: 1000px; margin: 0 auto 1rem; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; border-radius: 12px; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
@@ -245,15 +245,15 @@
                     </div>
                 </div>
                 <div class="col-md-5">
-                    <div class="dash-stat-box h-100">
+                    <div class="dash-stat-box h-100 d-flex flex-column">
                         <div class="text-muted small fw-bold mb-3"><i class="bi bi-bar-chart-fill text-primary"></i> 레벨별 평균 명중률</div>
-                        <div id="dashLevelAcc"></div>
+                        <div id="dashLevelAcc" class="flex-grow-1"></div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="dash-stat-box h-100">
+                    <div class="dash-stat-box h-100 d-flex flex-column">
                         <div class="text-muted small fw-bold mb-3"><i class="bi bi-stopwatch text-danger"></i> 평균 풀이 속도 분포</div>
-                        <div id="dashSpeedDist"></div>
+                        <div id="dashSpeedDist" class="flex-grow-1"></div>
                     </div>
                 </div>
             </div>
@@ -350,35 +350,40 @@
                 if (roomSnap.empty) return hofList.innerHTML = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
 
                 const bestMap = {};
-                for (const roomDoc of roomSnap.docs) {
-                    const studentsSnap = await getDocs(studentsCollectionRef(roomDoc.id));
-                    studentsSnap.forEach(studentSnap => {
-                        const d = studentSnap.data();
-                        if (!d.nickname) return;
-                        const score = Number(d.score ?? 0);
-                        if (!bestMap[d.nickname] || score > Number(bestMap[d.nickname].score ?? 0)) {
-                            bestMap[d.nickname] = { ...d, roomCode: roomDoc.id, score };
-                        }
-                    });
-                }
-
-                const arr = Object.values(bestMap).sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0)).slice(0, 5);
-                let html = `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><tbody>`;
-                arr.forEach((item, idx) => {
-                    let rank = `<span class="text-muted small">${idx + 1}</span>`;
-                    if (idx === 0) rank = '🥇'; else if (idx === 1) rank = '🥈'; else if (idx === 2) rank = '🥉';
-                    html += `<tr><td class="text-center" style="width:15%;">${rank}</td><td class="fw-bold">${item.nickname}</td><td class="text-center fw-bold text-primary">${Number(item.score ?? 0)}점</td></tr>`;
+                const q = query(collection(db, "zombiehunter_records"));
+                const snap = await getDocs(q);
+                let allRecs = [];
+                snap.forEach(d => {
+                    const r = d.data();
+                    if(r.bestScore !== undefined && r.bestScoreBy) allRecs.push({ name: r.bestScoreBy, score: r.bestScore, acc: r.bestAcc || 0, time: r.bestTime || 0 });
                 });
-                html += `</tbody></table></div>`;
-                hofList.innerHTML = html;
-            } catch (e) {
-                const hofList = document.getElementById('hofList');
-                hofList.innerHTML = '<div class="text-muted small text-center">데이터를 불러오지 못했습니다.</div>';
+                
+                allRecs.sort((a,b) => b.score - a.score);
+                let top5 = allRecs.slice(0,5);
+                
+                let hofHtml = '';
+                if(top5.length === 0) hofHtml = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
+                else {
+                    hofHtml = top5.map((r, i) => `
+                        <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                            <div>
+                                <span class="badge ${i===0?'bg-warning text-dark':i===1?'bg-secondary':'bg-danger'} me-2">${i+1}위</span>
+                                <span class="fw-bold">${r.name}</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="fw-bold text-primary">${r.score}점</span>
+                                <div class="small text-muted">${r.acc}%, ${r.time}초</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                document.getElementById('hofList').innerHTML = hofHtml;
+            } catch (err) {
+                document.getElementById('hofList').innerHTML = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
             }
         }
         loadHallOfFame();
 
-        // 게임 시작
         document.getElementById('startBtn').addEventListener('click', async () => {
             const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
             const name = document.getElementById('playerName').value.trim();
@@ -387,16 +392,15 @@
             const roomSnap = await getDoc(roomDocRef(code));
             if(!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
             
-            // 다른 방에 같은 닉네임이 있는지 확인
             const allRoomsSnap = await getDocs(collection(db, "zombiehunter_records"));
             let nameInUse = false;
             for (const rDoc of allRoomsSnap.docs) {
-                if (rDoc.id === code) continue; // 같은 방에서는 동일 닉네임으로 이어하기 허용
+                if (rDoc.id === code) continue;
                 const stdRef = doc(db, "zombiehunter_records", rDoc.id, "students", name);
                 const stdSnap = await getDoc(stdRef);
                 if (stdSnap.exists()) { nameInUse = true; break; }
             }
-            if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다. 다른 닉네임을 사용해주세요.');
+            if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다.');
             
             currentRoomCode = code; myName = name;
             currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
@@ -410,7 +414,6 @@
             showSection('game-section');
         });
 
-        // 플레이 종료 버튼 클릭 시 (현 시점 기록 기준 마무리)
         document.getElementById('endPlayBtn').addEventListener('click', () => {
             const isClear = (currentStage >= 4 && currentProblem >= 5);
             gameOver(isClear);
@@ -604,12 +607,11 @@
                     if (currentStage >= 5 && currentProblemShots >= currentLaserLimit && remaining > 0) {
                         lives--;
                         currentStageFails[conceptStage]++;
-                        document.getElementById('feedbackText').innerText = `레이저 제한 초과! (${currentLaserLimit}번까지만 가능)`;
+                        document.getElementById('feedbackText').innerText = `레이저 제한 초과!`;
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) {
                             updateLiveStatus();
-                            const isClear = (currentStage >= 5 && currentProblem >= 5);
-                            setTimeout(() => gameOver(isClear), 1000);
+                            setTimeout(() => gameOver(false), 1000);
                             return;
                         }
                         updateLiveStatus();
@@ -619,23 +621,36 @@
                     if (hitCount === 0) {
                         lives--; 
                         currentStageFails[conceptStage]++;
-                        document.getElementById('feedbackText').innerText = '빗나갔습니다! 하트가 깎입니다.';
+                        document.getElementById('feedbackText').innerText = '빗나갔습니다!';
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) { 
                             updateLiveStatus(); 
-                            const isClear = (currentStage >= 5 && currentProblem >= 5);
-                            setTimeout(() => gameOver(isClear), 1000); 
+                            setTimeout(() => gameOver(false), 1000); 
                             return; 
                         }
                     } else {
-                        currentHitShots++; // 시도당 1회 명중으로 계산
+                        currentHitShots++;
                         currentStageHits[conceptStage]++;
-                        if (remaining > 0) document.getElementById('feedbackText').innerText = `일부 명중! (${remaining}마리 남음)`;
-                        else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점 보너스'; }
+                        if (remaining > 0) document.getElementById('feedbackText').innerText = `일부 명중!`;
+                        else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점'; }
                     }
                     updateUI(); updateLiveStatus();
 
                     if (remaining === 0) {
+                        const finalScore = score;
+                        const docRef = doc(db, "zombiehunter_records", currentRoomCode);
+                        getDoc(docRef).then(snap => {
+                            const acc = currentTotalShots > 0 ? Math.round((currentHitShots / currentTotalShots) * 100) : 0;
+                            const pTime = currentTotalShots > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / currentTotalShots).toFixed(1) : 0;
+                            if(snap.exists()) {
+                                let d = snap.data();
+                                if(d.bestScore === undefined || finalScore > d.bestScore) {
+                                    setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime }, { merge:true });
+                                }
+                            } else {
+                                setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime, roomCode: currentRoomCode, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+                            }
+                        });
                         setTimeout(() => {
                             if (currentStage < 5) {
                                 if (currentProblem < 5) { currentProblem++; generateProblem(); updateUI(); }
@@ -948,14 +963,10 @@
                     "명중률(%)": acc,
                     "평균 풀이 시간(초)": Number(avgTime),
                     "플레이 횟수": s.pc,
-                    "양수 정비례 맞춘 문제": s.hits[1],
-                    "양수 정비례 틀린 문제": s.fails[1],
-                    "음수 정비례 맞춘 문제": s.hits[2],
-                    "음수 정비례 틀린 문제": s.fails[2],
-                    "양수 반비례 맞춘 문제": s.hits[3],
-                    "양수 반비례 틀린 문제": s.fails[3],
-                    "음수 반비례 맞춘 문제": s.hits[4],
-                    "음수 반비례 틀린 문제": s.fails[4]
+                    "양수 정비례 정답률": s.hits[1]+s.fails[1] > 0 ? Math.round((s.hits[1]/(s.hits[1]+s.fails[1]))*100) + "%" : "-",
+                    "음수 정비례 정답률": s.hits[2]+s.fails[2] > 0 ? Math.round((s.hits[2]/(s.hits[2]+s.fails[2]))*100) + "%" : "-",
+                    "양수 반비례 정답률": s.hits[3]+s.fails[3] > 0 ? Math.round((s.hits[3]/(s.hits[3]+s.fails[3]))*100) + "%" : "-",
+                    "음수 반비례 정답률": s.hits[4]+s.fails[4] > 0 ? Math.round((s.hits[4]/(s.hits[4]+s.fails[4]))*100) + "%" : "-"
                 });
             });
             document.getElementById('adminTableBody').innerHTML = tbodyHtml;
@@ -965,14 +976,14 @@
             document.getElementById('dashAvgAcc').innerText = `${Math.round(totalAcc/tLen)}%`;
 
             const levelNames = ["", "Lv.1 양수 정비례", "Lv.2 음수 정비례", "Lv.3 양수 반비례", "Lv.4 음수 반비례"];
-            let levelHtml = '';
+            let levelHtml = '<div class="d-flex flex-column justify-content-evenly h-100 py-1">';
             for(let i=1;i<=4;i++) {
                 let tot = levelHits[i] + levelFails[i];
                 let p = tot > 0 ? Math.round((levelHits[i]/tot)*100) : 0;
-                let text = tot > 0 ? `${p}% (${levelHits[i]}/${tot})` : "데이터 없음";
+                let text = tot > 0 ? `${p}%` : "데이터 없음";
                 let color = ["", "bg-primary", "bg-success", "bg-warning", "bg-info"][i];
                 levelHtml += `
-                    <div class="mb-2 d-flex align-items-center">
+                    <div class="d-flex align-items-center">
                         <div style="width: 120px;" class="small fw-bold text-muted">${levelNames[i]}</div>
                         <div class="flex-grow-1 mx-2">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
@@ -981,10 +992,11 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="small text-muted" style="width: 110px; text-align:right;">${p <= 10 ? text : ''}</div>
+                        <div class="small text-muted" style="width: 80px; text-align:right;">${p <= 10 ? text : ''}</div>
                     </div>
                 `;
             }
+            levelHtml += '</div>';
             document.getElementById('dashLevelAcc').innerHTML = levelHtml;
 
             const speeds = [
@@ -992,13 +1004,13 @@
                 { k: "8-12", n: "8~12초", c: "bg-warning" }, { k: "12-16", n: "12~16초", c: "bg-danger" },
                 { k: ">16", n: "16초~", c: "bg-dark" }
             ];
-            let speedHtml = '';
+            let speedHtml = '<div class="d-flex flex-column justify-content-evenly h-100 py-1">';
             speeds.forEach(sp => {
                 let cnt = speedCounts[sp.k];
                 let p = tLen > 0 ? (cnt / tLen) * 100 : 0;
                 let text = cnt > 0 ? cnt + '명' : '0명';
                 speedHtml += `
-                    <div class="mb-2 d-flex align-items-center">
+                    <div class="d-flex align-items-center">
                         <div style="width: 60px;" class="small fw-bold text-muted text-end">${sp.n}</div>
                         <div class="flex-grow-1 mx-3">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
@@ -1011,6 +1023,7 @@
                     </div>
                 `;
             });
+            speedHtml += '</div>';
             document.getElementById('dashSpeedDist').innerHTML = speedHtml;
         }
 
