@@ -373,6 +373,7 @@
         let isPlayer1 = false;
         let opponentName = "";
         let isResolvingMatch = false;
+        let matchResolutionInFlight = false;
 
         const sections = ['landing-section', 'waiting-section', 'student-section', 'admin-section'];
         function showSection(sectionId) {
@@ -630,12 +631,13 @@
 
                 if (match.status === 'playing') {
                     if (match.p1_choice && match.p2_choice) {
-                        if (!isResolvingMatch) {
+                        if (!isResolvingMatch && !matchResolutionInFlight) {
                             isResolvingMatch = true;
                             startCountdownAndResolve(match);
                         }
                     } else if (match.p1_choice === "" && match.p2_choice === "") {
                         isResolvingMatch = false;
+                        matchResolutionInFlight = false;
                         document.querySelectorAll('.rps-btn').forEach(btn => {
                             btn.disabled = false;
                             btn.classList.remove('active');
@@ -664,14 +666,26 @@
         }
 
         async function resolveMatch(match) {
+            if (!match || !currentMatchId || !currentRoom || !currentUser) return;
+            if (matchResolutionInFlight) return;
+
+            matchResolutionInFlight = true;
+            isResolvingMatch = true;
+
             const myChoice = isPlayer1 ? match.p1_choice : match.p2_choice;
             const opChoice = isPlayer1 ? match.p2_choice : match.p1_choice;
 
+            if (!myChoice || !opChoice) {
+                matchResolutionInFlight = false;
+                isResolvingMatch = false;
+                return;
+            }
+
             if (myChoice === opChoice) {
                 document.getElementById('game-status-text').textContent = '무승부! 다시 선택해주세요.';
-                if (isPlayer1) {
-                    await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { p1_choice: "", p2_choice: "" });
-                }
+                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { p1_choice: "", p2_choice: "" });
+                matchResolutionInFlight = false;
+                isResolvingMatch = false;
                 return;
             }
 
