@@ -440,7 +440,7 @@
         <div class="game-top-header">
             <div>
                 <div class="small opacity-75">Stage <span id="stageDisplay">1</span> <span class="ms-2">🎯 <span
-                            id="probDisplay">1</span><span id="probTotal">/5</span></span></div>
+                            id="probDisplay">1</span><span id="probTotal">/4</span></span><span id="laserLimitContainer" class="ms-2 d-none fw-bold text-warning">⚡ <span id="laserDisplay"></span></span></div>
                 <div class="fw-bold mt-1" id="livesDisplay">❤️❤️❤️❤️❤️</div>
             </div>
             <div class="text-end">
@@ -833,7 +833,11 @@
                 }
                 pickedCurves.forEach(c => {
                     const pts = buildCurvePoints(c.type, c.a);
-                    const sample = pts.sort(() => Math.random() - 0.5).slice(0, Math.max(2, Math.floor(nZombies / numCurves)));
+                    let sampleCount = Math.max(2, Math.floor(nZombies / numCurves));
+                    if (c.type === 'inverse') {
+                        sampleCount = Math.floor(Math.random() * 2) + 3; // 3 or 4
+                    }
+                    const sample = pts.sort(() => Math.random() - 0.5).slice(0, sampleCount);
                     sample.forEach(p => {
                         if (!mixedPoints.some(mp => mp.x === p.x && mp.y === p.y)) mixedPoints.push(p);
                     });
@@ -864,6 +868,15 @@
             document.getElementById('probTotal').innerText = currentStage < 5 ? "/4" : "";
             document.getElementById('scoreDisplay').innerText = score;
             document.getElementById('livesDisplay').innerText = '❤️'.repeat(lives) + '🖤'.repeat(5 - lives);
+
+            const laserContainer = document.getElementById('laserLimitContainer');
+            if (currentStage >= 5 && currentLaserLimit > 0) {
+                laserContainer.classList.remove('d-none');
+                const leftLaser = Math.max(0, currentLaserLimit - currentProblemShots);
+                document.getElementById('laserDisplay').innerText = leftLaser + '발 남음';
+            } else {
+                laserContainer.classList.add('d-none');
+            }
         }
 
         function drawCanvas(laserAnimX = null) {
@@ -1003,10 +1016,9 @@
                                     generateProblem(); updateUI();
                                 }
                             } else {
-                                // Stage 5: 3문제 통과 시 상수준 판정
-                                if (currentProblem >= 3) {
-                                    gameOver(true);
-                                    return;
+                                // Stage 5: 3문제 통과 시 상수준 판정 후 계속 진행
+                                if (currentProblem === 3) {
+                                    saveClearRecord();
                                 }
                                 currentProblem++; generateProblem(); updateUI();
                             }
@@ -1024,6 +1036,44 @@
         // updateLiveStatus는 무료사용량 절약을 위해 비활성화
         // 기록은 gameOver() 시점에만 Firestore에 저장됨
         function updateLiveStatus() { }
+
+        async function saveClearRecord() {
+            const finalAcc = currentTotalShots > 0 ? Math.round((currentHitShots / currentTotalShots) * 100) : 0;
+            const finalTime = currentTotalShots > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / currentTotalShots).toFixed(1) : 0;
+            const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
+
+            const roomRef = roomDocRef(currentRoomCode);
+            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: true, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
+            
+            const roomSnap = await getDoc(roomRef);
+            let updatedRoomData = { roomCode: currentRoomCode, updatedAt: serverTimestamp() };
+            if (roomSnap.exists()) {
+                const d = roomSnap.data();
+                if (d.bestScore === undefined || score > d.bestScore) {
+                    updatedRoomData.bestScore = score;
+                    updatedRoomData.bestScoreBy = myName;
+                    updatedRoomData.bestAcc = finalAcc;
+                    updatedRoomData.bestTime = finalTime;
+                    updatedRoomData.bestStage = currentStage;
+                }
+            } else {
+                updatedRoomData.bestScore = score;
+                updatedRoomData.bestScoreBy = myName;
+                updatedRoomData.bestAcc = finalAcc;
+                updatedRoomData.bestTime = finalTime;
+                updatedRoomData.bestStage = currentStage;
+                updatedRoomData.createdAt = serverTimestamp();
+            }
+            await setDoc(roomRef, updatedRoomData, { merge: true });
+            
+            await addDoc(recordsCollectionRef(currentRoomCode), recordData);
+
+            const alertBox = document.createElement('div');
+            alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:10px 20px;border-radius:8px;font-weight:bold;z-index:9999;box-shadow:0 4px 6px rgba(0,0,0,0.1);";
+            alertBox.innerText = "🎉 상수준 달성! 대시보드에 기록되었습니다. 무한 챌린지를 계속하세요!";
+            document.body.appendChild(alertBox);
+            setTimeout(() => alertBox.remove(), 3000);
+        }
 
         async function gameOver(isClear) {
             showSection('gameover-section');
