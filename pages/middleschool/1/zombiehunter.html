@@ -659,8 +659,8 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const GRID_LIMIT = 12;
-        const scale = 22, centerX = canvas.width / 2, centerY = canvas.height / 2;
+        const GRID_LIMIT = 10;
+        const scale = 28, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
         function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
         function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
@@ -678,7 +678,11 @@
                     if (r.bestScore !== undefined && r.bestScoreBy) allRecs.push({ name: r.bestScoreBy, score: r.bestScore, acc: r.bestAcc || 0, time: r.bestTime || 0, stage: r.bestStage || 1 });
                 });
 
-                allRecs.sort((a, b) => b.score - a.score);
+                allRecs.sort((a, b) => {
+                    if (b.score !== a.score) return b.score - a.score;
+                    if (b.acc !== a.acc) return b.acc - a.acc;
+                    return a.time - b.time;
+                });
                 let top5 = allRecs.slice(0, 5);
 
                 let hofHtml = '';
@@ -866,12 +870,12 @@
             ctx.restore();
 
             ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
-            ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillStyle = '#64748b'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
             for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 2) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
             ctx.fillText('0', centerX - 5, centerY + 5);
-            ctx.font = '22px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = '28px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
 
             if (laserAnimX !== null) {
@@ -1038,7 +1042,28 @@
             const roomRef = roomDocRef(currentRoomCode);
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
             const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
-            await setDoc(roomRef, { roomCode: currentRoomCode, updatedAt: serverTimestamp() }, { merge: true });
+            
+            const roomSnap = await getDoc(roomRef);
+            let updatedRoomData = { roomCode: currentRoomCode, updatedAt: serverTimestamp() };
+            if (roomSnap.exists()) {
+                const d = roomSnap.data();
+                if (d.bestScore === undefined || score > d.bestScore) {
+                    updatedRoomData.bestScore = score;
+                    updatedRoomData.bestScoreBy = myName;
+                    updatedRoomData.bestAcc = finalAcc;
+                    updatedRoomData.bestTime = finalTime;
+                    updatedRoomData.bestStage = currentStage;
+                }
+            } else {
+                updatedRoomData.bestScore = score;
+                updatedRoomData.bestScoreBy = myName;
+                updatedRoomData.bestAcc = finalAcc;
+                updatedRoomData.bestTime = finalTime;
+                updatedRoomData.bestStage = currentStage;
+                updatedRoomData.createdAt = serverTimestamp();
+            }
+            await setDoc(roomRef, updatedRoomData, { merge: true });
+            
             const recordRef = await addDoc(recordsCollectionRef(currentRoomCode), recordData);
             await setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
                 nickname: myName,
