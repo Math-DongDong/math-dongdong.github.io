@@ -184,34 +184,29 @@
     </section>
 
     <!-- 3. 게임 오버 섹션 -->
-    <section id="gameover-section" class="section-container container pt-5">
-        <div class="landing-card bg-white text-center shadow border">
-            <h1 class="fw-bold mb-4" id="gameoverTitle">게임 종료!</h1>
-            <h4 class="mb-2">최종 점수: <span id="finalScore" class="text-primary">0</span>점</h4>
-            <p class="text-muted mb-4" id="gameoverDesc">하트를 모두 소진했거나 플레이를 종료했습니다.</p>
-
-            <div class="bg-light border rounded-4 p-4 mb-4 text-start">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                    <h5 class="fw-bold mb-0">📊 내 순위와 주변 실력</h5>
-                    <span class="badge bg-primary px-3 py-2 fs-6" id="myRankBadge">-위</span>
+    <section id="gameover-section" class="section-container container pt-4">
+        <div class="landing-card">
+            <div class="card border-0 shadow-sm rounded-4 p-4 text-center mb-4">
+                <div class="display-4 mb-3">😭</div>
+                <h2 class="fw-bold text-danger mb-2" id="gameoverTitle">게임 종료!</h2>
+                <p class="text-muted mb-4" id="gameoverDesc">하트를 모두 소진했습니다.</p>
+                <div class="bg-light rounded-4 p-3 mb-4 text-center">
+                    <p class="fs-5 mb-1">최종 점수: <span id="finalScore" class="fw-bold text-primary fs-3">0</span>점</p>
+                    <p class="fs-6 mb-1">최고 레벨: <span id="finalStage" class="fw-bold text-success">Stage 1</span></p>
+                    <p class="fs-6 mb-1">정답률: <span id="finalAcc" class="fw-bold text-info">0%</span></p>
+                    <p class="fs-6 mb-1">평균 풀이: <span id="finalTime" class="fw-bold text-warning">0.0초</span></p>
                 </div>
-                <div class="small text-muted mb-3" id="rankSummaryText">순위를 계산 중입니다.</div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-borderless align-middle mb-0">
-                        <thead>
-                            <tr class="text-muted small">
-                                <th class="text-center" style="width: 12%;">순위</th>
-                                <th style="width: 40%;">닉네임</th>
-                                <th class="text-center" style="width: 24%;">점수</th>
-                                <th class="text-center" style="width: 24%;">상위권</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rankNearbyTable"></tbody>
-                    </table>
-                </div>
+                <div id="save-status" class="text-success fw-bold small mb-3">✅ 기록이 저장되었습니다!</div>
+                <button id="restartBtn" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
             </div>
 
-            <button id="restartBtn" class="btn btn-primary btn-lg w-100">다시 도전하기</button>
+            <!-- 게임 오버 랭킹 -->
+            <div class="card border-0 shadow-sm rounded-4 p-4">
+                <h5 class="fw-bold mb-3">🏆 명예의 전당 (최고 기록)</h5>
+                <div id="gameoverHofList">
+                    <p class="text-muted text-center small">기록을 불러오는 중...</p>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -345,41 +340,58 @@
         // 글로벌 명예의 전당
         async function loadHallOfFame() {
             try {
-                const roomSnap = await getDocs(collection(db, "zombiehunter_records"));
-                const hofList = document.getElementById('hofList');
-                if (roomSnap.empty) return hofList.innerHTML = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
-
-                const bestMap = {};
                 const q = query(collection(db, "zombiehunter_records"));
                 const snap = await getDocs(q);
                 let allRecs = [];
                 snap.forEach(d => {
                     const r = d.data();
-                    if(r.bestScore !== undefined && r.bestScoreBy) allRecs.push({ name: r.bestScoreBy, score: r.bestScore, acc: r.bestAcc || 0, time: r.bestTime || 0 });
+                    if(r.bestScore !== undefined && r.bestScoreBy) allRecs.push({ name: r.bestScoreBy, score: r.bestScore, acc: r.bestAcc || 0, time: r.bestTime || 0, stage: r.bestStage || 1 });
                 });
                 
                 allRecs.sort((a,b) => b.score - a.score);
                 let top5 = allRecs.slice(0,5);
                 
                 let hofHtml = '';
-                if(top5.length === 0) hofHtml = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
-                else {
-                    hofHtml = top5.map((r, i) => `
-                        <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-                            <div>
-                                <span class="badge ${i===0?'bg-warning text-dark':i===1?'bg-secondary':'bg-danger'} me-2">${i+1}위</span>
-                                <span class="fw-bold">${r.name}</span>
-                            </div>
-                            <div class="text-end">
-                                <span class="fw-bold text-primary">${r.score}점</span>
-                                <div class="small text-muted">${r.acc}%, ${r.time}초</div>
-                            </div>
-                        </div>
-                    `).join('');
+                if(top5.length === 0) {
+                    hofHtml = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
+                } else {
+                    hofHtml = `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 0.9rem;">
+                    <thead class="table-light"><tr>
+                        <th>#</th>
+                        <th class="text-start">닉네임</th>
+                        <th>점수</th>
+                        <th>최고레벨</th>
+                        <th>정답률</th>
+                        <th>평균풀이</th>
+                    </tr></thead><tbody>`;
+                    
+                    hofHtml += top5.map((r, i) => {
+                        let rankHtml = '';
+                        if (i === 0) rankHtml = '🥇';
+                        else if (i === 1) rankHtml = '🥈';
+                        else if (i === 2) rankHtml = '🥉';
+                        else rankHtml = `<span class="text-muted small">${i + 1}</span>`;
+                        
+                        return `<tr>
+                            <td>${rankHtml}</td>
+                            <td class="text-start fw-bold">${r.name}</td>
+                            <td class="fw-bold text-primary">${r.score}</td>
+                            <td><span class="badge bg-success">Stage ${r.stage}</span></td>
+                            <td>${r.acc}%</td>
+                            <td>${r.time}초</td>
+                        </tr>`;
+                    }).join('');
+                    hofHtml += `</tbody></table></div>`;
                 }
+                
                 document.getElementById('hofList').innerHTML = hofHtml;
+                const goHof = document.getElementById('gameoverHofList');
+                if(goHof) goHof.innerHTML = hofHtml;
             } catch (err) {
-                document.getElementById('hofList').innerHTML = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
+                const errHtml = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
+                document.getElementById('hofList').innerHTML = errHtml;
+                const goHof = document.getElementById('gameoverHofList');
+                if(goHof) goHof.innerHTML = errHtml;
             }
         }
         loadHallOfFame();
@@ -645,10 +657,10 @@
                             if(snap.exists()) {
                                 let d = snap.data();
                                 if(d.bestScore === undefined || finalScore > d.bestScore) {
-                                    setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime }, { merge:true });
+                                    setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime, bestStage: currentStage }, { merge:true });
                                 }
                             } else {
-                                setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime, roomCode: currentRoomCode, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+                                setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime, bestStage: currentStage, roomCode: currentRoomCode, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
                             }
                         });
                         setTimeout(() => {
@@ -690,9 +702,14 @@
 
         async function gameOver(isClear) {
             showSection('gameover-section');
-            document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료! 🏆" : "게임 종료! ☠️";
-            document.getElementById('gameoverDesc').innerText = isClear ? `기본 미션을 모두 완수하고 무한 모드(Prob ${currentProblem})까지 생존했습니다!` : "하트를 모두 소진했거나 플레이를 종료했습니다.";
+            document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료! 🏆" : "게임 종료!";
+            document.getElementById('gameoverDesc').innerText = isClear ? `기본 미션을 모두 완수하고 무한 모드(Prob ${currentProblem})까지 생존했습니다!` : "하트를 모두 소진했습니다.";
             document.getElementById('finalScore').innerText = score;
+            document.getElementById('finalStage').innerText = `Stage ${currentStage}`;
+            const finalAcc = currentTotalShots > 0 ? Math.round((currentHitShots / currentTotalShots) * 100) : 0;
+            const finalTime = currentTotalShots > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / currentTotalShots).toFixed(1) : 0;
+            document.getElementById('finalAcc').innerText = `${finalAcc}%`;
+            document.getElementById('finalTime').innerText = `${finalTime}초`;
             
             const roomRef = roomDocRef(currentRoomCode);
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
@@ -713,40 +730,7 @@
                 lastActive: serverTimestamp()
             }, { merge: true });
 
-            const rankSnapshot = await getDocs(recordsCollectionRef(currentRoomCode));
-            const allRecords = rankSnapshot.docs.map(docSnap => ({ ...docSnap.data(), id: docSnap.id }));
-            allRecords.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-            const myIndex = allRecords.findIndex(item => item.id === recordRef.id || item.nickname === myName);
-            const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
-            const start = Math.max(0, safeIndex - 2);
-            const end = Math.min(allRecords.length, safeIndex + 3);
-            const nearby = allRecords.slice(start, end);
-
-            const myRank = safeIndex + 1;
-            const totalPlayers = allRecords.length;
-            const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
-            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명`;
-            document.getElementById('rankSummaryText').innerText = `${myName}님은 전체 상위 ${percentile}%에 해당합니다. ${safeIndex > 0 ? `앞으로 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.` : '현재 1위로 앞선 사람이 없습니다.'}`;
-
-            const rows = nearby.map((item, idx) => {
-                const rankNumber = start + idx + 1;
-                const isMe = item.id === recordRef.id || item.nickname === myName;
-                const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
-                return `
-                    <tr class="${isMe ? 'table-primary fw-bold' : ''}">
-                        <td class="text-center">${rankNumber}</td>
-                        <td>${item.nickname}</td>
-                        <td class="text-center">${item.score}점</td>
-                        <td class="text-center">${percentText}</td>
-                    </tr>
-                `;
-            }).join('');
-            document.getElementById('rankNearbyTable').innerHTML = rows || '<tr><td colspan="4" class="text-muted text-center py-3">기록이 없습니다.</td></tr>';
-            
-            // 초기화
-            currentTotalShots = 0; currentHitShots = 0; 
-            currentStageHits = {1:0, 2:0, 3:0, 4:0}; currentStageFails = {1:0, 2:0, 3:0, 4:0};
-            loadHallOfFame();
+            await loadHallOfFame();
         }
 
         document.getElementById('restartBtn').addEventListener('click', () => {
@@ -987,7 +971,7 @@
                         <div style="width: 120px;" class="small fw-bold text-muted">${levelNames[i]}</div>
                         <div class="flex-grow-1 mx-2">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
-                                <div class="progress-bar ${color}" role="progressbar" style="width: ${p}%;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
+                                <div class="progress-bar ${color} justify-content-start ps-2" role="progressbar" style="width: ${p}%;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
                                     ${p > 10 ? text : ''}
                                 </div>
                             </div>
@@ -1014,7 +998,7 @@
                         <div style="width: 60px;" class="small fw-bold text-muted text-end">${sp.n}</div>
                         <div class="flex-grow-1 mx-3">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
-                                <div class="progress-bar ${sp.c}" role="progressbar" style="width: ${p}%;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
+                                <div class="progress-bar ${sp.c} justify-content-start ps-2" role="progressbar" style="width: ${p}%;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
                                     ${p > 10 ? text : ''}
                                 </div>
                             </div>
