@@ -766,7 +766,7 @@
             currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
             gameStartTime = Date.now();
 
-            updateLiveStatus();
+
             generateProblem();
             updateUI();
             showSection('game-section');
@@ -992,27 +992,21 @@
                         if (remaining > 0) document.getElementById('feedbackText').innerText = `일부 명중!`;
                         else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점'; }
                     }
-                    updateUI(); updateLiveStatus();
+                    updateUI();
 
                     if (remaining === 0) {
-                        const finalScore = score;
-                        const docRef = doc(db, "zombiehunter_records", currentRoomCode);
-                        getDoc(docRef).then(snap => {
-                            const acc = currentTotalShots > 0 ? Math.round((currentHitShots / currentTotalShots) * 100) : 0;
-                            const pTime = currentTotalShots > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / currentTotalShots).toFixed(1) : 0;
-                            if (snap.exists()) {
-                                let d = snap.data();
-                                if (d.bestScore === undefined || finalScore > d.bestScore) {
-                                    setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime, bestStage: currentStage }, { merge: true });
-                                }
-                            } else {
-                                setDoc(docRef, { bestScore: finalScore, bestScoreBy: myName, bestAcc: acc, bestTime: pTime, bestStage: currentStage, roomCode: currentRoomCode, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-                            }
-                        });
                         setTimeout(() => {
                             if (currentStage < 5) {
                                 if (currentProblem < 5) { currentProblem++; generateProblem(); updateUI(); }
-                                else { currentStage++; currentProblem = 1; generateProblem(); updateUI(); }
+                                else {
+                                    currentStage++; currentProblem = 1;
+                                    if (currentStage === 5) {
+                                        // 상수준 도달: 자동 게임 종료
+                                        gameOver(true);
+                                        return;
+                                    }
+                                    generateProblem(); updateUI();
+                                }
                             } else {
                                 currentProblem++; generateProblem(); updateUI();
                             }
@@ -1027,24 +1021,9 @@
             setTimeout(() => { canvas.classList.remove('shake-canvas'); document.getElementById('clawMark').classList.remove('active'); }, 600);
         }
 
-        function updateLiveStatus() {
-            if (!myName || !currentRoomCode) return;
-            const isComp = (currentStage >= 5 && currentProblem >= 5);
-            const roomRef = roomDocRef(currentRoomCode);
-            setDoc(roomRef, { roomCode: currentRoomCode, updatedAt: serverTimestamp() }, { merge: true });
-            setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
-                nickname: myName,
-                score,
-                stage: currentStage,
-                problem: currentProblem,
-                hitShots: currentHitShots,
-                stageHits: currentStageHits,
-                stageFails: currentStageFails,
-                playTimeSec: Math.floor((Date.now() - gameStartTime) / 1000),
-                isCompleted: isComp,
-                lastActive: serverTimestamp()
-            }, { merge: true });
-        }
+        // updateLiveStatus는 무료사용량 절약을 위해 비활성화
+        // 기록은 gameOver() 시점에만 Firestore에 저장됨
+        function updateLiveStatus() { }
 
         async function gameOver(isClear) {
             showSection('gameover-section');
@@ -1167,7 +1146,6 @@
             currentTotalShots = 0; currentHitShots = 0;
             currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
             gameStartTime = Date.now();
-            updateLiveStatus();
             generateProblem();
             updateUI();
             showSection('game-section');
@@ -1287,10 +1265,14 @@
         function renderDashboard() {
             if (!currentAdminRoom) {
                 document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-                ['1', '2', '3', '4'].forEach(i => document.getElementById('dashOverview' + i).innerText = '-');
+                document.getElementById('dashAvgScore').innerText = '-';
+                document.getElementById('dashAvgAcc').innerText = '-';
+                document.getElementById('dashLevelAcc').innerHTML = '';
+                document.getElementById('dashSpeedDist').innerHTML = '';
                 return;
             }
 
+            // records(방 별)만 사용하여 통계 생성
             let stats = {};
             roomRecords.forEach(r => {
                 if (!stats[r.nickname]) stats[r.nickname] = { pc: 0, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0, hits: { 1: 0, 2: 0, 3: 0, 4: 0 }, fails: { 1: 0, 2: 0, 3: 0, 4: 0 }, comp: false, playTime: 0 };
@@ -1303,22 +1285,14 @@
                 for (let i = 1; i <= 4; i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
             });
 
-            roomStudents.forEach(r => {
-                if (!stats[r.nickname]) stats[r.nickname] = { pc: 1, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0, hits: { 1: 0, 2: 0, 3: 0, 4: 0 }, fails: { 1: 0, 2: 0, 3: 0, 4: 0 }, comp: false, playTime: 0 };
-                let s = stats[r.nickname]; if (s.pc === 0) s.pc = 1;
-                if ((r.score || 0) > s.ms) s.ms = r.score;
-                if ((r.stage || 1) > s.mStg) { s.mStg = r.stage || 1; s.mProb = r.problem || 1; }
-                else if ((r.stage || 1) === s.mStg && (r.problem || 1) > s.mProb) { s.mProb = r.problem || 1; }
-                if (r.isCompleted) s.comp = true;
-                s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0); s.playTime += (r.playTimeSec || 0);
-                for (let i = 1; i <= 4; i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
-            });
-
             currentStats = stats;
             const keys = Object.keys(stats);
             if (keys.length === 0) {
                 document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
-                ['1', '2', '3', '4'].forEach(i => document.getElementById('dashOverview' + i).innerText = '-');
+                document.getElementById('dashAvgScore').innerText = '-';
+                document.getElementById('dashAvgAcc').innerText = '-';
+                document.getElementById('dashLevelAcc').innerHTML = '';
+                document.getElementById('dashSpeedDist').innerHTML = '';
                 return;
             }
 
@@ -1393,7 +1367,7 @@
             for (let i = 1; i <= 4; i++) {
                 let tot = levelHits[i] + levelFails[i];
                 let p = tot > 0 ? Math.round((levelHits[i] / tot) * 100) : 0;
-                let text = tot > 0 ? `${p}%` : "데이터 없음";
+                let text = tot > 0 ? `${p}%` : '';
                 let color = ["", "bg-primary", "bg-success", "bg-warning", "bg-info"][i];
                 levelHtml += `
                     <div class="d-flex align-items-center">
