@@ -278,6 +278,7 @@
         let currentStage = 1, currentProblem = 1, score = 0, lives = 5;
         let currentFuncType = 'linear', currentA = 2;
         let currentZombies = [];
+        let problemHistory = [];
         
         // 데이터 수집용
         let currentTotalShots = 0;
@@ -286,8 +287,8 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const GRID_LIMIT = 13;
-        const scale = 20, centerX = canvas.width / 2, centerY = canvas.height / 2;
+        const GRID_LIMIT = 12;
+        const scale = 22, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
         function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
         function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
@@ -340,7 +341,7 @@
             if(!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
             
             currentRoomCode = code; myName = name;
-            currentStage = 1; currentProblem = 1; score = 0; lives = 5;
+            currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
             currentTotalShots = 0; currentHitShots = 0; currentStageFails = {1:0, 2:0, 3:0, 4:0};
 
             updateLiveStatus();
@@ -355,31 +356,51 @@
             gameOver(isClear);
         });
 
-        function generateProblem() {
-            // 무한 모드 및 일반 모드에 따른 좀비 수 조절 (최소 2마리)
-            const nZombies = Math.max(2, 6 - currentProblem);
-            let points = [];
-            let type = currentStage === 1 ? 'linear' : (currentStage === 2 ? 'linear' : (currentStage === 3 ? 'inverse' : (Math.random() < 0.5 ? 'linear' : 'inverse')));
-
-            if (type === 'linear') {
-                let aOptions = currentStage === 1 ? [1, 2, 3, 4, 5] : [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5];
-                let a = aOptions[Math.floor(Math.random() * aOptions.length)];
-                for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x++) {
-                    if (x === 0) continue; let y = a * x;
-                    if (y >= -GRID_LIMIT && y <= GRID_LIMIT) points.push({x, y, active: true});
+        function buildCurvePoints(type, a) {
+            const points = [];
+            for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x++) {
+                if (x === 0) continue;
+                let y = type === 'linear' ? a * x : a / x;
+                if (type === 'inverse') {
+                    if (!Number.isInteger(y) || y < -GRID_LIMIT || y > GRID_LIMIT) continue;
+                } else if (y < -GRID_LIMIT || y > GRID_LIMIT) {
+                    continue;
                 }
-            } else {
-                let aOptions = [-24, -20, -18, -16, -12, 12, 16, 18, 20, 24];
-                let a = aOptions[Math.floor(Math.random() * aOptions.length)];
-                for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x++) {
-                    if (x === 0) continue; let y = a / x;
-                    if (Number.isInteger(y) && y >= -GRID_LIMIT && y <= GRID_LIMIT) points.push({x, y, active: true});
-                }
+                points.push({ x, y });
             }
-            currentZombies = points.sort(() => Math.random() - 0.5).slice(0, Math.min(nZombies, points.length));
+            return points;
+        }
 
-            currentA = 2; document.getElementById('aSlider').value = 2; document.getElementById('aValueDisplay').innerText = 2;
-            setFuncType('linear'); drawCanvas(); document.getElementById('feedbackText').innerText = '';
+        function generateProblem() {
+            const nZombies = Math.max(3, 6 - currentProblem);
+            const carryLimit = Math.min(2, Math.max(0, currentStage - 1));
+            const previousPatterns = problemHistory.slice(-carryLimit);
+            const baseType = currentStage >= 3 ? (Math.random() < 0.5 ? 'linear' : 'inverse') : 'linear';
+            const baseOptions = baseType === 'linear'
+                ? (currentStage === 1 ? [1, 2, 3, 4, 5] : [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5])
+                : [-24, -20, -18, -16, -12, 12, 16, 18, 20, 24];
+            const baseA = baseOptions[Math.floor(Math.random() * baseOptions.length)];
+            const basePoints = buildCurvePoints(baseType, baseA);
+            const mixedPoints = [...basePoints];
+
+            previousPatterns.forEach((pattern) => {
+                const sampleSize = Math.max(1, Math.min(3, Math.ceil(basePoints.length * 0.25)));
+                const extraPoints = [...pattern.points].sort(() => Math.random() - 0.5).slice(0, sampleSize);
+                extraPoints.forEach((point) => {
+                    const exists = mixedPoints.some((p) => p.x === point.x && p.y === point.y);
+                    if (!exists) mixedPoints.push(point);
+                });
+            });
+
+            currentZombies = mixedPoints.sort(() => Math.random() - 0.5).slice(0, Math.min(nZombies, mixedPoints.length)).map((point) => ({ ...point, active: true }));
+            currentA = baseA;
+            document.getElementById('aSlider').value = baseA;
+            document.getElementById('aValueDisplay').innerText = baseA;
+            setFuncType(baseType);
+            drawCanvas();
+            document.getElementById('feedbackText').innerText = '';
+            problemHistory.push({ type: baseType, a: baseA, points: basePoints });
+            if (problemHistory.length > 5) problemHistory.shift();
             updateLiveStatus();
         }
 
@@ -420,9 +441,9 @@
 
             ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
             ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-            for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 5) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
+            for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 4) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-            for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 5) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
+            for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 4) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
             ctx.fillText('0', centerX - 5, centerY + 5);
             ctx.font = '22px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
@@ -479,8 +500,9 @@
                         if (!z.active) return; let hit = false;
                         if (currentFuncType === 'linear' && z.y === currentA * z.x) hit = true;
                         if (currentFuncType === 'inverse' && z.x !== 0 && z.y === currentA / z.x) hit = true;
-                        if (hit) { z.active = false; hitCount++; score += 100; }
+                        if (hit) { z.active = false; hitCount++; }
                     });
+                    score += hitCount * 10;
                     drawCanvas(GRID_LIMIT);
                     const remaining = currentZombies.filter(z => z.active).length;
 
@@ -496,9 +518,9 @@
                             return; 
                         }
                     } else {
-                        currentHitShots++;
+                        currentHitShots += hitCount;
                         if (remaining > 0) document.getElementById('feedbackText').innerText = `일부 명중! (${remaining}마리 남음)`;
-                        else { score += 50; document.getElementById('feedbackText').innerText = '모두 명중!'; }
+                        else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점 보너스'; }
                     }
                     updateUI(); updateLiveStatus();
 
@@ -597,7 +619,10 @@
             loadHallOfFame();
         }
 
-        document.getElementById('restartBtn').addEventListener('click', () => showSection('landing-section'));
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            problemHistory = [];
+            showSection('landing-section');
+        });
 
         // ================= 관리자 대시보드 ================= //
         document.getElementById('adminBtn').addEventListener('click', async () => {
