@@ -187,7 +187,7 @@
     <section id="gameover-section" class="section-container container pt-4">
         <div class="landing-card">
             <div class="card border-0 shadow-sm rounded-4 p-4 text-center mb-4">
-                <div class="display-4 mb-3">😭</div>
+                <div class="display-4 mb-3" id="gameoverIcon">⚔️</div>
                 <h2 class="fw-bold text-danger mb-2" id="gameoverTitle">게임 종료!</h2>
                 <p class="text-muted mb-4" id="gameoverDesc">하트를 모두 소진했습니다.</p>
                 <div class="bg-light rounded-4 p-3 mb-4 text-center">
@@ -197,15 +197,30 @@
                     <p class="fs-6 mb-1">평균 풀이: <span id="finalTime" class="fw-bold text-warning">0.0초</span></p>
                 </div>
                 <div id="save-status" class="text-success fw-bold small mb-3">✅ 기록이 저장되었습니다!</div>
-                <button id="restartBtn" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
-            </div>
-
-            <!-- 게임 오버 랭킹 -->
-            <div class="card border-0 shadow-sm rounded-4 p-4">
-                <h5 class="fw-bold mb-3">🏆 명예의 전당 (최고 기록)</h5>
-                <div id="gameoverHofList">
-                    <p class="text-muted text-center small">기록을 불러오는 중...</p>
+                
+                <!-- 주변 순위 테이블 -->
+                <div class="bg-light border rounded-4 p-3 mb-4 text-start">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <h6 class="fw-bold mb-0">📊 내 순위와 주변 실력</h6>
+                        <span class="badge bg-primary px-3 py-1" id="myRankBadge">-위</span>
+                    </div>
+                    <div class="small text-muted mb-2" id="rankSummaryText">순위를 계산 중입니다.</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-borderless align-middle mb-0" style="font-size: 0.9rem;">
+                            <thead>
+                                <tr class="text-muted small">
+                                    <th class="text-center" style="width: 15%;">순위</th>
+                                    <th style="width: 45%;">닉네임</th>
+                                    <th class="text-center" style="width: 20%;">점수</th>
+                                    <th class="text-center" style="width: 20%;">상위%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rankNearbyTable"></tbody>
+                        </table>
+                    </div>
                 </div>
+
+                <button id="restartBtn" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
             </div>
         </div>
     </section>
@@ -360,7 +375,6 @@
                         <th>#</th>
                         <th class="text-start">닉네임</th>
                         <th>점수</th>
-                        <th>최고레벨</th>
                         <th>정답률</th>
                         <th>평균풀이</th>
                     </tr></thead><tbody>`;
@@ -376,7 +390,6 @@
                             <td>${rankHtml}</td>
                             <td class="text-start fw-bold">${r.name}</td>
                             <td class="fw-bold text-primary">${r.score}</td>
-                            <td><span class="badge bg-success">Stage ${r.stage}</span></td>
                             <td>${r.acc}%</td>
                             <td>${r.time}초</td>
                         </tr>`;
@@ -385,13 +398,8 @@
                 }
                 
                 document.getElementById('hofList').innerHTML = hofHtml;
-                const goHof = document.getElementById('gameoverHofList');
-                if(goHof) goHof.innerHTML = hofHtml;
             } catch (err) {
-                const errHtml = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
-                document.getElementById('hofList').innerHTML = errHtml;
-                const goHof = document.getElementById('gameoverHofList');
-                if(goHof) goHof.innerHTML = errHtml;
+                document.getElementById('hofList').innerHTML = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
             }
         }
         loadHallOfFame();
@@ -702,7 +710,8 @@
 
         async function gameOver(isClear) {
             showSection('gameover-section');
-            document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료! 🏆" : "게임 종료!";
+            document.getElementById('gameoverIcon').innerText = isClear ? "🏆" : "⚔️";
+            document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료!" : "게임 종료!";
             document.getElementById('gameoverDesc').innerText = isClear ? `기본 미션을 모두 완수하고 무한 모드(Prob ${currentProblem})까지 생존했습니다!` : "하트를 모두 소진했습니다.";
             document.getElementById('finalScore').innerText = score;
             document.getElementById('finalStage').innerText = `Stage ${currentStage}`;
@@ -729,6 +738,36 @@
                 isCompleted: isClear,
                 lastActive: serverTimestamp()
             }, { merge: true });
+
+            const rankSnapshot = await getDocs(recordsCollectionRef(currentRoomCode));
+            const allRecords = rankSnapshot.docs.map(docSnap => ({ ...docSnap.data(), id: docSnap.id }));
+            allRecords.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+            const myIndex = allRecords.findIndex(item => item.id === recordRef.id || item.nickname === myName);
+            const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
+            const start = Math.max(0, safeIndex - 2);
+            const end = Math.min(allRecords.length, safeIndex + 3);
+            const nearby = allRecords.slice(start, end);
+
+            const myRank = safeIndex + 1;
+            const totalPlayers = allRecords.length;
+            const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
+            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명`;
+            document.getElementById('rankSummaryText').innerText = `${myName}님은 전체 상위 ${percentile}%에 해당합니다. ${safeIndex > 0 ? `앞으로 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.` : '현재 1위로 앞선 사람이 없습니다.'}`;
+
+            const rows = nearby.map((item, idx) => {
+                const rankNumber = start + idx + 1;
+                const isMe = item.id === recordRef.id || item.nickname === myName;
+                const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
+                return `
+                    <tr class="${isMe ? 'table-primary fw-bold' : ''}">
+                        <td class="text-center">${rankNumber}</td>
+                        <td>${item.nickname}</td>
+                        <td class="text-center">${item.score}점</td>
+                        <td class="text-center">${percentText}</td>
+                    </tr>
+                `;
+            }).join('');
+            document.getElementById('rankNearbyTable').innerHTML = rows;
 
             await loadHallOfFame();
         }
@@ -971,9 +1010,7 @@
                         <div style="width: 120px;" class="small fw-bold text-muted">${levelNames[i]}</div>
                         <div class="flex-grow-1 mx-2">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
-                                <div class="progress-bar ${color} justify-content-start ps-2" role="progressbar" style="width: ${p}%;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
-                                    ${p > 10 ? text : ''}
-                                </div>
+                                ${p > 0 ? `<div class="progress-bar ${color}" role="progressbar" style="width: ${p}%; justify-content: flex-start; padding-left: 10px;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">${p > 10 ? text : ''}</div>` : ''}
                             </div>
                         </div>
                         <div class="small text-muted" style="width: 80px; text-align:right;">${p <= 10 ? text : ''}</div>
@@ -998,9 +1035,7 @@
                         <div style="width: 60px;" class="small fw-bold text-muted text-end">${sp.n}</div>
                         <div class="flex-grow-1 mx-3">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
-                                <div class="progress-bar ${sp.c} justify-content-start ps-2" role="progressbar" style="width: ${p}%;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
-                                    ${p > 10 ? text : ''}
-                                </div>
+                                ${p > 0 ? `<div class="progress-bar ${sp.c}" role="progressbar" style="width: ${p}%; justify-content: flex-start; padding-left: 10px;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">${p > 10 ? text : ''}</div>` : ''}
                             </div>
                         </div>
                         <div class="small text-muted" style="width: 30px; text-align:right;">${p <= 10 ? text : ''}</div>
