@@ -449,10 +449,11 @@
             const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${roomCode}`));
             if (!roomSnap.exists()) return await customAlert('입장 실패', '존재하지 않는 방입니다.');
 
+            const roomStatus = roomSnap.val().status;
             const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
             const playerSnap = await get(playerRef);
 
-            if (roomSnap.val().status === 'finished') {
+            if (roomStatus === 'finished') {
                 if (!playerSnap.exists()) {
                     return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
                 }
@@ -471,10 +472,15 @@
             document.getElementById('waiting-nickname-display').textContent = nickname;
 
             startHeartbeat();
-
             updateStudentScoreUI();
+            
+            // 상태 리스너 등록 (상태에 따라 화면을 분기)
             listenToRoomStatus();
-            enterWaitingRoom();
+
+            // 방이 게임 중일 때만 대기방 입장, 종료된 상태면 리스너가 student-section을 알아서 띄움
+            if (roomStatus !== 'finished') {
+                enterWaitingRoom();
+            }
         });
 
         document.getElementById('btn-admin-dash').addEventListener('click', async () => {
@@ -777,6 +783,15 @@
             onValue(drawRef, (snapshot) => {
                 if (snapshot.exists() && snapshot.val() === true) {
                     document.getElementById('feedback-area').style.display = 'block';
+                    
+                    // 기존에 작성한 의견이 있다면 텍스트 동기화
+                    const myFeedbackRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbacks/${currentUser}`);
+                    get(myFeedbackRef).then((snap) => {
+                        if (snap.exists()) {
+                            document.getElementById('feedback-text').value = snap.val().text;
+                            document.getElementById('btn-submit-feedback').textContent = "의견 수정하기";
+                        }
+                    });
                 }
             });
         }
@@ -912,7 +927,11 @@
                         const colors = ['post-it-1', 'post-it-2', 'post-it-3', 'post-it-4', 'post-it-5'];
                         Object.keys(data.feedbacks).forEach(nickname => {
                             const fb = data.feedbacks[nickname];
-                            const colorClass = colors[Math.floor(Math.random() * colors.length)];
+                            
+                            // 닉네임을 해시로 변환하여 고정된 포스트잇 색상 부여
+                            const charSum = nickname.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+                            const colorClass = colors[charSum % colors.length];
+                            
                             const col = document.createElement('div');
                             col.className = 'col-md-4 col-sm-6';
                             col.innerHTML = `
