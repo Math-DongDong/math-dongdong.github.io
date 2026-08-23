@@ -288,7 +288,7 @@
     </main>
 
     <script type="module">
-        import { ref, set, get, update, onValue, remove, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import { ref, set, get, update, onValue, remove, serverTimestamp, increment, runTransaction } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
         import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
 
@@ -406,32 +406,41 @@
         function handleVisibility() {
             if (!currentRoom || !currentUser) return;
             const isHidden = document.hidden;
+
             update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), {
                 status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
             }).catch(() => { });
 
-            if (isHidden && currentMatchId && currentMatchData && currentMatchData.status === 'playing') {
+            // 대기방에 위치한 경우 대기방 visible 상태 업데이트
+            if (document.getElementById('waiting-section').style.display === 'block') {
+                update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting/${currentUser}`), {
+                    visible: !isHidden
+                }).catch(() => {});
+            }
+
+            // 플레이 도중(결과 처리 진입 전) 화면 이탈 시 트랜잭션으로 몰수패 처리
+            if (isHidden && currentMatchId && currentMatchData && currentMatchData.status === 'playing' && !isResolvingMatch) {
                 const winnerId = isPlayer1 ? currentMatchData.p2 : currentMatchData.p1;
-
                 const mRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`);
-                update(mRef, {
-                    status: 'finished',
-                    winner: winnerId,
-                    endReason: 'visibility_hidden'
-                }).then(async () => {
-                    const myPlayerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`);
-                    await update(myPlayerRef, {
-                        losses: increment(1),
-                        total: increment(1)
-                    });
 
-                    if (winnerId) {
-                        const winnerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${winnerId}`);
-                        await update(winnerRef, {
-                            wins: increment(1),
-                            total: increment(1)
-                        });
+                runTransaction(mRef, (match) => {
+                    if (match && match.status === 'playing') {
+                        match.status = 'finished';
+                        match.winner = winnerId;
+                        match.endReason = 'visibility_hidden';
+                        return match;
+                    }
+                    return; // 이미 끝난 경기면 중단
+                }).then(async (result) => {
+                    if (result.committed) {
+                        const myPlayerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`);
+                        await update(myPlayerRef, { losses: increment(1), total: increment(1) });
+
+                        if (winnerId) {
+                            const winnerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${winnerId}`);
+                            await update(winnerRef, { wins: increment(1), total: increment(1) });
+                        }
                     }
                 }).catch(e => console.error(e));
             }
@@ -449,10 +458,11 @@
             const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${roomCode}`));
             if (!roomSnap.exists()) return await customAlert('입장 실패', '존재하지 않는 방입니다.');
 
+            const roomStatus = roomSnap.val().status;
             const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
             const playerSnap = await get(playerRef);
 
-            if (roomSnap.val().status === 'finished') {
+            if (roomStatus === 'finished') {
                 if (!playerSnap.exists()) {
                     return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
                 }
@@ -471,10 +481,12 @@
             document.getElementById('waiting-nickname-display').textContent = nickname;
 
             startHeartbeat();
-
             updateStudentScoreUI();
             listenToRoomStatus();
-            enterWaitingRoom();
+
+            if (roomStatus !== 'finished') {
+                enterWaitingRoom();
+            }
         });
 
         document.getElementById('btn-admin-dash').addEventListener('click', async () => {
@@ -498,7 +510,6 @@
         async function enterWaitingRoom() {
             if (!currentRoom || !currentUser) return;
 
-            // 기존 매칭 리스너 확실히 종료
             if (currentMatchUnsub) {
                 currentMatchUnsub();
                 currentMatchUnsub = null;
@@ -518,7 +529,10 @@
             document.getElementById('waiting-count').textContent = '대기 중...';
 
             const myWaitRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting/${currentUser}`);
-            await set(myWaitRef, Date.now());
+            await set(myWaitRef, {
+                ts: serverTimestamp(),
+                visible: !document.hidden
+            });
 
             const matchesRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches`);
             matchUnsub = onValue(matchesRef, (snap) => {
@@ -527,8 +541,6 @@
                 for (const matchId in matches) {
                     const m = matches[matchId];
                     if ((m.p1 === currentUser || m.p2 === currentUser) && m.status === 'playing' && matchId !== currentMatchId) {
-
-                        // 리스너 확실히 종료
                         if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
                         if (matchUnsub) { matchUnsub(); matchUnsub = null; }
 
@@ -545,11 +557,15 @@
                 const waiters = snap.val();
                 if (!waiters[currentUser]) return;
 
-                const allWaiters = Object.keys(waiters).sort((a, b) => waiters[a] - waiters[b]);
-                document.getElementById('waiting-count').textContent = `대기 중: ${allWaiters.length}명`;
+                const allWaitersCount = Object.keys(waiters).length;
+                document.getElementById('waiting-count').textContent = `대기 중: ${allWaitersCount}명`;
 
-                if (allWaiters.length >= 2 && allWaiters[0] === currentUser) {
-                    const opponent = allWaiters[1];
+                // 화면을 보고 있는 사람만 필터링 후 타임스탬프 순 정렬
+                const visibleWaiters = Object.keys(waiters).filter(k => waiters[k].visible === true);
+                visibleWaiters.sort((a, b) => (waiters[a].ts || 0) - (waiters[b].ts || 0));
+
+                if (visibleWaiters.length >= 2 && visibleWaiters[0] === currentUser) {
+                    const opponent = visibleWaiters[1];
 
                     const updates = {};
                     updates[`waiting/${currentUser}`] = null;
@@ -580,6 +596,7 @@
             isPlayer1 = (m.p1 === currentUser);
             opponentName = isPlayer1 ? m.p2 : m.p1;
             isResolvingMatch = false;
+            matchResolutionInFlight = false;
 
             document.getElementById('opponent-name').textContent = opponentName;
             document.getElementById('computer-choice-area').classList.add('d-none');
@@ -679,7 +696,6 @@
                 return;
             }
 
-            // 리스너 해제
             if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
 
             let resultText = '';
@@ -714,6 +730,9 @@
             if (isPlayer1) {
                 update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' }).catch(() => { });
             }
+            
+            // 로컬 플래그 처리로 handleVisibility 이중 카운트 완벽 차단
+            if (currentMatchData) currentMatchData.status = 'finished';
 
             setTimeout(() => {
                 get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/status`)).then(snap => {
@@ -758,7 +777,6 @@
                 }
 
                 if (snapshot.val() === 'finished') {
-                    // 확실히 리스너들 종료
                     if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
                     if (matchUnsub) { matchUnsub(); matchUnsub = null; }
                     if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
@@ -777,6 +795,14 @@
             onValue(drawRef, (snapshot) => {
                 if (snapshot.exists() && snapshot.val() === true) {
                     document.getElementById('feedback-area').style.display = 'block';
+                    
+                    const myFeedbackRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbacks/${currentUser}`);
+                    get(myFeedbackRef).then((snap) => {
+                        if (snap.exists()) {
+                            document.getElementById('feedback-text').value = snap.val().text;
+                            document.getElementById('btn-submit-feedback').textContent = "의견 수정하기";
+                        }
+                    });
                 }
             });
         }
@@ -912,7 +938,10 @@
                         const colors = ['post-it-1', 'post-it-2', 'post-it-3', 'post-it-4', 'post-it-5'];
                         Object.keys(data.feedbacks).forEach(nickname => {
                             const fb = data.feedbacks[nickname];
-                            const colorClass = colors[Math.floor(Math.random() * colors.length)];
+                            
+                            const charSum = nickname.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+                            const colorClass = colors[charSum % colors.length];
+                            
                             const col = document.createElement('div');
                             col.className = 'col-md-4 col-sm-6';
                             col.innerHTML = `
