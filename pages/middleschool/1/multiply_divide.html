@@ -393,18 +393,7 @@
                     <h1 class="fw-bold fs-3">✖️➗ 곱셈과 나눗셈 마스터</h1>
                     <p class="text-muted">방 코드와 닉네임을 입력하고 게임을 시작하세요!</p>
                 </div>
-                <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
-                    <h5 class="text-center fw-bold mb-4">👨‍🎓 게임 입장하기</h5>
-                    <input type="text" id="roomCodeInput"
-                        class="form-control form-control-lg text-center mb-3 bg-light border-0 fw-bold"
-                        placeholder="방 코드 4자리 입력" maxlength="4" oninput="this.value = this.value.slice(0,4);"
-                        style="text-transform: uppercase;">
-                    <input type="text" id="nickname-input"
-                        class="form-control form-control-lg text-center mb-4 bg-light border-0 fw-bold"
-                        placeholder="닉네임 (예: 동동)" maxlength="10">
-                    <button id="btn-start-game" class="btn btn-primary btn-lg w-100 fw-bold mb-2">🎮 방 입장하기</button>
-                    <button id="btn-open-dashboard" class="btn btn-dark btn-lg w-100 fw-bold">대시보드 열기</button>
-                </div>
+                <div id="room-entrance-container"></div>
             </div>
 
             <!-- 로그인 화면 랭킹 (명예의 전당 Top 5) -->
@@ -625,7 +614,9 @@
     <!-- ==================== 스크립트 ==================== -->
     <script type="module">
         import { db } from "../../../js/firebase-config.js";
-        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
+        import {
+            renderRoomEntrance, customAlert, customPrompt, customConfirm
+        } from "../../../js/room-auth.js";
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, limit,
             serverTimestamp, deleteDoc
@@ -796,109 +787,30 @@
         }
 
         // =====================================================================
-        // 닉네임 입력 / 게임 시작
+        // 방 입장 카드 렌더링 & 이벤트 연동
         // =====================================================================
-        document.getElementById('btn-start-game').addEventListener('click', async () => {
-            const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
-            const nickname = document.getElementById('nickname-input').value.trim();
-
-            if (!roomCode || roomCode.length !== 4) {
-                document.getElementById('roomCodeInput').classList.add('shake');
-                setTimeout(() => document.getElementById('roomCodeInput').classList.remove('shake'), 400);
-                await customAlert("알림", "올바른 방 코드 4자리를 입력해주세요.");
-                return;
-            }
-
-            if (!nickname) {
-                document.getElementById('nickname-input').classList.add('shake');
-                setTimeout(() => document.getElementById('nickname-input').classList.remove('shake'), 400);
-                await customAlert("알림", "닉네임을 입력해주세요.");
-                return;
-            }
-
-            try {
-                const roomSnap = await getDoc(roomDocRef(roomCode));
-                if (!roomSnap.exists()) {
-                    await customAlert("입장 실패", `방 코드 [${roomCode}]가 존재하지 않습니다.<br>선생님께 방 코드를 확인해주세요.`);
-                    return;
+        renderRoomEntrance('room-entrance-container', {
+            onJoin: async (roomCode, nickname) => {
+                try {
+                    const roomSnap = await getDoc(roomDocRef(roomCode));
+                    if (!roomSnap.exists()) {
+                        await customAlert("입장 실패", `방 코드 [${roomCode}]가 존재하지 않습니다.<br>선생님께 방 코드를 확인해주세요.`);
+                        return;
+                    }
+                    currentRoomCode = roomCode;
+                    playerNickname = nickname;
+                    showSection('game-section');
+                    initGame();
+                } catch (err) {
+                    console.error("방 확인 오류:", err);
+                    await customAlert("오류", "방 정보를 확인하는 중 오류가 발생했습니다.");
                 }
-            } catch (err) {
-                console.error("방 확인 오류:", err);
-                await customAlert("오류", "방 정보를 확인하는 중 오류가 발생했습니다.");
-                return;
+            },
+            onAdminSuccess: () => {
+                showSection('dashboard-section');
+                loadRooms();
             }
-
-            currentRoomCode = roomCode;
-            playerNickname = nickname;
-            showSection('game-section');
-            initGame();
         });
-
-        document.getElementById('nickname-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') document.getElementById('btn-start-game').click();
-        });
-        document.getElementById('roomCodeInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') document.getElementById('nickname-input').focus();
-        });
-
-        // 교사 대시보드 열기
-        document.getElementById('btn-open-dashboard').addEventListener('click', async () => {
-            const code = await customPrompt("대시보드 접속", "접속 코드를 입력하세요.", true, true);
-            if (code !== ADMIN_ACCESS_CODE) {
-                if (code !== null) await customAlert("접속 실패", "접속 코드가 틀렸습니다.");
-                return;
-            }
-            showSection('dashboard-section');
-            loadRooms();
-        });
-
-        // =====================================================================
-        // 모달 유틸
-        // =====================================================================
-        let customModalInstance = null;
-        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
-            return new Promise((resolve) => {
-                if (!customModalInstance) customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
-                document.getElementById('customModalTitle').innerHTML = title;
-                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
-                if (isPrompt) {
-                    let type = isPassword ? 'password' : 'text';
-                    bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3 text-center fw-bold" id="customModalInput">`;
-                }
-                document.getElementById('customModalBody').innerHTML = bodyHtml;
-                const btnCancel = document.getElementById('customModalCancel');
-                const btnConfirm = document.getElementById('customModalConfirm');
-                const modal = document.getElementById('customModal');
-                if (isPrompt || isConfirm) btnCancel.classList.remove('d-none');
-                else btnCancel.classList.add('d-none');
-                let resolveValue = null;
-                const handleConfirm = () => { resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true; customModalInstance.hide(); };
-                const handleCancel = () => { resolveValue = isConfirm ? false : null; customModalInstance.hide(); };
-                const handleHidden = () => {
-                    btnConfirm.removeEventListener('click', handleConfirm);
-                    btnCancel.removeEventListener('click', handleCancel);
-                    modal.removeEventListener('hidden.bs.modal', handleHidden);
-                    resolve(resolveValue);
-                };
-                btnConfirm.addEventListener('click', handleConfirm);
-                btnCancel.addEventListener('click', handleCancel);
-                modal.addEventListener('hidden.bs.modal', handleHidden);
-                customModalInstance.show();
-                if (isPrompt) {
-                    modal.addEventListener('shown.bs.modal', function onShown() {
-                        const input = document.getElementById('customModalInput');
-                        if (input) {
-                            input.focus();
-                            input.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleConfirm(); });
-                        }
-                        modal.removeEventListener('shown.bs.modal', onShown);
-                    });
-                }
-            });
-        }
-        const customAlert = (t, m) => showCustomModal(t, m, false);
-        const customPrompt = (t, m, pw) => showCustomModal(t, m, true, pw);
-        const customConfirm = (t, m) => showCustomModal(t, m, false, false, true);
 
         // =====================================================================
         // 게임 로직

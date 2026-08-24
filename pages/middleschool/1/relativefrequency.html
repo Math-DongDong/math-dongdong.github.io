@@ -118,16 +118,7 @@
             <p class="text-muted mb-5">친구들과 가위바위보를 하고 확인해보세요!</p>
             <div class="row justify-content-center">
                 <div class="col-md-5">
-                    <div class="card shadow-sm p-4 mb-4 border-0 rounded-4">
-                        <h4 class="fw-bold mb-3">🧑‍🎓 게임 입장하기</h4>
-                        <input type="text" id="join-room-code"
-                            class="form-control form-control-lg text-center mb-2 fw-bold" placeholder="방 코드 4자리 입력"
-                            oninput="this.value = this.value.toUpperCase();">
-                        <input type="text" id="join-nickname" class="form-control form-control-lg text-center mb-3"
-                            placeholder="닉네임 (예: 동동)" maxlength="10">
-                        <button id="btn-join-room" class="btn btn-primary btn-lg w-100 fw-bold mb-2">방 입장하기</button>
-                        <button id="btn-admin-dash" class="btn btn-dark btn-lg w-100 fw-bold">대시보드 열기</button>
-                    </div>
+                    <div id="room-entrance-container"></div>
                 </div>
             </div>
         </div>
@@ -290,70 +281,9 @@
     <script type="module">
         import { ref, set, get, update, onValue, remove, serverTimestamp, increment, runTransaction } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
-        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
-
-        // =====================================================================
-        // 커스텀 모달
-        // =====================================================================
-        let customModalInstance = null;
-        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
-            return new Promise((resolve) => {
-                if (!customModalInstance) {
-                    customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
-                }
-                document.getElementById('customModalTitle').innerHTML = title;
-                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
-                if (isPrompt) {
-                    let type = isPassword ? 'password' : 'text';
-                    let extraAttrs = isPassword ? 'style="ime-mode: disabled;" placeholder="영문 입력"' : '';
-                    bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3" id="customModalInput" ${extraAttrs}>`;
-                }
-                document.getElementById('customModalBody').innerHTML = bodyHtml;
-
-                const btnCancel = document.getElementById('customModalCancel');
-                const btnConfirm = document.getElementById('customModalConfirm');
-                const customModal = document.getElementById('customModal');
-
-                if (isPrompt || isConfirm) { btnCancel.classList.remove('d-none'); }
-                else { btnCancel.classList.add('d-none'); }
-
-                let resolveValue = null;
-
-                const handleConfirm = () => {
-                    resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true;
-                    customModalInstance.hide();
-                };
-                const handleCancel = () => { resolveValue = isConfirm ? false : null; customModalInstance.hide(); };
-                const handleHidden = () => {
-                    btnConfirm.removeEventListener('click', handleConfirm);
-                    btnCancel.removeEventListener('click', handleCancel);
-                    customModal.removeEventListener('hidden.bs.modal', handleHidden);
-                    if (isPrompt) {
-                        const input = document.getElementById('customModalInput');
-                        if (input) input.removeEventListener('keypress', handleEnter);
-                    }
-                    resolve(resolveValue);
-                };
-                const handleEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); } };
-
-                btnConfirm.addEventListener('click', handleConfirm);
-                btnCancel.addEventListener('click', handleCancel);
-                customModal.addEventListener('hidden.bs.modal', handleHidden);
-                customModalInstance.show();
-
-                if (isPrompt) {
-                    customModal.addEventListener('shown.bs.modal', function onShown() {
-                        const input = document.getElementById('customModalInput');
-                        if (input) { input.focus(); input.addEventListener('keypress', handleEnter); }
-                        customModal.removeEventListener('shown.bs.modal', onShown);
-                    });
-                }
-            });
-        }
-
-        const customAlert = (title, message) => showCustomModal(title, message, false);
-        const customPrompt = (title, message, isPassword = false) => showCustomModal(title, message, true, isPassword);
-        const customConfirm = (title, message) => showCustomModal(title, message, false, false, true);
+        import {
+            renderRoomEntrance, customAlert, customPrompt, customConfirm
+        } from "../../../js/room-auth.js";
 
         // =====================================================================
         // 상태 변수
@@ -447,58 +377,51 @@
         }
 
         // =====================================================================
-        // 랜딩 페이지
         // =====================================================================
-        document.getElementById('btn-join-room').addEventListener('click', async () => {
-            const roomCode = document.getElementById('join-room-code').value.trim();
-            const nickname = document.getElementById('join-nickname').value.trim();
+        // 랜딩 페이지 및 방 입장
+        // =====================================================================
+        renderRoomEntrance('room-entrance-container', {
+            joinBtnText: "방 입장하기",
+            onJoin: async (roomCode, nickname) => {
+                const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${roomCode}`));
+                if (!roomSnap.exists()) return await customAlert('입장 실패', '존재하지 않는 방입니다.');
 
-            if (!roomCode || !nickname) return await customAlert('입력 오류', '방 코드와 닉네임을 모두 입력해주세요.');
+                const roomStatus = roomSnap.val().status;
+                const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
+                const playerSnap = await get(playerRef);
 
-            const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${roomCode}`));
-            if (!roomSnap.exists()) return await customAlert('입장 실패', '존재하지 않는 방입니다.');
-
-            const roomStatus = roomSnap.val().status;
-            const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
-            const playerSnap = await get(playerRef);
-
-            if (roomStatus === 'finished') {
-                if (!playerSnap.exists()) {
-                    return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
+                if (roomStatus === 'finished') {
+                    if (!playerSnap.exists()) {
+                        return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
+                    }
                 }
+
+                if (playerSnap.exists()) {
+                    myScore = playerSnap.val();
+                } else {
+                    myScore = { wins: 0, draws: 0, losses: 0, total: 0 };
+                    await set(playerRef, myScore);
+                }
+
+                currentRoom = roomCode;
+                currentUser = nickname;
+                document.getElementById('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
+                document.getElementById('waiting-nickname-display').textContent = nickname;
+
+                startHeartbeat();
+                updateStudentScoreUI();
+                listenToRoomStatus();
+
+                if (roomStatus !== 'finished') {
+                    enterWaitingRoom();
+                }
+            },
+            onAdminSuccess: () => {
+                isTeacher = true;
+                document.getElementById('nav-room-info').textContent = '대시보드 (관리자)';
+                showSection('admin-section');
+                loadAdminRooms();
             }
-
-            if (playerSnap.exists()) {
-                myScore = playerSnap.val();
-            } else {
-                myScore = { wins: 0, draws: 0, losses: 0, total: 0 };
-                await set(playerRef, myScore);
-            }
-
-            currentRoom = roomCode;
-            currentUser = nickname;
-            document.getElementById('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
-            document.getElementById('waiting-nickname-display').textContent = nickname;
-
-            startHeartbeat();
-            updateStudentScoreUI();
-            listenToRoomStatus();
-
-            if (roomStatus !== 'finished') {
-                enterWaitingRoom();
-            }
-        });
-
-        document.getElementById('btn-admin-dash').addEventListener('click', async () => {
-            const code = await customPrompt("선생님 대시보드", "접속 코드를 입력하세요.", true);
-            if (code !== ADMIN_ACCESS_CODE) {
-                if (code !== null) await customAlert("접속 실패", "접속코드가 틀렸습니다.");
-                return;
-            }
-            isTeacher = true;
-            document.getElementById('nav-room-info').textContent = '대시보드 (관리자)';
-            showSection('admin-section');
-            loadAdminRooms();
         });
 
         // =====================================================================

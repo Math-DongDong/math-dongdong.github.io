@@ -427,19 +427,7 @@
                 <p class="text-muted">관계식을 입력하여 좀비를 소탕하세요!</p>
             </div>
 
-            <div class="bg-white p-4 rounded-4 shadow-sm border mb-4">
-                <h5 class="text-center fw-bold mb-4">👨‍🎓 게임 입장하기</h5>
-                <input type="text" id="roomCodeInput"
-                    class="form-control form-control-lg text-center mb-3 bg-light border-0 fw-bold"
-                    placeholder="방 코드 4자리 입력" maxlength="4" oninput="this.value = this.value.slice(0,4);"
-                    style="text-transform: uppercase;">
-                <input type="text" id="playerName"
-                    class="form-control form-control-lg text-center mb-4 bg-light border-0 fw-bold"
-                    placeholder="닉네임 (예: 동동)" maxlength="10">
-                <button id="startBtn" class="btn btn-primary btn-lg w-100 mb-2 fw-bold"
-                    style="background:#0d6efd; border:none;">방 입장하기</button>
-                <button id="adminBtn" class="btn btn-dark btn-lg w-100 fw-bold">대시보드 열기</button>
-            </div>
+            <div id="room-entrance-container"></div>
 
             <div class="bg-white p-4 rounded-4 shadow-sm border">
                 <h5 class="fw-bold mb-3 text-center"><i class="bi bi-trophy text-warning"></i> 명예의 전당 (Top 5)</h5>
@@ -627,39 +615,14 @@
 
     <script type="module">
         import { db } from '../../../js/firebase-config.js';
-        import { ADMIN_ACCESS_CODE } from "../../../js/access-code.js";
+        import {
+            renderRoomEntrance, customAlert, customPrompt, customConfirm
+        } from '../../../js/room-auth.js';
         import { collection, doc, setDoc, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         const navScript = document.createElement('script');
         navScript.src = '../../../js/navbar.js';
         document.body.appendChild(navScript);
-
-        // 모달 유틸
-        let customModalInstance = null;
-        function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
-            return new Promise((resolve) => {
-                if (!customModalInstance) customModalInstance = new bootstrap.Modal(document.getElementById('customModal'));
-                document.getElementById('customModalTitle').innerHTML = title;
-                let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
-                if (isPrompt) bodyHtml += `<input type="${isPassword ? 'password' : 'text'}" class="form-control form-control-lg mt-3 text-center fw-bold" id="customModalInput">`;
-                document.getElementById('customModalBody').innerHTML = bodyHtml;
-                const btnCancel = document.getElementById('customModalCancel');
-                const btnConfirm = document.getElementById('customModalConfirm');
-                const modal = document.getElementById('customModal');
-                if (isPrompt || isConfirm) btnCancel.classList.remove('d-none'); else btnCancel.classList.add('d-none');
-
-                let resolveValue = null;
-                const handleConfirm = () => { resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value || "") : true; customModalInstance.hide(); };
-                const handleCancel = () => { resolveValue = isConfirm ? false : null; customModalInstance.hide(); };
-                const handleHidden = () => { btnConfirm.removeEventListener('click', handleConfirm); btnCancel.removeEventListener('click', handleCancel); modal.removeEventListener('hidden.bs.modal', handleHidden); resolve(resolveValue); };
-                btnConfirm.addEventListener('click', handleConfirm); btnCancel.addEventListener('click', handleCancel); modal.addEventListener('hidden.bs.modal', handleHidden);
-                customModalInstance.show();
-                if (isPrompt) modal.addEventListener('shown.bs.modal', function onShown() { const input = document.getElementById('customModalInput'); if (input) { input.focus(); input.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleConfirm(); }); } modal.removeEventListener('shown.bs.modal', onShown); });
-            });
-        }
-        const customAlert = (t, m) => showCustomModal(t, m, false);
-        const customPrompt = (t, m, pw) => showCustomModal(t, m, true, pw);
-        const customConfirm = (t, m) => showCustomModal(t, m, false, false, true);
 
         // 전역 상태
         let currentRoomCode = '';
@@ -763,34 +726,35 @@
         }
         loadHallOfFame();
 
-        document.getElementById('startBtn').addEventListener('click', async () => {
-            const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
-            const name = document.getElementById('playerName').value.trim();
-            if (!code || !name) return customAlert('알림', '방 코드와 닉네임을 모두 입력해주세요!');
+        renderRoomEntrance('room-entrance-container', {
+            onJoin: async (code, name) => {
+                const roomSnap = await getDoc(roomDocRef(code));
+                if (!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
 
-            const roomSnap = await getDoc(roomDocRef(code));
-            if (!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
+                const allRoomsSnap = await getDocs(collection(db, "zombiehunter_records"));
+                let nameInUse = false;
+                for (const rDoc of allRoomsSnap.docs) {
+                    if (rDoc.id === code) continue;
+                    const stdRef = doc(db, "zombiehunter_records", rDoc.id, "students", name);
+                    const stdSnap = await getDoc(stdRef);
+                    if (stdSnap.exists()) { nameInUse = true; break; }
+                }
+                if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다.');
 
-            const allRoomsSnap = await getDocs(collection(db, "zombiehunter_records"));
-            let nameInUse = false;
-            for (const rDoc of allRoomsSnap.docs) {
-                if (rDoc.id === code) continue;
-                const stdRef = doc(db, "zombiehunter_records", rDoc.id, "students", name);
-                const stdSnap = await getDoc(stdRef);
-                if (stdSnap.exists()) { nameInUse = true; break; }
+                currentRoomCode = code; myName = name;
+                currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
+                currentTotalShots = 0; currentHitShots = 0;
+                currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                gameStartTime = Date.now();
+
+                generateProblem();
+                updateUI();
+                showSection('game-section');
+            },
+            onAdminSuccess: () => {
+                showSection('admin-section');
+                loadRooms();
             }
-            if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다.');
-
-            currentRoomCode = code; myName = name;
-            currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
-            currentTotalShots = 0; currentHitShots = 0;
-            currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
-            gameStartTime = Date.now();
-
-
-            generateProblem();
-            updateUI();
-            showSection('game-section');
         });
 
         document.getElementById('endPlayBtn').addEventListener('click', () => {
@@ -1222,11 +1186,7 @@
             showSection('game-section');
         });
 
-        // ================= 관리자 대시보드 ================= //
-        document.getElementById('adminBtn').addEventListener('click', async () => {
-            const pwd = await customPrompt("선생님 대시보드", "접속 코드를 입력하세요.", true, true);
-            if (pwd === ADMIN_ACCESS_CODE) { showSection('admin-section'); loadRooms(); } else if (pwd !== null) customAlert("접속 실패", "코드가 틀렸습니다.");
-        });
+
 
         let unsubRooms = null, unsubStudents = null, unsubRecords = null;
         let roomStudents = [], roomRecords = [];
