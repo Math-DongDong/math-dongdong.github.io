@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>엑셀 이미지 추출 및 다운로더</title>
+    <!-- 파비콘 및 PWA 설정 -->
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <meta name="description" content="엑셀 파일 속 숨겨진 원본 고화질 이미지를 즉시 추출하여 ZIP 압축 파일로 다운로드합니다.">
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 공통 CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+
+    <!-- JSZip & FileSaver.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            background-color: #f8f9fa;
+            color: #212529;
+            font-family: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .main-wrapper {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 1.5rem 1rem 3rem 1rem;
+        }
+
+        /* 메인 카드 스타일 */
+        .card-custom {
+            background: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        /* 파일 드롭존 스타일 */
+        .drop-zone {
+            border: 2px dashed #0d6efd;
+            background-color: #f0f7ff;
+            border-radius: 16px;
+            padding: 3rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            background-color: #e0effe;
+            border-color: #0b5ed7;
+            transform: translateY(-2px);
+        }
+
+        .drop-zone i {
+            font-size: 3.5rem;
+            color: #0d6efd;
+        }
+
+        /* 이미지 카드 그리드 */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .image-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .image-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .image-preview-box {
+            width: 100%;
+            height: 160px;
+            background-color: #f8fafc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .image-preview-box img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            transition: transform 0.3s ease;
+        }
+
+        .image-preview-box:hover img {
+            transform: scale(1.05);
+        }
+
+        .image-card-checkbox {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 5;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .image-info {
+            padding: 0.85rem;
+            font-size: 0.85rem;
+            background-color: #ffffff;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        /* 보안 안내 배지 */
+        .badge-secure {
+            background-color: #ecfdf5;
+            color: #059669;
+            border: 1px solid #a7f3d0;
+            padding: 0.5rem 1rem;
+            border-radius: 50rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 상단 네비게이션바 (공통) -->
+    <script src="../../../js/navbar.js"></script>
+
+    <div class="main-wrapper">
+        <!-- 헤더 영역 -->
+        <div class="text-center mb-4">
+            <span class="badge-secure mb-2">
+                <i class="bi bi-shield-check"></i> 서버 전송 없음 · 100% 브라우저 내 안전 처리
+            </span>
+            <h1 class="fw-bold text-primary mt-1">
+                <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> 엑셀 이미지 추출 및 다운로더
+            </h1>
+            <p class="text-secondary mb-0">
+                엑셀(.xlsx, .xlsm, .xlsb 등) 파일에 삽입된 모든 원본 이미지를 손실 없이 추출하여 ZIP(알집) 파일로 한 번에 다운로드하세요.
+            </p>
+        </div>
+
+        <!-- 파일 첨부 영역 -->
+        <div class="card-custom">
+            <div id="dropZone" class="drop-zone">
+                <i class="bi bi-cloud-arrow-up-fill mb-2 d-inline-block"></i>
+                <h5 class="fw-bold text-dark mb-1">엑셀 파일을 이곳에 끌어다 놓으세요</h5>
+                <p class="text-muted small mb-3">또는 아래 버튼을 눌러 파일을 선택하세요 (.xlsx, .xlsm, .xlsb 지원)</p>
+                <button type="button" class="btn btn-primary px-4 py-2 fw-semibold rounded-pill" onclick="document.getElementById('fileInput').click()">
+                    <i class="bi bi-folder2-open me-1"></i> 파일 선택하기
+                </button>
+                <input type="file" id="fileInput" accept=".xlsx, .xlsm, .xlsb, .xltx, .xltm" class="d-none" multiple>
+            </div>
+
+            <!-- 로딩 상태 표시 -->
+            <div id="loadingArea" class="text-center py-4 d-none">
+                <div class="spinner-border text-primary mb-2" role="status">
+                    <span class="visually-hidden">처리 중...</span>
+                </div>
+                <p class="text-secondary fw-semibold mb-0" id="loadingText">엑셀 파일 내부 이미지를 분석하고 추출하는 중입니다...</p>
+            </div>
+        </div>
+
+        <!-- 추출 결과 섹션 -->
+        <div id="resultSection" class="card-custom d-none">
+            <!-- 상단 툴바 및 액션 버튼 -->
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 border-bottom pb-3 mb-4">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">
+                        <i class="bi bi-images text-primary me-1"></i> 추출된 이미지 목록 
+                        <span class="badge bg-primary rounded-pill ms-1" id="totalImageCount">0</span>
+                    </h5>
+                    <p class="text-muted small mb-0" id="currentFileName">파일명: sample.xlsx</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="btnSelectAll" class="btn btn-outline-secondary btn-sm rounded-pill px-3" onclick="toggleSelectAll()">
+                        <i class="bi bi-check-all me-1"></i> 전체 선택/해제
+                    </button>
+                    <button id="btnDownloadZip" class="btn btn-success fw-bold btn-sm rounded-pill px-4 shadow-sm" onclick="downloadImagesZip()">
+                        <i class="bi bi-file-earmark-zip me-1"></i> 선택 이미지 ZIP 다운로드 (<span id="selectedCount">0</span>)
+                    </button>
+                    <button id="btnDownloadRawZip" class="btn btn-outline-success btn-sm rounded-pill px-3" onclick="downloadRawExcelAsZip()" title="엑셀 파일 전체를 .zip 파일로 저장">
+                        <i class="bi bi-file-zip me-1"></i> 원본 전체 ZIP 변환
+                    </button>
+                </div>
+            </div>
+
+            <!-- 이미지 갤러리 그리드 -->
+            <div id="imageGrid" class="image-grid">
+                <!-- 동적으로 생성되는 이미지 카드들 -->
+            </div>
+
+            <!-- 이미지가 없을 때 메시지 -->
+            <div id="noImagesAlert" class="alert alert-warning text-center py-4 d-none mb-0" role="alert">
+                <i class="bi bi-exclamation-triangle-fill fs-3 d-block mb-2 text-warning"></i>
+                <h6 class="fw-bold mb-1">엑셀 파일 내에 삽입된 이미지가 없습니다.</h6>
+                <p class="small text-muted mb-0">해당 엑셀 문서에 그림 또는 사진이 포함되어 있는지 확인해 주세요.</p>
+            </div>
+        </div>
+
+        <!-- 사용 가이드 및 팁 -->
+        <div class="card-custom">
+            <h5 class="fw-bold text-dark mb-3"><i class="bi bi-info-circle-fill text-primary me-2"></i>사용 방법 및 특징</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <h6 class="fw-bold text-primary"><i class="bi bi-1-circle-fill me-1"></i> 1. 파일 첨부</h6>
+                        <p class="text-muted small mb-0">이미지가 포함된 엑셀(.xlsx) 파일을 드래그하여 업로드합니다.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <h6 class="fw-bold text-success"><i class="bi bi-2-circle-fill me-1"></i> 2. 자동 추출 &amp; 미리보기</h6>
+                        <p class="text-muted small mb-0">엑셀 내부 <code>xl/media</code> 경로의 원본 화질 이미지를 실시간으로 파싱하여 목록을 구성합니다.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <h6 class="fw-bold text-info"><i class="bi bi-3-circle-fill me-1"></i> 3. ZIP 일괄 저장</h6>
+                        <p class="text-muted small mb-0">[선택 이미지 ZIP 다운로드]를 누르면 원본 고화질 사진들이 알집(ZIP)으로 일괄 압축되어 저장됩니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 이미지 크게보기 모달 -->
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold" id="imageModalLabel">이미지 미리보기</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center p-3 bg-light">
+                    <img id="modalImage" src="" alt="확대 이미지" class="img-fluid rounded shadow-sm" style="max-height: 70vh;">
+                </div>
+                <div class="modal-footer d-flex justify-content-between">
+                    <span id="modalMeta" class="text-muted small"></span>
+                    <button id="btnModalSingleDownload" class="btn btn-primary btn-sm rounded-pill px-3">
+                        <i class="bi bi-download me-1"></i> 이 이미지 다운로드
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // 전역 상태 변수
+        let extractedImages = []; // { id, name, originalPath, blob, dataUrl, size, width, height, extension, checked }
+        let currentLoadedFile = null;
+        let imageModalInstance = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            imageModalInstance = new bootstrap.Modal(document.getElementById('imageModal'));
+            initDragAndDrop();
+            initFileInput();
+        });
+
+        // 파일 인풋 이벤트 리스너
+        function initFileInput() {
+            const fileInput = document.getElementById('fileInput');
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    processExcelFile(e.target.files[0]);
+                }
+            });
+        }
+
+        // 드래그 앤 드롭 이벤트 리스너
+        function initDragAndDrop() {
+            const dropZone = document.getElementById('dropZone');
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('dragover');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('dragover');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files && files.length > 0) {
+                    processExcelFile(files[0]);
+                }
+            });
+        }
+
+        // 엑셀 파일 처리 및 이미지 추출
+        async function processExcelFile(file) {
+            if (!file.name.match(/\.(xlsx|xlsm|xlsb|xltx|xltm|zip)$/i)) {
+                alert('엑셀(.xlsx, .xlsm, .xlsb) 파일을 선택해주세요.');
+                return;
+            }
+
+            currentLoadedFile = file;
+            showLoading(true, `[${file.name}] 파일을 분석하고 이미지를 추출하고 있습니다...`);
+            extractedImages = [];
+
+            try {
+                const zip = new JSZip();
+                const loadedZip = await zip.loadAsync(file);
+
+                const imageEntries = [];
+                // 엑셀 내 이미지 파일 찾기 (주로 xl/media/ 내 위치)
+                loadedZip.forEach((relativePath, zipEntry) => {
+                    if (!zipEntry.dir && (
+                        relativePath.toLowerCase().startsWith('xl/media/') ||
+                        relativePath.match(/\.(png|jpe?g|gif|svg|bmp|webp|emf|wmf|tiff?)$/i)
+                    )) {
+                        imageEntries.push({ relativePath, zipEntry });
+                    }
+                });
+
+                if (imageEntries.length === 0) {
+                    renderEmptyResult(file.name);
+                    return;
+                }
+
+                // 이미지 Blob 및 메타데이터 추출
+                let count = 0;
+                for (const item of imageEntries) {
+                    count++;
+                    const fileName = item.relativePath.split('/').pop();
+                    const extMatch = fileName.match(/\.([0-9a-z]+)$/i);
+                    const ext = extMatch ? extMatch[1].toLowerCase() : 'png';
+                    
+                    const mimeType = getMimeType(ext);
+                    const blob = await item.zipEntry.async('blob');
+                    const typedBlob = new Blob([blob], { type: mimeType });
+                    const dataUrl = URL.createObjectURL(typedBlob);
+
+                    // 해상도(너비, 높이) 파악
+                    const { width, height } = await getImageDimensions(dataUrl);
+
+                    extractedImages.push({
+                        id: `img_${count}`,
+                        name: fileName,
+                        originalPath: item.relativePath,
+                        blob: typedBlob,
+                        dataUrl: dataUrl,
+                        size: formatBytes(blob.size),
+                        width: width,
+                        height: height,
+                        extension: ext.toUpperCase(),
+                        checked: true
+                    });
+                }
+
+                renderImages(file.name);
+            } catch (err) {
+                console.error('엑셀 파싱 오류:', err);
+                alert('파일을 분석하는 도중 오류가 발생했습니다. 정상적인 엑셀 파일인지 확인해주세요.');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 이미지 크기(Dimensions) 비동기 계산
+        function getImageDimensions(src) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve({ width: 0, height: 0 });
+                img.src = src;
+            });
+        }
+
+        // MIME 타입 매핑
+        function getMimeType(ext) {
+            const map = {
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'gif': 'image/gif',
+                'svg': 'image/svg+xml',
+                'bmp': 'image/bmp',
+                'webp': 'image/webp',
+                'emf': 'image/emf',
+                'wmf': 'image/wmf'
+            };
+            return map[ext] || 'application/octet-stream';
+        }
+
+        // 이미지 결과 렌더링
+        function renderImages(fileName) {
+            const resultSection = document.getElementById('resultSection');
+            const imageGrid = document.getElementById('imageGrid');
+            const noImagesAlert = document.getElementById('noImagesAlert');
+            const totalImageCount = document.getElementById('totalImageCount');
+            const currentFileName = document.getElementById('currentFileName');
+
+            resultSection.classList.remove('d-none');
+            noImagesAlert.classList.add('d-none');
+            imageGrid.innerHTML = '';
+
+            totalImageCount.textContent = extractedImages.length;
+            currentFileName.textContent = `파일명: ${fileName}`;
+
+            extractedImages.forEach((img, idx) => {
+                const card = document.createElement('div');
+                card.className = 'image-card';
+                card.innerHTML = `
+                    <input type="checkbox" class="form-check-input image-card-checkbox" id="check_${img.id}" ${img.checked ? 'checked' : ''} onchange="toggleImageCheck('${img.id}', this.checked)">
+                    <div class="image-preview-box" onclick="openPreviewModal(${idx})">
+                        <img src="${img.dataUrl}" alt="${img.name}" loading="lazy">
+                    </div>
+                    <div class="image-info">
+                        <div class="fw-bold text-truncate mb-1" title="${img.name}">${img.name}</div>
+                        <div class="d-flex justify-content-between text-muted" style="font-size: 0.75rem;">
+                            <span><span class="badge bg-secondary me-1">${img.extension}</span>${img.width ? `${img.width}×${img.height}` : ''}</span>
+                            <span>${img.size}</span>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm w-100 mt-2 py-1" onclick="downloadSingleImage(${idx})">
+                            <i class="bi bi-download me-1"></i> 다운로드
+                        </button>
+                    </div>
+                `;
+                imageGrid.appendChild(card);
+            });
+
+            updateSelectedCount();
+        }
+
+        // 이미지가 없을 때 렌더링
+        function renderEmptyResult(fileName) {
+            const resultSection = document.getElementById('resultSection');
+            const imageGrid = document.getElementById('imageGrid');
+            const noImagesAlert = document.getElementById('noImagesAlert');
+            const totalImageCount = document.getElementById('totalImageCount');
+            const currentFileName = document.getElementById('currentFileName');
+
+            resultSection.classList.remove('d-none');
+            imageGrid.innerHTML = '';
+            noImagesAlert.classList.remove('d-none');
+
+            totalImageCount.textContent = '0';
+            currentFileName.textContent = `파일명: ${fileName}`;
+            updateSelectedCount();
+        }
+
+        // 체크 상태 토글
+        function toggleImageCheck(id, isChecked) {
+            const item = extractedImages.find(img => img.id === id);
+            if (item) {
+                item.checked = isChecked;
+            }
+            updateSelectedCount();
+        }
+
+        // 전체 선택 / 해제
+        function toggleSelectAll() {
+            const allChecked = extractedImages.every(img => img.checked);
+            const targetState = !allChecked;
+
+            extractedImages.forEach(img => {
+                img.checked = targetState;
+                const chk = document.getElementById(`check_${img.id}`);
+                if (chk) chk.checked = targetState;
+            });
+
+            updateSelectedCount();
+        }
+
+        // 선택 카운트 및 다운로드 버튼 갱신
+        function updateSelectedCount() {
+            const selected = extractedImages.filter(img => img.checked).length;
+            document.getElementById('selectedCount').textContent = selected;
+            const btnDownloadZip = document.getElementById('btnDownloadZip');
+            btnDownloadZip.disabled = selected === 0;
+        }
+
+        // 모달 열기
+        function openPreviewModal(index) {
+            const img = extractedImages[index];
+            if (!img) return;
+
+            document.getElementById('imageModalLabel').textContent = img.name;
+            document.getElementById('modalImage').src = img.dataUrl;
+            document.getElementById('modalMeta').textContent = `규격: ${img.width} × ${img.height} px | 용량: ${img.size} | 형식: ${img.extension}`;
+
+            const btnDownload = document.getElementById('btnModalSingleDownload');
+            btnDownload.onclick = () => downloadSingleImage(index);
+
+            imageModalInstance.show();
+        }
+
+        // 단일 이미지 다운로드
+        function downloadSingleImage(index) {
+            const img = extractedImages[index];
+            if (!img) return;
+            saveAs(img.blob, img.name);
+        }
+
+        // 선택된 이미지들을 ZIP으로 압축하여 다운로드
+        async function downloadImagesZip() {
+            const selectedImages = extractedImages.filter(img => img.checked);
+            if (selectedImages.length === 0) {
+                alert('다운로드할 이미지를 1개 이상 선택해주세요.');
+                return;
+            }
+
+            showLoading(true, `선택된 ${selectedImages.length}개의 이미지를 ZIP 파일로 압축 중입니다...`);
+
+            try {
+                const zip = new JSZip();
+                selectedImages.forEach(img => {
+                    zip.file(img.name, img.blob);
+                });
+
+                const content = await zip.generateAsync({ type: 'blob' });
+                const baseName = currentLoadedFile ? currentLoadedFile.name.replace(/\.[^/.]+$/, '') : 'excel';
+                saveAs(content, `${baseName}_이미지모음.zip`);
+            } catch (err) {
+                console.error('ZIP 생성 오류:', err);
+                alert('ZIP 압축 파일 생성 중 오류가 발생했습니다.');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 원본 엑셀을 .zip 확장자로 바로 다운로드
+        function downloadRawExcelAsZip() {
+            if (!currentLoadedFile) return;
+            const baseName = currentLoadedFile.name.replace(/\.[^/.]+$/, '');
+            saveAs(currentLoadedFile, `${baseName}.zip`);
+        }
+
+        // 로딩 화면 표시/숨김
+        function showLoading(show, text = '') {
+            const loadingArea = document.getElementById('loadingArea');
+            const dropZone = document.getElementById('dropZone');
+            const loadingText = document.getElementById('loadingText');
+
+            if (show) {
+                loadingArea.classList.remove('d-none');
+                dropZone.classList.add('d-none');
+                if (text) loadingText.textContent = text;
+            } else {
+                loadingArea.classList.add('d-none');
+                dropZone.classList.remove('d-none');
+            }
+        }
+
+        // 바이트 단위 포맷
+        function formatBytes(bytes, decimals = 1) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+
+</html>
