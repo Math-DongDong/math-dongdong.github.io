@@ -151,6 +151,12 @@
             position: relative;
             box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
             white-space: nowrap;
+            cursor: grab;
+        }
+
+        .roulette-wrapper.dragging {
+            cursor: grabbing;
+            user-select: none;
         }
 
         .roulette-wrapper::-webkit-scrollbar {
@@ -1283,6 +1289,10 @@
         }
 
         function setupRouletteScroll(wrapper) {
+            let isDragging = false;
+            let startX = 0;
+            let startScrollLeft = 0;
+
             wrapper.addEventListener('scroll', () => {
                 const items = wrapper.querySelectorAll('.coord-item');
                 const scrollLeft = wrapper.scrollLeft;
@@ -1298,6 +1308,37 @@
                     }
                 });
             });
+
+            wrapper.addEventListener('pointerdown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startScrollLeft = wrapper.scrollLeft;
+                wrapper.classList.add('dragging');
+                wrapper.setPointerCapture(e.pointerId);
+            });
+
+            wrapper.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                wrapper.scrollLeft = startScrollLeft - (e.clientX - startX);
+            });
+
+            const stopDragging = (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                wrapper.classList.remove('dragging');
+                if (wrapper.hasPointerCapture(e.pointerId)) {
+                    wrapper.releasePointerCapture(e.pointerId);
+                }
+
+                const itemWidth = 30;
+                wrapper.scrollTo({
+                    left: Math.round(wrapper.scrollLeft / itemWidth) * itemWidth,
+                    behavior: 'smooth'
+                });
+            };
+
+            wrapper.addEventListener('pointerup', stopDragging);
+            wrapper.addEventListener('pointercancel', stopDragging);
         }
 
         function getRouletteValue(wrapper) {
