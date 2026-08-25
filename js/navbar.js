@@ -91,7 +91,8 @@
                 {
                     "title": "학생관리",
                     "items": [
-                        { "name": "학생관리 앱", "path": "pages/automation/student/appsheet.html" }
+                        { "name": "학생관리 앱", "path": "pages/automation/student/appsheet.html" },
+                        { "name": "자리배치 앱", "path": "pages/automation/student/seatingarrangement.html" }
                     ]
                 }
             ]
