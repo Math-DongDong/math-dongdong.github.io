@@ -754,16 +754,19 @@
             return result;
         }
 
+        let adminRoomUnsub = null;
+
         async function loadAdminRooms() {
-            const roomsRef = ref(rtdbRelativeFrequency, 'rooms');
-            onValue(roomsRef, (snapshot) => {
+            try {
+                const snapshot = await get(ref(rtdbRelativeFrequency, 'rooms'));
                 const select = document.getElementById('admin-room-select');
                 const currentValue = select.value;
                 select.innerHTML = '<option value="">방을 선택하세요</option>';
 
                 if (snapshot.exists()) {
-                    snapshot.forEach((childSnap) => {
-                        const code = childSnap.key;
+                    const rooms = snapshot.val();
+                    const sortedCodes = Object.keys(rooms).sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0));
+                    sortedCodes.forEach((code) => {
                         const option = document.createElement('option');
                         option.value = code;
                         option.textContent = `[${code}]`;
@@ -773,7 +776,9 @@
                 if (currentValue && snapshot.child(currentValue).exists()) {
                     select.value = currentValue;
                 }
-            });
+            } catch (e) {
+                console.error("방 목록 로드 오류:", e);
+            }
         }
 
         document.getElementById('btn-create-room').addEventListener('click', async () => {
@@ -783,6 +788,7 @@
                 createdAt: Date.now()
             });
             await customAlert('방 생성', `새로운 방(${code})이 생성되었습니다.`);
+            await loadAdminRooms();
             document.getElementById('admin-room-select').value = code;
             document.getElementById('admin-room-select').dispatchEvent(new Event('change'));
         });
@@ -791,18 +797,25 @@
             if (!currentRoom) return;
             const confirmed = await customConfirm('방 삭제', `${currentRoom} 방을 정말 삭제하시겠습니까?`);
             if (confirmed) {
+                if (adminRoomUnsub) { adminRoomUnsub(); adminRoomUnsub = null; }
                 await remove(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
                 currentRoom = null;
                 document.getElementById('admin-active-room').innerHTML = '';
                 document.getElementById('admin-board-area').style.display = 'none';
+                await loadAdminRooms();
             }
         });
 
         document.getElementById('admin-room-select').addEventListener('change', (e) => {
             const selected = e.target.value;
+            if (adminRoomUnsub) {
+                adminRoomUnsub();
+                adminRoomUnsub = null;
+            }
             if (!selected) {
                 document.getElementById('admin-board-area').style.display = 'none';
                 currentRoom = null;
+                document.getElementById('admin-active-room').innerHTML = '';
                 return;
             }
             currentRoom = selected;
@@ -817,9 +830,13 @@
 
         function listenToAdminRoom() {
             if (!currentRoom || !isTeacher) return;
+            if (adminRoomUnsub) {
+                adminRoomUnsub();
+                adminRoomUnsub = null;
+            }
 
             const roomRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}`);
-            onValue(roomRef, (snapshot) => {
+            adminRoomUnsub = onValue(roomRef, (snapshot) => {
                 if (!snapshot.exists()) return;
 
                 const data = snapshot.val();
