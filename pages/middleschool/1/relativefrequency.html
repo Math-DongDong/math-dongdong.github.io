@@ -37,6 +37,14 @@
             transform: scale(1.1);
         }
 
+        @media (prefers-reduced-motion: reduce) {
+
+            .rps-btn,
+            .post-it {
+                transition: none;
+            }
+        }
+
         /* 포스트잇 CSS */
         .post-it {
             padding: 15px;
@@ -80,6 +88,28 @@
 
         .post-it-5 {
             background-color: #ffb3ba;
+        }
+
+        /* 접속 상태 표시 점 */
+        .status-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .status-online {
+            background-color: #198754;
+        }
+
+        .status-away {
+            background-color: #ffc107;
+        }
+
+        .status-offline {
+            background-color: #adb5bd;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -135,6 +165,7 @@
                             <span class="visually-hidden">Loading...</span>
                         </div>
                         <p class="text-muted small">다른 학생과 매칭되면 자동으로 게임이 시작됩니다.</p>
+                        <p class="text-muted small">화면을 계속 켜 두어야 매칭됩니다.</p>
                         <div class="mt-3">
                             <span class="badge bg-light text-dark fs-6" id="waiting-count">대기 중: 0명</span>
                         </div>
@@ -153,9 +184,10 @@
                     <div class="card shadow-sm border-0 rounded-4 p-4 mb-4 bg-light">
                         <h4 id="game-status-text" class="fw-bold text-primary mb-3">선택해주세요!</h4>
                         <div class="d-flex justify-content-center mb-4" id="rps-btn-container">
-                            <button class="btn btn-outline-dark rps-btn" data-choice="scissors">✌️</button>
-                            <button class="btn btn-outline-dark rps-btn" data-choice="rock">✊</button>
-                            <button class="btn btn-outline-dark rps-btn" data-choice="paper">✋</button>
+                            <button class="btn btn-outline-dark rps-btn" data-choice="scissors"
+                                aria-label="가위">✌️</button>
+                            <button class="btn btn-outline-dark rps-btn" data-choice="rock" aria-label="바위">✊</button>
+                            <button class="btn btn-outline-dark rps-btn" data-choice="paper" aria-label="보">✋</button>
                         </div>
 
                         <div id="computer-choice-area" class="d-none mt-4">
@@ -173,6 +205,11 @@
                             </div>
                             <h3 id="round-result-text" class="fw-bold mt-4"></h3>
                         </div>
+
+                        <!-- 상대가 응답하지 않을 때의 탈출구 -->
+                        <button id="btn-abandon-match" class="btn btn-outline-secondary fw-bold mt-3 d-none">
+                            🔄 상대를 바꿔서 다시 매칭하기
+                        </button>
                     </div>
 
                     <div class="card shadow-sm border-0 rounded-4 p-4">
@@ -182,6 +219,9 @@
                             <div class="col-4 text-danger">패: <span id="score-lose">0</span></div>
                             <div class="col-4 text-primary">총: <span id="score-total">0</span></div>
                         </div>
+                        <p class="text-muted small mb-0 mt-3" id="score-forfeit-note" style="display: none;">
+                            자리를 비워 무효 처리된 경기: <span id="score-forfeit">0</span>회 (승패에 포함되지 않습니다)
+                        </p>
                     </div>
 
                     <div id="feedback-area" class="card shadow-sm border-0 rounded-4 p-4 mt-4 bg-white"
@@ -202,7 +242,8 @@
             <div class="admin-card mb-4">
                 <!-- 대시보드 상단 헤더 (공통 모듈) -->
                 <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js" data-title="가위바위보 대시보드" data-export="false" data-select-id="admin-room-select"></script>
+                <script src="../../../js/dashboard-header.js" data-title="가위바위보 대시보드" data-export="false"
+                    data-select-id="admin-room-select"></script>
 
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <h5 class="fw-bold mb-0">📊 학생 현황</h5>
@@ -216,14 +257,18 @@
                     <table class="table table-hover text-center align-middle mb-0" id="admin-players-table">
                         <thead class="table-light">
                             <tr>
+                                <th>상태</th>
                                 <th>이름</th>
                                 <th>승</th>
                                 <th>패</th>
                                 <th>총 횟수</th>
+                                <th>자리 비움</th>
                             </tr>
                         </thead>
                         <tbody id="admin-players-tbody">
-                            <tr><td colspan="4" class="py-4 text-muted">방을 선택해주세요.</td></tr>
+                            <tr>
+                                <td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -271,11 +316,24 @@
     </main>
 
     <script type="module">
-        import { ref, set, get, update, onValue, remove, serverTimestamp, increment, runTransaction } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import {
+            ref, set, get, update, onValue, remove, serverTimestamp, increment,
+            runTransaction, onDisconnect
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customPrompt, customConfirm
+            renderRoomEntrance, customAlert, customPrompt, customConfirm, escapeHtml, isValidRtdbKey
         } from "../../../js/room-auth.js";
+
+        const db = rtdbRelativeFrequency;
+
+        // =====================================================================
+        // 설정값
+        // =====================================================================
+        const AWAY_GRACE_MS = 15000;      // 화면을 벗어난 뒤 몰수까지 주는 유예 시간
+        const MATCH_TIMEOUT_MS = 30000;   // 이 시간이 지나면 "다시 매칭하기" 버튼 노출
+        const ONLINE_THRESHOLD_MS = 40000; // 중복 접속 판정 기준
+        const HEARTBEAT_MS = 10000;
 
         // =====================================================================
         // 상태 변수
@@ -283,42 +341,98 @@
         let currentRoom = null;
         let currentUser = null;
         let isTeacher = false;
-        let myScore = { wins: 0, draws: 0, losses: 0, total: 0 };
+        let myScore = { wins: 0, losses: 0, total: 0, forfeits: 0 };
+        let serverOffset = 0;
 
         // 매칭 관련
         let waitingUnsub = null;
-        let matchUnsub = null;
+        let matchPtrUnsub = null;
         let currentMatchUnsub = null;
         let currentMatchId = null;
         let currentMatchData = null;
         let heartbeatInterval = null;
         let isPlayer1 = false;
         let opponentName = "";
+        let lastOpponent = null;
         let isResolvingMatch = false;
         let matchResolutionInFlight = false;
+        let isMatching = false;
+
+        // 타이머
+        let awayTimer = null;
+        let countdownTimer = null;
+        let matchTimeoutTimer = null;
+        let returnTimer = null;
 
         const sections = ['landing-section', 'waiting-section', 'student-section', 'admin-section'];
         function showSection(sectionId) {
-            sections.forEach(id => document.getElementById(id).style.display = 'none');
-            document.getElementById(sectionId).style.display = 'block';
+            sections.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            const target = document.getElementById(sectionId);
+            if (target) target.style.display = 'block';
+        }
+
+        function $(id) { return document.getElementById(id); }
+        function serverNow() { return Date.now() + serverOffset; }
+
+        function playerRef(nickname = currentUser) {
+            return ref(db, `rooms/${currentRoom}/players/${nickname}`);
+        }
+        function myWaitRef() {
+            return ref(db, `rooms/${currentRoom}/waiting/${currentUser}`);
+        }
+
+        /** 서버 시각과의 오차를 동기화 (기기 시계가 틀어져 있어도 판정이 정확해짐) */
+        function syncServerOffset() {
+            return new Promise((resolve) => {
+                let done = false;
+                const finish = () => { if (!done) { done = true; resolve(); } };
+                try {
+                    onValue(ref(db, '.info/serverTimeOffset'), (snap) => {
+                        serverOffset = snap.val() || 0;
+                        finish();
+                    }, finish);
+                } catch (e) { finish(); }
+                setTimeout(finish, 1500);
+            });
         }
 
         // =====================================================================
         // 하트비트 및 접속 상태 관리
         // =====================================================================
-        function startHeartbeat() {
+        async function startHeartbeat() {
             if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+            // 브라우저를 그냥 닫거나 네트워크가 끊겨도 서버가 상태를 정리하도록 예약
+            try {
+                await onDisconnect(playerRef()).update({
+                    status: 'offline',
+                    lastHeartbeat: serverTimestamp(),
+                    currentMatch: null
+                });
+            } catch (e) { }
+
             updateHeartbeat();
-            heartbeatInterval = setInterval(updateHeartbeat, 10000);
+            heartbeatInterval = setInterval(updateHeartbeat, HEARTBEAT_MS);
 
             document.removeEventListener('visibilitychange', handleVisibility);
             document.addEventListener('visibilitychange', handleVisibility);
         }
 
+        function stopHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+            document.removeEventListener('visibilitychange', handleVisibility);
+            clearTimeout(awayTimer);
+            awayTimer = null;
+        }
+
         async function updateHeartbeat() {
             if (!currentRoom || !currentUser) return;
             try {
-                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), {
+                await update(playerRef(), {
                     lastHeartbeat: serverTimestamp(),
                     status: document.hidden ? 'away' : 'online'
                 });
@@ -329,88 +443,130 @@
             if (!currentRoom || !currentUser) return;
             const isHidden = document.hidden;
 
-            update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), {
+            update(playerRef(), {
                 status: isHidden ? 'away' : 'online',
                 lastHeartbeat: serverTimestamp()
             }).catch(() => { });
 
-            // 대기방에 위치한 경우 대기방 visible 상태 업데이트
-            if (document.getElementById('waiting-section').style.display === 'block') {
-                update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting/${currentUser}`), {
-                    visible: !isHidden
-                }).catch(() => {});
+            // 대기방에 있는 경우 매칭 대상 여부를 갱신
+            if ($('waiting-section').style.display === 'block') {
+                update(myWaitRef(), { visible: !isHidden }).catch(() => { });
             }
 
-            // 플레이 도중(결과 처리 진입 전) 화면 이탈 시 트랜잭션으로 몰수패 처리
-            if (isHidden && currentMatchId && currentMatchData && currentMatchData.status === 'playing' && !isResolvingMatch) {
-                const winnerId = isPlayer1 ? currentMatchData.p2 : currentMatchData.p1;
-                const mRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`);
-
-                runTransaction(mRef, (match) => {
-                    if (match && match.status === 'playing') {
-                        match.status = 'finished';
-                        match.winner = winnerId;
-                        match.endReason = 'visibility_hidden';
-                        return match;
-                    }
-                    return; // 이미 끝난 경기면 중단
-                }).then(async (result) => {
-                    if (result.committed) {
-                        const myPlayerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`);
-                        await update(myPlayerRef, { losses: increment(1), total: increment(1) });
-
-                        if (winnerId) {
-                            const winnerRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${winnerId}`);
-                            await update(winnerRef, { wins: increment(1), total: increment(1) });
-                        }
-                    }
-                }).catch(e => console.error(e));
+            if (isHidden) {
+                // 즉시 몰수하지 않고 유예 시간을 준다 (화면 절전, 알림 확인 등 오탐 방지)
+                if (currentMatchId && currentMatchData
+                    && currentMatchData.status === 'playing' && !isResolvingMatch) {
+                    clearTimeout(awayTimer);
+                    awayTimer = setTimeout(forfeitByAway, AWAY_GRACE_MS);
+                }
+            } else {
+                clearTimeout(awayTimer);
+                awayTimer = null;
             }
         }
 
-        // =====================================================================
+        /** 유예 시간이 지나도 돌아오지 않으면 경기를 '무효'로 종료 (승패 기록 없음) */
+        async function forfeitByAway() {
+            if (!document.hidden) return;
+            if (!currentRoom || !currentUser || !currentMatchId) return;
+            if (isResolvingMatch || matchResolutionInFlight) return;
+
+            const mRef = ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`);
+            try {
+                const result = await runTransaction(mRef, (match) => {
+                    if (match && match.status === 'playing') {
+                        match.status = 'finished';
+                        match.endReason = 'forfeit';
+                        match.leftBy = currentUser;
+                        return match;
+                    }
+                    return; // 이미 끝난 경기면 중단
+                });
+
+                if (result.committed) {
+                    // 승률 데이터를 오염시키지 않도록 별도 필드에만 기록
+                    await update(playerRef(), { forfeits: increment(1) }).catch(() => { });
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
         // =====================================================================
         // 랜딩 페이지 및 방 입장
         // =====================================================================
         renderRoomEntrance('room-entrance-container', {
             joinBtnText: "방 입장하기",
             onJoin: async (roomCode, nickname) => {
-                const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${roomCode}`));
+                if (!isValidRtdbKey(nickname)) {
+                    return await customAlert('입장 실패', '닉네임에 사용할 수 없는 문자가 들어 있습니다.');
+                }
+
+                await syncServerOffset();
+
+                const roomSnap = await get(ref(db, `rooms/${roomCode}`));
                 if (!roomSnap.exists()) return await customAlert('입장 실패', '존재하지 않는 방입니다.');
 
                 const roomStatus = roomSnap.val().status;
-                const playerRef = ref(rtdbRelativeFrequency, `rooms/${roomCode}/players/${nickname}`);
-                const playerSnap = await get(playerRef);
+                const targetPlayerRef = ref(db, `rooms/${roomCode}/players/${nickname}`);
+                const playerSnap = await get(targetPlayerRef);
 
-                if (roomStatus === 'finished') {
-                    if (!playerSnap.exists()) {
-                        return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
-                    }
+                if (roomStatus === 'finished' && !playerSnap.exists()) {
+                    return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
                 }
 
                 if (playerSnap.exists()) {
-                    myScore = playerSnap.val();
+                    const p = playerSnap.val();
+                    const hb = typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0;
+                    const looksOnline = p.status && p.status !== 'offline'
+                        && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+
+                    if (looksOnline) {
+                        const ok = await customConfirm(
+                            '중복 접속 확인',
+                            `<b>${escapeHtml(nickname)}</b> 이름으로 이미 접속 중인 기기가 있습니다.<br>` +
+                            `같은 이름으로 두 곳에서 접속하면 기록이 두 번 올라갈 수 있어요.<br><br>` +
+                            `연결이 끊겼던 것이라면 그대로 이어서 접속해도 됩니다. 계속할까요?`
+                        );
+                        if (!ok) return;
+                    }
+
+                    myScore = {
+                        wins: p.wins || 0,
+                        losses: p.losses || 0,
+                        total: p.total || 0,
+                        forfeits: p.forfeits || 0
+                    };
                 } else {
-                    myScore = { wins: 0, draws: 0, losses: 0, total: 0 };
-                    await set(playerRef, myScore);
+                    myScore = { wins: 0, losses: 0, total: 0, forfeits: 0 };
+                    await set(targetPlayerRef, {
+                        ...myScore,
+                        status: 'online',
+                        lastHeartbeat: serverTimestamp(),
+                        currentMatch: null
+                    });
                 }
 
                 currentRoom = roomCode;
                 currentUser = nickname;
-                document.getElementById('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
-                document.getElementById('waiting-nickname-display').textContent = nickname;
+                $('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
+                $('waiting-nickname-display').textContent = nickname;
 
-                startHeartbeat();
+                await startHeartbeat();
                 updateStudentScoreUI();
                 listenToRoomStatus();
 
                 if (roomStatus !== 'finished') {
                     enterWaitingRoom();
+                } else {
+                    showFinishedScreen();
                 }
             },
-            onAdminSuccess: () => {
+            onAdminSuccess: async () => {
                 isTeacher = true;
-                document.getElementById('nav-room-info').textContent = '대시보드 (관리자)';
+                await syncServerOffset();
+                $('nav-room-info').textContent = '대시보드 (관리자)';
                 showSection('admin-section');
                 loadAdminRooms();
             }
@@ -419,90 +575,163 @@
         // =====================================================================
         // 학생 화면 & 매칭 시스템
         // =====================================================================
-        const rpsChoices = ['scissors', 'rock', 'paper'];
         const rpsIcons = { 'scissors': '✌️', 'rock': '✊', 'paper': '✋' };
+
+        function clearMatchTimers() {
+            clearTimeout(countdownTimer);
+            clearTimeout(matchTimeoutTimer);
+            clearTimeout(returnTimer);
+            clearTimeout(awayTimer);
+            countdownTimer = matchTimeoutTimer = returnTimer = awayTimer = null;
+        }
+
+        function stopWaiting() {
+            if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
+            if (matchPtrUnsub) { matchPtrUnsub(); matchPtrUnsub = null; }
+            if (currentRoom && currentUser) {
+                const wRef = myWaitRef();
+                onDisconnect(wRef).cancel().catch(() => { });
+                remove(wRef).catch(() => { });
+            }
+        }
 
         async function enterWaitingRoom() {
             if (!currentRoom || !currentUser) return;
 
-            if (currentMatchUnsub) {
-                currentMatchUnsub();
-                currentMatchUnsub = null;
-            }
+            clearMatchTimers();
+            if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
             currentMatchId = null;
             currentMatchData = null;
+            isResolvingMatch = false;
+            matchResolutionInFlight = false;
+            isMatching = false;
+
+            // 방이 이미 종료되었다면 대기방으로 돌아가지 않는다
+            try {
+                const statusSnap = await get(ref(db, `rooms/${currentRoom}/status`));
+                if (statusSnap.exists() && statusSnap.val() === 'finished') {
+                    showFinishedScreen();
+                    return;
+                }
+            } catch (e) { }
 
             try {
-                const playerSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`));
-                if (playerSnap.exists()) {
-                    myScore = playerSnap.val();
+                const snap = await get(playerRef());
+                if (snap.exists()) {
+                    const p = snap.val();
+                    myScore = {
+                        wins: p.wins || 0,
+                        losses: p.losses || 0,
+                        total: p.total || 0,
+                        forfeits: p.forfeits || 0
+                    };
                     updateStudentScoreUI();
                 }
             } catch (e) { }
 
+            // 지난 경기 포인터 정리 (새로고침 시 옛 경기로 되돌아가는 것을 방지)
+            await update(playerRef(), { currentMatch: null }).catch(() => { });
+
             showSection('waiting-section');
-            document.getElementById('waiting-count').textContent = '대기 중...';
+            $('waiting-count').textContent = '대기 중...';
 
-            const myWaitRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting/${currentUser}`);
-            await set(myWaitRef, {
-                ts: serverTimestamp(),
-                visible: !document.hidden
+            await set(myWaitRef(), { ts: serverTimestamp(), visible: !document.hidden });
+            // 브라우저를 닫거나 네트워크가 끊기면 서버가 대기 목록에서 지워준다 (대기실 잠김 방지)
+            onDisconnect(myWaitRef()).remove().catch(() => { });
+
+            // 내 경기 포인터 하나만 구독 (matches 전체 구독 대비 트래픽 대폭 감소)
+            matchPtrUnsub = onValue(ref(db, `rooms/${currentRoom}/players/${currentUser}/currentMatch`), async (snap) => {
+                const matchId = snap.val();
+                if (!matchId || matchId === currentMatchId) return;
+
+                try {
+                    const mSnap = await get(ref(db, `rooms/${currentRoom}/matches/${matchId}`));
+                    if (!mSnap.exists()) return;
+                    const m = mSnap.val();
+                    if (m.status !== 'playing') return;
+                    if (m.p1 !== currentUser && m.p2 !== currentUser) return;
+
+                    stopWaiting();
+                    handleMatchFound(matchId, m);
+                } catch (e) { }
             });
 
-            const matchesRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches`);
-            matchUnsub = onValue(matchesRef, (snap) => {
-                if (!snap.exists()) return;
-                const matches = snap.val();
-                for (const matchId in matches) {
-                    const m = matches[matchId];
-                    if ((m.p1 === currentUser || m.p2 === currentUser) && m.status === 'playing' && matchId !== currentMatchId) {
-                        if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
-                        if (matchUnsub) { matchUnsub(); matchUnsub = null; }
-
-                        remove(myWaitRef);
-                        handleMatchFound(matchId, m);
-                        return;
-                    }
-                }
-            });
-
-            const waitingListRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`);
+            const waitingListRef = ref(db, `rooms/${currentRoom}/waiting`);
             waitingUnsub = onValue(waitingListRef, async (snap) => {
                 if (!snap.exists()) return;
                 const waiters = snap.val();
                 if (!waiters[currentUser]) return;
 
-                const allWaitersCount = Object.keys(waiters).length;
-                document.getElementById('waiting-count').textContent = `대기 중: ${allWaitersCount}명`;
+                $('waiting-count').textContent = `대기 중: ${Object.keys(waiters).length}명`;
+
+                if (isMatching) return;
 
                 // 화면을 보고 있는 사람만 필터링 후 타임스탬프 순 정렬
                 const visibleWaiters = Object.keys(waiters).filter(k => waiters[k].visible === true);
                 visibleWaiters.sort((a, b) => (waiters[a].ts || 0) - (waiters[b].ts || 0));
 
-                if (visibleWaiters.length >= 2 && visibleWaiters[0] === currentUser) {
-                    const opponent = visibleWaiters[1];
+                if (visibleWaiters.length < 2 || visibleWaiters[0] !== currentUser) return;
 
+                // 같은 상대와 계속 만나지 않도록 후보 중에서 무작위 선택
+                let candidates = visibleWaiters.slice(1);
+                if (lastOpponent && candidates.length > 1) {
+                    const filtered = candidates.filter(c => c !== lastOpponent);
+                    if (filtered.length) candidates = filtered;
+                }
+                const opponent = candidates[Math.floor(Math.random() * candidates.length)];
+                if (!opponent) return;
+
+                isMatching = true;
+                const lockRef = ref(db, `rooms/${currentRoom}/matchLock`);
+
+                try {
+                    // 시계 오차로 두 명이 동시에 '내가 0번'이라고 착각하는 상황 방지
+                    const lock = await runTransaction(lockRef, (cur) => {
+                        const now = serverNow();
+                        if (cur && cur.until && cur.until > now) return; // 다른 사람이 매칭 중
+                        return { by: currentUser, until: now + 3000 };
+                    });
+                    if (!lock.committed) { isMatching = false; return; }
+
+                    // 잠금을 얻는 사이 상대가 빠졌을 수 있으므로 재확인
+                    const fresh = await get(waitingListRef);
+                    const w = fresh.val() || {};
+                    if (!w[currentUser] || !w[opponent]) {
+                        await set(lockRef, null).catch(() => { });
+                        isMatching = false;
+                        return;
+                    }
+
+                    const matchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                     const updates = {};
                     updates[`waiting/${currentUser}`] = null;
                     updates[`waiting/${opponent}`] = null;
-
-                    const matchId = `${currentUser}_${opponent}_${Date.now()}`;
                     updates[`matches/${matchId}`] = {
                         p1: currentUser,
                         p2: opponent,
                         p1_choice: "",
                         p2_choice: "",
-                        status: 'playing'
+                        status: 'playing',
+                        createdAt: serverTimestamp()
                     };
+                    updates[`players/${currentUser}/currentMatch`] = matchId;
+                    updates[`players/${opponent}/currentMatch`] = matchId;
+                    updates[`matchLock`] = null;
 
-                    try {
-                        if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
-                        await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), updates);
-                    } catch (e) {
-                        enterWaitingRoom();
-                    }
+                    await update(ref(db, `rooms/${currentRoom}`), updates);
+                } catch (e) {
+                    await set(lockRef, null).catch(() => { });
+                    isMatching = false;
                 }
             });
+        }
+
+        function resetChoiceUI() {
+            document.querySelectorAll('.rps-btn').forEach(btn => {
+                btn.disabled = false;
+                btn.classList.remove('active');
+            });
+            $('computer-choice-area').classList.add('d-none');
         }
 
         function handleMatchFound(matchId, m) {
@@ -510,79 +739,116 @@
             currentMatchData = m;
             isPlayer1 = (m.p1 === currentUser);
             opponentName = isPlayer1 ? m.p2 : m.p1;
+            lastOpponent = opponentName;
             isResolvingMatch = false;
             matchResolutionInFlight = false;
+            clearMatchTimers();
 
-            document.getElementById('opponent-name').textContent = opponentName;
-            document.getElementById('computer-choice-area').classList.add('d-none');
-            document.getElementById('game-status-text').textContent = '선택해주세요!';
-
-            document.querySelectorAll('.rps-btn').forEach(btn => {
-                btn.disabled = false;
-                btn.classList.remove('active');
-            });
+            $('opponent-name').textContent = opponentName;
+            $('student-title').innerHTML =
+                `가위바위보! <br><small class="text-muted fs-5">vs <span id="opponent-name">${escapeHtml(opponentName)}</span></small>`;
+            $('rps-btn-container').style.display = '';
+            $('game-status-text').textContent = '선택해주세요!';
+            $('btn-abandon-match').classList.add('d-none');
+            resetChoiceUI();
 
             showSection('student-section');
 
-            const currentMatchRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${matchId}`);
-            currentMatchUnsub = onValue(currentMatchRef, (snap) => {
-                if (!snap.exists()) return;
+            // 상대가 끝까지 반응하지 않는 경우를 위한 탈출구
+            matchTimeoutTimer = setTimeout(() => {
+                $('btn-abandon-match').classList.remove('d-none');
+            }, MATCH_TIMEOUT_MS);
+
+            const matchRef = ref(db, `rooms/${currentRoom}/matches/${matchId}`);
+            currentMatchUnsub = onValue(matchRef, (snap) => {
+                if (!snap.exists()) {
+                    returnToWaiting('안내', '경기 정보가 사라져 대기실로 돌아갑니다.');
+                    return;
+                }
                 const match = snap.val();
                 currentMatchData = match;
 
                 if (match.status === 'finished') {
-                    if (match.endReason === 'visibility_hidden') {
-                        if (currentMatchUnsub) {
-                            currentMatchUnsub();
-                            currentMatchUnsub = null;
-                        }
-                        if (match.winner === currentUser) {
-                            customAlert('🎉 승리!', '상대방이 다른 화면으로 이동하여 몰수승 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
-                                enterWaitingRoom();
-                            });
-                        } else if (match.winner && match.winner !== currentUser) {
-                            customAlert('😢 패배', '게임 진행 중 다른 화면으로 이동하여 몰수패 처리되었습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.').then(() => {
-                                enterWaitingRoom();
-                            });
-                        }
-                        return;
+                    if (match.endReason === 'forfeit') {
+                        if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
+                        clearMatchTimers();
+                        const msg = (match.leftBy === currentUser)
+                            ? '자리를 비운 사이 경기가 무효 처리되었습니다.<br>승패에는 반영되지 않습니다.'
+                            : '상대방이 자리를 비워 경기가 무효 처리되었습니다.<br>승패에는 반영되지 않습니다.';
+                        customAlert('경기 무효', msg).then(() => enterWaitingRoom());
+                    } else if (match.endReason === 'abandoned') {
+                        if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
+                        clearMatchTimers();
+                        const msg = (match.leftBy === currentUser)
+                            ? '경기를 취소하고 대기실로 돌아갑니다.'
+                            : '상대방이 경기를 취소했습니다.<br>대기실로 돌아가 다음 매칭을 준비합니다.';
+                        customAlert('매칭 취소', msg).then(() => enterWaitingRoom());
                     }
+                    return;
                 }
 
                 if (match.status === 'playing') {
                     if (match.p1_choice && match.p2_choice) {
                         if (!isResolvingMatch && !matchResolutionInFlight) {
                             isResolvingMatch = true;
+                            $('btn-abandon-match').classList.add('d-none');
+                            clearTimeout(matchTimeoutTimer);
                             startCountdownAndResolve(match);
                         }
-                    } else if (match.p1_choice === "" && match.p2_choice === "") {
+                    } else if (!match.p1_choice && !match.p2_choice) {
                         isResolvingMatch = false;
                         matchResolutionInFlight = false;
-                        document.querySelectorAll('.rps-btn').forEach(btn => {
-                            btn.disabled = false;
-                            btn.classList.remove('active');
-                        });
-                        document.getElementById('computer-choice-area').classList.add('d-none');
+                        resetChoiceUI();
                     } else if ((isPlayer1 && match.p2_choice) || (!isPlayer1 && match.p1_choice)) {
-                        document.getElementById('game-status-text').textContent = '상대방이 선택을 완료했습니다!';
+                        $('game-status-text').textContent = '상대방이 선택을 완료했습니다!';
                     }
                 }
             });
         }
 
-        function startCountdownAndResolve(match) {
-            let count = 3;
-            document.getElementById('game-status-text').innerHTML = `결과 확인까지 <span class="text-danger fs-3">${count}</span>초...`;
+        function returnToWaiting(title, message) {
+            if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
+            clearMatchTimers();
+            customAlert(title, message).then(() => enterWaitingRoom());
+        }
 
-            const countInterval = setInterval(() => {
-                count--;
-                if (count > 0) {
-                    document.getElementById('game-status-text').innerHTML = `결과 확인까지 <span class="text-danger fs-3">${count}</span>초...`;
+        /**
+         * 남은 시간을 매 틱마다 실제 시각으로 다시 계산한다.
+         * (백그라운드 탭에서 setInterval이 느려져도 결과 시점이 어긋나지 않음)
+         */
+        function startCountdownAndResolve(match) {
+            clearTimeout(countdownTimer);
+            const endAt = Date.now() + 3000;
+
+            const tick = () => {
+                const remain = Math.ceil((endAt - Date.now()) / 1000);
+                if (remain > 0) {
+                    $('game-status-text').innerHTML =
+                        `결과 확인까지 <span class="text-danger fs-3">${remain}</span>초...`;
+                    countdownTimer = setTimeout(tick, 200);
                 } else {
-                    clearInterval(countInterval);
                     resolveMatch(match);
                 }
-            }, 1000);
+            };
+            tick();
+        }
+
+        /**
+         * 승패 기록을 정확히 한 번만 반영한다.
+         * matches/{id}/counted/{닉네임} 노드를 트랜잭션으로 선점한 사람만 점수를 올린다.
+         * → 새로고침하거나 리스너가 두 번 울려도 중복 집계되지 않음
+         */
+        async function commitResultOnce(outcome) {
+            const countedRef = ref(db, `rooms/${currentRoom}/matches/${currentMatchId}/counted/${currentUser}`);
+            const res = await runTransaction(countedRef, (cur) => (cur ? undefined : outcome));
+            if (!res.committed) return false;
+
+            const updates = { total: increment(1) };
+            if (outcome === 'win') updates.wins = increment(1);
+            else updates.losses = increment(1);
+
+            await update(playerRef(), updates);
+            return true;
         }
 
         async function resolveMatch(match) {
@@ -601,62 +867,89 @@
                 return;
             }
 
+            $('my-choice-icon').textContent = rpsIcons[myChoice] || '';
+            $('computer-choice-icon').textContent = rpsIcons[opChoice] || '';
+            $('computer-choice-area').classList.remove('d-none');
+
+            // ---------- 무승부 ----------
             if (myChoice === opChoice) {
-                document.getElementById('game-status-text').textContent = '무승부! 다시 선택해주세요.';
-                if (isPlayer1) {
-                    await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { p1_choice: "", p2_choice: "" });
-                }
-                matchResolutionInFlight = false;
-                isResolvingMatch = false;
+                $('round-result-text').textContent = '무승부!';
+                $('game-status-text').textContent = '무승부! 잠시 후 다시 선택합니다.';
+
+                // 어느 쪽이 먼저 도달하든 한 번만 초기화되도록 트랜잭션 사용
+                // (기존에는 p1만 초기화해서 p1이 이탈하면 p2가 멈췄음)
+                setTimeout(async () => {
+                    try {
+                        await runTransaction(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), (m) => {
+                            if (m && m.status === 'playing'
+                                && m.p1_choice && m.p2_choice && m.p1_choice === m.p2_choice) {
+                                m.p1_choice = "";
+                                m.p2_choice = "";
+                                return m;
+                            }
+                            return;
+                        });
+                    } catch (e) { }
+                    matchResolutionInFlight = false;
+                    isResolvingMatch = false;
+                }, 1500);
                 return;
             }
 
+            // ---------- 승패 결정 ----------
             if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
+            clearTimeout(matchTimeoutTimer);
+            $('btn-abandon-match').classList.add('d-none');
 
-            let resultText = '';
-            const scoreUpdates = { total: increment(1) };
-
-            if (
+            const isWin =
                 (myChoice === 'scissors' && opChoice === 'paper') ||
                 (myChoice === 'rock' && opChoice === 'scissors') ||
-                (myChoice === 'paper' && opChoice === 'rock')
-            ) {
-                resultText = '승리! 🎉';
-                scoreUpdates.wins = increment(1);
-            } else {
-                resultText = '패배... 😢';
-                scoreUpdates.losses = increment(1);
+                (myChoice === 'paper' && opChoice === 'rock');
+
+            $('round-result-text').textContent = isWin ? '승리! 🎉' : '패배... 😢';
+            $('game-status-text').textContent = '결과!';
+
+            try {
+                await commitResultOnce(isWin ? 'win' : 'lose');
+            } catch (e) {
+                console.error('점수 반영 실패:', e);
             }
 
-            document.getElementById('my-choice-icon').textContent = rpsIcons[myChoice];
-            document.getElementById('computer-choice-icon').textContent = rpsIcons[opChoice];
-            document.getElementById('round-result-text').textContent = resultText;
-            document.getElementById('computer-choice-area').classList.remove('d-none');
-            document.getElementById('game-status-text').textContent = '결과!';
-
-            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`), scoreUpdates);
-
-            const updatedSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/players/${currentUser}`));
-            if (updatedSnap.exists()) {
-                myScore = updatedSnap.val();
-                updateStudentScoreUI();
-            }
+            try {
+                const snap = await get(playerRef());
+                if (snap.exists()) {
+                    const p = snap.val();
+                    myScore = {
+                        wins: p.wins || 0,
+                        losses: p.losses || 0,
+                        total: p.total || 0,
+                        forfeits: p.forfeits || 0
+                    };
+                    updateStudentScoreUI();
+                }
+            } catch (e) { }
 
             if (isPlayer1) {
-                update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' }).catch(() => { });
+                update(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' })
+                    .catch(() => { });
             }
-            
-            // 로컬 플래그 처리로 handleVisibility 이중 카운트 완벽 차단
-            if (currentMatchData) currentMatchData.status = 'finished';
 
-            setTimeout(() => {
-                get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/status`)).then(snap => {
+            // 화면 이탈 감지가 이 경기를 다시 몰수 처리하지 않도록 로컬 상태도 갱신
+            if (currentMatchData) currentMatchData.status = 'finished';
+            clearTimeout(awayTimer);
+            awayTimer = null;
+
+            returnTimer = setTimeout(async () => {
+                try {
+                    const snap = await get(ref(db, `rooms/${currentRoom}/status`));
                     if (snap.exists() && snap.val() === 'finished') {
-                        document.getElementById('game-status-text').textContent = '선생님이 게임을 종료했습니다!';
+                        showFinishedScreen();
                     } else {
                         enterWaitingRoom();
                     }
-                });
+                } catch (e) {
+                    enterWaitingRoom();
+                }
             }, 3000);
         }
 
@@ -664,69 +957,97 @@
             btn.addEventListener('click', async () => {
                 const choice = btn.getAttribute('data-choice');
                 if (!currentRoom || !currentUser || !currentMatchId || !choice) return;
+                if (btn.disabled) return;
 
                 document.querySelectorAll('.rps-btn').forEach(b => b.disabled = true);
                 btn.classList.add('active');
-
-                document.getElementById('game-status-text').textContent = '상대방 기다리는 중...';
+                $('game-status-text').textContent = '상대방 기다리는 중...';
 
                 const updateKey = isPlayer1 ? 'p1_choice' : 'p2_choice';
-                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/matches/${currentMatchId}`), { [updateKey]: choice });
+                try {
+                    await update(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), { [updateKey]: choice });
+                } catch (e) {
+                    resetChoiceUI();
+                    $('game-status-text').textContent = '전송에 실패했어요. 다시 선택해주세요.';
+                }
             });
         });
 
+        // 상대가 반응하지 않을 때 학생이 스스로 빠져나오는 버튼
+        $('btn-abandon-match').addEventListener('click', async () => {
+            if (!currentMatchId || !currentRoom) return;
+            const ok = await customConfirm('매칭 취소',
+                '이 경기를 취소하고 다른 상대를 찾을까요?<br>승패는 기록되지 않습니다.');
+            if (!ok) return;
+
+            try {
+                await runTransaction(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), (m) => {
+                    if (m && m.status === 'playing') {
+                        m.status = 'finished';
+                        m.endReason = 'abandoned';
+                        m.leftBy = currentUser;
+                        return m;
+                    }
+                    return;
+                });
+            } catch (e) { }
+        });
+
         function updateStudentScoreUI() {
-            document.getElementById('score-win').textContent = myScore.wins || 0;
-            document.getElementById('score-lose').textContent = myScore.losses || 0;
-            document.getElementById('score-total').textContent = myScore.total || 0;
+            $('score-win').textContent = myScore.wins || 0;
+            $('score-lose').textContent = myScore.losses || 0;
+            $('score-total').textContent = myScore.total || 0;
+            $('score-forfeit').textContent = myScore.forfeits || 0;
+            $('score-forfeit-note').style.display = (myScore.forfeits > 0) ? 'block' : 'none';
+        }
+
+        function showFinishedScreen() {
+            stopWaiting();
+            if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
+            clearMatchTimers();
+            stopHeartbeat();
+
+            showSection('student-section');
+            $('student-title').innerHTML = '게임 종료';
+            $('rps-btn-container').style.display = 'none';
+            $('btn-abandon-match').classList.add('d-none');
+            $('computer-choice-area').classList.add('d-none');
+            $('game-status-text').textContent = '선생님이 가위바위보를 종료했습니다.';
+            $('waiting-count').textContent = '게임 종료됨';
         }
 
         function listenToRoomStatus() {
             if (!currentRoom || isTeacher) return;
-            const statusRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/status`);
-            onValue(statusRef, (snapshot) => {
+
+            onValue(ref(db, `rooms/${currentRoom}/status`), (snapshot) => {
                 if (!snapshot.exists()) {
-                    alert('방이 삭제되어 첫 화면으로 이동합니다.');
-                    location.reload();
+                    stopHeartbeat();
+                    customAlert('안내', '방이 삭제되어 첫 화면으로 이동합니다.').then(() => location.reload());
                     return;
                 }
-
                 if (snapshot.val() === 'finished') {
-                    if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
-                    if (matchUnsub) { matchUnsub(); matchUnsub = null; }
-                    if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
-
-                    document.getElementById('waiting-count').textContent = '게임 종료됨';
-                    document.getElementById('rps-btn-container').style.display = 'none';
-
-                    showSection('student-section');
-                    document.getElementById('student-title').innerHTML = '게임 종료';
-                    document.getElementById('computer-choice-area').classList.add('d-none');
-                    document.getElementById('game-status-text').textContent = '선생님이 가위바위보를 종료했습니다.';
+                    showFinishedScreen();
                 }
             });
 
-            const drawRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/drawComplete`);
-            onValue(drawRef, (snapshot) => {
+            onValue(ref(db, `rooms/${currentRoom}/drawComplete`), (snapshot) => {
                 if (snapshot.exists() && snapshot.val() === true) {
-                    document.getElementById('feedback-area').style.display = 'block';
-                    
-                    const myFeedbackRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbacks/${currentUser}`);
-                    get(myFeedbackRef).then((snap) => {
+                    $('feedback-area').style.display = 'block';
+                    get(ref(db, `rooms/${currentRoom}/feedbacks/${currentUser}`)).then((snap) => {
                         if (snap.exists()) {
-                            document.getElementById('feedback-text').value = snap.val().text;
-                            document.getElementById('btn-submit-feedback').textContent = "의견 수정하기";
+                            $('feedback-text').value = snap.val().text;
+                            const btn = $('btn-submit-feedback');
+                            if (!btn.disabled) btn.textContent = "의견 수정하기";
                         }
                     });
                 }
             });
 
             // 학생용 의견 입력란 잠금(비활성화) 실시간 감시
-            const lockRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbackLocked`);
-            onValue(lockRef, (snapshot) => {
+            onValue(ref(db, `rooms/${currentRoom}/feedbackLocked`), (snapshot) => {
                 const isLocked = snapshot.exists() && snapshot.val() === true;
-                const textarea = document.getElementById('feedback-text');
-                const submitBtn = document.getElementById('btn-submit-feedback');
+                const textarea = $('feedback-text');
+                const submitBtn = $('btn-submit-feedback');
                 if (isLocked) {
                     textarea.disabled = true;
                     submitBtn.disabled = true;
@@ -743,141 +1064,217 @@
             });
         }
 
-        document.getElementById('btn-submit-feedback').addEventListener('click', async () => {
-            const lockSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbackLocked`));
+        $('btn-submit-feedback').addEventListener('click', async () => {
+            const btn = $('btn-submit-feedback');
+            if (btn.disabled) return;
+
+            const lockSnap = await get(ref(db, `rooms/${currentRoom}/feedbackLocked`));
             if (lockSnap.exists() && lockSnap.val() === true) {
                 return await customAlert("마감 안내", "선생님이 의견 입력을 마감하여 더 이상 제출하거나 수정할 수 없습니다.");
             }
 
-            const text = document.getElementById('feedback-text').value.trim();
+            const text = $('feedback-text').value.trim();
             if (!text) return await customAlert("입력 오류", "내용을 입력해주세요.");
+            if (text.length > 500) return await customAlert("입력 오류", "500자 이내로 작성해주세요.");
 
-            await set(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbacks/${currentUser}`), {
-                text: text,
-                timestamp: Date.now()
-            });
-            await customAlert("제출 완료", "성공적으로 제출/수정 되었습니다!");
-            document.getElementById('btn-submit-feedback').textContent = "의견 수정하기";
+            btn.disabled = true;
+            try {
+                await set(ref(db, `rooms/${currentRoom}/feedbacks/${currentUser}`), {
+                    text: text,
+                    timestamp: Date.now()
+                });
+                await customAlert("제출 완료", "성공적으로 제출/수정 되었습니다!");
+                btn.textContent = "의견 수정하기";
+            } catch (e) {
+                await customAlert("오류", "제출 중 문제가 발생했습니다. 다시 시도해주세요.");
+            } finally {
+                btn.disabled = false;
+            }
         });
 
         // =====================================================================
         // 관리자 화면
         // =====================================================================
-        function generateRoomCode() {
-            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            let result = '';
-            for (let i = 0; i < 4; i++) {
-                result += characters.charAt(Math.floor(Math.random() * characters.length));
+
+        /** 헷갈리는 문자(0/O, 1/I)를 제외한 방 코드 생성 + 중복 확인 */
+        async function generateUniqueRoomCode() {
+            const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            for (let attempt = 0; attempt < 20; attempt++) {
+                let code = '';
+                for (let i = 0; i < 4; i++) {
+                    code += characters.charAt(Math.floor(Math.random() * characters.length));
+                }
+                const snap = await get(ref(db, `rooms/${code}`));
+                if (!snap.exists()) return code;
             }
-            return result;
+            return null;
         }
 
         let adminRoomUnsub = null;
+        let allPlayersData = [];
+        let lastDrawSignature = null;
 
         async function loadAdminRooms() {
+            const select = $('admin-room-select');
+            if (!select) return;
             try {
-                const snapshot = await get(ref(rtdbRelativeFrequency, 'rooms'));
-                const select = document.getElementById('admin-room-select');
+                const snapshot = await get(ref(db, 'rooms'));
                 const currentValue = select.value;
                 select.innerHTML = '<option value="">방을 선택하세요</option>';
 
                 if (snapshot.exists()) {
                     const rooms = snapshot.val();
-                    const sortedCodes = Object.keys(rooms).sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0));
+                    const sortedCodes = Object.keys(rooms)
+                        .sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0));
                     sortedCodes.forEach((code) => {
                         const option = document.createElement('option');
                         option.value = code;
                         option.textContent = code;
                         select.appendChild(option);
                     });
-                }
-                if (currentValue && snapshot.child(currentValue).exists()) {
-                    select.value = currentValue;
+                    if (currentValue && rooms[currentValue]) select.value = currentValue;
                 }
             } catch (e) {
                 console.error("방 목록 로드 오류:", e);
             }
         }
 
-        document.getElementById('btn-create-room').addEventListener('click', async () => {
-            const code = generateRoomCode();
-            await set(ref(rtdbRelativeFrequency, `rooms/${code}`), {
-                status: 'playing',
-                createdAt: Date.now()
-            });
+        function resetAdminPanels() {
+            $('admin-players-tbody').innerHTML =
+                '<tr><td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+            $('btn-end-game').disabled = true;
+            $('btn-draw-10').disabled = true;
+            $('draw-result-area').style.display = 'none';
+            $('admin-feedbacks-area').style.display = 'none';
+            lastDrawSignature = null;
+        }
+
+        // dashboard-header.js가 삽입하는 요소들이 없을 수도 있으므로 방어적으로 접근
+        $('btn-create-room')?.addEventListener('click', async () => {
+            const code = await generateUniqueRoomCode();
+            if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
+
+            await set(ref(db, `rooms/${code}`), { status: 'playing', createdAt: Date.now() });
             await customAlert('방 생성', `새로운 방(${code})이 생성되었습니다.`);
             await loadAdminRooms();
-            document.getElementById('admin-room-select').value = code;
-            document.getElementById('admin-room-select').dispatchEvent(new Event('change'));
+            const select = $('admin-room-select');
+            if (select) {
+                select.value = code;
+                select.dispatchEvent(new Event('change'));
+            }
         });
 
-        document.getElementById('btn-delete-room').addEventListener('click', async () => {
+        $('btn-delete-room')?.addEventListener('click', async () => {
             if (!currentRoom) return await customAlert("알림", "삭제할 방을 선택하세요.");
-            const confirmed = await customConfirm('방 삭제', `방 [${currentRoom}] 데이터를 모두 삭제하시겠습니까?`);
-            if (confirmed) {
-                if (adminRoomUnsub) { adminRoomUnsub(); adminRoomUnsub = null; }
-                await remove(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
-                currentRoom = null;
-                document.getElementById('admin-players-tbody').innerHTML = '<tr><td colspan="4" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-                document.getElementById('btn-end-game').disabled = true;
-                document.getElementById('btn-draw-10').disabled = true;
-                document.getElementById('draw-result-area').style.display = 'none';
-                document.getElementById('admin-feedbacks-area').style.display = 'none';
-                await loadAdminRooms();
-                await customAlert("완료", "방이 삭제되었습니다.");
+
+            const roomToDelete = currentRoom;
+            const confirmed = await customConfirm('방 삭제',
+                `방 <b>${escapeHtml(roomToDelete)}</b> 의 학생 기록과 의견이 <b>모두 삭제</b>됩니다.<br>` +
+                `되돌릴 수 없습니다. 계속할까요?`);
+            if (!confirmed) return;
+
+            const typed = await customPrompt('삭제 확인',
+                `삭제하려면 방 코드 <b>${escapeHtml(roomToDelete)}</b> 를 입력하세요.`);
+            if (typed === null) return;
+            if (String(typed).trim().toUpperCase() !== roomToDelete.toUpperCase()) {
+                return await customAlert('취소됨', '방 코드가 일치하지 않아 삭제하지 않았습니다.');
             }
+
+            if (adminRoomUnsub) { adminRoomUnsub(); adminRoomUnsub = null; }
+            await remove(ref(db, `rooms/${roomToDelete}`));
+            currentRoom = null;
+            resetAdminPanels();
+            await loadAdminRooms();
+            await customAlert("완료", "방이 삭제되었습니다.");
         });
 
-        document.getElementById('admin-room-select').addEventListener('change', (e) => {
+        $('admin-room-select')?.addEventListener('change', (e) => {
             const selected = e.target.value;
-            if (adminRoomUnsub) {
-                adminRoomUnsub();
-                adminRoomUnsub = null;
-            }
+            if (adminRoomUnsub) { adminRoomUnsub(); adminRoomUnsub = null; }
+
             if (!selected) {
-                document.getElementById('admin-players-tbody').innerHTML = '<tr><td colspan="4" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-                document.getElementById('btn-end-game').disabled = true;
-                document.getElementById('btn-draw-10').disabled = true;
-                document.getElementById('draw-result-area').style.display = 'none';
-                document.getElementById('admin-feedbacks-area').style.display = 'none';
                 currentRoom = null;
+                resetAdminPanels();
                 return;
             }
             currentRoom = selected;
-            document.getElementById('draw-result-area').style.display = 'none';
-
+            lastDrawSignature = null;
+            $('draw-result-area').style.display = 'none';
             listenToAdminRoom();
         });
 
-        let allPlayersData = [];
+        function statusBadge(player) {
+            const hb = typeof player.lastHeartbeat === 'number' ? player.lastHeartbeat : 0;
+            const fresh = (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+            if (!fresh || player.status === 'offline') {
+                return '<span class="status-dot status-offline"></span><span class="text-muted small">종료</span>';
+            }
+            if (player.status === 'away') {
+                return '<span class="status-dot status-away"></span><span class="text-warning small">자리비움</span>';
+            }
+            return '<span class="status-dot status-online"></span><span class="text-success small">접속중</span>';
+        }
+
+        function renderDrawResult(drawResult) {
+            if (!drawResult || !Array.isArray(drawResult.players)) {
+                $('draw-result-area').style.display = 'none';
+                return;
+            }
+
+            const signature = JSON.stringify(drawResult);
+            if (signature === lastDrawSignature) return;
+            lastDrawSignature = signature;
+
+            const revealed = drawResult.revealed === true;
+            const thWinrate = $('th-winrate');
+            thWinrate.innerHTML = revealed
+                ? '승률'
+                : '<button class="btn btn-sm btn-outline-dark fw-bold" id="btn-reveal-winrate">??</button>';
+
+            const tbody = $('draw-result-tbody');
+            tbody.innerHTML = '';
+            drawResult.players.forEach(p => {
+                const total = p.total || 0;
+                const wins = p.wins || 0;
+                const rate = total === 0 ? '기록 없음' : (wins / total).toFixed(2);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="fw-bold">${escapeHtml(p.nickname)}</td>
+                    <td class="text-success">${wins}</td>
+                    <td class="text-danger">${p.losses || 0}</td>
+                    <td class="fw-bold text-primary">${total}</td>
+                    <td class="fw-bold ${total === 0 ? 'text-muted' : 'text-dark'}">${revealed ? rate : ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            $('draw-result-area').style.display = 'block';
+        }
 
         function listenToAdminRoom() {
             if (!currentRoom || !isTeacher) return;
-            if (adminRoomUnsub) {
-                adminRoomUnsub();
-                adminRoomUnsub = null;
-            }
+            if (adminRoomUnsub) { adminRoomUnsub(); adminRoomUnsub = null; }
 
-            const roomRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}`);
-            adminRoomUnsub = onValue(roomRef, (snapshot) => {
+            adminRoomUnsub = onValue(ref(db, `rooms/${currentRoom}`), (snapshot) => {
                 if (!snapshot.exists()) return;
-
                 const data = snapshot.val();
+
+                const endBtn = $('btn-end-game');
+                const drawBtn = $('btn-draw-10');
                 if (data.status === 'finished') {
-                    document.getElementById('btn-end-game').disabled = true;
-                    document.getElementById('btn-end-game').textContent = '종료됨';
-                    document.getElementById('btn-draw-10').disabled = false;
+                    endBtn.disabled = true;
+                    endBtn.textContent = '종료됨';
+                    drawBtn.disabled = false;
                 } else {
-                    document.getElementById('btn-end-game').disabled = false;
-                    document.getElementById('btn-end-game').textContent = '가위바위보 종료';
-                    document.getElementById('btn-draw-10').disabled = true;
+                    endBtn.disabled = false;
+                    endBtn.textContent = '가위바위보 종료';
+                    drawBtn.disabled = true;
                 }
 
                 // 의견 입력란 잠금 버튼 상태 업데이트
-                const isLocked = data.feedbackLocked === true;
-                const lockBtn = document.getElementById('btn-toggle-feedback-lock');
+                const lockBtn = $('btn-toggle-feedback-lock');
                 if (lockBtn) {
-                    if (isLocked) {
+                    if (data.feedbackLocked === true) {
                         lockBtn.className = 'btn btn-sm btn-success fw-bold';
                         lockBtn.innerHTML = '🔓 입력란 활성화하기';
                     } else {
@@ -886,92 +1283,114 @@
                     }
                 }
 
-                const tbody = document.getElementById('admin-players-tbody');
+                // ---------- 학생 현황 ----------
+                const tbody = $('admin-players-tbody');
                 tbody.innerHTML = '';
                 allPlayersData = [];
 
                 if (data.players && Object.keys(data.players).length > 0) {
-                    Object.keys(data.players).forEach(nickname => {
-                        const score = data.players[nickname];
-                        allPlayersData.push({ nickname, ...score });
+                    Object.keys(data.players).sort().forEach(nickname => {
+                        const score = data.players[nickname] || {};
+                        allPlayersData.push({
+                            nickname,
+                            wins: score.wins || 0,
+                            losses: score.losses || 0,
+                            total: score.total || 0,
+                            forfeits: score.forfeits || 0
+                        });
 
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td class="fw-bold">${nickname}</td>
+                            <td>${statusBadge(score)}</td>
+                            <td class="fw-bold">${escapeHtml(nickname)}</td>
                             <td class="text-success fw-bold">${score.wins || 0}</td>
                             <td class="text-danger fw-bold">${score.losses || 0}</td>
                             <td class="fw-bold text-primary">${score.total || 0}</td>
+                            <td class="text-muted">${score.forfeits || 0}</td>
                         `;
                         tbody.appendChild(tr);
                     });
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
                 }
 
-                const fbContainer = document.getElementById('feedbacks-container');
+                // ---------- 뽑기 결과 (새로고침해도 유지) ----------
+                renderDrawResult(data.drawResult);
+
+                // ---------- 학생 의견 ----------
+                const fbContainer = $('feedbacks-container');
                 fbContainer.innerHTML = '';
                 if (data.drawComplete) {
-                    document.getElementById('admin-feedbacks-area').style.display = 'block';
+                    $('admin-feedbacks-area').style.display = 'block';
                     if (data.feedbacks) {
                         const colors = ['post-it-1', 'post-it-2', 'post-it-3', 'post-it-4', 'post-it-5'];
                         Object.keys(data.feedbacks).forEach(nickname => {
-                            const fb = data.feedbacks[nickname];
-                            
-                            const charSum = nickname.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+                            const fb = data.feedbacks[nickname] || {};
+                            const charSum = nickname.split('')
+                                .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
                             const colorClass = colors[charSum % colors.length];
-                            
+
                             const col = document.createElement('div');
                             col.className = 'col-md-4 col-sm-6';
+                            // 학생이 입력한 값은 반드시 이스케이프 후 표시
                             col.innerHTML = `
                                 <div class="post-it ${colorClass} text-dark">
-                                    <div class="post-it-author">👤 ${nickname}</div>
-                                    <div>${fb.text.replace(/\n/g, '<br>')}</div>
+                                    <div class="post-it-author">👤 ${escapeHtml(nickname)}</div>
+                                    <div>${escapeHtml(fb.text || '').replace(/\n/g, '<br>')}</div>
                                 </div>
                             `;
                             fbContainer.appendChild(col);
                         });
                     }
                 } else {
-                    document.getElementById('admin-feedbacks-area').style.display = 'none';
+                    $('admin-feedbacks-area').style.display = 'none';
                 }
             });
         }
 
         // 의견 입력란 활성화/비활성화 토글 핸들러
-        document.getElementById('btn-toggle-feedback-lock').addEventListener('click', async () => {
+        $('btn-toggle-feedback-lock').addEventListener('click', async () => {
             if (!currentRoom) return;
-            const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
+            const roomSnap = await get(ref(db, `rooms/${currentRoom}`));
             if (!roomSnap.exists()) return;
 
-            const isLocked = roomSnap.val().feedbackLocked === true;
-            const newLocked = !isLocked;
-
+            const newLocked = !(roomSnap.val().feedbackLocked === true);
             try {
-                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { feedbackLocked: newLocked });
-                if (newLocked) {
-                    await customAlert("설정 완료", "학생들의 의견 입력란이 <b>비활성화(마감)</b>되었습니다.<br>학생들은 더 이상 의견을 작성하거나 수정할 수 없습니다.");
-                } else {
-                    await customAlert("설정 완료", "학생들의 의견 입력란이 <b>다시 활성화</b>되었습니다.");
-                }
+                await update(ref(db, `rooms/${currentRoom}`), { feedbackLocked: newLocked });
+                await customAlert("설정 완료", newLocked
+                    ? "학생들의 의견 입력란이 <b>비활성화(마감)</b>되었습니다.<br>학생들은 더 이상 의견을 작성하거나 수정할 수 없습니다."
+                    : "학생들의 의견 입력란이 <b>다시 활성화</b>되었습니다.");
             } catch (e) {
                 console.error(e);
                 await customAlert("오류", "상태 변경 중 오류가 발생했습니다.");
             }
         });
 
-        document.getElementById('btn-end-game').addEventListener('click', async () => {
+        $('btn-end-game').addEventListener('click', async () => {
             if (!currentRoom) return;
-            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { status: 'finished' });
+            const ok = await customConfirm('가위바위보 종료', '지금 게임을 종료할까요?<br>진행 중이던 경기는 모두 정리됩니다.');
+            if (!ok) return;
 
-            await remove(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/waiting`));
+            await update(ref(db, `rooms/${currentRoom}`), { status: 'finished' });
+            // 대기열과 경기 기록을 정리해 데이터가 계속 쌓이지 않도록 함
+            await remove(ref(db, `rooms/${currentRoom}/waiting`)).catch(() => { });
+            await remove(ref(db, `rooms/${currentRoom}/matches`)).catch(() => { });
+            await remove(ref(db, `rooms/${currentRoom}/matchLock`)).catch(() => { });
 
             await customAlert('종료 완료', '게임이 종료되었습니다. 이제 10명을 추출할 수 있습니다.');
         });
 
-        document.getElementById('btn-draw-10').addEventListener('click', async () => {
+        $('btn-draw-10').addEventListener('click', async () => {
+            if (!currentRoom) return;
             if (allPlayersData.length === 0) {
-                await customAlert('알림', '참여한 학생이 없습니다.');
-                return;
+                return await customAlert('알림', '참여한 학생이 없습니다.');
+            }
+
+            const existing = await get(ref(db, `rooms/${currentRoom}/drawResult`));
+            if (existing.exists()) {
+                const ok = await customConfirm('다시 뽑기',
+                    '이미 뽑아 둔 명단이 있습니다.<br>다시 뽑으면 기존 명단은 사라집니다. 계속할까요?');
+                if (!ok) return;
             }
 
             let selected = [];
@@ -997,43 +1416,29 @@
                 [selected[i], selected[j]] = [selected[j], selected[i]];
             }
 
-            const thWinrate = document.getElementById('th-winrate');
-            thWinrate.innerHTML = '<button class="btn btn-sm btn-outline-dark fw-bold" id="btn-reveal-winrate">??</button>';
-
-            const tbody = document.getElementById('draw-result-tbody');
-            tbody.innerHTML = '';
-
-            selected.forEach(p => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="fw-bold">${p.nickname}</td>
-                    <td class="text-success">${p.wins || 0}</td>
-                    <td class="text-danger">${p.losses || 0}</td>
-                    <td class="fw-bold text-primary">${p.total || 0}</td>
-                    <td class="winrate-cell fw-bold text-dark" data-wins="${p.wins || 0}" data-total="${p.total || 0}"></td>
-                `;
-                tbody.appendChild(tr);
+            // 새로고침해도 같은 명단이 유지되도록 DB에 저장
+            await update(ref(db, `rooms/${currentRoom}`), {
+                drawResult: {
+                    at: Date.now(),
+                    revealed: false,
+                    players: selected.map(p => ({
+                        nickname: p.nickname,
+                        wins: p.wins || 0,
+                        losses: p.losses || 0,
+                        total: p.total || 0
+                    }))
+                },
+                drawComplete: true
             });
 
-            document.getElementById('draw-result-area').style.display = 'block';
-            document.getElementById('draw-result-area').scrollIntoView({ behavior: 'smooth' });
-
-            await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { drawComplete: true });
+            $('draw-result-area').scrollIntoView({ behavior: 'smooth' });
         });
 
-        document.getElementById('th-winrate').addEventListener('click', (e) => {
-            if (e.target.id === 'btn-reveal-winrate') {
-                document.getElementById('th-winrate').textContent = '승률';
-                document.querySelectorAll('.winrate-cell').forEach(cell => {
-                    const wins = parseInt(cell.getAttribute('data-wins') || 0);
-                    const total = parseInt(cell.getAttribute('data-total') || 0);
-                    if (total === 0) {
-                        cell.textContent = '0.00';
-                    } else {
-                        cell.textContent = (wins / total).toFixed(2);
-                    }
-                });
-            }
+        // 승률 공개 (이벤트 위임: 버튼이 다시 그려져도 동작)
+        $('th-winrate').addEventListener('click', async (e) => {
+            if (e.target.id !== 'btn-reveal-winrate') return;
+            if (!currentRoom) return;
+            await update(ref(db, `rooms/${currentRoom}/drawResult`), { revealed: true }).catch(() => { });
         });
 
     </script>
