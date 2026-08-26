@@ -478,16 +478,17 @@
             // 강퇴 등으로 이미 삭제된 학생 노드를 되살리지 않도록 트랜잭션으로 처리
             async function applyTo(nickname, field) {
                 if (!nickname || nickname === 'COMPUTER') return;
+                const pRef = playerRef(roomCode, nickname);
                 try {
-                    await runTransaction(playerRef(roomCode, nickname), (cur) => {
-                        if (cur === null) return; // 삭제된 학생은 건너뜀
-                        if (field) cur[field] = (cur[field] || 0) + 1;
-                        cur.currentOpponent = null; // 대전 현황 표시용 값 정리
-                        return cur;
-                    });
+                    // 트랜잭션은 캐시가 없으면 null로 중단되므로 서버 값을 직접 확인합니다
+                    const snap = await get(pRef);
+                    if (!snap.exists()) return;   // 강퇴 등으로 이미 삭제된 학생
+
+                    const patch = { currentOpponent: null };
+                    if (field) patch[field] = increment(1);   // 서버 원자 연산 (캐시 불필요)
+                    await update(pRef, patch);
                 } catch (e) { }
             }
-
             await applyTo(player1, winnerValid ? (player1 === winner ? 'wins' : 'losses') : null);
             await applyTo(player2, winnerValid ? (player2 === winner ? 'wins' : 'losses') : null);
             // currentMatchId는 각자 대기실 복귀 시 정리합니다.
