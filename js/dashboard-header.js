@@ -11,7 +11,7 @@
     const title = scriptTag ? scriptTag.getAttribute('data-title') : '대시보드';
 
     const headerHtml = `
-        <div class="dash-header mb-4 bg-white p-3 rounded-4 shadow-sm border">
+        <div class="dash-header mb-4">
             <div class="dash-left">
                 <div class="dash-title-group">
                     <div class="fs-3">👩‍🏫</div>
