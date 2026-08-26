@@ -199,46 +199,41 @@
 
         <!-- ==================== 4. 관리자 대시보드 ==================== -->
         <div id="admin-section" class="section-container" style="display: none;">
-            <!-- 대시보드 상단 헤더 (공통 모듈) -->
-            <div id="dash-header-placeholder"></div>
-            <script src="../../../js/dashboard-header.js" data-title="가위바위보 대시보드" data-export="false" data-select-id="admin-room-select"></script>
+            <div class="admin-card mb-4">
+                <!-- 대시보드 상단 헤더 (공통 모듈) -->
+                <div id="dash-header-placeholder"></div>
+                <script src="../../../js/dashboard-header.js" data-title="가위바위보 대시보드" data-export="false" data-select-id="admin-room-select"></script>
 
-            <div id="admin-board-area" class="row g-4 mt-2" style="display: none;">
-                <div class="col-12">
-                    <div class="card shadow-sm border-0 rounded-4 p-4">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="fw-bold mb-0">📊 학생 현황</h5>
-                            <div>
-                                <button id="btn-end-game" class="btn btn-warning fw-bold me-2">가위바위보 종료</button>
-                                <button id="btn-draw-10" class="btn btn-success fw-bold" disabled>10명 뽑기 (결과
-                                    확인)</button>
-                            </div>
-                        </div>
-
-                        <div class="table-responsive">
-                            <table class="table table-hover text-center align-middle" id="admin-players-table">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>이름</th>
-                                        <th>승</th>
-                                        <th>패</th>
-                                        <th>총 횟수</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <!-- 동적 렌더링 -->
-                                </tbody>
-                            </table>
-                        </div>
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h5 class="fw-bold mb-0">📊 학생 현황</h5>
+                    <div>
+                        <button id="btn-end-game" class="btn btn-warning fw-bold me-2" disabled>가위바위보 종료</button>
+                        <button id="btn-draw-10" class="btn btn-success fw-bold" disabled>10명 뽑기 (결과 확인)</button>
                     </div>
                 </div>
 
+                <div class="table-responsive">
+                    <table class="table table-hover text-center align-middle mb-0" id="admin-players-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>이름</th>
+                                <th>승</th>
+                                <th>패</th>
+                                <th>총 횟수</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-players-tbody">
+                            <tr><td colspan="4" class="py-4 text-muted">방을 선택해주세요.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <!-- 10명 뽑기 결과 영역 -->
-                <div class="col-12" id="draw-result-area" style="display: none;">
+                <div class="mt-4" id="draw-result-area" style="display: none;">
                     <div class="card shadow-sm border-0 rounded-4 p-4 border-success">
                         <h4 class="fw-bold text-success mb-3">🎉 추출된 10명의 데이터</h4>
                         <div class="table-responsive">
-                            <table class="table table-bordered text-center align-middle">
+                            <table class="table table-bordered text-center align-middle mb-0">
                                 <thead class="table-success">
                                     <tr>
                                         <th>이름</th>
@@ -258,9 +253,14 @@
                 </div>
 
                 <!-- 의견 모음 영역 -->
-                <div class="col-12 mt-4" id="admin-feedbacks-area" style="display: none;">
+                <div class="mt-4" id="admin-feedbacks-area" style="display: none;">
                     <div class="card shadow-sm border-0 rounded-4 p-4 bg-light">
-                        <h4 class="fw-bold mb-3">📝 학생들의 의견</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                            <h4 class="fw-bold mb-0">📝 학생들의 의견</h4>
+                            <button id="btn-toggle-feedback-lock" class="btn btn-sm btn-outline-danger fw-bold">
+                                🔒 입력란 비활성화
+                            </button>
+                        </div>
                         <div class="row g-3" id="feedbacks-container">
                             <!-- 동적 렌더링 -->
                         </div>
@@ -720,9 +720,35 @@
                     });
                 }
             });
+
+            // 학생용 의견 입력란 잠금(비활성화) 실시간 감시
+            const lockRef = ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbackLocked`);
+            onValue(lockRef, (snapshot) => {
+                const isLocked = snapshot.exists() && snapshot.val() === true;
+                const textarea = document.getElementById('feedback-text');
+                const submitBtn = document.getElementById('btn-submit-feedback');
+                if (isLocked) {
+                    textarea.disabled = true;
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = "🔒 입력이 마감되었습니다";
+                    submitBtn.classList.remove('btn-primary');
+                    submitBtn.classList.add('btn-secondary');
+                } else {
+                    textarea.disabled = false;
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('btn-secondary');
+                    submitBtn.classList.add('btn-primary');
+                    submitBtn.textContent = textarea.value.trim() ? "의견 수정하기" : "의견 제출하기";
+                }
+            });
         }
 
         document.getElementById('btn-submit-feedback').addEventListener('click', async () => {
+            const lockSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}/feedbackLocked`));
+            if (lockSnap.exists() && lockSnap.val() === true) {
+                return await customAlert("마감 안내", "선생님이 의견 입력을 마감하여 더 이상 제출하거나 수정할 수 없습니다.");
+            }
+
             const text = document.getElementById('feedback-text').value.trim();
             if (!text) return await customAlert("입력 오류", "내용을 입력해주세요.");
 
@@ -786,14 +812,19 @@
         });
 
         document.getElementById('btn-delete-room').addEventListener('click', async () => {
-            if (!currentRoom) return;
-            const confirmed = await customConfirm('방 삭제', `${currentRoom} 방을 정말 삭제하시겠습니까?`);
+            if (!currentRoom) return await customAlert("알림", "삭제할 방을 선택하세요.");
+            const confirmed = await customConfirm('방 삭제', `방 [${currentRoom}] 데이터를 모두 삭제하시겠습니까?`);
             if (confirmed) {
                 if (adminRoomUnsub) { adminRoomUnsub(); adminRoomUnsub = null; }
                 await remove(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
                 currentRoom = null;
-                document.getElementById('admin-board-area').style.display = 'none';
+                document.getElementById('admin-players-tbody').innerHTML = '<tr><td colspan="4" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('btn-end-game').disabled = true;
+                document.getElementById('btn-draw-10').disabled = true;
+                document.getElementById('draw-result-area').style.display = 'none';
+                document.getElementById('admin-feedbacks-area').style.display = 'none';
                 await loadAdminRooms();
+                await customAlert("완료", "방이 삭제되었습니다.");
             }
         });
 
@@ -804,12 +835,15 @@
                 adminRoomUnsub = null;
             }
             if (!selected) {
-                document.getElementById('admin-board-area').style.display = 'none';
+                document.getElementById('admin-players-tbody').innerHTML = '<tr><td colspan="4" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('btn-end-game').disabled = true;
+                document.getElementById('btn-draw-10').disabled = true;
+                document.getElementById('draw-result-area').style.display = 'none';
+                document.getElementById('admin-feedbacks-area').style.display = 'none';
                 currentRoom = null;
                 return;
             }
             currentRoom = selected;
-            document.getElementById('admin-board-area').style.display = 'block';
             document.getElementById('draw-result-area').style.display = 'none';
 
             listenToAdminRoom();
@@ -839,11 +873,24 @@
                     document.getElementById('btn-draw-10').disabled = true;
                 }
 
-                const tbody = document.querySelector('#admin-players-table tbody');
+                // 의견 입력란 잠금 버튼 상태 업데이트
+                const isLocked = data.feedbackLocked === true;
+                const lockBtn = document.getElementById('btn-toggle-feedback-lock');
+                if (lockBtn) {
+                    if (isLocked) {
+                        lockBtn.className = 'btn btn-sm btn-success fw-bold';
+                        lockBtn.innerHTML = '🔓 입력란 활성화하기';
+                    } else {
+                        lockBtn.className = 'btn btn-sm btn-outline-danger fw-bold';
+                        lockBtn.innerHTML = '🔒 입력란 비활성화';
+                    }
+                }
+
+                const tbody = document.getElementById('admin-players-tbody');
                 tbody.innerHTML = '';
                 allPlayersData = [];
 
-                if (data.players) {
+                if (data.players && Object.keys(data.players).length > 0) {
                     Object.keys(data.players).forEach(nickname => {
                         const score = data.players[nickname];
                         allPlayersData.push({ nickname, ...score });
@@ -851,12 +898,14 @@
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
                             <td class="fw-bold">${nickname}</td>
-                            <td class="text-success">${score.wins || 0}</td>
-                            <td class="text-danger">${score.losses || 0}</td>
+                            <td class="text-success fw-bold">${score.wins || 0}</td>
+                            <td class="text-danger fw-bold">${score.losses || 0}</td>
                             <td class="fw-bold text-primary">${score.total || 0}</td>
                         `;
                         tbody.appendChild(tr);
                     });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
                 }
 
                 const fbContainer = document.getElementById('feedbacks-container');
@@ -887,6 +936,28 @@
                 }
             });
         }
+
+        // 의견 입력란 활성화/비활성화 토글 핸들러
+        document.getElementById('btn-toggle-feedback-lock').addEventListener('click', async () => {
+            if (!currentRoom) return;
+            const roomSnap = await get(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`));
+            if (!roomSnap.exists()) return;
+
+            const isLocked = roomSnap.val().feedbackLocked === true;
+            const newLocked = !isLocked;
+
+            try {
+                await update(ref(rtdbRelativeFrequency, `rooms/${currentRoom}`), { feedbackLocked: newLocked });
+                if (newLocked) {
+                    await customAlert("설정 완료", "학생들의 의견 입력란이 <b>비활성화(마감)</b>되었습니다.<br>학생들은 더 이상 의견을 작성하거나 수정할 수 없습니다.");
+                } else {
+                    await customAlert("설정 완료", "학생들의 의견 입력란이 <b>다시 활성화</b>되었습니다.");
+                }
+            } catch (e) {
+                console.error(e);
+                await customAlert("오류", "상태 변경 중 오류가 발생했습니다.");
+            }
+        });
 
         document.getElementById('btn-end-game').addEventListener('click', async () => {
             if (!currentRoom) return;
