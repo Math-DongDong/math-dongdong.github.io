@@ -781,6 +781,42 @@
             }
         }
 
+        function generateRoomCode() {
+            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let code = '';
+            for (let i = 0; i < 4; i++) {
+                code += characters.charAt(Math.floor(Math.random() * characters.length));
+            }
+            return code;
+        }
+
+        document.getElementById('btn-create-room').addEventListener('click', async () => {
+            const createButton = document.getElementById('btn-create-room');
+            createButton.disabled = true;
+
+            try {
+                let roomCode;
+                do {
+                    roomCode = generateRoomCode();
+                } while ((await get(roomRef(roomCode))).exists());
+
+                await set(roomRef(roomCode), {
+                    settings: { computerMatchEnabled: false },
+                    createdAt: serverTimestamp()
+                });
+
+                await loadAdminRooms();
+                document.getElementById('admin-room-select').value = roomCode;
+                startAdminMonitoring(roomCode);
+                await customAlert('방 생성 완료', `게임 방이 생성되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]`);
+            } catch (error) {
+                console.error(error);
+                await customAlert('오류', '방 생성에 실패했습니다.');
+            } finally {
+                createButton.disabled = false;
+            }
+        });
+
         document.getElementById('admin-room-select').addEventListener('change', (e) => {
             const code = e.target.value;
             if (!code) {
