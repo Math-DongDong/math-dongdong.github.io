@@ -149,6 +149,12 @@
             position: relative;
             box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
             white-space: nowrap;
+            cursor: grab;
+        }
+
+        .roulette-wrapper.dragging {
+            cursor: grabbing;
+            user-select: none;
         }
 
         /* 가운데 선택 영역 하이라이트 */
@@ -1284,6 +1290,10 @@
         }
 
         function setupRouletteScroll(wrapper) {
+            let isDragging = false;
+            let dragStartX = 0;
+            let dragStartScrollLeft = 0;
+
             wrapper.addEventListener('scroll', () => {
                 const items = wrapper.querySelectorAll('.coord-item');
                 const scrollLeft = wrapper.scrollLeft;
@@ -1299,6 +1309,40 @@
                     }
                 });
             });
+
+            wrapper.addEventListener('pointerdown', (event) => {
+                if (event.pointerType !== 'mouse') return;
+
+                isDragging = true;
+                dragStartX = event.clientX;
+                dragStartScrollLeft = wrapper.scrollLeft;
+                wrapper.classList.add('dragging');
+                wrapper.setPointerCapture(event.pointerId);
+            });
+
+            wrapper.addEventListener('pointermove', (event) => {
+                if (!isDragging) return;
+                wrapper.scrollLeft = dragStartScrollLeft - (event.clientX - dragStartX);
+            });
+
+            const stopDragging = (event) => {
+                if (!isDragging) return;
+
+                isDragging = false;
+                wrapper.classList.remove('dragging');
+                if (wrapper.hasPointerCapture(event.pointerId)) {
+                    wrapper.releasePointerCapture(event.pointerId);
+                }
+
+                const itemWidth = 30;
+                wrapper.scrollTo({
+                    left: Math.round(wrapper.scrollLeft / itemWidth) * itemWidth,
+                    behavior: 'smooth'
+                });
+            };
+
+            wrapper.addEventListener('pointerup', stopDragging);
+            wrapper.addEventListener('pointercancel', stopDragging);
         }
 
         function getRouletteValue(wrapper) {
