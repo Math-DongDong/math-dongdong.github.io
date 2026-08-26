@@ -85,16 +85,11 @@
         </div>
 
         <div id="admin-section" class="section-container">
-            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-                <h2 class="fw-bold mb-0">👨‍🏫 좌표평면 오목 대시보드</h2>
-                <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <select id="admin-room-select" class="form-select w-auto me-2"><option value="">방을 선택하세요</option></select>
-                    <span class="fs-5 fw-bold text-primary me-3" id="admin-active-room"></span>
-                    <button id="btn-create-room" class="btn btn-primary fw-bold">새로운 방 만들기</button>
-                    <button id="btn-delete-room" class="btn btn-danger fw-bold">현재 방 삭제하기</button>
-                </div>
-            </div>
-            <div class="row g-4 mt-2" id="admin-board-area" style="display: none;">
+            <!-- 대시보드 상단 헤더 (공통 모듈) -->
+            <div id="dash-header-placeholder"></div>
+            <script src="../../../js/dashboard-header.js" data-title="좌표평면 오목 대시보드" data-export="false" data-select-id="admin-room-select"></script>
+
+            <div class="row g-4 mt-2" id="admin-board-area">
                 <div class="col-12">
                     <div class="card shadow-sm border-0 rounded-4 p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -114,7 +109,9 @@
                                         <th>순위</th><th>닉네임</th><th>상태</th><th>대전 현황</th><th>승</th><th>패</th><th>승률</th><th>관리</th>
                                     </tr>
                                 </thead>
-                                <tbody id="admin-record-tbody"></tbody>
+                                <tbody id="admin-record-tbody">
+                                    <tr><td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td></tr>
+                                </tbody>
                             </table>
                         </div>
                     </div>
@@ -385,7 +382,7 @@
             if (snap.exists()) {
                 const rooms = snap.val();
                 Object.keys(rooms).sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0)).forEach(roomId => {
-                    const option = document.createElement('option'); option.value = roomId; option.textContent = `[${roomId}]`; select.appendChild(option);
+                    const option = document.createElement('option'); option.value = roomId; option.textContent = roomId; select.appendChild(option);
                 });
             }
         }
@@ -407,14 +404,26 @@
         });
         document.getElementById('admin-room-select').addEventListener('change', (e) => {
             const code = e.target.value;
-            if (!code) { document.getElementById('admin-board-area').style.display = 'none'; document.getElementById('admin-active-room').textContent = ""; cleanupSubscriptions(); return; }
+            if (!code) {
+                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('admin-player-count').textContent = '0명 접속';
+                cleanupSubscriptions();
+                return;
+            }
             startAdminMonitoring(code);
         });
         document.getElementById('btn-delete-room').addEventListener('click', async () => {
             const code = document.getElementById('admin-room-select').value;
             if (!code) return await customAlert("알림", "방을 선택하세요.");
             if (!await customConfirm("삭제 확인", `[ <b class="text-danger">${code}</b> ] 방을 삭제하시겠습니까?`)) return;
-            try { await remove(roomRef(code)); cleanupSubscriptions(); document.getElementById('admin-active-room').textContent = ""; document.getElementById('admin-board-area').style.display = 'none'; await loadAdminRooms(); await customAlert("완료", "방 삭제됨."); } catch (e) { }
+            try {
+                await remove(roomRef(code));
+                cleanupSubscriptions();
+                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('admin-player-count').textContent = '0명 접속';
+                await loadAdminRooms();
+                await customAlert("완료", "방 삭제됨.");
+            } catch (e) { }
         });
 
         let unsubAdminPlayers = null, unsubAdminMatches = null;
@@ -424,8 +433,6 @@
             if (unsubAdminMatches) { unsubAdminMatches(); unsubAdminMatches = null; }
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
             adminPlayersData = {}; adminMatchesData = {}; currentRoomCode = roomCode;
-            document.getElementById('admin-board-area').style.display = 'block';
-            document.getElementById('admin-active-room').innerHTML = `코드: <span class="badge bg-primary fs-5">${roomCode}</span>`;
             document.getElementById('admin-room-select').value = roomCode;
             unsubRoom = onValue(roomRef(roomCode), (snapshot) => {
                 if (snapshot.exists() && snapshot.val().settings) {
