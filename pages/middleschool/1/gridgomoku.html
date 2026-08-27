@@ -239,14 +239,7 @@
 
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <h5 class="fw-bold mb-0">👥 참가자 및 대전 현황</h5>
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="form-check form-switch fs-6 mb-0">
-                            <input class="form-check-input" type="checkbox" id="admin-computer-toggle">
-                            <label class="form-check-label fw-bold text-secondary" for="admin-computer-toggle">컴퓨터
-                                추가</label>
-                        </div>
-                        <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
-                    </div>
+                    <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
                 </div>
 
                 <div class="table-responsive">
@@ -365,8 +358,6 @@
         const HEARTBEAT_FRESH_MS = 15000;   // 매칭 대상으로 인정할 하트비트 신선도
         const MAX_CONSECUTIVE_PASS = 4;     // 연속 패스 이 횟수 도달 시 무승부 종료
         const REMATCH_WAIT_SEC = 20;        // 직전 상대와 재대결을 허용하기까지 대기 시간
-        const COMPUTER_WAIT_SEC = 20;       // 컴퓨터 대전으로 넘어가기까지 대기 시간
-        const COMPUTER_MISTAKE_RATE = 0.1;  // 0에 가까울수록 컴퓨터가 강해집니다
         const MATCH_LOCK_MS = 3000;         // 매칭 잠금 유지 시간
         const NICKNAME_RE = /^[가-힣a-zA-Z0-9_\- ]{1,10}$/;  // 입력창 maxlength=10과 동일하게 맞춤
         const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;                // 방 코드도 Firebase 경로에 쓰이므로 검증
@@ -391,7 +382,7 @@
         let isKicked = false;
         let myAwayStartTime = 0;
 
-        let unsubSettings = null, unsubMe = null, unsubAllPlayers = null;
+        let unsubMe = null, unsubAllPlayers = null;
         let unsubMatch = null, unsubWaiting = null, unsubOpponent = null;
 
         let opponentSynced = false;
@@ -402,10 +393,9 @@
         let opponentMatchId = null;
         let gameSyncStartedAt = 0;
 
-        let heartbeatInterval = null, waitingInterval = null, computerMoveTimeout = null;
+        let heartbeatInterval = null, waitingInterval = null;
         let localJoinedTime = 0;
 
-        let roomSettings = null;
         let playersData = {};
         let matchData = null;
         let boardState = {};
@@ -428,10 +418,8 @@
         }
 
         // escapeHtml은 room-auth.js에서 공용으로 가져옵니다.
-        function displayName(id) { return id === 'COMPUTER' ? '컴퓨터' : id; }
 
         function roomRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}`); }
-        function settingsRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}/settings`); }
         function playerRef(roomCode, nickname) { return ref(db, `gomoku_rooms/${roomCode}/players/${nickname}`); }
         function matchRef(roomCode, matchId) { return ref(db, `gomoku_rooms/${roomCode}/matches/${matchId}`); }
         function waitingRef(roomCode, nickname) { return ref(db, `gomoku_rooms/${roomCode}/waiting/${nickname}`); }
@@ -477,7 +465,7 @@
 
             // 강퇴 등으로 이미 삭제된 학생 노드를 되살리지 않도록 트랜잭션으로 처리
             async function applyTo(nickname, field) {
-                if (!nickname || nickname === 'COMPUTER') return;
+                if (!nickname) return;
                 const pRef = playerRef(roomCode, nickname);
                 try {
                     // 트랜잭션은 캐시가 없으면 null로 중단되므로 서버 값을 직접 확인합니다
@@ -545,7 +533,6 @@
                     }
 
                     currentRoomCode = code; currentNickname = nickname;
-                    roomSettings = snap.val().settings;
 
                     // 브라우저를 강제 종료해도 서버가 즉시 offline 처리
                     try {
@@ -592,14 +579,8 @@
 
         // 세션 내내 유지되는 구독 (대기실 복귀 시에도 해제하지 않음)
         function subscribeSession() {
-            // 방 전체가 아니라 settings만 구독합니다.
             // 방 노드를 통째로 구독하면 다른 모든 학생의 하트비트와 모든 대국의 착수가
-            // 매번 전원에게 내려와 트래픽이 급증합니다.
-            if (unsubSettings) { unsubSettings(); unsubSettings = null; }
-            unsubSettings = onValue(settingsRef(currentRoomCode), (snapshot) => {
-                roomSettings = snapshot.exists() ? snapshot.val() : null;
-            });
-
+            // 매번 전원에게 내려와 트래픽이 급증하므로, 내 정보만 구독합니다.
             if (unsubMe) { unsubMe(); unsubMe = null; }
             unsubMe = onValue(playerRef(currentRoomCode, currentNickname), (playerSnap) => {
                 if (!currentRoomCode) return;
@@ -720,7 +701,7 @@
                 }
                 if (!roomCode) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
 
-                await set(roomRef(roomCode), { settings: { computerMatchEnabled: false }, createdAt: serverTimestamp() });
+                await set(roomRef(roomCode), { createdAt: serverTimestamp() });
                 await set(ref(db, `gomoku_room_index/${roomCode}`), { createdAt: serverTimestamp() });
                 await loadAdminRooms();
                 const sel = document.getElementById('admin-room-select');
@@ -770,7 +751,7 @@
             }
         });
 
-        let unsubAdminSettings = null, unsubAdminPlayers = null, adminRenderInterval = null;
+        let unsubAdminPlayers = null, adminRenderInterval = null;
         let adminPlayersData = {};
         let adminRenderPending = false, adminLastRender = 0;
 
@@ -780,21 +761,6 @@
             currentRoomCode = roomCode;
             const sel = document.getElementById('admin-room-select');
             if (sel) sel.value = roomCode;
-
-            unsubAdminSettings = onValue(settingsRef(roomCode), (snapshot) => {
-                const compToggle = document.getElementById('admin-computer-toggle');
-                if (compToggle) compToggle.checked = !!(snapshot.exists() && snapshot.val().computerMatchEnabled);
-            });
-
-            const compToggle = document.getElementById('admin-computer-toggle');
-            if (compToggle && !compToggle.dataset.bound) {
-                compToggle.dataset.bound = 'true';
-                compToggle.addEventListener('change', async (e) => {
-                    if (!currentRoomCode) return;
-                    try { await update(roomRef(currentRoomCode), { 'settings/computerMatchEnabled': e.target.checked }); }
-                    catch (err) { e.target.checked = !e.target.checked; }
-                });
-            }
 
             // matches 컬렉션은 구독하지 않습니다.
             // 대전 현황은 players/{id}/currentOpponent 값으로 표시합니다.
@@ -852,7 +818,7 @@
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
 
                 const matchInfo = p.currentOpponent
-                    ? `<span class="text-primary fw-bold">vs ${escapeHtml(displayName(p.currentOpponent))}</span>`
+                    ? `<span class="text-primary fw-bold">vs ${escapeHtml(p.currentOpponent)}</span>`
                     : '<span class="text-muted">대기 중</span>';
 
                 html += `<tr>
@@ -990,7 +956,7 @@
                 if (activeInitiator.id !== currentNickname) return;
 
                 const myLastOpponent = playersData[currentNickname]?.lastOpponent || null;
-                let matchPartner = null, isComputer = false, oldOpponent = null;
+                let matchPartner = null, oldOpponent = null;
 
                 for (const candidate of currentWaitingList) {
                     if (candidate.id === currentNickname) continue;
@@ -1003,8 +969,6 @@
 
                 if (!matchPartner && oldOpponent && waitTimeSec >= REMATCH_WAIT_SEC) {
                     matchPartner = oldOpponent;
-                } else if (!matchPartner && roomSettings?.computerMatchEnabled && waitTimeSec >= COMPUTER_WAIT_SEC) {
-                    matchPartner = { id: 'COMPUTER' }; isComputer = true;
                 }
                 if (!matchPartner) return;
 
@@ -1023,7 +987,7 @@
                     const freshWait = await get(waitingCollRef(currentRoomCode));
                     const w = freshWait.exists() ? freshWait.val() : {};
                     if (!w[currentNickname]) return;
-                    if (!isComputer && !w[matchPartner.id]) return;
+                    if (!w[matchPartner.id]) return;
 
                     const matchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                     const updates = {};
@@ -1036,12 +1000,10 @@
                     updates[`players/${activeInitiator.id}/currentMatchId`] = matchId;
                     updates[`players/${activeInitiator.id}/currentOpponent`] = matchPartner.id;
                     updates[`waiting/${activeInitiator.id}`] = null;
-                    if (!isComputer) {
-                        updates[`players/${matchPartner.id}/lastOpponent`] = activeInitiator.id;
-                        updates[`players/${matchPartner.id}/currentMatchId`] = matchId;
-                        updates[`players/${matchPartner.id}/currentOpponent`] = activeInitiator.id;
-                        updates[`waiting/${matchPartner.id}`] = null;
-                    }
+                    updates[`players/${matchPartner.id}/lastOpponent`] = activeInitiator.id;
+                    updates[`players/${matchPartner.id}/currentMatchId`] = matchId;
+                    updates[`players/${matchPartner.id}/currentOpponent`] = activeInitiator.id;
+                    updates[`waiting/${matchPartner.id}`] = null;
                     updates['matchLock'] = null; // 매칭 성공과 동시에 잠금 해제
 
                     await update(roomRef(currentRoomCode), updates);
@@ -1247,7 +1209,7 @@
 
                 initBoard(); drawBoard(); updateGameUI(); checkTimer();
 
-                if (matchData.status === 'playing' && !unsubOpponent && oppId !== 'COMPUTER') {
+                if (matchData.status === 'playing' && !unsubOpponent) {
                     unsubOpponent = onValue(playerRef(currentRoomCode, oppId), (snap) => {
                         if (!snap.exists()) return;
                         const data = snap.val();
@@ -1265,14 +1227,6 @@
                             opponentStatus = 'online'; opponentAwayStartTime = 0;
                         }
                     });
-                }
-
-                if (matchData.status === 'playing' && (matchData.player1 === 'COMPUTER' || matchData.player2 === 'COMPUTER')) {
-                    const compColor = matchData.player1 === 'COMPUTER' ? 'black' : 'white';
-                    const turnColor = matchData.moves.length % 2 === 0 ? 'black' : 'white';
-                    if (compColor === turnColor && myColor !== compColor && !computerMoveTimeout) {
-                        computerMoveTimeout = setTimeout(() => { computerMoveTimeout = null; playComputerMove(); }, 1500);
-                    }
                 }
             });
         }
@@ -1388,15 +1342,14 @@
 
         function updateGameUI() {
             if (!matchData) return;
-            document.getElementById('player-name-black').textContent = `${displayName(matchData.player1)} (흑)`;
-            document.getElementById('player-name-white').textContent = `${displayName(matchData.player2)} (백)`;
+            document.getElementById('player-name-black').textContent = `${matchData.player1} (흑)`;
+            document.getElementById('player-name-white').textContent = `${matchData.player2} (백)`;
 
             const isBlackTurn = (matchData.moves?.length || 0) % 2 === 0;
             const bB = document.getElementById('player-bar-black'), bW = document.getElementById('player-bar-white');
 
             if (matchData.status === 'finished') {
                 if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-                if (computerMoveTimeout) { clearTimeout(computerMoveTimeout); computerMoveTimeout = null; }
                 bB.classList.remove('active-turn'); bW.classList.remove('active-turn');
                 const bar = document.getElementById('timer-progress-bar');
                 if (bar) bar.style.width = '0%';
@@ -1429,7 +1382,7 @@
                     matchData.winner === currentNickname ? '🎉 승리!' : matchData.winner ? '😢 패배' : '🤝 무승부';
                 document.getElementById('game-result-desc').textContent =
                     matchData.winner === currentNickname ? '축하합니다! 대전에서 승리했습니다.'
-                        : matchData.winner ? `${displayName(matchData.winner)} 학생이 승리했습니다.`
+                        : matchData.winner ? `${matchData.winner} 학생이 승리했습니다.`
                             : matchData.endReason === 'pass' ? '양쪽 모두 시간 내에 두지 않아 무승부로 끝났습니다.'
                                 : '좌표평면이 가득 찼습니다.';
                 return;
@@ -1477,74 +1430,6 @@
         });
 
         // =====================================================================
-        // 컴퓨터 대전 AI
-        // =====================================================================
-        function lineRun(board, x, y, dx, dy, color) {
-            let c = 0;
-            for (let s = 1; ; s++) { if (board[`${x + dx * s},${y + dy * s}`] === color) c++; else break; }
-            return c;
-        }
-        function scoreCell(board, x, y, color) {
-            let total = 0;
-            for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
-                const a = lineRun(board, x, y, dx, dy, color);
-                const b = lineRun(board, x, y, -dx, -dy, color);
-                const len = a + b + 1;
-                const ax = x + dx * (a + 1), ay = y + dy * (a + 1);
-                const bx = x - dx * (b + 1), by = y - dy * (b + 1);
-                const open = (inRange(ax, ay) && !board[`${ax},${ay}`] ? 1 : 0) + (inRange(bx, by) && !board[`${bx},${by}`] ? 1 : 0);
-
-                let s = 0;
-                if (len === WIN_COUNT) s = 1000000;
-                else if (len > WIN_COUNT) s = 0;              // 장목은 승리가 아니므로 가치 없음
-                else if (len === 4) s = open === 2 ? 50000 : open === 1 ? 9000 : 0;
-                else if (len === 3) s = open === 2 ? 4000 : open === 1 ? 400 : 0;
-                else if (len === 2) s = open === 2 ? 180 : open === 1 ? 25 : 0;
-                else s = open === 2 ? 8 : 2;
-                total += s;
-            }
-            return total;
-        }
-
-        async function playComputerMove() {
-            if (!matchData || matchData.status !== 'playing') return;
-            const moves = matchData.moves || [];
-            const compColor = matchData.player1 === 'COMPUTER' ? 'black' : 'white';
-            if (compColor !== (moves.length % 2 === 0 ? 'black' : 'white')) return;
-            if (moves.length === 0) { await submitMoveAsComputer({ x: 0, y: 0 }); return; }
-
-            const board = buildBoard(moves);
-            const oppColor = compColor === 'black' ? 'white' : 'black';
-
-            // 기존 돌 주변 2칸 이내의 빈 자리만 후보로 검토
-            const cands = new Set();
-            for (const key of Object.keys(board)) {
-                const [sx, sy] = key.split(',').map(Number);
-                for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
-                    const nx = sx + dx, ny = sy + dy;
-                    if (inRange(nx, ny) && !board[`${nx},${ny}`]) cands.add(`${nx},${ny}`);
-                }
-            }
-            if (cands.size === 0) { await passTurnDueToTimeout(); return; }
-
-            const scored = [...cands].map(k => {
-                const [x, y] = k.split(',').map(Number);
-                return { x, y, score: scoreCell(board, x, y, compColor) + scoreCell(board, x, y, oppColor) * 0.92 };
-            }).sort((a, b) => b.score - a.score);
-
-            // 가끔 최선이 아닌 수를 두어 학생이 이길 여지를 남깁니다
-            const pool = (Math.random() < COMPUTER_MISTAKE_RATE && scored.length > 3) ? scored.slice(1, 4) : scored.slice(0, 1);
-            const pick = pool[Math.floor(Math.random() * pool.length)];
-            await submitMoveAsComputer(pick);
-        }
-
-        async function submitMoveAsComputer(coord) {
-            if (isSubmittingMove) return;
-            isSubmittingMove = true;
-            try { await submitMove(coord); } catch (e) { } finally { isSubmittingMove = false; }
-        }
-
-        // =====================================================================
         // 정리 및 전환
         // =====================================================================
         document.getElementById('btn-back-to-waiting').addEventListener('click', async () => {
@@ -1566,7 +1451,7 @@
                         const m = mSnap.val();
                         const other = m.player1 === currentNickname ? m.player2 : m.player1;
                         let otherStill = false;
-                        if (other && other !== 'COMPUTER') {
+                        if (other) {
                             const oSnap = await get(ref(db, `gomoku_rooms/${currentRoomCode}/players/${other}/currentMatchId`));
                             otherStill = oSnap.val() === finishedId;
                         }
@@ -1582,7 +1467,6 @@
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
             if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-            if (computerMoveTimeout) { clearTimeout(computerMoveTimeout); computerMoveTimeout = null; }
         }
         function cleanupWaiting() {
             if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
@@ -1593,14 +1477,12 @@
             }
         }
         function cleanupAdmin() {
-            if (unsubAdminSettings) { unsubAdminSettings(); unsubAdminSettings = null; }
             if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
             if (adminRenderInterval) { clearInterval(adminRenderInterval); adminRenderInterval = null; }
         }
         function cleanupAll() {
             cleanupMatchSubs(); cleanupWaiting(); cleanupAdmin();
             if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-            if (unsubSettings) { unsubSettings(); unsubSettings = null; }
             if (unsubMe) { unsubMe(); unsubMe = null; }
             document.removeEventListener('visibilitychange', handleVisibility);
         }
