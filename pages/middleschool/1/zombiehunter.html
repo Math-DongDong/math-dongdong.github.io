@@ -14,7 +14,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
-
         /* Landing */
         .landing-card {
             max-width: 480px;
@@ -237,8 +236,6 @@
         .fire-btn:hover {
             background: #dc2626;
         }
-
-
     </style>
 </head>
 
@@ -317,7 +314,7 @@
         <div class="game-top-header">
             <div>
                 <div class="small opacity-75">Stage <span id="stageDisplay">1</span> <span class="ms-2">🎯 <span
-                            id="probDisplay">1</span><span id="probTotal">/4</span></span></div>
+                            id="probDisplay">1</span><span id="probTotal">/3</span></span></div>
                 <div class="fw-bold mt-1" id="livesDisplay">❤️❤️❤️❤️❤️</div>
             </div>
             <div class="text-end">
@@ -475,7 +472,7 @@
     <script type="module">
         import { db } from '../../../js/firebase-config.js';
         import {
-            renderRoomEntrance, customAlert, customPrompt, customConfirm
+            renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance
         } from '../../../js/room-auth.js';
         import { collection, doc, setDoc, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
@@ -601,6 +598,7 @@
                 if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다.');
 
                 currentRoomCode = code; myName = name;
+                rememberEntrance(code, name);   // 입장 성공 시점에만 저장 → 다음 접속 때 자동 입력
                 currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
                 currentTotalShots = 0; currentHitShots = 0;
                 currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -637,12 +635,15 @@
         }
 
         function generateProblem() {
-            const nZombies = Math.max(2, 5 - currentProblem);
+            // 좀비 수: 1번 문제 4마리, 2번 문제 3마리, 3번(복습)부터는 2~3마리 무작위
+            const nZombies = currentProblem === 1 ? 4 : (currentProblem === 2 ? 3 : Math.floor(Math.random() * 2) + 2);
             let baseType = 'linear';
             let baseA = 1;
             let conceptForThisProblem = currentStage;
 
-            if (currentStage > 1 && currentStage <= 4 && (currentProblem === 2 || currentProblem === 4)) {
+            // 스테이지당 3문제: 1·2번은 현재 스테이지 새 문제, 3번은 이전 스테이지 개념 중 무작위 복습
+            // (1스테이지는 이전 개념이 없으므로 3번도 1스테이지 문제 유지, 좀비 수만 복습 규칙 적용)
+            if (currentStage > 1 && currentStage <= 4 && currentProblem === 3) {
                 conceptForThisProblem = Math.floor(Math.random() * (currentStage - 1)) + 1;
             }
 
@@ -709,7 +710,7 @@
         function updateUI() {
             document.getElementById('stageDisplay').innerText = currentStage < 5 ? currentStage : "5 (혼합)";
             document.getElementById('probDisplay').innerText = currentProblem;
-            document.getElementById('probTotal').innerText = currentStage < 5 ? "/4" : "";
+            document.getElementById('probTotal').innerText = currentStage < 5 ? "/3" : "";
             document.getElementById('scoreDisplay').innerText = score;
             document.getElementById('livesDisplay').innerText = '❤️'.repeat(lives) + '🖤'.repeat(5 - lives);
 
@@ -854,7 +855,7 @@
                     if (remaining === 0) {
                         setTimeout(() => {
                             if (currentStage < 5) {
-                                if (currentProblem < 4) { currentProblem++; generateProblem(); updateUI(); }
+                                if (currentProblem < 3) { currentProblem++; generateProblem(); updateUI(); }
                                 else {
                                     currentStage++; currentProblem = 1;
                                     generateProblem(); updateUI();
@@ -1199,7 +1200,7 @@
 
             let totalScore = 0, totalAcc = 0;
             let levelHits = { 1: 0, 2: 0, 3: 0, 4: 0 }, levelFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
-            let speedCounts = { "<4": 0, "4-8": 0, "8-12": 0, "12-16": 0, ">16": 0 };
+            let speedCounts = { "<20": 0, "20-40": 0, "40-60": 0, ">=60": 0 };
             let tbodyHtml = '';
             currentExcelData = [];
 
@@ -1215,11 +1216,10 @@
                 for (let i = 1; i <= 4; i++) { levelHits[i] += s.hits[i]; levelFails[i] += s.fails[i]; }
 
                 let avgTimeRaw = s.ts > 0 ? (s.playTime / s.ts) : 0;
-                if (avgTimeRaw <= 4) speedCounts["<4"]++;
-                else if (avgTimeRaw <= 8) speedCounts["4-8"]++;
-                else if (avgTimeRaw <= 12) speedCounts["8-12"]++;
-                else if (avgTimeRaw <= 16) speedCounts["12-16"]++;
-                else speedCounts[">16"]++;
+                if (avgTimeRaw < 20) speedCounts["<20"]++;
+                else if (avgTimeRaw < 40) speedCounts["20-40"]++;
+                else if (avgTimeRaw < 60) speedCounts["40-60"]++;
+                else speedCounts[">=60"]++;
 
                 let compText = "";
                 if (s.comp) compText = "모든 개념 마스터";
@@ -1276,9 +1276,8 @@
             document.getElementById('dashLevelAcc').innerHTML = levelHtml;
 
             const speeds = [
-                { k: "<4", n: "~4초", c: "bg-success" }, { k: "4-8", n: "4~8초", c: "bg-primary" },
-                { k: "8-12", n: "8~12초", c: "bg-warning" }, { k: "12-16", n: "12~16초", c: "bg-danger" },
-                { k: ">16", n: "16초~", c: "bg-dark" }
+                { k: "<20", n: "0~20초", c: "bg-success" }, { k: "20-40", n: "20~40초", c: "bg-primary" },
+                { k: "40-60", n: "40~60초", c: "bg-warning" }, { k: ">=60", n: "60초 이상", c: "bg-danger" }
             ];
             let speedHtml = '<div class="d-flex flex-column justify-content-evenly h-100 py-1">';
             speeds.forEach(sp => {
@@ -1287,7 +1286,7 @@
                 let text = cnt > 0 ? cnt + '명' : '0명';
                 speedHtml += `
                     <div class="d-flex align-items-center">
-                        <div style="width: 60px;" class="small fw-bold text-muted text-end">${sp.n}</div>
+                        <div style="width: 80px;" class="small fw-bold text-muted text-end">${sp.n}</div>
                         <div class="flex-grow-1 mx-3">
                             <div class="progress" style="height: 20px; background-color: #f1f5f9;">
                                 ${p > 0 ? `<div class="progress-bar ${sp.c}" role="progressbar" style="width: ${p}%; justify-content: flex-start; padding-left: 10px; border-top-right-radius: 6px; border-bottom-right-radius: 6px;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">${p > 10 ? text : ''}</div>` : ''}
