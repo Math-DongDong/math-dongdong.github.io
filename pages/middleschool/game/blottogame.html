@@ -526,87 +526,113 @@
                         "모둠 이름은 한글·영문·숫자·밑줄·하이픈만 사용해 1~10자로 입력해주세요.");
                 }
 
-                const docSnap = await get(roomRef(code));
-                if (!docSnap.exists()) {
-                    return await customAlert("알림", "존재하지 않는 방 코드입니다.");
-                }
-
-                const roomData = docSnap.val();
-                if (!roomData.settings || !roomData.state) {
-                    return await customAlert("알림", "방 정보가 올바르지 않습니다. 선생님께 문의하세요.");
-                }
-
-                const teamsMax = roomData.settings.teamsCount;
-                localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
-                isKicked = false;
-                sessionEnded = false;
-
-                const pRef = playerRef(code, nickname);
-                const playerSnap = await get(pRef);
-
-                if (playerSnap.exists()) {
-                    // ── 재접속 경로 ──
-                    const p = playerSnap.val();
-                    const hb = typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0;
-                    const looksOnline = p.status && p.status !== 'offline'
-                        && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
-
-                    if (looksOnline) {
-                        // 하드 차단 대신 '이어서 접속'을 허용합니다.
-                        // 네트워크가 끊긴 기기는 서버가 끊김을 감지하기 전까지 online으로 남아 있어,
-                        // 차단하면 본인이 자기 유령에게 막히는 상황이 생깁니다.
-                        // 진짜 다른 기기라도 아래에서 새 sessionId가 기록되는 순간 스스로 물러납니다.
-                        const ok = await customConfirm(
-                            '이어서 접속할까요?',
-                            `<b>${escapeHtml(nickname)}</b> 모둠으로 접속 중인 기기가 있습니다.<br><br>` +
-                            `우리 모둠이 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
-                            `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 점수와 병사 수는 그대로 이어집니다)</span><br><br>` +
-                            `<b class="text-danger">다른 모둠 이름이라면</b> [취소]를 누르고<br>다른 이름을 사용해주세요.`
-                        );
-                        if (!ok) return;
+                // 실패 원인이 전부 "네트워크 오류"로 뭉뚱그려지지 않도록 여기서 직접 처리합니다.
+                try {
+                    const docSnap = await get(roomRef(code));
+                    if (!docSnap.exists()) {
+                        return await customAlert("알림", "존재하지 않는 방 코드입니다.");
                     }
 
-                    await update(pRef, {
-                        status: 'online',
-                        lastHeartbeat: serverTimestamp(),
-                        sessionId: localSessionId
-                    });
-                } else {
-                    // ── 신규 입장 경로 ── 인원 수 확인
-                    // (RTDB 스냅샷은 .size가 아니라 numChildren()을 씁니다)
-                    const currentPlayersSnap = await get(ref(db, `blotto_rooms/${code}/players`));
-                    const joined = currentPlayersSnap.exists() ? currentPlayersSnap.numChildren() : 0;
-                    if (joined >= teamsMax) {
-                        return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
-                    }
-                    if (roomData.state.status === 'finished') {
-                        return await customAlert("입장 불가", "이미 종료된 게임입니다.");
+                    const roomData = docSnap.val();
+                    if (!roomData.settings || !roomData.state) {
+                        return await customAlert("알림", "방 정보가 올바르지 않습니다. 선생님께 문의하세요.");
                     }
 
-                    await set(pRef, {
-                        nickname: nickname,
-                        score: 0,
-                        remaining: roomData.settings.maxSoldiers,
-                        joinedAt: serverTimestamp(),
-                        status: 'online',
-                        lastHeartbeat: serverTimestamp(),
-                        sessionId: localSessionId
-                    });
+                    const teamsMax = roomData.settings.teamsCount;
+                    localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+                    isKicked = false;
+                    sessionEnded = false;
+
+                    const pRef = playerRef(code, nickname);
+                    const playerSnap = await get(pRef);
+                    const prev = playerSnap.exists() ? playerSnap.val() : null;
+
+                    // 이전 버전에서 제출 처리가 노드를 통째로 덮어써 nickname·score·remaining이
+                    // 사라진 '손상된 노드'가 남아 있을 수 있습니다. 이런 노드는 재접속으로 이어붙이면
+                    // 필수 필드가 없어 쓰기가 거부되므로, 온전한 노드로 새로 만들어 복구합니다.
+                    const isComplete = !!prev
+                        && typeof prev.nickname === 'string'
+                        && typeof prev.score === 'number'
+                        && typeof prev.remaining === 'number';
+
+                    if (isComplete) {
+                        // ── 재접속 경로 ──
+                        const hb = typeof prev.lastHeartbeat === 'number' ? prev.lastHeartbeat : 0;
+                        const looksOnline = prev.status && prev.status !== 'offline'
+                            && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+
+                        if (looksOnline) {
+                            // 하드 차단 대신 '이어서 접속'을 허용합니다.
+                            // 네트워크가 끊긴 기기는 서버가 끊김을 감지하기 전까지 online으로 남아 있어,
+                            // 차단하면 본인이 자기 유령에게 막히는 상황이 생깁니다.
+                            // 진짜 다른 기기라도 아래에서 새 sessionId가 기록되는 순간 스스로 물러납니다.
+                            const ok = await customConfirm(
+                                '이어서 접속할까요?',
+                                `<b>${escapeHtml(nickname)}</b> 모둠으로 접속 중인 기기가 있습니다.<br><br>` +
+                                `우리 모둠이 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
+                                `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 점수와 병사 수는 그대로 이어집니다)</span><br><br>` +
+                                `<b class="text-danger">다른 모둠 이름이라면</b> [취소]를 누르고<br>다른 이름을 사용해주세요.`
+                            );
+                            if (!ok) return;
+                        }
+
+                        await update(pRef, {
+                            status: 'online',
+                            lastHeartbeat: serverTimestamp(),
+                            sessionId: localSessionId
+                        });
+                    } else {
+                        // ── 신규 입장(또는 손상 노드 복구) ──
+                        if (!prev) {
+                            // 자리를 새로 차지하는 경우에만 정원을 확인합니다.
+                            // (RTDB 스냅샷은 .size가 아니라 numChildren()을 씁니다)
+                            const currentPlayersSnap = await get(ref(db, `blotto_rooms/${code}/players`));
+                            const joined = currentPlayersSnap.exists() ? currentPlayersSnap.numChildren() : 0;
+                            if (joined >= teamsMax) {
+                                return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
+                            }
+                            if (roomData.state.status === 'finished') {
+                                return await customAlert("입장 불가", "이미 종료된 게임입니다.");
+                            }
+                        }
+
+                        await set(pRef, {
+                            nickname: nickname,
+                            score: 0,
+                            remaining: roomData.settings.maxSoldiers,
+                            joinedAt: serverTimestamp(),
+                            status: 'online',
+                            lastHeartbeat: serverTimestamp(),
+                            sessionId: localSessionId
+                        });
+                    }
+
+                    currentRoomCode = code;
+                    currentNickname = nickname;
+
+                    // 입장에 성공한 방 코드·모둠 이름을 기기에 저장 → 다음 접속 때 자동 입력
+                    rememberEntrance(code, nickname);
+
+                    subscribeSession();
+                    await startHeartbeat();
+
+                    sectionLanding.classList.remove('active-section');
+                    sectionStudent.classList.add('active-section');
+
+                    startStudentRealtimeSync();
+                } catch (e) {
+                    console.error('입장 처리 오류:', e);
+                    const msg = String((e && e.message) || e).toLowerCase();
+                    if (msg.includes('permission_denied') || msg.includes('permission denied')) {
+                        await customAlert("입장 실패",
+                            "데이터베이스 접근이 거부되었습니다.<br>" +
+                            "네트워크 문제가 아니라 <b>보안 규칙</b> 때문입니다.<br>" +
+                            "선생님께 알려 규칙을 확인해달라고 해주세요.");
+                    } else {
+                        await customAlert("입장 실패",
+                            "입장 중 문제가 발생했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.");
+                    }
                 }
-
-                currentRoomCode = code;
-                currentNickname = nickname;
-
-                // 입장에 성공한 방 코드·모둠 이름을 기기에 저장 → 다음 접속 때 자동 입력
-                rememberEntrance(code, nickname);
-
-                subscribeSession();
-                await startHeartbeat();
-
-                sectionLanding.classList.remove('active-section');
-                sectionStudent.classList.add('active-section');
-
-                startStudentRealtimeSync();
             },
             onAdminSuccess: () => {
                 isTeacher = true;
