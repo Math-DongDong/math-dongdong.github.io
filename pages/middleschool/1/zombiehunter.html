@@ -556,6 +556,11 @@
         const GRID_LIMIT = 8;
         const scale = 34, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
+        // 시스템 다크모드에서는 좌표축 숫자를 밝은색으로 (캔버스 내부는 CSS 미디어쿼리가 안 통하므로 JS로 감지)
+        const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        function axisLabelColor() { return darkModeQuery.matches ? '#e2e8f0' : '#1e293b'; }
+        if (darkModeQuery.addEventListener) darkModeQuery.addEventListener('change', () => drawCanvas());
+
         function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
         function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
         function studentsCollectionRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "students"); }
@@ -669,7 +674,7 @@
         });
 
         document.getElementById('endPlayBtn').addEventListener('click', () => {
-            const isClear = (currentStage >= 5 && currentProblem > 3);
+            const isClear = (currentStage >= 5 && currentProblem > 1); // Stage 5 문제 1개 이상 클리어 = 상수준
             gameOver(isClear);
         });
 
@@ -721,7 +726,7 @@
                 mixedPoints = [...basePoints].sort(() => Math.random() - 0.5).slice(0, nZombies);
             } else {
                 const numCurves = Math.random() < 0.5 ? 2 : 3;
-                currentLaserLimit = numCurves;
+                currentLaserLimit = numCurves + 1; // 필요한 최소 발수(곡선 수) + 여유 1발
                 const pickedCurves = [];
                 for (let i = 0; i < numCurves; i++) {
                     const stg = Math.floor(Math.random() * 4) + 1;
@@ -805,7 +810,7 @@
             ctx.restore();
 
             ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
-            ctx.fillStyle = '#1e293b'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillStyle = axisLabelColor(); ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
             for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 2) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
@@ -878,23 +883,54 @@
                     if (currentFuncType === 'inverse' && currentA > 0) conceptStage = 3;
                     if (currentFuncType === 'inverse' && currentA < 0) conceptStage = 4;
 
-                    if (currentStage >= 5 && currentProblemShots >= currentLaserLimit && remaining > 0) {
-                        lives--;
+                    // 발사 단위 기록: 명중/실패 (개념별 통계는 모든 스테이지 공통)
+                    if (hitCount === 0) {
                         currentStageFails[conceptStage]++;
-                        document.getElementById('feedbackText').innerText = `레이저 제한 초과!`;
-                        triggerClawAnimation(); updateUI();
-                        if (lives <= 0) {
+                    } else {
+                        currentHitShots++;
+                        currentStageHits[conceptStage]++;
+                    }
+
+                    if (currentStage >= 5) {
+                        // Stage 5 규칙: 레이저가 남아있는 동안은 빗나가도 목숨 유지.
+                        // 레이저를 전부 썼는데 좀비가 남아있으면 목숨 1 차감 후
+                        // 새로운 좀비 배치를 생성하고 레이저를 다시 채운다.
+                        if (remaining === 0) {
+                            score += 5;
+                            document.getElementById('feedbackText').innerText = '모두 명중! +5점';
+                            updateUI();
+                            document.getElementById('fireBtn').disabled = true;
+                            setTimeout(() => {
+                                // Stage 5의 첫 문제를 깨는 순간 상수준 판정 → 이후 무한 챌린지 계속
+                                if (currentProblem === 1) saveClearRecord();
+                                currentProblem++; generateProblem(); updateUI();
+                                document.getElementById('fireBtn').disabled = false;
+                            }, 1200);
+                        } else if (currentProblemShots >= currentLaserLimit) {
+                            lives--;
+                            document.getElementById('feedbackText').innerText = '레이저 소진! 좀비 무리가 재배치됩니다.';
+                            triggerClawAnimation(); updateUI();
+                            if (lives <= 0) {
+                                updateLiveStatus();
+                                setTimeout(() => gameOver(false), 1000);
+                                return;
+                            }
                             updateLiveStatus();
-                            setTimeout(() => gameOver(false), 1000);
-                            return;
+                            document.getElementById('fireBtn').disabled = true;
+                            setTimeout(() => {
+                                generateProblem(); updateUI();
+                                document.getElementById('fireBtn').disabled = false;
+                            }, 1200);
+                        } else {
+                            document.getElementById('feedbackText').innerText = hitCount === 0 ? '빗나갔습니다!' : '일부 명중!';
+                            updateUI();
                         }
-                        updateLiveStatus();
                         return;
                     }
 
+                    // Stage 1~4: 빗나가면 목숨 차감 (기존 규칙)
                     if (hitCount === 0) {
                         lives--;
-                        currentStageFails[conceptStage]++;
                         document.getElementById('feedbackText').innerText = '빗나갔습니다!';
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) {
@@ -903,8 +939,6 @@
                             return;
                         }
                     } else {
-                        currentHitShots++;
-                        currentStageHits[conceptStage]++;
                         if (remaining > 0) document.getElementById('feedbackText').innerText = `일부 명중!`;
                         else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점'; }
                     }
@@ -912,18 +946,10 @@
 
                     if (remaining === 0) {
                         setTimeout(() => {
-                            if (currentStage < 5) {
-                                if (currentProblem < 3) { currentProblem++; generateProblem(); updateUI(); }
-                                else {
-                                    currentStage++; currentProblem = 1;
-                                    generateProblem(); updateUI();
-                                }
-                            } else {
-                                // Stage 5: 3문제 통과 시 상수준 판정 후 계속 진행
-                                if (currentProblem === 3) {
-                                    saveClearRecord();
-                                }
-                                currentProblem++; generateProblem(); updateUI();
+                            if (currentProblem < 3) { currentProblem++; generateProblem(); updateUI(); }
+                            else {
+                                currentStage++; currentProblem = 1;
+                                generateProblem(); updateUI();
                             }
                         }, 1200);
                     }
@@ -1267,7 +1293,7 @@
                 const acc = s.ts > 0 ? Math.round((s.hs / s.ts) * 100) : 0;
                 const rankDisplay = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
                 let tier = '하 (보충)', tBdg = 'bg-danger';
-                if (s.mStg >= 5 && s.mProb >= 5) { tier = '상 (우수)'; tBdg = 'bg-success'; }
+                if (s.comp || (s.mStg >= 5 && s.mProb >= 2)) { tier = '상 (우수)'; tBdg = 'bg-success'; }
                 else if (s.mStg >= 3) { tier = '중 (보통)'; tBdg = 'bg-warning text-dark'; }
 
                 totalScore += s.ms; totalAcc += acc;
