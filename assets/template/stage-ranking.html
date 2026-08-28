@@ -1,636 +1,1307 @@
 <!DOCTYPE html>
 <html lang="ko">
+<!--
+═══════════════════════════════════════════════════════════════════════
+  [스테이지형 템플릿] 학습 게임 — 기록형 (좀비헌터 계열)
+═══════════════════════════════════════════════════════════════════════
+  용도: 개인이 개념 스테이지를 순서대로 깨고, 교사가 대시보드로 성취를
+        평가하는 게임. 실시간 대전이 아니므로 RTDB가 아닌 Firestore를
+        쓰고, 하트비트·세션·onDisconnect가 전부 필요 없다.
+        실시간 게임이 필요하면 realtime-basic / realtime-matching을 쓰세요.
+
+  포함된 것 (좀비헌터 운영으로 검증된 패턴):
+    · 스테이지 구조: 개념 N개 × 3문제(1·2 새 문제 / 3번 이전 개념 복습)
+      + 마지막 혼합 스테이지(무한 모드, 첫 문제 클리어 = 상수준 기록)
+    · 난이도: 문제별 요소 수 4 → 3 → 2~3(복습), 목숨 5개
+    · 혼합 스테이지 시도 제한: 필요 최소 횟수 + 1.
+      시도가 남아있으면 실패해도 목숨 유지, 소진 + 목표 잔존이면
+      목숨 1 차감 → 새 배치 + 시도 리필 (0회 상태로 머무는 경로 없음)
+    · 저장은 딱 두 시점: gameOver + 상수준 달성 (무료 사용량 보호)
+    · 이어하기: localStorage 스냅샷 (Firestore 쓰기 0회) — 끄려면 RESUME_ENABLED=false
+    · 첫화면: renderRoomEntrance + 성공 시점에만 rememberEntrance
+    · 대시보드: 개념별 정답률 · 성취 3단계 · 풀이 속도 분포(20초 구간)
+      · 학생별 이력 모달 · 엑셀 내보내기 · 전체 통합 명예의 전당 · 주변 순위
+    · 모바일: 컴팩트 미디어쿼리(767px↓) + 컨트롤 균등 분할 행
+
+  사용 순서:
+    1) [TODO] 표시 5곳을 채움 (Ctrl+F로 "[TODO" 검색)
+       — 지금 상태로도 예시 게임("배수 사냥")이 동작하므로,
+         먼저 그대로 열어 인프라를 확인한 뒤 게임 부분만 교체하세요.
+    2) Firestore 보안 규칙에 `{GAME_KEY}_records` 컬렉션 추가 (파일 하단 주석)
+    3) 공통 파일 필요: js/room-auth.js (rememberEntrance export 버전),
+       js/dashboard-header.js, js/firebase-config.js,
+       css/dashboard.css, css/navbar.css, js/navbar.js
+
+  캔버스(좌표평면 등)를 쓰는 게임이라면 [TODO-4]의 주석을 꼭 읽으세요.
+═══════════════════════════════════════════════════════════════════════
+-->
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스테이지/진단형 학습 게임 템플릿</title>
-    <!-- 파비콘 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>[TODO-1] 게임 제목</title>
     <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
-    <!-- Bootstrap 5 CSS & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <!-- 엑셀 다운로드 SheetJS -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <!-- 공통 CSS (네비바 & 대시보드) -->
     <link rel="stylesheet" href="../../../css/navbar.css">
     <link rel="stylesheet" href="../../../css/dashboard.css">
-
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* ===== 커스텀 게임 & 애니메이션 스타일 ===== */
-        .login-card {
-            max-width: 500px;
+        /* Landing */
+        .landing-card {
+            max-width: 480px;
             margin: 0 auto;
-            background: #ffffff;
-            border-radius: 20px;
-            padding: 2.5rem 2rem;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
         }
 
-        .game-status-bar {
-            background: #ffffff;
-            border-radius: 16px;
+        /* Game Header & Layout */
+        .game-top-header {
+            max-width: 1000px;
+            margin: 0 auto 1rem;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            border-radius: 12px;
             padding: 1rem 1.5rem;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
-        .problem-card {
-            background: #ffffff;
-            border-radius: 20px;
-            padding: 2rem;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-            min-height: 250px;
+        .game-layout {
             display: flex;
             flex-direction: column;
+            gap: 1.5rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        @media (min-width: 768px) {
+            .game-layout {
+                flex-direction: row;
+            }
+        }
+
+        /* 게임판 */
+        .board-container {
+            flex: 1;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f1f5f9;
+            display: flex;
             justify-content: center;
             align-items: center;
+            position: relative;
+            overflow: hidden;
+            min-height: 340px;
+            padding: 1rem;
         }
 
-        .combo-badge {
-            animation: pulse 0.5s infinite alternate;
+        /* Controls */
+        .controls-container {
+            width: 100%;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f1f5f9;
         }
 
-        @keyframes pulse {
-            from { transform: scale(1); }
-            to { transform: scale(1.1); }
+        @media (min-width: 768px) {
+            .controls-container {
+                width: 340px;
+            }
         }
 
-        .level-badge {
-            font-size: 0.9rem;
-            padding: 0.4rem 0.8rem;
-            border-radius: 12px;
+        /* 컨트롤 균등 분할 행: 자식들을 같은 폭으로 (좀비헌터의 "3열 분할" 패턴) */
+        .control-row>* {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+
+        .choice-btn {
+            padding: 0.75rem 0.25rem;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 8px;
+            font-weight: 700;
+            transition: all 0.2s;
+            text-align: center;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .choice-btn.active {
+            border-color: #4f46e5;
+            background: #e0e7ff;
+            color: #4f46e5;
+        }
+
+        .status-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.05rem;
+            font-weight: 700;
+            text-align: center;
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            color: #1e293b;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            white-space: nowrap;
+            padding: 0.25rem;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .submit-btn:hover {
+            background: #dc2626;
+        }
+
+        /* [TODO-4] 게임 전용 스타일을 여기에 (아래는 예시 게임용 — 교체 대상) */
+        /* ▼▼▼ 예시 구현 시작 ▼▼▼ */
+        .demo-chip {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            width: 64px;
+            height: 64px;
+            margin: 8px;
+            border-radius: 50%;
+            background: #fef3c7;
+            border: 3px solid #f59e0b;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #92400e;
+            transition: transform 0.2s, opacity 0.3s;
+        }
+
+        .demo-chip.gone {
+            opacity: 0;
+            transform: scale(0.3);
+        }
+
+        /* ▲▲▲ 예시 구현 끝 ▲▲▲ */
+
+        /* 모바일 컴팩트 레이아웃: 게임 화면 세로 길이 축소 */
+        @media (max-width: 767px) {
+            #game-section.pt-4 {
+                padding-top: 0.5rem !important;
+            }
+
+            .game-top-header {
+                margin: 0 auto 0.75rem;
+                padding: 0.6rem 1rem;
+            }
+
+            .game-layout {
+                gap: 0.75rem;
+            }
+
+            .controls-container {
+                padding: 1rem;
+            }
+
+            .controls-container .mb-4 {
+                margin-bottom: 0.75rem !important;
+            }
+
+            .board-container {
+                min-height: 280px;
+            }
+
+            .choice-btn {
+                padding: 0.5rem 0.25rem;
+                font-size: 0.95rem;
+            }
+
+            .submit-btn {
+                padding: 0.75rem;
+                font-size: 1.15rem;
+            }
+
+            #feedbackText {
+                margin-top: 0.5rem !important;
+                min-height: 20px !important;
+            }
         }
     </style>
 </head>
 
 <body>
-    <!-- 상단 네비게이션바 -->
-    <script src="../../../js/navbar.js"></script>
-
-    <main class="container py-4">
-        <!-- ==================== 1. 로그인 및 랭킹 화면 ==================== -->
-        <div id="login-section" class="section-container active-section">
-            <div class="login-card mb-4">
-                <div class="text-center mb-4">
-                    <h1 class="fw-bold fs-3">🎯 스테이지 학습 게임</h1>
-                    <p class="text-muted">방 코드와 닉네임을 입력하고 게임을 시작하세요!</p>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div id="room-entrance-container"></div>
-            </div>
-
-            <!-- 글로벌 명예의 전당 (Top 5) -->
-            <div class="login-card">
-                <h5 class="fw-bold mb-3 text-center">🏆 명예의 전당 (Top 5)</h5>
-                <div id="hall-of-fame-list" class="list-group list-group-flush">
-                    <p class="text-muted text-center small py-3">기록을 불러오는 중...</p>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
+                        id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- ==================== 2. 게임 플레이 화면 ==================== -->
-        <div id="game-section" class="section-container">
-            <!-- 상단 상태 바 (점수, 스테이지, 콤보, 체력) -->
-            <div class="game-status-bar mb-4">
-                <div class="row align-items-center text-center g-2">
-                    <div class="col-6 col-md-3 text-md-start">
-                        <span class="badge bg-primary level-badge" id="hud-stage">Stage 1-1</span>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <span class="text-muted small">점수: </span>
-                        <span class="fs-4 fw-bold text-success" id="hud-score">0</span>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <span class="text-muted small">체력: </span>
-                        <span id="hud-lives" class="fs-5">❤️❤️❤️❤️❤️</span>
-                    </div>
-                    <div class="col-6 col-md-3 text-md-end">
-                        <span class="badge bg-warning text-dark combo-badge d-none" id="hud-combo">🔥 0 COMBO</span>
-                    </div>
+    <div class="modal fade" id="studentHistoryModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">📋 <span id="shModalTitle">학생</span> 님의 전체 이력</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <!-- 스테이지 진행률 바 -->
-                <div class="progress mt-3" style="height: 6px;">
-                    <div class="progress-bar bg-success" id="hud-progress" style="width: 0%;"></div>
-                </div>
-            </div>
-
-            <!-- 메인 문제 및 풀이 영역 -->
-            <div class="row justify-content-center">
-                <div class="col-12 col-md-8">
-                    <div class="problem-card mb-4">
-                        <span class="text-muted small mb-2" id="problem-category">기본 연산</span>
-                        <h2 class="fw-bold my-3 text-center" id="problem-question">3 + 5 = ?</h2>
-
-                        <!-- 입력 폼 및 제출 버튼 -->
-                        <div class="w-75 mt-3">
-                            <div class="input-group input-group-lg mb-3">
-                                <input type="text" class="form-control text-center fw-bold" id="user-answer-input" placeholder="정답 입력" autocomplete="off">
-                                <button class="btn btn-primary fw-bold px-4" id="btn-submit-answer">확인</button>
-                            </div>
-                            <div class="text-center small" id="feedback-msg"></div>
-                        </div>
-                    </div>
-
-                    <div class="text-center">
-                        <button id="btn-give-up" class="btn btn-outline-secondary btn-sm">게임 포기하기</button>
+                <div class="modal-body" id="shModalBody">
+                    <h6 class="fw-bold mb-3">개념별 누적 성적</h6>
+                    <div class="row g-2 mb-4" id="shModalCards"></div>
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-hover text-center align-middle mb-0" style="font-size: 0.9rem;">
+                            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                <tr>
+                                    <th>일시</th>
+                                    <th>점수</th>
+                                    <th>스테이지</th>
+                                    <th>정답률</th>
+                                    <th>풀이(시도당)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="shModalTable"></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- ==================== 3. 게임 종료 / 결과 화면 ==================== -->
-        <div id="result-section" class="section-container">
-            <div class="row justify-content-center">
-                <div class="col-12 col-md-8 col-lg-6">
-                    <div class="card shadow-sm border-0 rounded-4 p-5 text-center mb-4">
-                        <h2 class="fw-bold mb-3" id="result-title">🎉 게임 클리어!</h2>
-                        <p class="text-muted mb-4" id="result-desc">모든 스테이지를 성공적으로 완수했습니다.</p>
+    <div id="navbar-placeholder"></div>
 
-                        <div class="row g-3 my-2">
-                            <div class="col-4">
-                                <div class="p-3 bg-light rounded-4">
-                                    <div class="text-muted small">최종 점수</div>
-                                    <div class="fs-3 fw-bold text-primary" id="result-final-score">0</div>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="p-3 bg-light rounded-4">
-                                    <div class="text-muted small">정답률</div>
-                                    <div class="fs-3 fw-bold text-success" id="result-accuracy">0%</div>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="p-3 bg-light rounded-4">
-                                    <div class="text-muted small">최고 콤보</div>
-                                    <div class="fs-3 fw-bold text-warning" id="result-max-combo">0</div>
-                                </div>
-                            </div>
-                        </div>
+    <!-- 1. 랜딩 섹션 -->
+    <section id="landing-section" class="section-container active-section container pt-4">
+        <div class="landing-card">
+            <div class="text-center mb-4">
+                <div class="display-3 mb-2">🎮</div>
+                <h1 class="fw-bold fs-2 text-dark">[TODO-1] 게임 제목</h1>
+                <p class="text-muted">[TODO-1] 게임 한 줄 소개</p>
+            </div>
 
-                        <div class="mt-4">
-                            <button id="btn-restart-game" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
-                        </div>
+            <div id="room-entrance-container"></div>
+
+            <div class="bg-white p-4 rounded-4 shadow-sm border">
+                <h5 class="fw-bold mb-3 text-center"><i class="bi bi-trophy text-warning"></i> 명예의 전당 (Top 5)</h5>
+                <div id="hofList" class="mt-2">
+                    <div class="text-muted small text-center">데이터를 불러오는 중...</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. 게임 섹션 -->
+    <section id="game-section" class="section-container container pt-4">
+        <div class="game-top-header">
+            <div>
+                <div class="small opacity-75">Stage <span id="stageDisplay">1</span> <span class="ms-2">🎯 <span
+                            id="probDisplay">1</span><span id="probTotal">/3</span></span></div>
+                <div class="fw-bold mt-1" id="livesDisplay">❤️❤️❤️❤️❤️</div>
+            </div>
+            <div class="text-end">
+                <div class="d-flex align-items-center justify-content-end gap-3 mb-1">
+                    <button id="endPlayBtn" class="btn btn-outline-light btn-sm fw-bold px-2 py-1"
+                        style="border-width: 2px;">플레이 종료</button>
+                    <div class="text-end">
+                        <div class="small opacity-75" style="line-height: 1;">Score</div>
+                        <div class="fw-bold fs-4" id="scoreDisplay" style="line-height: 1.2;">0</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- ==================== 4. 선생님 대시보드 (엑셀 지원) ==================== -->
-        <div id="admin-section" class="section-container">
-            <div class="admin-card mb-4">
-                <!-- 대시보드 상단 헤더 (공통 모듈 - 엑셀 다운로드 기본 포함) -->
-                <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js" data-title="학습 진단 대시보드" data-export="true" data-select-id="admin-room-select"></script>
+        <div class="game-layout">
+            <!--
+              [TODO-4] 게임판. DOM이든 캔버스든 자유.
+              캔버스(좌표평면 등)를 쓴다면 좀비헌터에서 확립한 규칙:
+                · 모바일에서 잘 보이려면 "범위를 줄이고 셀을 키워라"
+                  (예: ±10 격자·28px 셀 → ±8 격자·34px 셀 = 화면상 약 21% 확대)
+                · 축 숫자는 bold 20px 이상, 색은 CSS가 아니라 JS로 분기:
+                    const dm = window.matchMedia('(prefers-color-scheme: dark)');
+                    ctx.fillStyle = dm.matches ? '#e2e8f0' : '#1e293b';
+                  캔버스 내부에는 CSS 미디어쿼리가 통하지 않는다.
+                · 표시 범위를 바꾸면 출제 풀을 반드시 전수 재검증
+                  (요소가 놓일 수 있는 자리 수 ≥ 문제당 요소 수).
+            -->
+            <div class="board-container">
+                <div id="game-board" class="text-center w-100"></div>
+            </div>
 
-                <!-- 성취도 오버뷰 카드 (3열) -->
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="dash-stat-box text-center">
-                            <div class="text-muted small fw-bold mb-2">학급 평균 점수</div>
-                            <div class="fs-2 fw-bold text-success" id="dash-avg-score">-</div>
-                        </div>
+            <div class="controls-container">
+                <!-- [TODO-5] 입력 UI. 아래는 예시 게임용 — 교체 대상.
+                     .control-row 는 자식을 같은 폭으로 나누는 유틸(좀비헌터의 3열 분할 패턴).
+                     선택 버튼 + 상태/수식 표시를 한 행에 넣으면 세로가 크게 준다. -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-bold">규칙 선택</div>
+                        <div id="attemptLimitContainer" class="d-none fw-bold text-danger small">⚡ <span
+                                id="attemptDisplay"></span></div>
                     </div>
-                    <div class="col-md-4">
-                        <div class="dash-stat-box text-center">
-                            <div class="text-muted small fw-bold mb-2">학급 평균 정답률</div>
-                            <div class="fs-2 fw-bold text-primary" id="dash-avg-acc">-</div>
-                        </div>
+                    <!-- ▼▼▼ 예시 구현 시작 ▼▼▼ -->
+                    <div class="d-flex gap-2 control-row" id="choiceRow"></div>
+                    <div class="d-flex gap-2 control-row mt-2">
+                        <div class="status-display" id="statusDisplay">선택 없음</div>
                     </div>
-                    <div class="col-md-4">
-                        <div class="dash-stat-box text-center">
-                            <div class="text-muted small fw-bold mb-2">총 참여 학생</div>
-                            <div class="fs-2 fw-bold text-dark" id="dash-total-students">0명</div>
-                        </div>
-                    </div>
+                    <!-- ▲▲▲ 예시 구현 끝 ▲▲▲ -->
                 </div>
 
-                <!-- 학생별 기록 테이블 -->
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0 text-center" id="admin-record-table">
-                        <thead class="table-light">
-                            <tr>
-                                <th>순위</th>
-                                <th>닉네임</th>
-                                <th>최고 도달</th>
-                                <th>최종 점수 (정답률)</th>
-                                <th>최대 콤보</th>
-                                <th>플레이 횟수</th>
-                                <th>상세 이력</th>
-                            </tr>
-                        </thead>
-                        <tbody id="admin-record-tbody">
-                            <tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+                <button id="submitBtn" class="submit-btn"><i class="bi bi-lightning-fill"></i> 제출!</button>
+                <div id="feedbackText" class="mt-3 text-center fw-bold text-danger" style="min-height: 24px;"></div>
             </div>
         </div>
+    </section>
 
-        <!-- 학생 상세 풀이 이력 모달 -->
-        <div class="modal fade" id="studentDetailModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered modal-lg">
-                <div class="modal-content rounded-4 border-0 shadow">
-                    <div class="modal-header border-0 pb-0">
-                        <h5 class="modal-title fw-bold">📋 <span id="modal-student-name">학생</span> 풀이 기록</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <!-- 3. 게임 오버 섹션 -->
+    <section id="gameover-section" class="section-container container pt-4">
+        <div class="landing-card">
+            <div class="card border-0 shadow-sm rounded-4 p-4 text-center mb-4">
+                <div class="display-4 mb-3" id="gameoverIcon">⚔️</div>
+                <h2 class="fw-bold text-danger mb-2" id="gameoverTitle">게임 종료!</h2>
+                <p class="text-muted mb-4" id="gameoverDesc">하트를 모두 소진했습니다.</p>
+                <div class="bg-light rounded-4 p-3 mb-4 text-center">
+                    <p class="fs-5 mb-1">최종 점수: <span id="finalScore" class="fw-bold text-primary fs-3">0</span>점</p>
+                    <p class="fs-6 mb-1">최고 스테이지: <span id="finalStage" class="fw-bold text-success">Stage 1</span></p>
+                    <p class="fs-6 mb-1">정답률: <span id="finalAcc" class="fw-bold text-info">0%</span></p>
+                    <p class="fs-6 mb-1">평균 풀이: <span id="finalTime" class="fw-bold text-warning">0.0초</span></p>
+                </div>
+                <div id="save-status" class="text-success fw-bold small mb-3">✅ 기록이 저장되었습니다!</div>
+
+                <div class="bg-light border rounded-4 p-3 mb-4 text-start">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <h6 class="fw-bold mb-0">📊 내 순위와 주변 실력</h6>
+                        <span class="badge bg-primary px-3 py-1" id="myRankBadge">-위</span>
                     </div>
-                    <div class="modal-body">
-                        <div class="table-responsive" style="max-height: 350px;">
-                            <table class="table table-hover text-center align-middle mb-0 small">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>일시</th>
-                                        <th>점수</th>
-                                        <th>도달 스테이지</th>
-                                        <th>정답률</th>
-                                        <th>콤보</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="modal-history-tbody"></tbody>
-                            </table>
-                        </div>
+                    <div class="small text-muted mb-2" id="rankSummaryText">순위를 계산 중입니다.</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-borderless align-middle mb-0" style="font-size: 0.9rem;">
+                            <thead>
+                                <tr class="text-muted small">
+                                    <th class="text-center" style="width: 15%;">순위</th>
+                                    <th style="width: 45%;">닉네임</th>
+                                    <th class="text-center" style="width: 20%;">점수</th>
+                                    <th class="text-center" style="width: 20%;">상위%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rankNearbyTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <button id="restartBtn" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. 관리자 섹션 -->
+    <section id="admin-section" class="section-container container pt-4">
+        <div class="admin-card mb-4">
+            <div id="dash-header-placeholder"></div>
+            <script src="../../../js/dashboard-header.js" data-title="[TODO-1] 게임 대시보드"></script>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <div class="dash-stat-box h-100 d-flex flex-column justify-content-center text-center">
+                        <div class="text-muted small fw-bold mb-2">학급 평균 점수</div>
+                        <div class="fs-2 fw-bold text-success" id="dashAvgScore">-</div>
+                        <div class="text-muted small fw-bold mb-2 mt-4">학급 평균 정답률</div>
+                        <div class="fs-3 fw-bold text-primary" id="dashAvgAcc">-</div>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div class="dash-stat-box h-100 d-flex flex-column">
+                        <div class="text-muted small fw-bold mb-3"><i class="bi bi-bar-chart-fill text-primary"></i>
+                            개념별 평균 정답률</div>
+                        <div id="dashConceptAcc" class="flex-grow-1"></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="dash-stat-box h-100 d-flex flex-column">
+                        <div class="text-muted small fw-bold mb-3"><i class="bi bi-stopwatch text-danger"></i> 평균 풀이 속도
+                            분포</div>
+                        <div id="dashSpeedDist" class="flex-grow-1"></div>
                     </div>
                 </div>
             </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 text-center">
+                    <thead class="table-light">
+                        <tr>
+                            <th>순위</th>
+                            <th>이름</th>
+                            <th>종합 성취수준</th>
+                            <th>핵심 역량</th>
+                            <th>최종 점수 (정답률)</th>
+                            <th>평균 풀이 시간</th>
+                            <th>플레이 횟수</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminTableBody">
+                        <tr>
+                            <td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </main>
+    </section>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- ==================== Firebase & 게임 스크립트 ==================== -->
     <script type="module">
-        import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
-        // TODO: 프로젝트의 Firestore 인스턴스로 변경하세요
-        import { dbPlusMinus as db } from "../../../js/firebase-config.js";
-        import { renderRoomEntrance, customAlert, customConfirm } from "../../../js/room-auth.js";
+        import { db } from '../../../js/firebase-config.js';
+        import {
+            renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance
+        } from '../../../js/room-auth.js';
+        import { collection, doc, setDoc, addDoc, getDocs, getDoc, onSnapshot, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
-        // =====================================================================
-        // 게임 설정 및 상태 변수
-        // =====================================================================
-        const DB_COLLECTION = "sample_stage_records"; // TODO: 컬렉션명 변경
+        const navScript = document.createElement('script');
+        navScript.src = '../../../js/navbar.js';
+        document.body.appendChild(navScript);
 
-        let currentRoomCode = null;
-        let currentNickname = null;
-        let currentStage = 1;
-        let currentProblemIndex = 1;
-        let score = 0;
-        let lives = 5;
-        let combo = 0;
-        let maxCombo = 0;
-        let totalAnswered = 0;
-        let correctCount = 0;
-        let currentAnswer = 0;
-        let problemHistory = [];
+        /* ═══════════════ 게임 설계 상수 ═══════════════ */
 
-        let adminUnsub = null;
-        let cachedAdminRecords = [];
+        const GAME_KEY = 'mystagegame';   // [TODO-1] 게임 식별자 (영문 소문자) → 컬렉션 `${GAME_KEY}_records`
 
-        // UI 섹션
-        function showSection(sectionId) {
-            document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section'));
-            document.getElementById(sectionId).classList.add('active-section');
+        // [TODO-2] 개념 목록. 배열 순서 = 스테이지 순서 (conceptId는 1부터).
+        //          이름은 대시보드·학생 모달·엑셀에 그대로 쓰인다.
+        //          아래는 예시 게임("배수 사냥")용 — base는 예시 전용 필드.
+        const CONCEPTS = [
+            { name: '2의 배수', base: 2 },
+            { name: '3의 배수', base: 3 },
+            { name: '5의 배수', base: 5 },
+            { name: '7의 배수', base: 7 },
+        ];
+        const CONCEPT_COUNT = CONCEPTS.length;
+        const MIXED_STAGE = CONCEPT_COUNT + 1;            // 마지막 = 혼합·무한 스테이지
+        const PROBLEMS_PER_STAGE = 3;                     // 1·2번 새 문제, 3번 복습
+        const MAX_LIVES = 5;
+        const MID_TIER_STAGE = Math.max(2, Math.ceil(CONCEPT_COUNT * 0.6)); // 성취 '중' 기준 (조정 가능)
+        const RESUME_ENABLED = true;                      // 이어하기(localStorage 스냅샷) 사용 여부
+        const RESUME_MAX_AGE_MS = 3 * 60 * 60 * 1000;     // 스냅샷 유효 시간 (3시간)
+
+        // 문제별 요소(목표) 수: 1번 4개 → 2번 3개 → 3번(복습)부터 2~3개 무작위
+        function elementCount(problem) {
+            return problem === 1 ? 4 : (problem === 2 ? 3 : Math.floor(Math.random() * 2) + 2);
         }
 
-        // =====================================================================
-        // 1. 방 입장 & 명예의 전당
-        // =====================================================================
-        renderRoomEntrance('room-entrance-container', {
-            joinBtnText: "🚀 게임 시작하기",
-            onJoin: async (code, nickname) => {
-                const roomSnap = await getDoc(doc(db, DB_COLLECTION, code));
-                if (!roomSnap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
-
-                currentRoomCode = code;
-                currentNickname = nickname;
-                startNewGame();
-            },
-            onAdminSuccess: () => {
-                showSection('admin-section');
-                loadAdminRooms();
+        // 3번 문제는 복습: 이전 개념 중 무작위 1개 (1스테이지는 자기 개념 유지, 요소 수만 복습 규칙)
+        function conceptForProblem(stage, problem) {
+            if (stage > 1 && stage <= CONCEPT_COUNT && problem === 3) {
+                return Math.floor(Math.random() * (stage - 1)) + 1;
             }
-        });
+            return Math.min(stage, CONCEPT_COUNT);
+        }
+
+        /* ═══════════════ 전역 상태 ═══════════════ */
+
+        let currentRoomCode = '';
+        let myName = '';
+        let currentStage = 1, currentProblem = 1, score = 0, lives = MAX_LIVES;
+        let currentTargets = [];              // [{ conceptId, active, ...게임별 필드 }]
+        let currentProblemAttempts = 0;
+        let currentAttemptLimit = 0;          // 혼합 스테이지에서만 > 0
+
+        // 기록용 (records 스키마와 1:1)
+        let totalAttempts = 0;
+        let correctAttempts = 0;
+        let conceptHits = {};
+        let conceptFails = {};
+        let gameStartTime = 0;
+
+        function emptyConceptMap() {
+            const m = {};
+            for (let i = 1; i <= CONCEPT_COUNT; i++) m[i] = 0;
+            return m;
+        }
+
+        function resetGameState() {
+            currentStage = 1; currentProblem = 1; score = 0; lives = MAX_LIVES;
+            totalAttempts = 0; correctAttempts = 0;
+            conceptHits = emptyConceptMap(); conceptFails = emptyConceptMap();
+            gameStartTime = Date.now();
+        }
+
+        function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
+        function roomDocRef(roomCode) { return doc(db, `${GAME_KEY}_records`, roomCode); }
+        function studentsCollectionRef(roomCode) { return collection(db, `${GAME_KEY}_records`, roomCode, "students"); }
+        function recordsCollectionRef(roomCode) { return collection(db, `${GAME_KEY}_records`, roomCode, "records"); }
+
+        /* ═══════════════ 이어하기 (localStorage 스냅샷 — Firestore 쓰기 0회) ═══════════════ */
+
+        const RESUME_KEY = `${GAME_KEY}_resume`;
+
+        function saveResumeSnapshot() {
+            if (!RESUME_ENABLED || !currentRoomCode) return;
+            try {
+                localStorage.setItem(RESUME_KEY, JSON.stringify({
+                    roomCode: currentRoomCode, name: myName,
+                    stage: currentStage, problem: currentProblem, score, lives,
+                    totalAttempts, correctAttempts, conceptHits, conceptFails,
+                    elapsedSec: Math.floor((Date.now() - gameStartTime) / 1000),
+                    savedAt: Date.now()
+                }));
+            } catch (e) { /* 저장 불가 환경이면 조용히 무시 */ }
+        }
+
+        function clearResumeSnapshot() {
+            try { localStorage.removeItem(RESUME_KEY); } catch (e) { }
+        }
+
+        // 입장 성공 직후 호출. 스냅샷이 같은 방·같은 이름이고 신선하면 이어하기를 제안한다.
+        // 복원해도 문제 자체는 새로 출제된다(같은 지점의 새 문제) — 목표 배치는 저장하지 않는다.
+        async function tryResume(code, name) {
+            if (!RESUME_ENABLED) return false;
+            try {
+                const raw = localStorage.getItem(RESUME_KEY);
+                if (!raw) return false;
+                const s = JSON.parse(raw);
+                if (s.roomCode !== code || s.name !== name) return false;
+                if (!s.savedAt || Date.now() - s.savedAt > RESUME_MAX_AGE_MS) { clearResumeSnapshot(); return false; }
+                const ok = await customConfirm('이어하기',
+                    `중단된 판이 있습니다 (Stage ${s.stage}, 문제 ${s.problem}, ${s.score}점, ❤️${s.lives}). 이어서 하시겠습니까?`);
+                if (!ok) { clearResumeSnapshot(); return false; }
+                currentStage = s.stage; currentProblem = s.problem;
+                score = s.score; lives = s.lives;
+                totalAttempts = s.totalAttempts || 0; correctAttempts = s.correctAttempts || 0;
+                conceptHits = { ...emptyConceptMap(), ...(s.conceptHits || {}) };
+                conceptFails = { ...emptyConceptMap(), ...(s.conceptFails || {}) };
+                gameStartTime = Date.now() - (s.elapsedSec || 0) * 1000;
+                return true;
+            } catch (e) { return false; }
+        }
+
+        /* ═══════════════ 명예의 전당 (전체 방 통합) ═══════════════ */
 
         async function loadHallOfFame() {
             try {
-                const listEl = document.getElementById('hall-of-fame-list');
-                const roomsSnap = await getDocs(collection(db, DB_COLLECTION));
-                let allPlayers = [];
+                const roomsSnap = await getDocs(collection(db, `${GAME_KEY}_records`));
+                const promises = [];
+                roomsSnap.forEach(roomDoc => promises.push(getDocs(collection(db, `${GAME_KEY}_records`, roomDoc.id, "records"))));
+                const recordsSnaps = await Promise.all(promises);
 
-                for (const rDoc of roomsSnap.docs) {
-                    const stds = await getDocs(collection(db, DB_COLLECTION, rDoc.id, "students"));
-                    stds.forEach(s => {
-                        allPlayers.push({ nickname: s.id, ...s.data() });
+                let playerMap = {};
+                recordsSnaps.forEach((rs, idx) => {
+                    const roomCode = roomsSnap.docs[idx].id;
+                    rs.forEach(d => {
+                        const r = d.data();
+                        const key = `${roomCode}_${r.nickname}`;
+                        const rScore = r.score || 0;
+                        const acc = r.totalAttempts > 0 ? Math.round((r.correctAttempts / r.totalAttempts) * 100) : 0;
+                        const time = r.totalAttempts > 0 ? Number((r.playTimeSec / r.totalAttempts).toFixed(1)) : 9999;
+                        if (!playerMap[key]) {
+                            playerMap[key] = { name: r.nickname, score: rScore, acc, time };
+                        } else {
+                            const curr = playerMap[key];
+                            if (rScore > curr.score || (rScore === curr.score && acc > curr.acc) || (rScore === curr.score && acc === curr.acc && time < curr.time)) {
+                                playerMap[key] = { name: r.nickname, score: rScore, acc, time };
+                            }
+                        }
                     });
-                }
-
-                allPlayers.sort((a, b) => (b.bestScore || 0) - (a.bestScore || 0));
-                const top5 = allPlayers.slice(0, 5);
-
-                if (top5.length === 0) {
-                    listEl.innerHTML = '<p class="text-muted text-center small py-3">첫 번째 도전자가 되어보세요!</p>';
-                    return;
-                }
-
-                let html = '';
-                top5.forEach((p, idx) => {
-                    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}위`;
-                    html += `
-                        <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-3 border-0 bg-light rounded-3 mb-2">
-                            <div><b>${medal}</b> <span class="ms-2 fw-bold">${p.nickname}</span></div>
-                            <div><span class="badge bg-primary rounded-pill">${p.bestScore || 0}점</span></div>
-                        </div>
-                    `;
                 });
-                listEl.innerHTML = html;
-            } catch (e) { }
+
+                let allRecs = Object.values(playerMap);
+                allRecs.sort((a, b) => {
+                    if (b.score !== a.score) return b.score - a.score;
+                    if (b.acc !== a.acc) return b.acc - a.acc;
+                    return a.time - b.time;
+                });
+                const top5 = allRecs.slice(0, 5);
+
+                let hofHtml = '';
+                if (top5.length === 0) {
+                    hofHtml = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
+                } else {
+                    hofHtml = `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 0.9rem;">
+                    <thead class="table-light"><tr>
+                        <th>#</th>
+                        <th class="text-start">닉네임</th>
+                        <th>점수</th>
+                        <th>정답률</th>
+                        <th>평균풀이</th>
+                    </tr></thead><tbody>`;
+                    hofHtml += top5.map((r, i) => {
+                        let rankHtml = '';
+                        if (i === 0) rankHtml = '🥇';
+                        else if (i === 1) rankHtml = '🥈';
+                        else if (i === 2) rankHtml = '🥉';
+                        else rankHtml = `<span class="text-muted small">${i + 1}</span>`;
+                        return `<tr>
+                            <td>${rankHtml}</td>
+                            <td class="text-start fw-bold">${r.name}</td>
+                            <td class="fw-bold text-primary">${r.score}</td>
+                            <td>${r.acc}%</td>
+                            <td>${r.time}초</td>
+                        </tr>`;
+                    }).join('');
+                    hofHtml += `</tbody></table></div>`;
+                }
+                document.getElementById('hofList').innerHTML = hofHtml;
+            } catch (err) {
+                document.getElementById('hofList').innerHTML = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
+            }
         }
         loadHallOfFame();
 
-        // =====================================================================
-        // 2. 게임 라이프사이클 및 문제 생성
-        // =====================================================================
-        function startNewGame() {
-            currentStage = 1;
-            currentProblemIndex = 1;
-            score = 0;
-            lives = 5;
-            combo = 0;
-            maxCombo = 0;
-            totalAnswered = 0;
-            correctCount = 0;
-            problemHistory = [];
+        /* ═══════════════ 입장 (13장 규약: 성공 시점에만 rememberEntrance) ═══════════════ */
 
-            showSection('game-section');
-            generateProblem();
-            updateHUD();
-        }
+        renderRoomEntrance('room-entrance-container', {
+            onJoin: async (code, name) => {
+                const roomSnap = await getDoc(roomDocRef(code));
+                if (!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
 
-        // TODO: 게임 특성에 맞는 문제 생성 알고리즘으로 교체
-        function generateProblem() {
-            const num1 = Math.floor(Math.random() * (currentStage * 10)) + 1;
-            const num2 = Math.floor(Math.random() * (currentStage * 10)) + 1;
-            currentAnswer = num1 + num2;
+                // 다른 방에서 이미 쓰는 닉네임인지 검사 (전 방 순회)
+                const allRoomsSnap = await getDocs(collection(db, `${GAME_KEY}_records`));
+                let nameInUse = false;
+                for (const rDoc of allRoomsSnap.docs) {
+                    if (rDoc.id === code) continue;
+                    const stdSnap = await getDoc(doc(db, `${GAME_KEY}_records`, rDoc.id, "students", name));
+                    if (stdSnap.exists()) { nameInUse = true; break; }
+                }
+                if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다.');
 
-            document.getElementById('problem-category').textContent = `Stage ${currentStage} - 기본 덧셈`;
-            document.getElementById('problem-question').textContent = `${num1} + ${num2} = ?`;
-            document.getElementById('user-answer-input').value = '';
-            document.getElementById('user-answer-input').focus();
-            document.getElementById('feedback-msg').textContent = '';
-        }
+                currentRoomCode = code; myName = name;
+                rememberEntrance(code, name);   // 입장 성공 시점에만 저장 → 다음 접속 때 자동 입력
 
-        function updateHUD() {
-            document.getElementById('hud-stage').textContent = `Stage ${currentStage}-${currentProblemIndex}`;
-            document.getElementById('hud-score').textContent = score;
-            document.getElementById('hud-lives').textContent = '❤️'.repeat(Math.max(0, lives)) + '🖤'.repeat(Math.max(0, 5 - lives));
-            
-            const comboEl = document.getElementById('hud-combo');
-            if (combo >= 2) {
-                comboEl.classList.remove('d-none');
-                comboEl.textContent = `🔥 ${combo} COMBO`;
-            } else {
-                comboEl.classList.add('d-none');
+                const resumed = await tryResume(code, name);
+                if (!resumed) resetGameState();
+
+                generateProblem();
+                updateUI();
+                showSection('game-section');
+            },
+            onAdminSuccess: () => {
+                showSection('admin-section');
+                loadRooms();
             }
-
-            const progress = ((currentProblemIndex - 1) / 5) * 100;
-            document.getElementById('hud-progress').style.width = `${progress}%`;
-        }
-
-        // 정답 검증 로직
-        document.getElementById('btn-submit-answer').addEventListener('click', checkAnswer);
-        document.getElementById('user-answer-input').addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') checkAnswer();
         });
 
-        function checkAnswer() {
-            const userVal = parseInt(document.getElementById('user-answer-input').value.trim());
-            if (isNaN(userVal)) return;
+        document.getElementById('endPlayBtn').addEventListener('click', () => {
+            const isClear = (currentStage >= MIXED_STAGE && currentProblem > 1); // 혼합 문제 1개 이상 클리어 = 상수준
+            gameOver(isClear);
+        });
 
-            totalAnswered++;
-            const isCorrect = (userVal === currentAnswer);
+        /* ═══════════════ 문제 생성 엔진 ═══════════════ */
 
-            if (isCorrect) {
-                correctCount++;
-                combo++;
-                maxCombo = Math.max(maxCombo, combo);
-                score += (100 * currentStage) + (combo * 10);
-                document.getElementById('feedback-msg').innerHTML = '<span class="text-success fw-bold">정답입니다! 🎉</span>';
-                
-                currentProblemIndex++;
-                if (currentProblemIndex > 5) {
-                    currentStage++;
-                    currentProblemIndex = 1;
-                    if (currentStage > 3) {
-                        return gameOver(true); // 3스테이지 완료 시 게임 클리어
+        // [TODO-3] 게임의 목표(요소) 생성. conceptIds의 각 개념에서 요소를 뽑아
+        //          [{ conceptId, active: true, ...게임별 필드 }] 배열로 반환.
+        //          규칙: (1) 요소 총수는 대략 nElements (혼합은 개념당 2개 이상)
+        //               (2) 서로 다른 요소가 겹치지 않게 (좌표·값 중복 제거)
+        //               (3) 출제 파라미터마다 배치 가능한 자리 수 ≥ 요소 수를
+        //                   스크립트로 전수 검증할 것 (표시 범위를 바꿀 때마다!)
+        // ▼▼▼ 예시 구현 시작 (배수 사냥: 개념 = k의 배수, 요소 = 숫자 칩) ▼▼▼
+        function makeTargets(conceptIds, nElements) {
+            const targets = [];
+            const used = new Set();
+            const perConcept = Math.max(2, Math.floor(nElements / conceptIds.length));
+            conceptIds.forEach(cid => {
+                const base = CONCEPTS[cid - 1].base;
+                const pool = [];
+                for (let m = 1; m * base <= 60; m++) pool.push(m * base);
+                pool.sort(() => Math.random() - 0.5);
+                let added = 0;
+                for (const v of pool) {
+                    if (added >= (conceptIds.length === 1 ? nElements : perConcept)) break;
+                    if (used.has(v)) continue;
+                    used.add(v);
+                    targets.push({ conceptId: cid, value: v, active: true });
+                    added++;
+                }
+            });
+            return targets;
+        }
+        // ▲▲▲ 예시 구현 끝 ▲▲▲
+
+        function generateProblem() {
+            currentAttemptLimit = 0;
+            if (currentStage <= CONCEPT_COUNT) {
+                // 개념 스테이지: 문제 1·2는 현재 개념, 3은 복습 개념
+                const cid = conceptForProblem(currentStage, currentProblem);
+                currentTargets = makeTargets([cid], elementCount(currentProblem));
+            } else {
+                // 혼합 스테이지: 개념 2~3개 섞기, 시도 제한 = 필요 최소 횟수(개념 수) + 1
+                const k = Math.random() < 0.5 ? 2 : 3;
+                const ids = [...Array(CONCEPT_COUNT).keys()].map(i => i + 1)
+                    .sort(() => Math.random() - 0.5).slice(0, k);
+                currentTargets = makeTargets(ids, Math.max(elementCount(currentProblem), k * 2));
+                currentAttemptLimit = ids.length + 1;
+            }
+            currentProblemAttempts = 0;
+            renderBoard();
+            resetInput();
+            document.getElementById('feedbackText').innerText = '';
+        }
+
+        /* ═══════════════ 게임 화면 · 입력 ═══════════════ */
+
+        // [TODO-4] 게임판 렌더. currentTargets를 화면에 그린다 (active=false는 제거 연출).
+        // [TODO-5] 입력 UI 초기화(resetInput)와 판정(evaluateAttempt):
+        //          evaluateAttempt는 현재 입력으로 명중한 요소들의 active를 false로 바꾸고
+        //          { hitCount } 를 반환한다. attemptConceptId()는 이번 시도를 어느 개념의
+        //          통계로 기록할지 (보통 = 플레이어가 고른 규칙의 개념).
+        // ▼▼▼ 예시 구현 시작 ▼▼▼
+        let selectedConceptId = null;
+
+        function renderBoard() {
+            document.getElementById('game-board').innerHTML = currentTargets.map((t, i) =>
+                `<span class="demo-chip ${t.active ? '' : 'gone'}" data-i="${i}">${t.value}</span>`
+            ).join('');
+        }
+
+        function resetInput() {
+            selectedConceptId = null;
+            const row = document.getElementById('choiceRow');
+            row.innerHTML = CONCEPTS.map((c, i) =>
+                `<div class="choice-btn" data-cid="${i + 1}">${c.base}</div>`
+            ).join('');
+            row.querySelectorAll('.choice-btn').forEach(btn => btn.addEventListener('click', () => {
+                selectedConceptId = parseInt(btn.dataset.cid);
+                row.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('statusDisplay').innerText = CONCEPTS[selectedConceptId - 1].name;
+            }));
+            document.getElementById('statusDisplay').innerText = '선택 없음';
+        }
+
+        function evaluateAttempt() {
+            if (selectedConceptId === null) return null; // 입력 미완성 → 시도로 치지 않음
+            const base = CONCEPTS[selectedConceptId - 1].base;
+            let hitCount = 0;
+            currentTargets.forEach(t => {
+                if (t.active && t.value % base === 0) { t.active = false; hitCount++; }
+            });
+            return { hitCount };
+        }
+
+        function attemptConceptId() {
+            return selectedConceptId || conceptForProblem(currentStage, currentProblem);
+        }
+        // ▲▲▲ 예시 구현 끝 ▲▲▲
+
+        /* ═══════════════ 시도 처리 (검증된 규칙 — 그대로 두세요) ═══════════════ */
+
+        function updateUI() {
+            document.getElementById('stageDisplay').innerText = currentStage <= CONCEPT_COUNT ? currentStage : `${MIXED_STAGE} (혼합)`;
+            document.getElementById('probDisplay').innerText = currentProblem;
+            document.getElementById('probTotal').innerText = currentStage <= CONCEPT_COUNT ? `/${PROBLEMS_PER_STAGE}` : "";
+            document.getElementById('scoreDisplay').innerText = score;
+            document.getElementById('livesDisplay').innerText = '❤️'.repeat(lives) + '🖤'.repeat(MAX_LIVES - lives);
+
+            const limitContainer = document.getElementById('attemptLimitContainer');
+            if (currentStage >= MIXED_STAGE && currentAttemptLimit > 0) {
+                limitContainer.classList.remove('d-none');
+                const left = Math.max(0, currentAttemptLimit - currentProblemAttempts);
+                document.getElementById('attemptDisplay').innerText = left + '회 남음';
+            } else {
+                limitContainer.classList.add('d-none');
+            }
+            saveResumeSnapshot();
+        }
+
+        document.getElementById('submitBtn').addEventListener('click', () => {
+            const result = evaluateAttempt();
+            if (result === null) {
+                document.getElementById('feedbackText').innerText = '먼저 규칙을 선택하세요!';
+                return;
+            }
+            totalAttempts++;
+            currentProblemAttempts++;
+            const hitCount = result.hitCount;
+            score += hitCount * 10;
+            renderBoard();
+            const remaining = currentTargets.filter(t => t.active).length;
+            const cid = attemptConceptId();
+
+            // 시도 단위 기록: 명중/실패 (개념별 통계는 모든 스테이지 공통)
+            if (hitCount === 0) {
+                conceptFails[cid]++;
+            } else {
+                correctAttempts++;
+                conceptHits[cid]++;
+            }
+
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (currentStage >= MIXED_STAGE) {
+                // 혼합 스테이지 규칙: 시도가 남아있는 동안은 실패해도 목숨 유지.
+                // 시도를 전부 썼는데 목표가 남아있으면 목숨 1 차감 후
+                // 새로운 배치를 생성하고 시도를 다시 채운다.
+                if (remaining === 0) {
+                    score += 5;
+                    document.getElementById('feedbackText').innerText = '모두 해결! +5점';
+                    updateUI();
+                    submitBtn.disabled = true;
+                    setTimeout(() => {
+                        // 혼합 스테이지의 첫 문제를 깨는 순간 상수준 판정 → 이후 무한 챌린지 계속
+                        if (currentProblem === 1) saveClearRecord();
+                        currentProblem++; generateProblem(); updateUI();
+                        submitBtn.disabled = false;
+                    }, 1200);
+                } else if (currentProblemAttempts >= currentAttemptLimit) {
+                    lives--;
+                    document.getElementById('feedbackText').innerText = '기회 소진! 새로운 배치가 나타납니다.';
+                    updateUI();
+                    if (lives <= 0) {
+                        setTimeout(() => gameOver(false), 1000);
+                        return;
                     }
+                    submitBtn.disabled = true;
+                    setTimeout(() => {
+                        generateProblem(); updateUI();
+                        submitBtn.disabled = false;
+                    }, 1200);
+                } else {
+                    document.getElementById('feedbackText').innerText = hitCount === 0 ? '빗나갔습니다!' : '일부 해결!';
+                    updateUI();
+                }
+                return;
+            }
+
+            // 개념 스테이지(1~CONCEPT_COUNT): 빗나가면 목숨 차감
+            if (hitCount === 0) {
+                lives--;
+                document.getElementById('feedbackText').innerText = '빗나갔습니다!';
+                updateUI();
+                if (lives <= 0) {
+                    setTimeout(() => gameOver(false), 1000);
+                    return;
                 }
             } else {
-                combo = 0;
-                lives--;
-                document.getElementById('feedback-msg').innerHTML = `<span class="text-danger fw-bold">오답입니다! (정답: ${currentAnswer})</span>`;
-                if (lives <= 0) return gameOver(false);
+                if (remaining > 0) document.getElementById('feedbackText').innerText = '일부 해결!';
+                else { score += 5; document.getElementById('feedbackText').innerText = '모두 해결! +5점'; }
             }
+            updateUI();
 
-            updateHUD();
-            setTimeout(generateProblem, 600);
-        }
-
-        document.getElementById('btn-give-up').addEventListener('click', async () => {
-            if (await customConfirm("포기", "정말 게임을 중단하시겠습니까?")) gameOver(false);
+            if (remaining === 0) {
+                submitBtn.disabled = true;
+                setTimeout(() => {
+                    if (currentProblem < PROBLEMS_PER_STAGE) { currentProblem++; }
+                    else { currentStage++; currentProblem = 1; }
+                    generateProblem(); updateUI();
+                    submitBtn.disabled = false;
+                }, 1200);
+            }
         });
 
-        // =====================================================================
-        // 3. 게임 종료 및 Firestore 기록 저장
-        // =====================================================================
-        async function gameOver(isClear) {
-            showSection('result-section');
-            const accuracy = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+        /* ═══════════════ 저장 (딱 두 시점: 상수준 달성 · 게임 종료) ═══════════════ */
 
-            document.getElementById('result-title').textContent = isClear ? "🎉 게임 클리어!" : "💀 게임 오버";
-            document.getElementById('result-final-score').textContent = score;
-            document.getElementById('result-accuracy').textContent = `${accuracy}%`;
-            document.getElementById('result-max-combo').textContent = `${maxCombo}콤보`;
-
-            // Firestore에 개인 성적 및 플레이 이력 누적 저장
-            try {
-                const stdRef = doc(db, DB_COLLECTION, currentRoomCode, "students", currentNickname);
-                const stdSnap = await getDoc(stdRef);
-                const prev = stdSnap.exists() ? stdSnap.data() : { playCount: 0, bestScore: 0 };
-
-                await setDoc(stdRef, {
-                    bestScore: Math.max(prev.bestScore || 0, score),
-                    lastAccuracy: accuracy,
-                    maxStage: Math.max(prev.maxStage || 1, currentStage),
-                    maxCombo: Math.max(prev.maxCombo || 0, maxCombo),
-                    playCount: (prev.playCount || 0) + 1,
-                    lastPlayedAt: serverTimestamp()
-                }, { merge: true });
-
-                // 상세 플레이 로그 추가
-                const recCol = collection(db, DB_COLLECTION, currentRoomCode, "records");
-                await setDoc(doc(recCol), {
-                    nickname: currentNickname,
-                    score: score,
-                    accuracy: accuracy,
-                    stage: currentStage,
-                    maxCombo: maxCombo,
-                    createdAt: serverTimestamp()
-                });
-            } catch (e) {
-                console.error("기록 저장 실패", e);
-            }
+        function buildRecordData(isCompleted) {
+            return {
+                nickname: myName, score,
+                maxStage: currentStage, maxProblem: currentProblem,
+                isCompleted,
+                totalAttempts, correctAttempts,
+                conceptHits, conceptFails,
+                playTimeSec: Math.floor((Date.now() - gameStartTime) / 1000),
+                playedAt: serverTimestamp()
+            };
         }
 
-        document.getElementById('btn-restart-game').addEventListener('click', startNewGame);
+        async function updateRoomBest() {
+            const finalAcc = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
+            const finalTime = totalAttempts > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / totalAttempts).toFixed(1) : 0;
+            const roomRef = roomDocRef(currentRoomCode);
+            const roomSnap = await getDoc(roomRef);
+            let updated = { roomCode: currentRoomCode, updatedAt: serverTimestamp() };
+            const isBest = !roomSnap.exists() || roomSnap.data().bestScore === undefined || score > roomSnap.data().bestScore;
+            if (isBest) {
+                updated.bestScore = score;
+                updated.bestScoreBy = myName;
+                updated.bestAcc = finalAcc;
+                updated.bestTime = finalTime;
+                updated.bestStage = currentStage;
+            }
+            if (!roomSnap.exists()) updated.createdAt = serverTimestamp();
+            await setDoc(roomRef, updated, { merge: true });
+        }
 
-        // =====================================================================
-        // 4. 선생님 대시보드 로직 (엑셀 다운로드 포함)
-        // =====================================================================
-        async function loadAdminRooms() {
-            const snap = await getDocs(collection(db, DB_COLLECTION));
-            const select = document.getElementById('admin-room-select');
-            select.innerHTML = '<option value="">방을 선택하세요</option>';
-            snap.forEach(d => {
-                const opt = document.createElement('option');
-                opt.value = d.id;
-                opt.textContent = d.id;
-                select.appendChild(opt);
+        async function saveClearRecord() {
+            await updateRoomBest();
+            await addDoc(recordsCollectionRef(currentRoomCode), buildRecordData(true));
+            const alertBox = document.createElement('div');
+            alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:10px 20px;border-radius:8px;font-weight:bold;z-index:9999;box-shadow:0 4px 6px rgba(0,0,0,0.1);";
+            alertBox.innerText = "🎉 상수준 달성! 대시보드에 기록되었습니다. 무한 챌린지를 계속하세요!";
+            document.body.appendChild(alertBox);
+            setTimeout(() => alertBox.remove(), 3000);
+        }
+
+        async function gameOver(isClear) {
+            clearResumeSnapshot();   // 판이 정식으로 끝났으니 이어하기 스냅샷 폐기
+            showSection('gameover-section');
+            document.getElementById('gameoverIcon').innerText = isClear ? "🏆" : "⚔️";
+            document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료!" : "게임 종료!";
+            document.getElementById('gameoverDesc').innerText = isClear ? `기본 미션을 모두 완수하고 무한 모드(문제 ${currentProblem})까지 생존했습니다!` : "하트를 모두 소진했습니다.";
+            document.getElementById('finalScore').innerText = score;
+            document.getElementById('finalStage').innerText = `Stage ${currentStage}`;
+            const finalAcc = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
+            const finalTime = totalAttempts > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / totalAttempts).toFixed(1) : 0;
+            document.getElementById('finalAcc').innerText = `${finalAcc}%`;
+            document.getElementById('finalTime').innerText = `${finalTime}초`;
+
+            await updateRoomBest();
+            await addDoc(recordsCollectionRef(currentRoomCode), buildRecordData(isClear));
+            await setDoc(doc(db, `${GAME_KEY}_records`, currentRoomCode, "students", myName), {
+                nickname: myName, score,
+                stage: currentStage, problem: currentProblem,
+                totalAttempts, correctAttempts, conceptHits, conceptFails,
+                playTimeSec: Math.floor((Date.now() - gameStartTime) / 1000),
+                isCompleted: isClear,
+                lastActive: serverTimestamp()
+            }, { merge: true });
+
+            // 전체 방 통합 순위에서 내 위치 ±2명
+            const roomsSnap = await getDocs(collection(db, `${GAME_KEY}_records`));
+            const promises = [];
+            roomsSnap.forEach(roomDoc => promises.push(getDocs(collection(db, `${GAME_KEY}_records`, roomDoc.id, "records"))));
+            const recordsSnaps = await Promise.all(promises);
+
+            let playerMap = {};
+            recordsSnaps.forEach((rs, idx) => {
+                const roomCode = roomsSnap.docs[idx].id;
+                rs.forEach(d => {
+                    const r = d.data();
+                    const key = `${roomCode}_${r.nickname}`;
+                    const rScore = r.score || 0;
+                    const acc = r.totalAttempts > 0 ? Math.round((r.correctAttempts / r.totalAttempts) * 100) : 0;
+                    const time = r.totalAttempts > 0 ? Number((r.playTimeSec / r.totalAttempts).toFixed(1)) : 9999;
+                    if (!playerMap[key]) {
+                        playerMap[key] = { ...r, roomCode, acc, time };
+                    } else {
+                        const curr = playerMap[key];
+                        if (rScore > curr.score || (rScore === curr.score && acc > curr.acc) || (rScore === curr.score && acc === curr.acc && time < curr.time)) {
+                            playerMap[key] = { ...r, roomCode, acc, time };
+                        }
+                    }
+                });
             });
+
+            let allRecords = Object.values(playerMap);
+            allRecords.sort((a, b) => {
+                if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0);
+                if (b.acc !== a.acc) return b.acc - a.acc;
+                return a.time - b.time;
+            });
+
+            const myKey = `${currentRoomCode}_${myName}`;
+            const myIndex = allRecords.findIndex(item => `${item.roomCode}_${item.nickname}` === myKey);
+            const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
+            const start = Math.max(0, safeIndex - 2);
+            const end = Math.min(allRecords.length, safeIndex + 3);
+            const nearby = allRecords.slice(start, end);
+
+            const myRank = safeIndex + 1;
+            const totalPlayers = allRecords.length;
+            const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
+            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명 (전체 통합)`;
+            document.getElementById('rankSummaryText').innerText = `${myName}님은 모든 방을 통틀어 상위 ${percentile}%에 해당합니다. ${safeIndex > 0 ? `바로 위에는 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.` : '현재 통합 1위로 앞선 사람이 없습니다!'}`;
+
+            document.getElementById('rankNearbyTable').innerHTML = nearby.map((item, idx) => {
+                const rankNumber = start + idx + 1;
+                const isMe = `${item.roomCode}_${item.nickname}` === myKey;
+                const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
+                return `
+                    <tr class="${isMe ? 'table-primary fw-bold' : ''}">
+                        <td class="text-center">${rankNumber}</td>
+                        <td>${item.nickname}</td>
+                        <td class="text-center">${item.score}점</td>
+                        <td class="text-center">${percentText}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            await loadHallOfFame();
+        }
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            resetGameState();
+            generateProblem();
+            updateUI();
+            showSection('game-section');
+        });
+
+        /* ═══════════════ 관리자 대시보드 (12장 규약 + 스테이지형 확장) ═══════════════ */
+
+        let unsubRooms = null, unsubRecords = null;
+        let roomRecords = [];
+        let currentAdminRoom = '';
+        let currentExcelData = [];
+        let currentStats = {};
+
+        function loadRooms() {
+            if (unsubRooms) unsubRooms();
+            unsubRooms = onSnapshot(collection(db, `${GAME_KEY}_records`), snap => {
+                const select = document.getElementById('roomSelect');
+                const curr = select.value;
+                select.innerHTML = '<option value="">방을 선택하세요</option>';
+                snap.forEach(d => select.innerHTML += `<option value="${d.id}">${d.id}</option>`);
+                if (curr && document.querySelector(`#roomSelect option[value="${curr}"]`)) select.value = curr;
+            });
+        }
+
+        document.getElementById('roomSelect').addEventListener('change', (e) => {
+            currentAdminRoom = e.target.value;
+            if (unsubRecords) unsubRecords();
+            if (!currentAdminRoom) { roomRecords = []; renderDashboard(); return; }
+            unsubRecords = onSnapshot(recordsCollectionRef(currentAdminRoom), snap => {
+                roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard();
+            });
+        });
+
+        let studentModalInstance = null;
+        window.showStudentModal = function (nick) {
+            const s = currentStats[nick];
+            if (!s) return;
+            document.getElementById('shModalTitle').innerText = nick;
+
+            const myRecords = roomRecords.filter(r => r.nickname === nick).sort((a, b) => (b.playedAt?.toMillis() || 0) - (a.playedAt?.toMillis() || 0));
+            const trs = myRecords.map(r => {
+                const dt = r.playedAt ? new Date(r.playedAt.toMillis()).toLocaleString() : '-';
+                const acc = r.totalAttempts > 0 ? Math.round((r.correctAttempts / r.totalAttempts) * 100) : 0;
+                const pTime = r.totalAttempts > 0 ? (r.playTimeSec / r.totalAttempts).toFixed(1) : 0;
+                return `<tr><td>${dt}</td><td class="fw-bold text-primary">${r.score}</td><td><span class="badge bg-success">Lv.${r.maxStage}</span></td><td>${acc}%</td><td>${pTime}초</td></tr>`;
+            }).join('');
+            document.getElementById('shModalTable').innerHTML = trs.length > 0 ? trs : '<tr><td colspan="5" class="text-muted">기록이 없습니다.</td></tr>';
+
+            let cardsHtml = '';
+            for (let i = 1; i <= CONCEPT_COUNT; i++) {
+                const h = s.hits[i] || 0, f = s.fails[i] || 0;
+                const tot = h + f;
+                const p = tot > 0 ? Math.round((h / tot) * 100) : '-';
+                cardsHtml += `
+                    <div class="col-6 col-md-3">
+                        <div class="card h-100 text-center shadow-sm border-0" style="border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0;">
+                            <div class="card-body p-3">
+                                <div class="text-muted small fw-bold mb-1">Lv.${i} ${CONCEPTS[i - 1].name}</div>
+                                <h4 class="fw-bold text-dark mb-1">${p === '-' ? '-' : p + '%'}</h4>
+                                <div class="small text-muted">${h}맞 / ${f}틀</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('shModalCards').innerHTML = cardsHtml;
+
+            if (!studentModalInstance) studentModalInstance = new bootstrap.Modal(document.getElementById('studentHistoryModal'));
+            studentModalInstance.show();
+        };
+
+        function generateRoomCode() {
+            const pool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let code = '';
+            for (let i = 0; i < 4; i++) code += pool[Math.floor(Math.random() * pool.length)];
+            return code;
         }
 
         document.getElementById('btn-create-room').addEventListener('click', async () => {
-            const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-            await setDoc(doc(db, DB_COLLECTION, code), { createdAt: serverTimestamp() });
-            await loadAdminRooms();
-            document.getElementById('admin-room-select').value = code;
-            startAdminMonitoring(code);
-            await customAlert("생성 완료", `새로운 방 [<b>${code}</b>]이 생성되었습니다.`);
+            let code;
+            while (true) {
+                code = generateRoomCode();
+                const d = await getDoc(roomDocRef(code));
+                if (!d.exists()) break;
+            }
+            await setDoc(roomDocRef(code), { roomCode: code, createdAt: serverTimestamp() });
+            customAlert("방 생성", `새로운 방 코드는 [${code}] 입니다.`);
+            document.getElementById('roomSelect').value = code;
+            currentAdminRoom = code;
+            document.getElementById('roomSelect').dispatchEvent(new Event('change'));
         });
 
         document.getElementById('btn-delete-room').addEventListener('click', async () => {
-            const code = document.getElementById('admin-room-select').value;
-            if (!code) return await customAlert("알림", "삭제할 방을 선택하세요.");
-            if (!await customConfirm("방 삭제", `방 [${code}] 데이터를 모두 삭제하시겠습니까?`)) return;
-
-            await deleteDoc(doc(db, DB_COLLECTION, code));
-            if (adminUnsub) adminUnsub();
-            document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-            await loadAdminRooms();
-            await customAlert("완료", "방이 삭제되었습니다.");
+            if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
+            const confirmed = await customConfirm("방 삭제", `방 [${currentAdminRoom}] 데이터를 모두 삭제하시겠습니까?`);
+            if (!confirmed) return;
+            const sSnap = await getDocs(studentsCollectionRef(currentAdminRoom)); sSnap.forEach(d => deleteDoc(d.ref));
+            const rSnap = await getDocs(recordsCollectionRef(currentAdminRoom)); rSnap.forEach(d => deleteDoc(d.ref));
+            await deleteDoc(roomDocRef(currentAdminRoom));
+            customAlert("완료", "방이 삭제되었습니다.");
+            document.getElementById('roomSelect').value = '';
+            document.getElementById('roomSelect').dispatchEvent(new Event('change'));
         });
 
-        document.getElementById('admin-room-select').addEventListener('change', (e) => {
-            const code = e.target.value;
-            if (!code) {
-                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-                if (adminUnsub) adminUnsub();
-                return;
-            }
-            startAdminMonitoring(code);
-        });
+        function renderDashboard() {
+            const emptyDash = (msg) => {
+                document.getElementById('adminTableBody').innerHTML = `<tr><td colspan="7" class="py-4 text-muted">${msg}</td></tr>`;
+                document.getElementById('dashAvgScore').innerText = '-';
+                document.getElementById('dashAvgAcc').innerText = '-';
+                document.getElementById('dashConceptAcc').innerHTML = '';
+                document.getElementById('dashSpeedDist').innerHTML = '';
+            };
+            if (!currentAdminRoom) return emptyDash('방을 선택해주세요.');
 
-        function startAdminMonitoring(roomCode) {
-            if (adminUnsub) adminUnsub();
-            currentRoomCode = roomCode;
-
-            adminUnsub = onSnapshot(collection(db, DB_COLLECTION, roomCode, "students"), (snap) => {
-                cachedAdminRecords = [];
-                snap.forEach(d => cachedAdminRecords.push({ nickname: d.id, ...d.data() }));
-                renderAdminDashboard();
+            // 통계는 records(판별 원본)만으로 재구성
+            let stats = {};
+            roomRecords.forEach(r => {
+                if (!stats[r.nickname]) stats[r.nickname] = { pc: 0, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0, hits: emptyConceptMap(), fails: emptyConceptMap(), comp: false, playTime: 0 };
+                const s = stats[r.nickname]; s.pc++;
+                if (r.score > s.ms) s.ms = r.score;
+                if (r.maxStage > s.mStg) { s.mStg = r.maxStage; s.mProb = r.maxProblem || 1; }
+                else if (r.maxStage === s.mStg && (r.maxProblem || 1) > s.mProb) { s.mProb = r.maxProblem || 1; }
+                if (r.isCompleted) s.comp = true;
+                s.ts += (r.totalAttempts || 0); s.hs += (r.correctAttempts || 0); s.playTime += (r.playTimeSec || 0);
+                for (let i = 1; i <= CONCEPT_COUNT; i++) { s.hits[i] += (r.conceptHits?.[i] || 0); s.fails[i] += (r.conceptFails?.[i] || 0); }
             });
-        }
 
-        function renderAdminDashboard() {
-            const tbody = document.getElementById('admin-record-tbody');
-            document.getElementById('dash-total-students').textContent = `${cachedAdminRecords.length}명`;
+            currentStats = stats;
+            const keys = Object.keys(stats);
+            if (keys.length === 0) return emptyDash('아직 참여한 학생이 없습니다.');
 
-            if (cachedAdminRecords.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
-                document.getElementById('dash-avg-score').textContent = '-';
-                document.getElementById('dash-avg-acc').textContent = '-';
-                return;
+            const sortedKeys = keys.sort((a, b) => {
+                const sA = stats[a], sB = stats[b];
+                if (sA.ms !== sB.ms) return sB.ms - sA.ms;
+                const accA = sA.ts > 0 ? (sA.hs / sA.ts) : 0;
+                const accB = sB.ts > 0 ? (sB.hs / sB.ts) : 0;
+                if (accA !== accB) return accB - accA;
+                const timeA = sA.ts > 0 ? (sA.playTime / sA.ts) : 9999;
+                const timeB = sB.ts > 0 ? (sB.playTime / sB.ts) : 9999;
+                return timeA - timeB;
+            });
+
+            let totalScore = 0, totalAcc = 0;
+            let cHits = emptyConceptMap(), cFails = emptyConceptMap();
+            let speedCounts = { "<20": 0, "20-40": 0, "40-60": 0, ">=60": 0 };
+            let tbodyHtml = '';
+            currentExcelData = [];
+
+            sortedKeys.forEach((nick, idx) => {
+                const s = stats[nick];
+                const acc = s.ts > 0 ? Math.round((s.hs / s.ts) * 100) : 0;
+                const rankDisplay = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+
+                // 성취 3단계: 상 = 상수준 기록 보유(혼합 첫 문제 클리어), 중 = 중반 개념 도달
+                let tier = '하 (보충)', tBdg = 'bg-danger';
+                if (s.comp || (s.mStg >= MIXED_STAGE && s.mProb >= 2)) { tier = '상 (우수)'; tBdg = 'bg-success'; }
+                else if (s.mStg >= MID_TIER_STAGE) { tier = '중 (보통)'; tBdg = 'bg-warning text-dark'; }
+
+                totalScore += s.ms; totalAcc += acc;
+                for (let i = 1; i <= CONCEPT_COUNT; i++) { cHits[i] += s.hits[i]; cFails[i] += s.fails[i]; }
+
+                const avgTimeRaw = s.ts > 0 ? (s.playTime / s.ts) : 0;
+                if (avgTimeRaw < 20) speedCounts["<20"]++;
+                else if (avgTimeRaw < 40) speedCounts["20-40"]++;
+                else if (avgTimeRaw < 60) speedCounts["40-60"]++;
+                else speedCounts[">=60"]++;
+
+                let compText = "";
+                if (s.comp) compText = "모든 개념 마스터";
+                else if (s.mStg >= MIXED_STAGE) compText = `혼합(Stage ${MIXED_STAGE}) 진행중`;
+                else compText = `${CONCEPTS[Math.max(1, Math.min(s.mStg, CONCEPT_COUNT)) - 1].name}(Stage ${Math.max(1, s.mStg)}) 진행중`;
+
+                const avgTime = avgTimeRaw.toFixed(1);
+
+                tbodyHtml += `<tr style="cursor:pointer;" onclick="showStudentModal('${nick}')"><td class="fw-bold">${rankDisplay}</td><td class="fw-bold">${nick}</td><td><span class="badge ${tBdg} fs-6">${tier}</span></td><td>${compText}</td><td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td><td><span class="fw-bold">${avgTime}초</span></td><td><span class="badge bg-secondary">${s.pc}회</span></td></tr>`;
+
+                const row = {
+                    "순위": idx + 1,
+                    "이름": nick,
+                    "종합 성취수준": tier,
+                    "핵심 역량": compText,
+                    "최종 점수": s.ms,
+                    "정답률(%)": acc,
+                    "평균 풀이 시간(초)": Number(avgTime),
+                    "플레이 횟수": s.pc
+                };
+                for (let i = 1; i <= CONCEPT_COUNT; i++) {
+                    const tot = s.hits[i] + s.fails[i];
+                    row[`${CONCEPTS[i - 1].name} 정답률`] = tot > 0 ? Math.round((s.hits[i] / tot) * 100) + "%" : "-";
+                }
+                currentExcelData.push(row);
+            });
+            document.getElementById('adminTableBody').innerHTML = tbodyHtml;
+
+            const tLen = keys.length;
+            document.getElementById('dashAvgScore').innerText = `${Math.round(totalScore / tLen)}점`;
+            document.getElementById('dashAvgAcc').innerText = `${Math.round(totalAcc / tLen)}%`;
+
+            const barColors = ["bg-primary", "bg-success", "bg-warning", "bg-info", "bg-danger", "bg-dark"];
+            let conceptHtml = '<div class="d-flex flex-column justify-content-evenly h-100 py-1">';
+            for (let i = 1; i <= CONCEPT_COUNT; i++) {
+                const tot = cHits[i] + cFails[i];
+                const p = tot > 0 ? Math.round((cHits[i] / tot) * 100) : 0;
+                const text = tot > 0 ? `${p}%` : '';
+                const color = barColors[(i - 1) % barColors.length];
+                conceptHtml += `
+                    <div class="d-flex align-items-center">
+                        <div style="width: 120px;" class="small fw-bold text-muted">Lv.${i} ${CONCEPTS[i - 1].name}</div>
+                        <div class="flex-grow-1 mx-2">
+                            <div class="progress" style="height: 20px; background-color: #f1f5f9;">
+                                ${p > 0 ? `<div class="progress-bar ${color}" role="progressbar" style="width: ${p}%; justify-content: flex-start; padding-left: 10px; border-top-right-radius: 6px; border-bottom-right-radius: 6px;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">${p > 10 ? text : ''}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
+            conceptHtml += '</div>';
+            document.getElementById('dashConceptAcc').innerHTML = conceptHtml;
 
-            // 평균 계산
-            const totalScore = cachedAdminRecords.reduce((sum, r) => sum + (r.bestScore || 0), 0);
-            const totalAcc = cachedAdminRecords.reduce((sum, r) => sum + (r.lastAccuracy || 0), 0);
-            document.getElementById('dash-avg-score').textContent = Math.round(totalScore / cachedAdminRecords.length);
-            document.getElementById('dash-avg-acc').textContent = `${Math.round(totalAcc / cachedAdminRecords.length)}%`;
-
-            // 점수순 정렬
-            cachedAdminRecords.sort((a, b) => (b.bestScore || 0) - (a.bestScore || 0));
-
-            let html = '';
-            cachedAdminRecords.forEach((r, idx) => {
-                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
-                html += `
-                    <tr>
-                        <td class="fw-bold">${medal}</td>
-                        <td class="fw-bold">${r.nickname}</td>
-                        <td><span class="badge bg-light text-dark border">Stage ${r.maxStage || 1}</span></td>
-                        <td><span class="text-primary fw-bold">${r.bestScore || 0}점</span> (${r.lastAccuracy || 0}%)</td>
-                        <td>🔥 ${r.maxCombo || 0}</td>
-                        <td>${r.playCount || 1}회</td>
-                        <td><button class="btn btn-outline-primary btn-sm" onclick="showStudentHistory('${r.nickname}')">이력 보기</button></td>
-                    </tr>
+            // 평균 풀이 속도 분포: 20초 구간 + 마지막은 열린 구간
+            const speeds = [
+                { k: "<20", n: "0~20초", c: "bg-success" }, { k: "20-40", n: "20~40초", c: "bg-primary" },
+                { k: "40-60", n: "40~60초", c: "bg-warning" }, { k: ">=60", n: "60초 이상", c: "bg-danger" }
+            ];
+            let speedHtml = '<div class="d-flex flex-column justify-content-evenly h-100 py-1">';
+            speeds.forEach(sp => {
+                const cnt = speedCounts[sp.k];
+                const p = tLen > 0 ? (cnt / tLen) * 100 : 0;
+                const text = cnt > 0 ? cnt + '명' : '0명';
+                speedHtml += `
+                    <div class="d-flex align-items-center">
+                        <div style="width: 80px;" class="small fw-bold text-muted text-end">${sp.n}</div>
+                        <div class="flex-grow-1 mx-3">
+                            <div class="progress" style="height: 20px; background-color: #f1f5f9;">
+                                ${p > 0 ? `<div class="progress-bar ${sp.c}" role="progressbar" style="width: ${p}%; justify-content: flex-start; padding-left: 10px; border-top-right-radius: 6px; border-bottom-right-radius: 6px;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">${p > 10 ? text : ''}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="small text-muted" style="width: 30px; text-align:right;">${p <= 10 ? text : ''}</div>
+                    </div>
                 `;
             });
-            tbody.innerHTML = html;
+            speedHtml += '</div>';
+            document.getElementById('dashSpeedDist').innerHTML = speedHtml;
         }
 
-        // 학생 상세 풀이 이력 모달
-        window.showStudentHistory = async function(nickname) {
-            document.getElementById('modal-student-name').textContent = nickname;
-            const modalTbody = document.getElementById('modal-history-tbody');
-            modalTbody.innerHTML = '<tr><td colspan="5" class="py-3 text-muted">불러오는 중...</td></tr>';
-
-            const modal = new bootstrap.Modal(document.getElementById('studentDetailModal'));
-            modal.show();
-
-            const recSnap = await getDocs(collection(db, DB_COLLECTION, currentRoomCode, "records"));
-            const logs = [];
-            recSnap.forEach(d => {
-                if (d.data().nickname === nickname) logs.push(d.data());
-            });
-
-            if (logs.length === 0) {
-                modalTbody.innerHTML = '<tr><td colspan="5" class="py-3 text-muted">기록이 없습니다.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            logs.forEach(l => {
-                html += `
-                    <tr>
-                        <td>-</td>
-                        <td class="fw-bold text-primary">${l.score || 0}점</td>
-                        <td>Stage ${l.stage || 1}</td>
-                        <td>${l.accuracy || 0}%</td>
-                        <td>${l.maxCombo || 0}</td>
-                    </tr>
-                `;
-            });
-            modalTbody.innerHTML = html;
-        };
-
-        // 엑셀 다운로드 기능
-        document.getElementById('btn-export-excel')?.addEventListener('click', () => {
-            if (cachedAdminRecords.length === 0) return customAlert("알림", "다운로드할 데이터가 없습니다.");
-
-            const rows = cachedAdminRecords.map((r, i) => ({
-                "순위": i + 1,
-                "닉네임": r.nickname,
-                "최고점수": r.bestScore || 0,
-                "최종정답률(%)": r.lastAccuracy || 0,
-                "최대도달스테이지": r.maxStage || 1,
-                "최대콤보": r.maxCombo || 0,
-                "플레이횟수": r.playCount || 1
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(rows);
+        document.getElementById('btn-export-excel').addEventListener('click', () => {
+            if (!currentAdminRoom) return customAlert("알림", "방을 선택해주세요.");
+            if (currentExcelData.length === 0) return customAlert("알림", "데이터가 없습니다.");
+            const ws = XLSX.utils.json_to_sheet(currentExcelData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "학습결과");
-            XLSX.writeFile(wb, `학습진단기록_${currentRoomCode}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            XLSX.utils.book_append_sheet(wb, ws, "평가진단");
+            XLSX.writeFile(wb, `${GAME_KEY}_평가진단_${currentAdminRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
         });
     </script>
+
+    <!--
+    ═══════════════════════════════════════════════════════════════════
+    [Firestore 보안 규칙] 콘솔 > Firestore Database > 규칙에 컬렉션 추가.
+    mystagegame → 본인 GAME_KEY로 교체.
+
+      match /mystagegame_records/{roomCode} {
+        allow read, write: if true;
+        match /{sub=**} { allow read, write: if true; }
+      }
+
+    ※ 교실용 최소 설정. 외부 공개 배포라면 필드 화이트리스트·문자열 길이
+      제한·rate 제한을 추가하고, 가이드 14장의 대원칙(클라이언트는 전부
+      위조 가능)을 기준으로 다시 조여야 한다.
+    ═══════════════════════════════════════════════════════════════════
+    -->
 </body>
+
 </html>
