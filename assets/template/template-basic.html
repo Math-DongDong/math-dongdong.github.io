@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ko">
+<!--
+═══════════════════════════════════════════════════════════════════════
+  [기본형 템플릿] 실시간 교실 게임 — 매칭 없음 (블로토 계열)
+═══════════════════════════════════════════════════════════════════════
+  용도: 모둠/개인이 각자 진행하고 교사가 대시보드로 전체를 보는 게임.
+        1:1 자동 매칭이 필요하면 template-matching.html을 쓰세요.
+
+  포함된 것 (검증 완료된 패턴):
+    · 첫화면: renderRoomEntrance (방코드·닉네임 자동 기억 포함)
+    · 세션 관리: sessionId 인수 / "이어서 접속할까요?" / 유령 차단
+    · 하트비트: 트랜잭션 방식 (삭제된 노드 부활 금지)
+    · onDisconnect: 상태 정리 + 물러날 때 예약 취소
+    · 관리자: 방 생성(혼동문자 제외+중복확인)·삭제·목록, 상태 배지, 입장순 정렬
+    · countChildren: SDK 버전 안전 (v9 size / v8 numChildren / forEach 폴백)
+
+  사용 순서:
+    1) GAME_KEY와 firebase-config의 DB import를 게임에 맞게 변경
+    2) [TODO] 표시 4곳을 채움 (Ctrl+F로 "[TODO" 검색)
+    3) 파일 맨 아래 주석의 보안 규칙을 Firebase 콘솔에 게시
+    4) 공통 파일 필요: js/room-auth.js, js/dashboard-header.js,
+       js/firebase-config.js, css/dashboard.css, css/navbar.css, js/navbar.js
+
+  게임방법 버튼 추가하려면: renderRoomEntrance 옵션에 아래 세 줄만 추가
+       guideBtnText: "📖 게임방법 보기",
+       guideTitle: "게임 방법",
+       guideSlides: [ { src: "이미지경로", alt: "", title: "", desc: "" }, ... ],
+═══════════════════════════════════════════════════════════════════════
+-->
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[TODO-1] 게임 제목</title>
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <link rel="stylesheet" href="../../../css/dashboard.css">
+
+    <style>
+        /* 접속 상태 표시 점 (세 게임 공통 서식) */
+        .status-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .status-online { background-color: #198754; }
+        .status-away { background-color: #ffc107; }
+        .status-offline { background-color: #dc3545; }
+
+        /* [TODO-2] 게임 전용 스타일을 여기에 */
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 (room-auth.js가 사용) -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info">대기 중</span>
+        </div>
+
+        <!-- ═══════════ 1. 첫화면 (게임방법 버튼 없는 버전) ═══════════ -->
+        <div id="landing-section" class="section-container active-section text-center py-5">
+            <h1 class="fw-bold mb-4">[TODO-1] 🎮 게임 제목</h1>
+            <p class="text-muted mb-5">[TODO-1] 게임 한 줄 소개</p>
+            <div class="row justify-content-center">
+                <div class="col-md-5">
+                    <div id="room-entrance-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ 2. 관리자 대시보드 ═══════════ -->
+        <div id="admin-section" class="section-container">
+            <div class="admin-card mb-4">
+                <!-- 상단 헤더는 공통 모듈이 자동 생성: 방 선택 드롭다운(#admin-room-select),
+                     새 방 만들기(#btn-create-room), 방 삭제(#btn-delete-room) -->
+                <div id="dash-header-placeholder"></div>
+                <script src="../../../js/dashboard-header.js" data-title="[TODO-1] 대시보드 제목" data-export="false"
+                    data-select-id="admin-room-select"></script>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h5 class="fw-bold mb-0">👥 참가자 현황</h5>
+                    <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                </div>
+
+                <div class="table-responsive">
+                    <!-- 세 게임 공통 테이블 서식: table-hover + text-center + align-middle + thead.table-light -->
+                    <table class="table table-hover text-center align-middle mb-0" id="admin-record-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>닉네임</th>
+                                <th>상태</th>
+                                <!-- [TODO-3] 게임 데이터 열 추가 (점수, 진행도 등) -->
+                                <th>관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-record-tbody">
+                            <tr><td colspan="3" class="py-4 text-muted">방을 선택해주세요.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ 3. 학생 플레이 화면 ═══════════ -->
+        <div id="game-section" class="section-container">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 text-center">
+                        <h3 class="fw-bold mb-3 text-primary" id="student-nickname-display">닉네임</h3>
+                        <!-- [TODO-4] 게임 UI를 여기에 -->
+                        <p class="text-muted">[TODO-4] 게임 화면</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // [TODO-1] firebase-config.js에서 이 게임용 DB 인스턴스를 export하고 여기서 가져오세요.
+        import { rtdbBlotto as db } from "../../../js/firebase-config.js";
+        import {
+            renderRoomEntrance, customAlert, customConfirm, escapeHtml,
+            isValidRtdbKey, rememberEntrance
+        } from "../../../js/room-auth.js";
+        import {
+            ref, set, get, onValue, update, remove, serverTimestamp,
+            runTransaction, onDisconnect, increment
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+
+        // =====================================================================
+        // 설정 — GAME_KEY만 바꾸면 DB 경로가 통째로 분리됩니다.
+        // =====================================================================
+        const GAME_KEY = 'mygame';                     // [TODO-1] 게임 식별자 (영문 소문자)
+        const HEARTBEAT_MS = 10000;                    // 하트비트 주기
+        const ONLINE_THRESHOLD_MS = 40000;             // 접속 끊김 판정 (하트비트의 4배)
+        const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
+        const NICKNAME_RE = /^[가-힣a-zA-Z0-9_\- ]{1,10}$/;   // 입력창 maxlength=10과 동일하게 유지
+
+        // =====================================================================
+        // 전역 상태
+        // =====================================================================
+        let currentRoomCode = null, currentNickname = null;
+        let isTeacher = false;
+        let localSessionId = null, isKicked = false, sessionEnded = false;
+        let heartbeatInterval = null, serverOffset = 0;
+        let unsubMe = null, unsubRoom = null, unsubPlayers = null;
+        let playersData = {};
+
+        const $ = (id) => document.getElementById(id);
+        const serverNow = () => Date.now() + serverOffset;
+        const roomRef = (c) => ref(db, `${GAME_KEY}_rooms/${c}`);
+        const playerRef = (c, n) => ref(db, `${GAME_KEY}_rooms/${c}/players/${n}`);
+        const playersCollRef = (c) => ref(db, `${GAME_KEY}_rooms/${c}/players`);
+
+        function showSection(id) {
+            ['landing-section', 'admin-section', 'game-section'].forEach(s =>
+                $(s)?.classList.toggle('active-section', s === id));
+        }
+
+        // 기기 시계가 틀어져 있어도 판정이 정확하도록 서버 시각과 동기화
+        onValue(ref(db, '.info/serverTimeOffset'), (snap) => { serverOffset = snap.val() || 0; });
+
+        // 자식 개수 세기 — SDK 버전 안전판
+        // (모듈러 v9+는 size '속성', 구버전 v8은 numChildren() '메서드'. 혼동 사고 방지)
+        function countChildren(snap) {
+            if (!snap || !snap.exists()) return 0;
+            if (typeof snap.size === 'number') return snap.size;
+            if (typeof snap.numChildren === 'function') return snap.numChildren();
+            let n = 0; snap.forEach(() => { n++; });
+            return n;
+        }
+
+        // =====================================================================
+        // 세션 관리 — 세 게임에서 검증된 패턴 그대로
+        // 내 노드 한 칸만 구독해 (1) 강퇴·방삭제 (2) 다른 기기의 세션 인수를 감지
+        // =====================================================================
+        function subscribeSession() {
+            if (unsubMe) { unsubMe(); unsubMe = null; }
+            unsubMe = onValue(playerRef(currentRoomCode, currentNickname), (snap) => {
+                if (!currentRoomCode || sessionEnded || isTeacher) return;
+                if (!snap.exists()) {
+                    sessionEnded = true; isKicked = true; cleanupSession();
+                    customAlert('안내', '방 또는 참가자 정보가 삭제되어<br>첫 화면으로 이동합니다.')
+                        .then(() => location.reload());
+                    return;
+                }
+                const d = snap.val();
+                if (d.sessionId && d.sessionId !== localSessionId) {
+                    sessionEnded = true; isKicked = true; cleanupSession();
+                    customAlert('중복 접속', '다른 기기에서 같은 이름으로 접속하여<br>이 화면의 연결이 끊어졌습니다.')
+                        .then(() => location.reload());
+                }
+            });
+        }
+
+        // ★ 물러날 때 onDisconnect 예약을 반드시 취소.
+        //   취소하지 않으면 곧 이어지는 location.reload()가 연결 종료로 인식되어
+        //   서버가 '새 기기'의 상태를 offline으로 덮어씁니다.
+        function cleanupSession() {
+            if (currentRoomCode && currentNickname) {
+                try { onDisconnect(playerRef(currentRoomCode, currentNickname)).cancel(); } catch (e) { }
+            }
+            stopHeartbeat();
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+            if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+        }
+
+        // =====================================================================
+        // 하트비트 — 반드시 트랜잭션으로 (단순 update는 삭제된 노드를 부활시킴)
+        // =====================================================================
+        async function startHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            try {
+                await onDisconnect(playerRef(currentRoomCode, currentNickname)).update({ status: 'offline' });
+            } catch (e) { }
+            updateHeartbeat();
+            heartbeatInterval = setInterval(updateHeartbeat, HEARTBEAT_MS);
+            document.removeEventListener('visibilitychange', updateHeartbeat);
+            document.addEventListener('visibilitychange', updateHeartbeat);
+        }
+
+        function stopHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+            document.removeEventListener('visibilitychange', updateHeartbeat);
+        }
+
+        async function updateHeartbeat() {
+            if (!currentRoomCode || !currentNickname || isKicked || isTeacher) return;
+            try {
+                await runTransaction(playerRef(currentRoomCode, currentNickname), (cur) => {
+                    if (cur === null) return;              // 삭제됨 → 부활 금지
+                    cur.lastHeartbeat = serverNow();       // 트랜잭션 안에서는 serverTimestamp() 사용 불가
+                    cur.status = document.hidden ? 'away' : 'online';
+                    return cur;
+                });
+            } catch (e) { }
+        }
+
+        // =====================================================================
+        // 첫화면 — 입장 처리 (자동 기억·이어서 접속 포함)
+        // =====================================================================
+        renderRoomEntrance('room-entrance-container', {
+            joinBtnText: "방 입장하기",
+            // 게임방법 버튼이 필요하면 여기에 guideSlides/guideBtnText/guideTitle 세 줄 추가 (파일 상단 주석 참고)
+            onJoin: async (code, nickname) => {
+                code = (code || '').trim().toUpperCase();
+                nickname = (nickname || '').trim();
+
+                if (!ROOM_CODE_RE.test(code))
+                    return await customAlert("방 코드 확인", "방 코드는 영문 대문자와 숫자 4자리입니다.");
+                if (!NICKNAME_RE.test(nickname) || !isValidRtdbKey(nickname))
+                    return await customAlert("닉네임 확인", "한글·영문·숫자·밑줄·하이픈만 사용해 1~10자로 입력해주세요.");
+
+                // 오류 원인이 "네트워크 오류"로 뭉뚱그려지지 않도록 직접 처리
+                try {
+                    const roomSnap = await get(roomRef(code));
+                    if (!roomSnap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
+
+                    localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+                    isKicked = false; sessionEnded = false;
+
+                    const pRef = playerRef(code, nickname);
+                    const prevSnap = await get(pRef);
+                    const prev = prevSnap.exists() ? prevSnap.val() : null;
+                    // 필수 필드가 온전한 노드만 '재접속'으로 인정 (손상 노드는 새로 생성해 복구)
+                    const isComplete = !!prev && typeof prev.nickname === 'string';
+
+                    if (isComplete) {
+                        const hb = typeof prev.lastHeartbeat === 'number' ? prev.lastHeartbeat : 0;
+                        const looksOnline = prev.status && prev.status !== 'offline'
+                            && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+                        if (looksOnline) {
+                            // 하드 차단 금지: 끊긴 기기는 서버가 감지하기 전까지 online으로 남아
+                            // 본인이 자기 유령에게 막힙니다. 확인 후 이어받으면 sessionId가
+                            // 기록되는 순간 옛 기기가 스스로 물러납니다.
+                            const ok = await customConfirm('이어서 접속할까요?',
+                                `<b>${escapeHtml(nickname)}</b> 이름으로 접속 중인 기기가 있습니다.<br><br>` +
+                                `내가 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
+                                `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 기록은 그대로 이어집니다)</span><br><br>` +
+                                `<b class="text-danger">다른 친구가 쓰는 이름이라면</b> [취소] 후 다른 닉네임을 사용해주세요.`);
+                            if (!ok) return;
+                        }
+                        await update(pRef, {
+                            status: 'online', lastHeartbeat: serverTimestamp(), sessionId: localSessionId
+                        });
+                    } else {
+                        await set(pRef, {
+                            nickname,
+                            joinedAt: serverTimestamp(),           // 입장 순서 고정값 (재접속해도 안 바뀜)
+                            status: 'online',
+                            lastHeartbeat: serverTimestamp(),
+                            sessionId: localSessionId
+                            /* [TODO-4] 게임 초기 필드 (score: 0 등) */
+                        });
+                    }
+
+                    currentRoomCode = code; currentNickname = nickname;
+                    rememberEntrance(code, nickname);   // 다음 접속 때 자동 입력
+
+                    subscribeSession();
+                    await startHeartbeat();
+
+                    $('nav-room-info').innerHTML = `방: <b>${escapeHtml(code)}</b> | <b>${escapeHtml(nickname)}</b>`;
+                    $('student-nickname-display').textContent = nickname;
+                    showSection('game-section');
+                    /* [TODO-4] 게임 구독·초기화 시작 */
+                } catch (e) {
+                    console.error('입장 처리 오류:', e);
+                    const msg = String((e && e.message) || e).toLowerCase();
+                    if (msg.includes('permission')) {
+                        await customAlert("입장 실패",
+                            "데이터베이스 접근이 거부되었습니다.<br>네트워크가 아니라 <b>보안 규칙</b> 문제입니다.");
+                    } else {
+                        await customAlert("입장 실패", "입장 중 문제가 발생했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.");
+                    }
+                }
+            },
+            onAdminSuccess: () => {
+                isTeacher = true;
+                $('nav-room-info').textContent = '대시보드 (관리자)';
+                showSection('admin-section');
+                loadAdminRooms();
+            }
+        });
+
+        // =====================================================================
+        // 관리자 대시보드
+        // =====================================================================
+        // 헷갈리는 문자(0/O, 1/I) 제외 + 중복 확인
+        async function generateUniqueRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            for (let attempt = 0; attempt < 20; attempt++) {
+                let code = '';
+                for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+                if (!(await get(roomRef(code))).exists()) return code;
+            }
+            return null;
+        }
+
+        async function loadAdminRooms() {
+            const select = $('admin-room-select');
+            if (!select) return;
+            try {
+                // ★ 이 읽기가 되려면 규칙에서 `${GAME_KEY}_rooms` "자체"에 .read: true 필요
+                //   ($room 하위에만 있으면 컬렉션 전체 읽기가 거부됨 — 실제로 겪은 함정)
+                const snapshot = await get(ref(db, `${GAME_KEY}_rooms`));
+                const keep = select.value;
+                select.innerHTML = '<option value="">방을 선택하세요</option>';
+                const rooms = [];
+                if (snapshot.exists()) {
+                    snapshot.forEach(s => rooms.push({ id: s.key, createdAt: (s.val() || {}).createdAt || 0 }));
+                    rooms.sort((a, b) => b.createdAt - a.createdAt);
+                    rooms.forEach(r => {
+                        const o = document.createElement('option');
+                        o.value = r.id; o.textContent = r.id;
+                        select.appendChild(o);
+                    });
+                    if (keep && rooms.some(r => r.id === keep)) select.value = keep;
+                }
+            } catch (e) {
+                console.error("방 목록 로드 오류:", e);
+                await customAlert("오류", "방 목록을 불러오지 못했습니다.<br>보안 규칙의 컬렉션 읽기 권한을 확인해주세요.");
+            }
+        }
+
+        let unsubAdminPlayers = null, adminRenderInterval = null;
+        let adminPlayersData = {};
+        let adminRenderPending = false, adminLastRender = 0;
+
+        function cleanupAdmin() {
+            if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
+            if (adminRenderInterval) { clearInterval(adminRenderInterval); adminRenderInterval = null; }
+        }
+
+        function startAdminMonitoring(roomCode) {
+            cleanupAdmin();
+            adminPlayersData = {};
+            currentRoomCode = roomCode;
+            const sel = $('admin-room-select');
+            if (sel) sel.value = roomCode;
+
+            unsubAdminPlayers = onValue(playersCollRef(roomCode), (snapshot) => {
+                adminPlayersData = snapshot.exists() ? snapshot.val() : {};
+                scheduleAdminRender();
+            });
+            // 조용히 끊긴 학생의 상태 갱신용 (DB 읽기 없음)
+            adminRenderInterval = setInterval(renderAdminBoard, 5000);
+        }
+
+        // 하트비트마다 표를 다시 그리지 않도록 1초 스로틀
+        function scheduleAdminRender() {
+            const now = Date.now();
+            if (now - adminLastRender > 1000) { adminLastRender = now; renderAdminBoard(); return; }
+            if (adminRenderPending) return;
+            adminRenderPending = true;
+            setTimeout(() => { adminRenderPending = false; adminLastRender = Date.now(); renderAdminBoard(); }, 1000);
+        }
+
+        // 상태 판정은 한 곳에서: 접속중(녹) / 다른화면(노랑) / 접속 끊김(빨강)
+        function statusInfo(p) {
+            const diff = serverNow() - (p.lastHeartbeat || 0);
+            if (diff > ONLINE_THRESHOLD_MS || p.status === 'offline')
+                return { l: '접속 끊김', c: 'status-offline', t: 'text-danger', order: 2 };
+            if (p.status === 'away')
+                return { l: '다른화면', c: 'status-away', t: 'text-warning', order: 1 };
+            return { l: '접속중', c: 'status-online', t: 'text-success', order: 0 };
+        }
+
+        function renderAdminBoard() {
+            const tbody = $('admin-record-tbody');
+            const countEl = $('admin-player-count');
+            if (!tbody || !countEl) return;
+
+            const list = Object.entries(adminPlayersData).filter(([, p]) => p && p.nickname);
+            countEl.textContent = `${list.filter(([, p]) => statusInfo(p).order === 0).length}명 접속`;
+
+            if (list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                return;
+            }
+
+            // 입장 순서대로 표시 (상태순으로 바꾸려면 statusInfo(p).order를 1순위로)
+            list.sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+
+            let html = '';
+            list.forEach(([id, p]) => {
+                const st = statusInfo(p);
+                html += `<tr>
+                    <td class="fw-bold">${escapeHtml(p.nickname || id)}</td>
+                    <td><div class="d-flex align-items-center gap-1 justify-content-center"><span class="status-dot ${st.c}"></span><small class="${st.t} fw-bold">${st.l}</small></div></td>
+                    <!-- [TODO-3] 게임 데이터 셀 -->
+                    <td>${st.order !== 0 ? `<button class="btn btn-outline-danger btn-sm btn-kick" data-id="${escapeHtml(id)}">강퇴</button>` : '-'}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+
+            tbody.querySelectorAll('.btn-kick').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const pId = btn.dataset.id;
+                    if (!await customConfirm("강퇴", `${escapeHtml(pId)} 학생을 강퇴할까요?`)) return;
+                    await remove(playerRef(currentRoomCode, pId));
+                });
+            });
+        }
+
+        $('btn-create-room')?.addEventListener('click', async () => {
+            const btn = $('btn-create-room');
+            btn.disabled = true;
+            try {
+                const code = await generateUniqueRoomCode();
+                if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다.');
+                await set(roomRef(code), {
+                    createdAt: serverTimestamp()
+                    /* [TODO-4] 방 설정(settings)·상태(state)가 필요하면 여기에 */
+                });
+                await loadAdminRooms();
+                const sel = $('admin-room-select');
+                if (sel) sel.value = code;
+                startAdminMonitoring(code);
+                await customAlert('생성 완료', `방 코드: [ <b class="text-primary fs-3">${code}</b> ]`);
+            } finally { btn.disabled = false; }
+        });
+
+        $('admin-room-select')?.addEventListener('change', (e) => {
+            const code = e.target.value;
+            if (!code) {
+                cleanupAdmin();
+                currentRoomCode = null;
+                $('admin-record-tbody').innerHTML = '<tr><td colspan="3" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                $('admin-player-count').textContent = '0명 접속';
+                return;
+            }
+            startAdminMonitoring(code);
+        });
+
+        $('btn-delete-room')?.addEventListener('click', async () => {
+            const code = $('admin-room-select')?.value;
+            if (!code) return await customAlert("알림", "삭제할 방을 선택하세요.");
+            const ok = await customConfirm("방 삭제",
+                `방 <b class="text-danger">${escapeHtml(code)}</b> 의 모든 기록이 삭제됩니다.<br>되돌릴 수 없습니다. 계속할까요?`);
+            if (!ok) return;
+
+            const delBtn = $('btn-delete-room');
+            if (delBtn) delBtn.disabled = true;
+            try {
+                cleanupAdmin();   // 삭제 직후 빈 스냅샷으로 화면이 깜빡이지 않도록 구독 먼저 해제
+                await remove(roomRef(code));
+                currentRoomCode = null;
+                const sel = $('admin-room-select');
+                if (sel) sel.value = '';
+                $('admin-record-tbody').innerHTML = '<tr><td colspan="3" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                $('admin-player-count').textContent = '0명 접속';
+                await loadAdminRooms();
+                await customAlert("완료", "방이 삭제되었습니다.");
+            } catch (e) {
+                await customAlert("오류", "방을 삭제하지 못했습니다.");
+            } finally {
+                if (delBtn) delBtn.disabled = false;
+            }
+        });
+    </script>
+
+    <!--
+    ═══════════════════════════════════════════════════════════════════
+      보안 규칙 템플릿 — Firebase 콘솔 > Realtime Database > 규칙에 게시
+      (mygame 두 곳을 GAME_KEY와 동일하게 변경)
+    ═══════════════════════════════════════════════════════════════════
+    {
+      "rules": {
+        ".read": false,
+        ".write": false,
+        "mygame_rooms": {
+          ".read": true,          ← 컬렉션 '자체'에 필요 (방 목록 드롭다운용)
+          "$room": {
+            ".write": true,
+            "createdAt": { ".validate": "newData.isNumber()" },
+            "players": {
+              "$nick": {
+                ".validate": "newData.hasChildren(['nickname'])",
+                "nickname": { ".validate": "newData.isString() && newData.val() === $nick" },
+                "joinedAt": { ".validate": "newData.isNumber()" },
+                "lastHeartbeat": { ".validate": "newData.isNumber()" },
+                "sessionId": { ".validate": "newData.isString()" },
+                "status": { ".validate": "newData.val() === 'online' || newData.val() === 'away' || newData.val() === 'offline'" }
+              }
+            }
+          }
+        }
+      }
+    }
+    주의 1: hasChildren에 넣는 필드는 코드가 '실제로 항상 쓰는' 필드만.
+            (null이 될 수 있는 필드를 넣으면 RTDB가 null을 저장하지 않아 전부 거부됨)
+    주의 2: 점수 필드를 추가하면 increment 조작 방지 validate를 함께.
+            예) "score": { ".validate": "newData.isNumber() && newData.val() >= 0 &&
+                 (!data.exists() || (newData.val() >= data.val() && newData.val() <= data.val() + 20))" }
+    -->
+</body>
+
+</html>
