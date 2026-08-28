@@ -110,6 +110,28 @@
             animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
+        /* 접속 상태 표시 점 */
+        .status-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .status-online {
+            background-color: #198754;
+        }
+
+        .status-away {
+            background-color: #ffc107;
+        }
+
+        .status-offline {
+            background-color: #dc3545;
+        }
+
         /* 라운드 기록 테이블 */
         .history-table {
             font-size: 0.88rem;
@@ -172,6 +194,20 @@
             font-weight: 900;
             color: #b45309;
         }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .player-card,
+            .reveal-badge {
+                transition: none;
+            }
+
+            .pop,
+            .player-card.winner,
+            .player-card.winner .winner-crown {
+                animation: none;
+            }
+        }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -223,7 +259,8 @@
         <div id="admin-section" class="section-container">
             <!-- 대시보드 상단 헤더 (공통 모듈) -->
             <div id="dash-header-placeholder"></div>
-            <script src="../../../js/dashboard-header.js" data-title="블로토 게임 대시보드" data-export="false" data-select-id="admin-room-select"></script>
+            <script src="../../../js/dashboard-header.js" data-title="블로토 게임 대시보드" data-export="false"
+                data-select-id="admin-room-select"></script>
 
             <div class="row g-4" id="admin-settings-area" style="display: none;">
                 <div class="col-12">
@@ -231,16 +268,16 @@
                         <h5 class="fw-bold mb-3">⚙️ 게임 설정</h5>
                         <div class="row g-3 align-items-end">
                             <div class="col-md-3">
-                                <label class="form-label">참여 모둠 수</label>
+                                <label class="form-label" for="setting-teams">참여 모둠 수</label>
                                 <input type="number" id="setting-teams" class="form-control" value="7" min="2" max="20">
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">병사 수</label>
+                                <label class="form-label" for="setting-soldiers">병사 수</label>
                                 <input type="number" id="setting-soldiers" class="form-control" value="200" min="10"
                                     max="1000">
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">총 라운드 수</label>
+                                <label class="form-label" for="setting-rounds">총 라운드 수</label>
                                 <input type="number" id="setting-rounds" class="form-control" value="7" min="1"
                                     max="20">
                             </div>
@@ -255,10 +292,14 @@
             <div class="row g-4 mt-2" id="admin-board-area" style="display: none;">
                 <div class="col-12">
                     <div class="card shadow-sm border-0 rounded-4 p-4 overflow-auto">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <h5 class="fw-bold mb-0">📊 현황판 (현재: <span id="admin-current-round-text"
                                     class="text-primary">1</span> 라운드)</h5>
-                            <button id="btn-next-round" class="btn btn-warning fw-bold" disabled>결과 확인</button>
+                            <div class="d-flex gap-2">
+                                <button id="btn-auto-reveal" class="btn btn-outline-primary fw-bold" disabled>⚡ 자동
+                                    공개</button>
+                                <button id="btn-next-round" class="btn btn-warning fw-bold" disabled>결과 확인</button>
+                            </div>
                         </div>
 
                         <div id="admin-cards-container" class="row g-3 justify-content-center">
@@ -298,7 +339,7 @@
                             <h5 class="fw-bold mb-3">⚔️ 이번 라운드 출전 병사 수</h5>
                             <div class="input-group input-group-lg mb-3">
                                 <input type="number" id="student-deploy-input" class="form-control text-center fw-bold"
-                                    placeholder="0" min="0">
+                                    placeholder="0" min="0" inputmode="numeric">
                                 <button class="btn btn-primary fw-bold px-4" id="btn-submit-deploy">출전!</button>
                             </div>
                             <p class="text-muted small text-start">※ 남은 병사 수보다 많이 출전시킬 수 없습니다.</p>
@@ -306,8 +347,8 @@
 
                         <div id="student-waiting-area" class="d-none">
                             <div class="spinner-border text-primary mb-3" role="status"></div>
-                            <h5 class="fw-bold text-primary">출전 완료!</h5>
-                            <p class="text-muted">다른 모둠이 제출할 때까지 대기 중입니다...</p>
+                            <h5 class="fw-bold text-primary" id="student-waiting-title">출전 완료!</h5>
+                            <p class="text-muted" id="student-waiting-desc">다른 모둠이 제출할 때까지 대기 중입니다...</p>
                             <button class="btn btn-outline-secondary mt-2" id="btn-edit-deploy">수정하기</button>
                         </div>
 
@@ -326,29 +367,57 @@
     <script type="module">
         import { rtdbBlotto as db } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customPrompt, customConfirm
+            renderRoomEntrance, customAlert, customConfirm, escapeHtml,
+            isValidRtdbKey, rememberEntrance
         } from "../../../js/room-auth.js";
         import {
-            ref, set, get, child, push, onValue, update, remove, serverTimestamp
+            ref, set, get, onValue, update, remove, serverTimestamp,
+            runTransaction, onDisconnect
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+
+        // =====================================================================
+        // 설정 상수
+        // =====================================================================
+        const HEARTBEAT_MS = 10000;          // 하트비트 주기
+        const ONLINE_THRESHOLD_MS = 40000;   // 접속 끊김 판정 기준
+        const AUTO_INTERVAL_MS = 2000;       // 자동 공개 간격
+        const REVEAL_ANIM_MS = 500;          // 카드 공개 연출 시간
+        const SCORE_DELAY_MS = 5000;         // 마지막 공개 후 점수 반영까지의 뜸들이기
+        const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
+        const NICKNAME_RE = /^[가-힣a-zA-Z0-9_\- ]{1,10}$/;
 
         // =====================================================================
         // 전역 상태 변수
         // =====================================================================
         let currentRoomCode = null;
         let currentNickname = null;
+        let isTeacher = false;
         let roomSettings = null;
         let roomState = null;
         let playersData = {}; // key: nickname, value: player data
 
         let unsubRoom = null;
         let unsubPlayers = null;
+        let unsubMe = null;
+
+        // 세션 관리 (오목/가위바위보와 동일한 방식)
+        let localSessionId = null;
+        let isKicked = false;
+        let sessionEnded = false;
+        let heartbeatInterval = null;
+        let serverOffset = 0;
 
         let isEditingDeploy = false;
         let lastSeenRound = 0;
-        let isAnimating = false; // DB 업데이트/5초 대기 중 렌더링 방지용
-        let revealIndex = -1;           // 현재까지 공개된 카드 인덱스 (-1: 언제 0이전)
-        let currentRoundDeployments = []; // 현재 라운드 공개용 데이터
+        let isAnimating = false;          // 공개 연출 중 재렌더 차단
+        let revealIndex = -1;             // 다음에 공개할 인덱스 (-1: 아직 시작 안 함)
+        let currentRoundDeployments = []; // 현재 라운드 공개용 스냅샷
+        let cardIndexByNickname = {};     // 닉네임 → 카드 DOM 인덱스
+
+        // 자동 공개
+        let isAutoRevealing = false;
+        let autoSleepTimer = null;
+        let autoSleepResolve = null;
 
         // UI 영역
         const sectionLanding = document.getElementById('landing-section');
@@ -356,46 +425,183 @@
         const sectionAdmin = document.getElementById('admin-section');
         const navRoomInfo = document.getElementById('nav-room-info');
 
+        function $(id) { return document.getElementById(id); }
+        function serverNow() { return Date.now() + serverOffset; }
+        function roomRef(code) { return ref(db, `blotto_rooms/${code}`); }
+        function playerRef(code, nick) { return ref(db, `blotto_rooms/${code}/players/${nick}`); }
+
+        // 기기 시계가 틀어져 있어도 접속 판정이 정확하도록 서버 시각과 동기화
+        onValue(ref(db, '.info/serverTimeOffset'), (snap) => { serverOffset = snap.val() || 0; });
+
+        // =====================================================================
+        // 세션 감시 및 정리 (재접속 로직 — 오목/가위바위보와 동일)
+        // 내 플레이어 노드 한 칸만 구독해 (1) 방·노드 삭제 (2) 다른 기기의 세션 인수를 감지합니다.
+        // =====================================================================
+        function subscribeSession() {
+            if (unsubMe) { unsubMe(); unsubMe = null; }
+            unsubMe = onValue(playerRef(currentRoomCode, currentNickname), (snap) => {
+                if (!currentRoomCode || sessionEnded || isTeacher) return;
+                if (!snap.exists()) {
+                    sessionEnded = true; isKicked = true;
+                    cleanupSession();
+                    customAlert('안내', '방 또는 모둠 정보가 삭제되어<br>첫 화면으로 이동합니다.')
+                        .then(() => location.reload());
+                    return;
+                }
+                const d = snap.val();
+                if (d.sessionId && d.sessionId !== localSessionId) {
+                    sessionEnded = true; isKicked = true;
+                    cleanupSession();
+                    customAlert('중복 접속', '다른 기기에서 같은 모둠 이름으로 접속하여<br>이 화면의 연결이 끊어졌습니다.')
+                        .then(() => location.reload());
+                }
+            });
+        }
+
+        /**
+         * 세션을 접을 때는 onDisconnect 예약을 반드시 취소합니다.
+         * 취소하지 않으면 곧 이어지는 location.reload()가 연결 종료로 인식되어,
+         * 서버가 새로 접속한 기기의 상태까지 offline으로 덮어씁니다.
+         */
+        function cleanupSession() {
+            if (currentRoomCode && currentNickname) {
+                try { onDisconnect(playerRef(currentRoomCode, currentNickname)).cancel(); } catch (e) { }
+            }
+            stopHeartbeat();
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+            if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+        }
+
+        // =====================================================================
+        // 하트비트 (접속 상태 유지)
+        // =====================================================================
+        async function startHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            try {
+                await onDisconnect(playerRef(currentRoomCode, currentNickname))
+                    .update({ status: 'offline' });
+            } catch (e) { }
+            updateHeartbeat();
+            heartbeatInterval = setInterval(updateHeartbeat, HEARTBEAT_MS);
+            document.removeEventListener('visibilitychange', handleVisibility);
+            document.addEventListener('visibilitychange', handleVisibility);
+        }
+
+        function stopHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+            document.removeEventListener('visibilitychange', handleVisibility);
+        }
+
+        // 트랜잭션으로 처리해 이미 삭제된 노드를 유령 데이터로 되살리지 않습니다.
+        async function updateHeartbeat() {
+            if (!currentRoomCode || !currentNickname || isKicked || isTeacher) return;
+            try {
+                await runTransaction(playerRef(currentRoomCode, currentNickname), (cur) => {
+                    if (cur === null) return;   // 삭제됨 → 부활 금지
+                    cur.lastHeartbeat = serverNow();
+                    cur.status = document.hidden ? 'away' : 'online';
+                    return cur;
+                });
+            } catch (e) { }
+        }
+
+        function handleVisibility() { updateHeartbeat(); }
+
         // =====================================================================
         // 1. 랜딩 페이지 로직 및 방 입장
         // =====================================================================
         renderRoomEntrance('room-entrance-container', {
             joinBtnText: "방 입장하기",
+            nicknamePlaceholder: "모둠 이름 (예: 1모둠)",
             onJoin: async (code, nickname) => {
-                const roomRef = ref(db, "blotto_rooms/" + code);
-                const docSnap = await get(roomRef);
+                code = (code || '').trim().toUpperCase();
+                nickname = (nickname || '').trim();
 
+                if (!ROOM_CODE_RE.test(code)) {
+                    return await customAlert("방 코드 확인", "방 코드는 영문 대문자와 숫자 4자리입니다.");
+                }
+                if (!NICKNAME_RE.test(nickname) || !isValidRtdbKey(nickname)) {
+                    return await customAlert("모둠 이름 확인",
+                        "모둠 이름은 한글·영문·숫자·밑줄·하이픈만 사용해 1~10자로 입력해주세요.");
+                }
+
+                const docSnap = await get(roomRef(code));
                 if (!docSnap.exists()) {
                     return await customAlert("알림", "존재하지 않는 방 코드입니다.");
                 }
 
                 const roomData = docSnap.val();
+                if (!roomData.settings || !roomData.state) {
+                    return await customAlert("알림", "방 정보가 올바르지 않습니다. 선생님께 문의하세요.");
+                }
+
                 const teamsMax = roomData.settings.teamsCount;
+                localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+                isKicked = false;
+                sessionEnded = false;
 
-                // 이미 있는 닉네임인지 확인 (재접속)
-                const playerRef = ref(db, "blotto_rooms/" + code + "/players/" + nickname);
-                const playerSnap = await get(playerRef);
+                const pRef = playerRef(code, nickname);
+                const playerSnap = await get(pRef);
 
-                if (!playerSnap.exists()) {
-                    // 신규 접속인 경우 인원 수 체크
-                    const playersCol = ref(db, "blotto_rooms/" + code + "/players");
-                    const currentPlayersSnap = await get(playersCol);
-                    if (currentPlayersSnap.size >= teamsMax) {
-                        return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
+                if (playerSnap.exists()) {
+                    // ── 재접속 경로 ──
+                    const p = playerSnap.val();
+                    const hb = typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0;
+                    const looksOnline = p.status && p.status !== 'offline'
+                        && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+
+                    if (looksOnline) {
+                        // 하드 차단 대신 '이어서 접속'을 허용합니다.
+                        // 네트워크가 끊긴 기기는 서버가 끊김을 감지하기 전까지 online으로 남아 있어,
+                        // 차단하면 본인이 자기 유령에게 막히는 상황이 생깁니다.
+                        // 진짜 다른 기기라도 아래에서 새 sessionId가 기록되는 순간 스스로 물러납니다.
+                        const ok = await customConfirm(
+                            '이어서 접속할까요?',
+                            `<b>${escapeHtml(nickname)}</b> 모둠으로 접속 중인 기기가 있습니다.<br><br>` +
+                            `우리 모둠이 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
+                            `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 점수와 병사 수는 그대로 이어집니다)</span><br><br>` +
+                            `<b class="text-danger">다른 모둠 이름이라면</b> [취소]를 누르고<br>다른 이름을 사용해주세요.`
+                        );
+                        if (!ok) return;
                     }
 
-                    // 플레이어 데이터 생성
-                    await set(playerRef, {
+                    await update(pRef, {
+                        status: 'online',
+                        lastHeartbeat: serverTimestamp(),
+                        sessionId: localSessionId
+                    });
+                } else {
+                    // ── 신규 입장 경로 ── 인원 수 확인
+                    // (RTDB 스냅샷은 .size가 아니라 numChildren()을 씁니다)
+                    const currentPlayersSnap = await get(ref(db, `blotto_rooms/${code}/players`));
+                    const joined = currentPlayersSnap.exists() ? currentPlayersSnap.numChildren() : 0;
+                    if (joined >= teamsMax) {
+                        return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
+                    }
+                    if (roomData.state.status === 'finished') {
+                        return await customAlert("입장 불가", "이미 종료된 게임입니다.");
+                    }
+
+                    await set(pRef, {
                         nickname: nickname,
                         score: 0,
                         remaining: roomData.settings.maxSoldiers,
-                        rounds: {},
-                        joinedAt: serverTimestamp()
+                        joinedAt: serverTimestamp(),
+                        status: 'online',
+                        lastHeartbeat: serverTimestamp(),
+                        sessionId: localSessionId
                     });
                 }
 
                 currentRoomCode = code;
                 currentNickname = nickname;
+
+                // 입장에 성공한 방 코드·모둠 이름을 기기에 저장 → 다음 접속 때 자동 입력
+                rememberEntrance(code, nickname);
+
+                subscribeSession();
+                await startHeartbeat();
 
                 sectionLanding.classList.remove('active-section');
                 sectionStudent.classList.add('active-section');
@@ -403,134 +609,163 @@
                 startStudentRealtimeSync();
             },
             onAdminSuccess: () => {
+                isTeacher = true;
                 sectionLanding.classList.remove('active-section');
                 sectionAdmin.classList.add('active-section');
-                document.getElementById('admin-settings-area').style.display = 'block';
-                document.getElementById('admin-board-area').style.display = 'none';
+                navRoomInfo.textContent = '대시보드 (관리자)';
+                $('admin-settings-area').style.display = 'block';
+                $('admin-board-area').style.display = 'none';
                 loadAdminRooms();
             }
         });
 
-        // 새로운 방 만들기
-        document.getElementById('btn-create-room').addEventListener('click', () => {
-            document.getElementById('admin-settings-area').style.display = 'block';
-            document.getElementById('admin-board-area').style.display = 'none';
-            document.getElementById('admin-active-room').textContent = "";
-            if (unsubRoom) unsubRoom();
-            if (unsubPlayers) unsubPlayers();
+        // =====================================================================
+        // 2. 선생님 대시보드 로직
+        // =====================================================================
+
+        // 헷갈리는 문자(0/O, 1/I)를 제외한 방 코드 생성 + 중복 확인
+        async function generateUniqueRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            for (let attempt = 0; attempt < 20; attempt++) {
+                let code = '';
+                for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+                if (!(await get(roomRef(code))).exists()) return code;
+            }
+            return null;
+        }
+
+        // dashboard-header.js가 삽입하는 요소이므로 방어적으로 접근합니다.
+        $('btn-create-room')?.addEventListener('click', () => {
+            $('admin-settings-area').style.display = 'block';
+            $('admin-board-area').style.display = 'none';
+            stopAdminMonitoring();
+            const sel = $('admin-room-select');
+            if (sel) sel.value = '';
+            currentRoomCode = null;
         });
 
-        document.getElementById('btn-confirm-create').addEventListener('click', async () => {
-            const teams = parseInt(document.getElementById('setting-teams').value);
-            const soldiers = parseInt(document.getElementById('setting-soldiers').value);
-            const rounds = parseInt(document.getElementById('setting-rounds').value);
+        $('btn-confirm-create').addEventListener('click', async () => {
+            const btn = $('btn-confirm-create');
+            const teams = parseInt($('setting-teams').value, 10);
+            const soldiers = parseInt($('setting-soldiers').value, 10);
+            const rounds = parseInt($('setting-rounds').value, 10);
 
-            if (!teams || !soldiers || !rounds) return customAlert("오류", "설정 값을 모두 올바르게 입력하세요.");
+            if (!teams || !soldiers || !rounds || teams < 2 || soldiers < 1 || rounds < 1) {
+                return await customAlert("오류", "설정 값을 모두 올바르게 입력하세요.");
+            }
 
-            const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-
+            btn.disabled = true;
             try {
-                // 방 기본 정보 생성
-                await set(ref(db, "blotto_rooms/" + roomCode), {
-                    settings: {
-                        teamsCount: teams,
-                        maxSoldiers: soldiers,
-                        maxRounds: rounds
-                    },
-                    state: {
-                        currentRound: 1,
-                        status: "playing"
-                    },
+                const roomCode = await generateUniqueRoomCode();
+                if (!roomCode) {
+                    return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
+                }
+
+                await set(roomRef(roomCode), {
+                    settings: { teamsCount: teams, maxSoldiers: soldiers, maxRounds: rounds },
+                    state: { currentRound: 1, status: "playing" },
                     createdAt: serverTimestamp()
                 });
 
-                await customAlert("방 생성 완료", `게임이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]<br>학생들에게 코드를 안내해 주세요.`);
+                await loadAdminRooms();
+                await customAlert("방 생성 완료",
+                    `게임이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]<br>학생들에게 코드를 안내해 주세요.`);
 
                 startAdminMonitoring(roomCode);
             } catch (error) {
                 console.error(error);
                 await customAlert("오류", "방 생성에 실패했습니다.");
+            } finally {
+                btn.disabled = false;
             }
         });
 
-
-
-
-        // =====================================================================
-        // 2. 선생님 대시보드 로직
-        // =====================================================================
-        function startAdminMonitoring(roomCode) {
-            currentRoomCode = roomCode;
-            document.getElementById('admin-settings-area').style.display = 'none';
-            document.getElementById('admin-board-area').style.display = 'block';
-
-            const select = document.getElementById('admin-room-select');
-            if (select && select.querySelector(`option[value="${roomCode}"]`)) {
-                select.value = roomCode;
-            } else if (select) {
-                const option = document.createElement('option');
-                option.value = roomCode;
-                option.textContent = roomCode;
-                select.appendChild(option);
-                select.value = roomCode;
-            }
-
-            if (unsubRoom) unsubRoom();
-            if (unsubPlayers) unsubPlayers();
-
-            // 방 정보 구독
-            unsubRoom = onValue(ref(db, "blotto_rooms/" + roomCode), (docSnap) => {
-                if (docSnap.exists()) {
-                    roomSettings = docSnap.val().settings;
-                    roomState = docSnap.val().state;
-                    renderAdminBoard();
+        async function loadAdminRooms() {
+            const select = $('admin-room-select');
+            if (!select) return;
+            try {
+                const snapshot = await get(ref(db, "blotto_rooms"));
+                const keep = select.value;
+                select.innerHTML = '<option value="">방을 선택하세요</option>';
+                const rooms = [];
+                if (snapshot.exists()) {
+                    snapshot.forEach(docSnap => { rooms.push({ id: docSnap.key, data: docSnap.val() || {} }); });
+                    rooms.sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
+                    rooms.forEach(room => {
+                        const option = document.createElement('option');
+                        option.value = room.id;
+                        option.textContent = room.id;
+                        select.appendChild(option);
+                    });
+                    if (keep && rooms.some(r => r.id === keep)) select.value = keep;
                 }
+            } catch (e) {
+                console.error("방 목록 로드 오류:", e);
+                await customAlert("오류", "방 목록을 불러오지 못했습니다.<br>네트워크와 접근 권한을 확인해주세요.");
+            }
+        }
+
+        function stopAdminMonitoring() {
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+            if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+            stopAutoReveal();
+            revealIndex = -1;
+            currentRoundDeployments = [];
+            isAnimating = false;
+            roomSettings = null;
+            roomState = null;
+            playersData = {};
+        }
+
+        function startAdminMonitoring(roomCode) {
+            stopAdminMonitoring();
+            currentRoomCode = roomCode;
+            $('admin-settings-area').style.display = 'none';
+            $('admin-board-area').style.display = 'block';
+
+            const select = $('admin-room-select');
+            if (select) select.value = roomCode;
+
+            // 이전 세션이 공개 도중 중단됐을 수 있으므로 잠금 해제
+            update(ref(db, `blotto_rooms/${roomCode}/state`), { revealing: null }).catch(() => { });
+
+            unsubRoom = onValue(roomRef(roomCode), (docSnap) => {
+                if (!docSnap.exists()) {
+                    // 방이 삭제된 경우 (다른 기기에서 삭제 등)
+                    stopAdminMonitoring();
+                    $('admin-settings-area').style.display = 'block';
+                    $('admin-board-area').style.display = 'none';
+                    loadAdminRooms();
+                    return;
+                }
+                const d = docSnap.val();
+                roomSettings = d.settings;
+                roomState = d.state;
+                renderAdminBoard();
             });
 
-            // 플레이어 정보 구독
-            unsubPlayers = onValue(ref(db, "blotto_rooms/" + roomCode + "/players"), (snapshot) => {
+            unsubPlayers = onValue(ref(db, `blotto_rooms/${roomCode}/players`), (snapshot) => {
                 playersData = {};
-                snapshot.forEach(doc => {
-                    playersData[doc.key] = doc.val();
-                });
+                snapshot.forEach(doc => { playersData[doc.key] = doc.val(); });
                 renderAdminBoard();
             });
         }
 
-        async function loadAdminRooms() {
-            const snapshot = await get(ref(db, "blotto_rooms"));
-            const select = document.getElementById('admin-room-select');
-            select.innerHTML = '<option value="">방을 선택하세요</option>';
-            const rooms = [];
-            if (snapshot.exists()) {
-                snapshot.forEach(docSnap => {
-                    rooms.push({ id: docSnap.key, data: docSnap.val() });
-                });
-                rooms.sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
-                rooms.forEach(room => {
-                    const option = document.createElement('option');
-                    option.value = room.id;
-                    option.textContent = room.id;
-                    select.appendChild(option);
-                });
-            }
-        }
-
-        document.getElementById('admin-room-select').addEventListener('change', (e) => {
+        $('admin-room-select')?.addEventListener('change', (e) => {
             const code = e.target.value;
             if (!code) {
-                document.getElementById('admin-settings-area').style.display = 'block';
-                document.getElementById('admin-board-area').style.display = 'none';
-                if (unsubRoom) { unsubRoom(); unsubRoom = null; }
-                if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+                stopAdminMonitoring();
+                currentRoomCode = null;
+                $('admin-settings-area').style.display = 'block';
+                $('admin-board-area').style.display = 'none';
                 return;
             }
             startAdminMonitoring(code);
         });
 
-        document.getElementById('btn-delete-room').addEventListener('click', async () => {
-            const select = document.getElementById('admin-room-select');
-            const roomCode = select.value;
+        $('btn-delete-room')?.addEventListener('click', async () => {
+            const select = $('admin-room-select');
+            const roomCode = select ? select.value : null;
 
             if (!roomCode) {
                 return await customAlert("알림", "삭제할 방을 선택해 주세요.");
@@ -538,91 +773,110 @@
 
             const confirmed = await customConfirm(
                 "방 삭제 확인",
-                `[ <b class="text-danger">${roomCode}</b> ] 방을 정말로 삭제하시겠습니까?<br><small class="text-muted">삭제된 방과 관련된 모든 학생 데이터는 복구할 수 없습니다.</small>`
+                `[ <b class="text-danger">${escapeHtml(roomCode)}</b> ] 방을 정말로 삭제하시겠습니까?<br>` +
+                `<small class="text-muted">삭제된 방과 관련된 모든 모둠 데이터는 복구할 수 없습니다.</small>`
             );
-
             if (!confirmed) return;
 
+            const delBtn = $('btn-delete-room');
+            if (delBtn) delBtn.disabled = true;
             try {
-                // RTDB에서는 부모 경로를 지우면 하위도 모두 삭제됨
-                await remove(ref(db, "blotto_rooms/" + roomCode));
+                // 구독을 먼저 끊어야 삭제 직후 빈 스냅샷으로 화면이 깜빡이지 않습니다.
+                stopAdminMonitoring();
+                await remove(roomRef(roomCode));
 
-                if (unsubRoom) { unsubRoom(); unsubRoom = null; }
-                if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
-
-                document.getElementById('admin-active-room').textContent = "";
-                document.getElementById('admin-settings-area').style.display = 'block';
-                document.getElementById('admin-board-area').style.display = 'none';
+                currentRoomCode = null;
+                $('admin-settings-area').style.display = 'block';
+                $('admin-board-area').style.display = 'none';
+                if (select) select.value = '';
 
                 await loadAdminRooms();
                 await customAlert("삭제 완료", "방이 성공적으로 삭제되었습니다.");
             } catch (error) {
                 console.error(error);
                 await customAlert("오류", "방 삭제 처리 중 오류가 발생했습니다.");
+            } finally {
+                if (delBtn) delBtn.disabled = false;
             }
         });
 
+        // 접속 상태 표시 (접속중 / 다른화면 / 접속 끊김)
+        function statusBadge(p) {
+            const hb = typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0;
+            const fresh = (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+            if (!fresh || p.status === 'offline') {
+                return '<span class="status-dot status-offline"></span><span class="text-danger small fw-bold">접속 끊김</span>';
+            }
+            if (p.status === 'away') {
+                return '<span class="status-dot status-away"></span><span class="text-warning small fw-bold">다른화면</span>';
+            }
+            return '<span class="status-dot status-online"></span><span class="text-success small fw-bold">접속중</span>';
+        }
+
         function renderAdminBoard() {
             if (!roomSettings || !roomState) return;
-            if (isAnimating) return; // 연출 중일 때는 화면 갱신 방지
+            if (isAnimating) return; // 공개 연출 중에는 화면 갱신 방지
 
-            const container = document.getElementById('admin-cards-container');
+            const container = $('admin-cards-container');
             const currentRound = roomState.currentRound;
             const maxRounds = roomSettings.maxRounds;
 
-            document.getElementById('admin-current-round-text').textContent = currentRound;
+            $('admin-current-round-text').textContent = currentRound;
 
-            // 플레이어 목록 배열 (가입순 정렬) - 실제 닉네임이 있는 플레이어만 필터링
+            // 가입순 정렬 — 실제 닉네임이 있는 모둠만
             const playersList = Object.values(playersData)
-                .filter(p => !!p.nickname)
+                .filter(p => p && !!p.nickname)
                 .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
 
-            // 1등 점수 구하기
             const scores = playersList.map(p => p.score || 0);
             const maxScore = scores.length > 0 ? Math.max(...scores) : -Infinity;
 
             let html = ``;
             let allSubmittedCurrentRound = true;
-            let joinedPlayersCount = playersList.length;
+            const joinedPlayersCount = playersList.length;
+            cardIndexByNickname = {};
 
-            playersList.forEach(p => {
+            playersList.forEach((p, idx) => {
                 const nickname = p.nickname;
+                cardIndexByNickname[nickname] = idx;
+
                 const isTop = (maxScore > 0 && p.score === maxScore);
                 const badgeHtml = isTop ? `<span class="badge bg-warning text-dark fs-6 ms-2">🥇 1위</span>` : '';
 
-                const currentSubmitted = p.rounds[currentRound];
+                // rounds는 비어 있으면 RTDB에 저장되지 않으므로 반드시 기본값을 씌웁니다.
+                const rounds = p.rounds || {};
+                const currentSubmitted = rounds[currentRound];
                 let roundStatusHtml = ``;
 
                 if (currentSubmitted !== undefined) {
                     if (currentRound <= maxRounds && roomState.status === "playing") {
-                        // 모두 제출 전까지는 숫자를 숨김
-                        roundStatusHtml = `<div class="text-success fw-bold mt-2" style="font-size:1.2rem;" id="deploy-display-${nickname}">✔ 제출 완료</div>`;
+                        roundStatusHtml = `<div class="text-success fw-bold mt-2" style="font-size:1.2rem;" id="deploy-display-${idx}">✔ 제출 완료</div>`;
                     } else {
-                        // 결과가 이미 공개된(완료된) 게임 상태
-                        roundStatusHtml = `<div class="text-primary fw-bold mt-2" style="font-size:1.5rem;">⚔️ ${currentSubmitted} 명</div>`;
+                        roundStatusHtml = `<div class="text-primary fw-bold mt-2" style="font-size:1.5rem;" id="deploy-display-${idx}">⚔️ ${currentSubmitted} 명</div>`;
                     }
                 } else {
                     if (currentRound <= maxRounds) allSubmittedCurrentRound = false;
-                    roundStatusHtml = `<div class="text-muted mt-2" style="font-size:1.1rem;" id="deploy-display-${nickname}">... 대기 중 ...</div>`;
+                    roundStatusHtml = `<div class="text-muted mt-2" style="font-size:1.1rem;" id="deploy-display-${idx}">... 대기 중 ...</div>`;
                 }
 
                 const isGameOver = (roomState.status === 'finished');
                 const winnerExtra = (isGameOver && isTop) ? `
                     <div class="text-center mt-2">
-                        <span class="winner-crown">🍑</span>
+                        <span class="winner-crown">👑</span>
                         <div class="winner-score">${p.score}점</div>
                         <div class="text-warning fw-bold" style="font-size:0.9rem;">🥇 최종 우승!</div>
                     </div>` : '';
 
                 html += `
                 <div class="col-md-4 col-sm-6">
-                    <div class="card p-3 player-card h-100${isGameOver && isTop ? ' winner' : ''}" id="admin-card-${nickname}">
+                    <div class="card p-3 player-card h-100${isGameOver && isTop ? ' winner' : ''}" id="admin-card-${idx}">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="fw-bold mb-0 text-dark">${nickname} ${badgeHtml}</h5>
+                            <h5 class="fw-bold mb-0 text-dark">${escapeHtml(nickname)} ${badgeHtml}</h5>
+                            <span>${statusBadge(p)}</span>
                         </div>
                         <div class="d-flex justify-content-between text-muted small mb-3">
-                            <span>점수: <b class="text-primary fs-6">${p.score}</b> 점</span>
-                            <span>남은 병사: <b class="text-success fs-6">${p.remaining}</b> 명</span>
+                            <span>점수: <b class="text-primary fs-6">${p.score || 0}</b> 점</span>
+                            <span>남은 병사: <b class="text-success fs-6">${p.remaining || 0}</b> 명</span>
                         </div>
                         <div class="text-center bg-light rounded py-3">
                             <div class="small fw-bold text-secondary mb-1">[ ${currentRound} 라운드 출전 ]</div>
@@ -637,30 +891,30 @@
                 html = `<div class="col-12 text-center text-muted py-5 fs-5">아직 입장한 모둠이 없습니다.</div>`;
             }
 
-            container.innerHTML = electricityHtml(html);
+            container.innerHTML = html;
 
-            // ── 라운드별 기록 테이블 렌더링 ──
-            const historyArea = document.getElementById('admin-history-area');
-            const historyThead = document.getElementById('admin-history-thead');
-            const historyTbody = document.getElementById('admin-history-tbody');
+            // ── 라운드별 기록 테이블 ──
+            const historyArea = $('admin-history-area');
+            const historyThead = $('admin-history-thead');
+            const historyTbody = $('admin-history-tbody');
 
-            // 공개된 라운드(현재 라운드보다 이전)만 표시
             const revealedRounds = [];
             for (let r = 1; r < currentRound && r <= maxRounds; r++) revealedRounds.push(r);
 
             if (revealedRounds.length > 0 && playersList.length > 0) {
                 historyArea.style.display = 'block';
 
-                // 헤더: 라운드 | 닉네임1 | 닉네임2 ...
                 let theadHtml = '<tr><th>라운드</th>';
-                playersList.forEach(p => { theadHtml += `<th>${p.nickname}</th>`; });
+                playersList.forEach(p => { theadHtml += `<th>${escapeHtml(p.nickname)}</th>`; });
                 theadHtml += '</tr>';
                 historyThead.innerHTML = theadHtml;
 
                 let tbodyHtml = '';
                 revealedRounds.forEach(r => {
-                    // 해당 라운드 출전 수 배열
-                    const deploys = playersList.map(p => (p.rounds && p.rounds[r] !== undefined) ? p.rounds[r] : '-');
+                    const deploys = playersList.map(p => {
+                        const rounds = p.rounds || {};
+                        return rounds[r] !== undefined ? rounds[r] : '-';
+                    });
                     const numericDeploys = deploys.filter(v => v !== '-').map(Number);
                     const maxDeploy = numericDeploys.length > 0 ? Math.max(...numericDeploys) : null;
                     const minDeploy = numericDeploys.length > 0 ? Math.min(...numericDeploys) : null;
@@ -681,143 +935,274 @@
                 historyArea.style.display = 'none';
             }
 
-            // 다음 라운드 버튼 활성화 로직
-            const btnNext = document.getElementById('btn-next-round');
+            // ── 버튼 상태 ──
+            const btnNext = $('btn-next-round');
+            const btnAuto = $('btn-auto-reveal');
             if (roomState.status === "finished" || currentRound > maxRounds) {
                 btnNext.disabled = true;
                 btnNext.textContent = "게임 종료";
                 btnNext.className = "btn btn-secondary fw-bold";
+                btnAuto.disabled = true;
+                btnAuto.className = "btn btn-outline-secondary fw-bold";
             } else if (joinedPlayersCount > 1 && allSubmittedCurrentRound) {
                 btnNext.disabled = false;
                 btnNext.textContent = "한명씩 결과 확인";
                 btnNext.className = "btn btn-success fw-bold";
+                btnAuto.disabled = false;
+                btnAuto.textContent = "⚡ 자동 공개";
+                btnAuto.className = "btn btn-outline-primary fw-bold";
             } else {
                 btnNext.disabled = true;
                 btnNext.textContent = "모두 제출 시 활성화됨";
                 btnNext.className = "btn btn-warning fw-bold";
+                btnAuto.disabled = true;
+                btnAuto.textContent = "⚡ 자동 공개";
+                btnAuto.className = "btn btn-outline-secondary fw-bold";
             }
         }
 
-        // HTML 이스케이프가 아닌 단순 HTML 래퍼
-        function electricityHtml(html) { return html; }
+        // =====================================================================
+        // 결과 공개 (수동 한 명씩 / 자동 2초 간격)
+        // =====================================================================
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+        // 자동 공개 중간에 멈출 수 있도록 취소 가능한 대기
+        function autoSleep(ms) {
+            return new Promise(resolve => {
+                autoSleepResolve = resolve;
+                autoSleepTimer = setTimeout(() => {
+                    autoSleepTimer = null; autoSleepResolve = null; resolve();
+                }, ms);
+            });
+        }
 
-        // 한 명씩 결과 공개 및 라운드 종료 처리
-        document.getElementById('btn-next-round').addEventListener('click', async () => {
-            const btnNext = document.getElementById('btn-next-round');
-            if (btnNext.disabled) return; // 이중 클릭 방지
+        function stopAutoReveal() {
+            isAutoRevealing = false;
+            if (autoSleepTimer) { clearTimeout(autoSleepTimer); autoSleepTimer = null; }
+            if (autoSleepResolve) { const r = autoSleepResolve; autoSleepResolve = null; r(); }
+        }
 
+        /** 현재 라운드 제출값을 스냅샷으로 떠서 무작위 순서로 섞어 둡니다. */
+        function prepareReveal() {
             const currentRound = roomState.currentRound;
-            const maxRounds = roomSettings.maxRounds;
+            currentRoundDeployments = Object.values(playersData)
+                .filter(p => p && p.nickname && (p.rounds || {})[currentRound] !== undefined)
+                .map(p => ({ nickname: p.nickname, deployed: Number((p.rounds || {})[currentRound]) || 0 }));
 
-            // ▶ 첫 번째 클릭: 현재 라운드 데이터 수집 및 및 랜덤 셔플
-            if (revealIndex === -1) {
-                currentRoundDeployments = Object.values(playersData)
-                    .filter(p => p.nickname && p.rounds[currentRound] !== undefined)
-                    .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0))
-                    .map(p => ({ nickname: p.nickname, deployed: p.rounds[currentRound] }));
-
-                // Fisher-Yates 셈플 - 매번 다른 순서로 공개
-                for (let i = currentRoundDeployments.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [currentRoundDeployments[i], currentRoundDeployments[j]] = [currentRoundDeployments[j], currentRoundDeployments[i]];
-                }
-
-                isAnimating = true; // re-render 차단
-                revealIndex = 0;
-            } else {
-                revealIndex++;
+            // Fisher-Yates 셔플 — 매번 다른 순서로 공개
+            for (let i = currentRoundDeployments.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [currentRoundDeployments[i], currentRoundDeployments[j]] =
+                    [currentRoundDeployments[j], currentRoundDeployments[i]];
             }
 
-            // 현재 인덱스 학생 카드 공개
-            btnNext.disabled = true;
+            isAnimating = true;   // 재렌더 차단 (카드 DOM 유지)
+            revealIndex = 0;
+
+            // 공개가 시작되면 학생들의 수정을 잠급니다 (공개 도중 숫자가 바뀌는 것 방지)
+            update(ref(db, `blotto_rooms/${currentRoomCode}/state`), { revealing: currentRound }).catch(() => { });
+        }
+
+        /** revealIndex 위치의 카드 한 장을 공개하고 인덱스를 1 증가시킵니다. */
+        async function revealOneCard() {
             const pData = currentRoundDeployments[revealIndex];
-            const card = document.getElementById(`admin-card-${pData.nickname}`);
-            const display = document.getElementById(`deploy-display-${pData.nickname}`);
+            if (!pData) { revealIndex++; return; }
+
+            const idx = cardIndexByNickname[pData.nickname];
+            const card = $(`admin-card-${idx}`);
+            const display = $(`deploy-display-${idx}`);
 
             if (card && display) {
                 card.classList.add('revealing');
                 display.innerHTML = `<span class="reveal-badge text-danger pop">⚔️ ${pData.deployed}명</span>`;
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await sleep(REVEAL_ANIM_MS);
                 card.classList.remove('revealing');
             }
+            revealIndex++;
+        }
 
-            const isLast = revealIndex >= currentRoundDeployments.length - 1;
+        function updateRevealButtons() {
+            const btnNext = $('btn-next-round');
+            const btnAuto = $('btn-auto-reveal');
+            const total = currentRoundDeployments.length;
 
-            if (!isLast) {
-                // 다음 학생이 더 있음 → 버튼 다시 활성화
-                const remaining = currentRoundDeployments.length - revealIndex - 1;
-                btnNext.textContent = `다음 공개 (${revealIndex + 1}/${currentRoundDeployments.length})`;
-                btnNext.className = "btn btn-primary fw-bold";
-                btnNext.disabled = false;
-            } else {
-                // 마지막 학생 공개 완료 → 5초 조용히 대기 후 점수 반영
-                btnNext.textContent = "점수 반영 중...";
+            if (isAutoRevealing) {
+                btnNext.disabled = true;
+                btnNext.textContent = `자동 공개 중 (${revealIndex}/${total})`;
                 btnNext.className = "btn btn-secondary fw-bold";
+                btnAuto.disabled = false;
+                btnAuto.textContent = "⏸ 자동 중지";
+                btnAuto.className = "btn btn-outline-danger fw-bold";
+            } else {
+                btnNext.disabled = false;
+                btnNext.textContent = `다음 공개 (${revealIndex}/${total})`;
+                btnNext.className = "btn btn-primary fw-bold";
+                btnAuto.disabled = false;
+                btnAuto.textContent = "⚡ 자동 공개";
+                btnAuto.className = "btn btn-outline-primary fw-bold";
+            }
+        }
 
-                await new Promise(resolve => setTimeout(resolve, 5000));
+        function lockRevealButtons(text) {
+            const btnNext = $('btn-next-round');
+            const btnAuto = $('btn-auto-reveal');
+            btnNext.disabled = true;
+            btnNext.textContent = text;
+            btnNext.className = "btn btn-secondary fw-bold";
+            btnAuto.disabled = true;
+            btnAuto.className = "btn btn-outline-secondary fw-bold";
+        }
 
-                // ── 점수 계산 ──
+        /**
+         * 라운드 마무리 — 점수 계산 후 '한 번의 원자적 쓰기'로 반영합니다.
+         * 여러 번 나눠 쓰면 중간에 통신이 끊겼을 때 일부 모둠만 점수가 오른 채로 남습니다.
+         */
+        async function finalizeRound() {
+            stopAutoReveal();
+            lockRevealButtons("점수 반영 중...");
+            await sleep(SCORE_DELAY_MS);
+
+            const currentRound = roomState.currentRound;
+            const maxRounds = roomSettings.maxRounds;
+
+            try {
+                // 새로고침·중복 클릭으로 같은 라운드가 두 번 반영되지 않도록 서버 값을 재확인
+                const freshState = await get(ref(db, `blotto_rooms/${currentRoomCode}/state`));
+                if (!freshState.exists() || freshState.val().currentRound !== currentRound) {
+                    return;   // 이미 처리됨
+                }
+
+                // ── 점수 계산 (동점은 같은 등수, 다음 등수는 건너뜀) ──
                 const teamsCount = currentRoundDeployments.length;
                 const sorted = [...currentRoundDeployments].sort((a, b) => b.deployed - a.deployed);
-                let rank = 1, prevDep = -1, skipped = 0;
+                let rank = 1, prevDep = null, skipped = 0;
                 const scoreUpdates = {};
                 for (const item of sorted) {
-                    if (item.deployed === prevDep) { skipped++; }
+                    if (prevDep !== null && item.deployed === prevDep) { skipped++; }
                     else { rank = rank + skipped; skipped = 1; }
                     scoreUpdates[item.nickname] = Math.max(0, teamsCount - rank);
                     prevDep = item.deployed;
                 }
 
-                // ── DB 업데이트 ──
-                try {
-                    for (const { nickname } of currentRoundDeployments) {
-                        const player = playersData[nickname];
-                        const deployed = player.rounds[currentRound] || 0;
-                        const newRemaining = Math.max(0, player.remaining - deployed);
-                        const newScore = player.score + (scoreUpdates[nickname] || 0);
-                        await updateDoc(doc(db, "blotto_rooms", currentRoomCode, "players", nickname), {
-                            remaining: newRemaining,
-                            score: newScore
-                        });
-                    }
-                    const nextStatus = currentRound >= maxRounds ? "finished" : "playing";
-                    await updateDoc(doc(db, "blotto_rooms", currentRoomCode), {
-                        "state.currentRound": currentRound + 1,
-                        "state.status": nextStatus
-                    });
-                } catch (err) {
-                    console.error(err);
-                    await customAlert("오류", "라운드 처리 중 문제가 발생했습니다.");
-                } finally {
-                    // 상태 리셋 후 정상 렌더링 재개
-                    revealIndex = -1;
-                    currentRoundDeployments = [];
-                    isAnimating = false;
-                    renderAdminBoard();
+                // ── 원자적 다중 경로 쓰기 ──
+                const updates = {};
+                for (const item of currentRoundDeployments) {
+                    const p = playersData[item.nickname];
+                    if (!p) continue;
+                    // 공개할 때 떠 둔 스냅샷 값을 사용 (공개 도중 값이 바뀌어도 결과가 어긋나지 않음)
+                    updates[`players/${item.nickname}/remaining`] =
+                        Math.max(0, (p.remaining || 0) - item.deployed);
+                    updates[`players/${item.nickname}/score`] =
+                        (p.score || 0) + (scoreUpdates[item.nickname] || 0);
+                }
+                updates['state/currentRound'] = currentRound + 1;
+                updates['state/status'] = currentRound >= maxRounds ? "finished" : "playing";
+                updates['state/revealing'] = null;
+
+                await update(roomRef(currentRoomCode), updates);
+            } catch (err) {
+                console.error(err);
+                await customAlert("오류", "라운드 처리 중 문제가 발생했습니다.<br>네트워크를 확인하고 다시 시도해주세요.");
+                // 실패했다면 학생 잠금은 풀어 줍니다
+                update(ref(db, `blotto_rooms/${currentRoomCode}/state`), { revealing: null }).catch(() => { });
+            } finally {
+                revealIndex = -1;
+                currentRoundDeployments = [];
+                isAnimating = false;
+                renderAdminBoard();
+            }
+        }
+
+        /** 카드 한 장 공개 후, 남은 카드가 있으면 버튼을 되살리고 없으면 라운드를 마무리합니다. */
+        async function revealStep() {
+            await revealOneCard();
+            if (revealIndex < currentRoundDeployments.length) return false;
+            await finalizeRound();
+            return true;
+        }
+
+        // ── 수동: 한 명씩 결과 확인 ──
+        $('btn-next-round').addEventListener('click', async () => {
+            const btnNext = $('btn-next-round');
+            if (btnNext.disabled || !roomState || !roomSettings) return;
+            if (isAutoRevealing) return;
+
+            if (revealIndex === -1) {
+                prepareReveal();
+                if (currentRoundDeployments.length === 0) {
+                    isAnimating = false; revealIndex = -1;
+                    return await customAlert("알림", "공개할 제출 내역이 없습니다.");
                 }
             }
+
+            lockRevealButtons("공개 중...");
+            const done = await revealStep();
+            if (!done) updateRevealButtons();
         });
 
+        // ── 자동: 2초 간격으로 한 명씩 공개 (중간에 중지 가능) ──
+        $('btn-auto-reveal').addEventListener('click', async () => {
+            const btnAuto = $('btn-auto-reveal');
+            if (btnAuto.disabled || !roomState || !roomSettings) return;
+
+            // 이미 자동 공개 중이면 중지하고 수동 모드로 전환
+            if (isAutoRevealing) {
+                stopAutoReveal();
+                updateRevealButtons();
+                return;
+            }
+
+            if (revealIndex === -1) {
+                prepareReveal();
+                if (currentRoundDeployments.length === 0) {
+                    isAnimating = false; revealIndex = -1;
+                    return await customAlert("알림", "공개할 제출 내역이 없습니다.");
+                }
+            }
+
+            isAutoRevealing = true;
+            updateRevealButtons();
+
+            while (isAutoRevealing && revealIndex < currentRoundDeployments.length) {
+                const done = await revealStep();
+                if (done) return;                       // 마지막 → finalizeRound가 마무리
+                if (!isAutoRevealing) break;            // 공개 도중 중지됨
+                updateRevealButtons();
+                // 연출 시간을 포함해 정확히 AUTO_INTERVAL_MS 간격이 되도록 남은 시간만 대기
+                await autoSleep(Math.max(0, AUTO_INTERVAL_MS - REVEAL_ANIM_MS));
+            }
+
+            isAutoRevealing = false;
+            if (revealIndex < currentRoundDeployments.length) updateRevealButtons();
+        });
 
         // =====================================================================
         // 3. 학생(모둠) 플레이 로직
         // =====================================================================
         function startStudentRealtimeSync() {
-            navRoomInfo.innerHTML = `방 코드: <b>${currentRoomCode}</b> | 접속: <b>${currentNickname}</b>`;
-            document.getElementById('student-nickname-display').textContent = currentNickname;
+            navRoomInfo.innerHTML =
+                `방 코드: <b>${escapeHtml(currentRoomCode)}</b> | 모둠: <b>${escapeHtml(currentNickname)}</b>`;
+            $('student-nickname-display').textContent = currentNickname;
 
-            // 방 정보 구독 (라운드 진행 상황 파악)
-            unsubRoom = onValue(ref(db, "blotto_rooms/" + currentRoomCode), (docSnap) => {
-                if (docSnap.exists()) {
-                    roomSettings = docSnap.val().settings;
-                    roomState = docSnap.val().state;
-                    updateStudentUI();
+            // 방 정보 구독 (라운드 진행 상황)
+            if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+            unsubRoom = onValue(roomRef(currentRoomCode), (docSnap) => {
+                if (!docSnap.exists()) {
+                    if (sessionEnded) return;
+                    sessionEnded = true;
+                    cleanupSession();
+                    customAlert('안내', '방이 삭제되어 첫 화면으로 이동합니다.').then(() => location.reload());
+                    return;
                 }
+                const d = docSnap.val();
+                roomSettings = d.settings;
+                roomState = d.state;
+                updateStudentUI();
             });
 
-            // 내 정보 구독 (잔여 병사 등 갱신)
-            unsubPlayers = onValue(ref(db, "blotto_rooms/" + currentRoomCode + "/players/" + currentNickname), (docSnap) => {
+            // 내 정보만 구독 (다른 모둠의 제출 내역은 받지 않음 → 트래픽 절약 + 정보 노출 방지)
+            if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+            unsubPlayers = onValue(playerRef(currentRoomCode, currentNickname), (docSnap) => {
                 if (docSnap.exists()) {
                     playersData[currentNickname] = docSnap.val();
                     updateStudentUI();
@@ -831,81 +1216,107 @@
             const myData = playersData[currentNickname];
             const currentRound = roomState.currentRound;
             const maxRounds = roomSettings.maxRounds;
+            const myRounds = myData.rounds || {};   // 비어 있으면 RTDB에 저장되지 않으므로 기본값 필수
 
-            document.getElementById('student-remaining-display').textContent = myData.remaining;
+            $('student-remaining-display').textContent = myData.remaining ?? 0;
 
-            const inputArea = document.getElementById('student-input-area');
-            const waitingArea = document.getElementById('student-waiting-area');
-            const finishedArea = document.getElementById('student-finished-area');
-            const deployInput = document.getElementById('student-deploy-input');
+            const inputArea = $('student-input-area');
+            const waitingArea = $('student-waiting-area');
+            const finishedArea = $('student-finished-area');
+            const deployInput = $('student-deploy-input');
 
             if (roomState.status === "finished" || currentRound > maxRounds) {
-                document.getElementById('student-round-display').textContent = `게임 종료`;
+                $('student-round-display').textContent = `게임 종료`;
                 inputArea.classList.add('d-none');
                 waitingArea.classList.add('d-none');
                 finishedArea.classList.remove('d-none');
                 return;
             }
+            finishedArea.classList.add('d-none');
 
-            document.getElementById('student-round-display').textContent = `${currentRound} / ${maxRounds}`;
+            $('student-round-display').textContent = `${currentRound} / ${maxRounds}`;
 
             if (lastSeenRound !== currentRound) {
                 isEditingDeploy = false;
                 lastSeenRound = currentRound;
             }
 
-            // 현재 라운드를 이미 제출했는지 확인
-            const hasSubmittedRound = myData.rounds[currentRound] !== undefined;
+            const hasSubmittedRound = myRounds[currentRound] !== undefined;
+            // 선생님이 결과를 공개하는 동안에는 수정을 잠급니다
+            const isRevealing = roomState.revealing === currentRound;
 
-            if (hasSubmittedRound && !isEditingDeploy) {
+            if (hasSubmittedRound && (!isEditingDeploy || isRevealing)) {
+                if (isRevealing) isEditingDeploy = false;
                 inputArea.classList.add('d-none');
                 waitingArea.classList.remove('d-none');
+                $('student-waiting-title').textContent = isRevealing ? '결과 공개 중!' : '출전 완료!';
+                $('student-waiting-desc').textContent = isRevealing
+                    ? '선생님 화면에서 결과가 공개되고 있습니다...'
+                    : '다른 모둠이 제출할 때까지 대기 중입니다...';
+                $('btn-edit-deploy').classList.toggle('d-none', isRevealing);
             } else {
                 inputArea.classList.remove('d-none');
                 waitingArea.classList.add('d-none');
-                if (!isEditingDeploy) {
-                    deployInput.value = ""; // 입력창 초기화
-                }
-                deployInput.max = myData.remaining;
+                if (!isEditingDeploy) deployInput.value = "";
+                deployInput.max = myData.remaining ?? 0;
             }
         }
 
-        document.getElementById('btn-edit-deploy').addEventListener('click', () => {
+        $('btn-edit-deploy').addEventListener('click', () => {
+            if (!roomState || roomState.revealing === roomState.currentRound) return;
             isEditingDeploy = true;
-            document.getElementById('student-deploy-input').value = playersData[currentNickname].rounds[roomState.currentRound] || "";
+            const myRounds = (playersData[currentNickname] || {}).rounds || {};
+            $('student-deploy-input').value = myRounds[roomState.currentRound] ?? "";
             updateStudentUI();
         });
 
         // 출전 버튼 클릭 (학생)
-        document.getElementById('btn-submit-deploy').addEventListener('click', async () => {
+        $('btn-submit-deploy').addEventListener('click', async () => {
+            const btn = $('btn-submit-deploy');
+            if (btn.disabled || isKicked) return;
+            if (!roomState || !roomSettings) return;
+
             const myData = playersData[currentNickname];
+            if (!myData) return;
             const currentRound = roomState.currentRound;
 
-            const rawInput = document.getElementById('student-deploy-input').value.trim();
-            // 빈 값이면 0으로 처리, 아니면 정수 제한
-            let deployCount = rawInput === '' ? 0 : parseInt(rawInput, 10);
-
-            if (isNaN(deployCount) || deployCount < 0) {
-                return await customAlert("알림", "출전할 병사 수를 올바르게 입력하세요.");
+            if (roomState.status === 'finished') {
+                return await customAlert("알림", "이미 종료된 게임입니다.");
             }
-            if (deployCount > myData.remaining) {
+            if (roomState.revealing === currentRound) {
+                return await customAlert("알림", "선생님이 결과를 공개하는 중이라<br>지금은 제출하거나 수정할 수 없습니다.");
+            }
+
+            const rawInput = $('student-deploy-input').value.trim();
+            const deployCount = rawInput === '' ? 0 : parseInt(rawInput, 10);
+
+            if (isNaN(deployCount) || deployCount < 0 || !Number.isInteger(deployCount)) {
+                return await customAlert("알림", "출전할 병사 수를 0 이상의 정수로 입력하세요.");
+            }
+            if (deployCount > (myData.remaining || 0)) {
                 return await customAlert("알림", "남은 병사 수보다 많이 출전시킬 수 없습니다.");
             }
 
+            btn.disabled = true;
             try {
-                const playerRef = ref(db, "blotto_rooms/" + currentRoomCode + "/players/" + currentNickname);
-                // rounds 맵 업데이트
-                await set(playerRef, {
-                    rounds: {
-                        [currentRound]: deployCount
-                    }
-                }, { merge: true });
+                // rounds 하위 경로만 update → 다른 필드(점수·병사 수·닉네임)를 지우지 않습니다.
+                // (set은 노드를 통째로 덮어써서 모둠 정보가 사라집니다)
+                await update(ref(db, `blotto_rooms/${currentRoomCode}/players/${currentNickname}/rounds`), {
+                    [currentRound]: deployCount
+                });
                 isEditingDeploy = false;
-
+                updateStudentUI();
             } catch (err) {
                 console.error(err);
-                await customAlert("오류", "제출 중 오류가 발생했습니다.");
+                await customAlert("오류", "제출 중 오류가 발생했습니다.<br>네트워크를 확인하고 다시 시도해주세요.");
+            } finally {
+                btn.disabled = false;
             }
+        });
+
+        // 엔터로도 제출
+        $('student-deploy-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') $('btn-submit-deploy').click();
         });
 
     </script>
