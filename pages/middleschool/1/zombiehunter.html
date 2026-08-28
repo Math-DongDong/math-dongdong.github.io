@@ -62,7 +62,7 @@
         /* Canvas & Claw Animation */
         .canvas-container {
             flex: 1;
-            background: #ffffff;
+            background: #ffffff !important;
             border-radius: 16px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
             border: 1px solid #f1f5f9;
@@ -74,7 +74,7 @@
         }
 
         canvas {
-            background: #f8fafc;
+            background: #f8fafc !important;
             border-radius: 8px;
             max-width: 100%;
             height: auto;
@@ -156,7 +156,7 @@
         /* Controls */
         .controls-container {
             width: 100%;
-            background: #ffffff;
+            background: #ffffff !important;
             border-radius: 16px;
             padding: 1.5rem;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
@@ -232,6 +232,33 @@
             padding: 0 0.2rem;
         }
 
+        /* 모바일 전용: 캔버스 위 반투명 수식 오버레이 (기본은 숨김, 767px 이하에서 표시) */
+        .equation-overlay {
+            display: none;
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem 0.9rem;
+            background: rgba(255, 255, 255, 0.82);
+            border: 1.5px solid rgba(79, 70, 229, 0.45);
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1e293b;
+            pointer-events: none;
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .equation-overlay .math-fraction {
+            font-size: 1.05rem;
+        }
+
         .fire-btn {
             width: 100%;
             padding: 1rem;
@@ -284,14 +311,13 @@
                 font-size: 1rem;
             }
 
+            /* 수식은 캔버스 위 오버레이로 표시하고, 컨트롤 영역의 수식 박스는 숨겨 세로 공간 절약 */
             .equation-display {
-                min-height: 56px;
-                font-size: 1.4rem;
-                margin-bottom: 0.75rem;
+                display: none;
             }
 
-            .equation-display .math-fraction {
-                font-size: 1.25rem;
+            .equation-overlay {
+                display: flex;
             }
 
             .fire-btn {
@@ -405,6 +431,7 @@
                     <div class="slash slash2"></div>
                     <div class="slash slash3"></div>
                 </div>
+                <div class="equation-overlay" id="equationOverlay"></div>
             </div>
 
             <div class="controls-container">
@@ -425,9 +452,9 @@
                         <span class="fw-bold">a 값 조절</span>
                         <span id="aValueDisplay" class="badge bg-primary fs-6">2</span>
                     </div>
-                    <input type="range" id="aSlider" min="-24" max="24" value="2" step="1">
+                    <input type="range" id="aSlider" min="-20" max="20" value="2" step="1">
                     <div class="slider-ticks d-flex justify-content-between mt-1 small text-muted">
-                        <span>-24</span><span>0</span><span>24</span>
+                        <span>-20</span><span>0</span><span>20</span>
                     </div>
                 </div>
 
@@ -549,13 +576,20 @@
         document.body.appendChild(navScript);
 
         // 이 페이지는 항상 라이트 모드 유지 (좌표평면 가독성).
-        // 네비바 등 공통 스크립트가 나중에 다크 테마를 적용해도 즉시 라이트로 되돌린다.
-        document.documentElement.setAttribute('data-bs-theme', 'light');
-        new MutationObserver(() => {
-            if (document.documentElement.getAttribute('data-bs-theme') !== 'light') {
-                document.documentElement.setAttribute('data-bs-theme', 'light');
-            }
-        }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
+        // 공통 스크립트가 html/body에 어떤 방식(data-bs-theme 속성 또는 다크 클래스)으로
+        // 다크 테마를 적용해도 즉시 라이트로 되돌린다.
+        const DARK_CLASSES = ['dark', 'dark-mode', 'darkmode', 'theme-dark', 'dark-theme'];
+        function forceLightTheme() {
+            [document.documentElement, document.body].forEach(el => {
+                if (!el) return;
+                if (el.getAttribute('data-bs-theme') !== 'light') el.setAttribute('data-bs-theme', 'light');
+                DARK_CLASSES.forEach(c => { if (el.classList.contains(c)) el.classList.remove(c); });
+            });
+        }
+        forceLightTheme();
+        const themeObserver = new MutationObserver(forceLightTheme);
+        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme', 'class'] });
+        themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-bs-theme', 'class'] });
 
         // 전역 상태
         let currentRoomCode = '';
@@ -725,15 +759,15 @@
             }
 
             // ±8 격자 기준 a값 풀: 모든 식이 최소 4개의 격자점(좀비 후보)을 갖도록 구성
-            // (정비례 a=±5는 격자점이 2개뿐이라 제외)
+            // (정비례 a=±5는 격자점이 2개뿐이라 제외, 반비례 a=±24는 슬라이더 범위(±20)에 맞춰 제외)
             if (conceptForThisProblem === 1) {
                 baseType = 'linear'; baseA = [1, 2, 3, 4][Math.floor(Math.random() * 4)];
             } else if (conceptForThisProblem === 2) {
                 baseType = 'linear'; baseA = [-4, -3, -2, -1][Math.floor(Math.random() * 4)];
             } else if (conceptForThisProblem === 3) {
-                baseType = 'inverse'; baseA = [12, 16, 18, 20, 24][Math.floor(Math.random() * 5)];
+                baseType = 'inverse'; baseA = [12, 16, 18, 20][Math.floor(Math.random() * 4)];
             } else if (conceptForThisProblem === 4) {
-                baseType = 'inverse'; baseA = [-24, -20, -18, -16, -12][Math.floor(Math.random() * 5)];
+                baseType = 'inverse'; baseA = [-20, -18, -16, -12][Math.floor(Math.random() * 4)];
             }
 
             let mixedPoints = [];
@@ -751,8 +785,8 @@
                     let t = 'linear', a = 1;
                     if (stg === 1) { t = 'linear'; a = [1, 2, 3, 4][Math.floor(Math.random() * 4)]; }
                     if (stg === 2) { t = 'linear'; a = [-4, -3, -2, -1][Math.floor(Math.random() * 4)]; }
-                    if (stg === 3) { t = 'inverse'; a = [12, 16, 18, 20, 24][Math.floor(Math.random() * 5)]; }
-                    if (stg === 4) { t = 'inverse'; a = [-24, -20, -18, -16, -12][Math.floor(Math.random() * 5)]; }
+                    if (stg === 3) { t = 'inverse'; a = [12, 16, 18, 20][Math.floor(Math.random() * 4)]; }
+                    if (stg === 4) { t = 'inverse'; a = [-20, -18, -16, -12][Math.floor(Math.random() * 4)]; }
                     pickedCurves.push({ type: t, a: a });
                 }
                 pickedCurves.forEach(c => {
@@ -784,7 +818,11 @@
         document.querySelectorAll('.function-type-btn').forEach(btn => btn.addEventListener('click', (e) => setFuncType(e.currentTarget.dataset.type)));
         function setFuncType(type) { currentFuncType = type; document.querySelectorAll('.function-type-btn').forEach(b => b.classList.remove('active')); document.querySelector(`.function-type-btn[data-type="${type}"]`).classList.add('active'); updateEquationDisplay(); }
         document.getElementById('aSlider').addEventListener('input', (e) => { let val = parseInt(e.target.value); if (val === 0) val = currentA > 0 ? 1 : -1; e.target.value = val; currentA = val; document.getElementById('aValueDisplay').innerText = val; updateEquationDisplay(); });
-        function updateEquationDisplay() { document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`; }
+        function updateEquationDisplay() {
+            const eqHtml = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
+            document.getElementById('equationDisplay').innerHTML = eqHtml;
+            document.getElementById('equationOverlay').innerHTML = eqHtml;
+        }
 
         function updateUI() {
             document.getElementById('stageDisplay').innerText = currentStage < 5 ? currentStage : "5 (혼합)";
