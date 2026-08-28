@@ -8,6 +8,11 @@
  *  - 닉네임 입력 시 Firebase 키로 쓸 수 없는 문자 자동 제거
  *  - 입장 버튼 중복 클릭(더블 탭) 방지
  *  - 접속 코드 오입력 시 짧은 지연 (연타 시도 억제)
+ *  - [추가] 게임방법 안내 슬라이드 모달 (showGuideModal)
+ *    · renderRoomEntrance 옵션에 guideSlides 배열을 넘기면
+ *      [방 입장하기]와 [대시보드 열기] 사이에 게임방법 버튼이 자동 생성됩니다.
+ *    · guideSlides를 넘기지 않으면 버튼이 렌더링되지 않으므로,
+ *      게임방법이 필요 없는 페이지는 기존 호출 코드를 그대로 쓰면 됩니다.
  */
 
 import { ADMIN_ACCESS_CODE } from './access-code.js';
@@ -188,7 +193,101 @@ export const customPrompt = (t, m, pw = false) => showCustomModal(t, m, true, pw
 export const customConfirm = (t, m) => showCustomModal(t, m, false, false, true);
 
 // =====================================================================
-// 2. 관리자 접속 코드 인증
+// 2. 게임방법 안내 슬라이드 모달
+// =====================================================================
+/**
+ * 슬라이드 형식:
+ *   { src: 이미지 경로, alt: 대체 텍스트, title: 제목, desc: 설명 }
+ * src는 호출하는 페이지 기준 상대 경로를 그대로 넘기면 됩니다.
+ * title/desc는 개발자가 작성한 문자열만 넘기세요. (학생 입력값이면 escapeHtml 필수)
+ */
+function ensureGuideStyle() {
+    if (document.getElementById('room-auth-guide-style')) return;
+    const style = document.createElement('style');
+    style.id = 'room-auth-guide-style';
+    style.textContent = `
+        .guide-slide-media {
+            max-height: 52vh;
+            max-width: 100%;
+            object-fit: contain;
+            border-radius: 12px;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        #guideCarousel { padding-bottom: 2.5rem; }
+        #guideCarousel .carousel-indicators { bottom: 0; margin-bottom: 0.25rem; }
+        #guideCarousel .carousel-control-prev,
+        #guideCarousel .carousel-control-next { width: 8%; }
+    `;
+    document.head.appendChild(style);
+}
+
+function ensureGuideModalDOM() {
+    if (document.getElementById('guideModal')) return;
+    const html = `
+    <div class="modal fade" id="guideModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="guideModalTitle">게임 방법</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body pt-2" id="guideModalBody"></div>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+let guideModalInstance = null;
+
+export function showGuideModal(slides, title = "게임 방법") {
+    if (!Array.isArray(slides) || slides.length === 0) return;
+    ensureGuideStyle();
+
+    // Bootstrap이 없으면 슬라이드를 띄울 수 없으므로 조용히 무시
+    if (typeof bootstrap === 'undefined' || !bootstrap.Modal) return;
+
+    ensureGuideModalDOM();
+    const modalEl = document.getElementById('guideModal');
+    document.getElementById('guideModalTitle').innerHTML = title;
+
+    const indicators = slides.map((s, i) => `
+        <button type="button" data-bs-target="#guideCarousel" data-bs-slide-to="${i}"
+            ${i === 0 ? 'class="active" aria-current="true"' : ''}
+            aria-label="${escapeHtml(s.title || `슬라이드 ${i + 1}`)}"></button>`).join('');
+
+    const items = slides.map((s, i) => `
+        <div class="carousel-item ${i === 0 ? 'active' : ''}">
+            <div class="d-flex flex-column align-items-center text-center px-4 px-md-5">
+                <img src="${s.src}" alt="${escapeHtml(s.alt || s.title || '')}" class="guide-slide-media mb-3" loading="lazy">
+                ${s.title ? `<h5 class="fw-bold text-dark mb-1">${s.title}</h5>` : ''}
+                ${s.desc ? `<p class="text-secondary small mb-0">${s.desc}</p>` : ''}
+            </div>
+        </div>`).join('');
+
+    // 매번 새로 그려서 항상 첫 번째 슬라이드부터 시작 (자동 넘김 없음, 학생이 직접 넘김)
+    document.getElementById('guideModalBody').innerHTML = `
+        <div id="guideCarousel" class="carousel carousel-dark slide" data-bs-interval="false" data-bs-touch="true">
+            <div class="carousel-indicators">${indicators}</div>
+            <div class="carousel-inner">${items}</div>
+            <button class="carousel-control-prev" type="button" data-bs-target="#guideCarousel" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">이전</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#guideCarousel" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">다음</span>
+            </button>
+        </div>`;
+
+    if (!guideModalInstance) guideModalInstance = new bootstrap.Modal(modalEl);
+    guideModalInstance.show();
+}
+
+// =====================================================================
+// 3. 관리자 접속 코드 인증
 // =====================================================================
 let adminFailCount = 0;
 
@@ -216,7 +315,7 @@ export async function verifyAdminAccess(onSuccess, onFailure) {
 //    Firebase Authentication + Database Rules로 옮겨야 합니다.
 
 // =====================================================================
-// 3. 방 입장 카드 컴포넌트 렌더링
+// 4. 방 입장 카드 컴포넌트 렌더링
 // =====================================================================
 export function renderRoomEntrance(container, options = {}) {
     const target = typeof container === 'string' ? document.getElementById(container) : container;
@@ -230,10 +329,19 @@ export function renderRoomEntrance(container, options = {}) {
         nicknamePlaceholder = "닉네임 (예: 동동)",
         joinBtnText = "🎮 방 입장하기",
         dashBtnText = "대시보드 열기",
+        // [추가] 게임방법 슬라이드: 배열을 넘기면 버튼이 생기고, 없으면 기존과 동일
+        guideSlides = null,
+        guideBtnText = "📖 게임방법 보기",
+        guideTitle = "게임 방법",
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
     } = options;
+
+    const hasGuide = Array.isArray(guideSlides) && guideSlides.length > 0;
+    const guideBtnHtml = hasGuide
+        ? `<button id="btnShowGuide" class="btn btn-outline-primary btn-lg w-100 mb-2 fw-bold">${guideBtnText}</button>`
+        : '';
 
     target.innerHTML = `
         <div class="card shadow-sm p-4 mb-4 border-0 rounded-4 bg-white" id="room-entrance-card">
@@ -250,6 +358,7 @@ export function renderRoomEntrance(container, options = {}) {
             <div class="text-center text-muted small mb-3" id="nicknameHint" style="min-height: 1.2rem;"></div>
             <button id="btnJoinRoom" class="btn btn-primary btn-lg w-100 mb-2 fw-bold"
                 style="background:#0d6efd; border:none;">${joinBtnText}</button>
+            ${guideBtnHtml}
             <button id="btnOpenDashboard" class="btn btn-dark btn-lg w-100 fw-bold">${dashBtnText}</button>
         </div>
     `;
@@ -258,6 +367,7 @@ export function renderRoomEntrance(container, options = {}) {
     const nameInput = target.querySelector('#playerNameInput');
     const nameHint = target.querySelector('#nicknameHint');
     const joinBtn = target.querySelector('#btnJoinRoom');
+    const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
 
     roomInput.addEventListener('input', () => {
@@ -303,6 +413,7 @@ export function renderRoomEntrance(container, options = {}) {
         joining = true;
         joinBtn.disabled = true;
         dashBtn.disabled = true;
+        if (guideBtn) guideBtn.disabled = true;
         const originalText = joinBtn.innerHTML;
         joinBtn.innerHTML = '입장하는 중...';
 
@@ -315,11 +426,13 @@ export function renderRoomEntrance(container, options = {}) {
             joining = false;
             joinBtn.disabled = false;
             dashBtn.disabled = false;
+            if (guideBtn) guideBtn.disabled = false;
             joinBtn.innerHTML = originalText;
         }
     };
 
     joinBtn.addEventListener('click', triggerJoin);
+    if (guideBtn) guideBtn.addEventListener('click', () => showGuideModal(guideSlides, guideTitle));
     dashBtn.addEventListener('click', () => verifyAdminAccess(onAdminSuccess, onAdminFailure));
 
     roomInput.addEventListener('keypress', (e) => {
