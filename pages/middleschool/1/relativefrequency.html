@@ -322,7 +322,8 @@
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import { rtdbRelativeFrequency } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customPrompt, customConfirm, escapeHtml, isValidRtdbKey
+            renderRoomEntrance, customAlert, customPrompt, customConfirm, escapeHtml,
+            isValidRtdbKey, rememberEntrance
         } from "../../../js/room-auth.js";
 
         const db = rtdbRelativeFrequency;
@@ -330,10 +331,12 @@
         // =====================================================================
         // 설정값
         // =====================================================================
-        const AWAY_GRACE_MS = 15000;      // 화면을 벗어난 뒤 몰수까지 주는 유예 시간
-        const MATCH_TIMEOUT_MS = 30000;   // 이 시간이 지나면 "다시 매칭하기" 버튼 노출
-        const ONLINE_THRESHOLD_MS = 40000; // 중복 접속 판정 기준
-        const HEARTBEAT_MS = 10000;
+        const AWAY_GRACE_MS = 15000;        // 화면을 벗어난 뒤 무효 처리까지 주는 유예 시간
+        const MATCH_TIMEOUT_MS = 30000;     // 이 시간이 지나면 "다시 매칭하기" 버튼 노출
+        const ONLINE_THRESHOLD_MS = 40000;  // 중복 접속 판정 + 장기 이탈(재접속 시 무효 처리) 기준
+        const HEARTBEAT_MS = 10000;         // 하트비트 주기
+        const WAITER_STALE_MS = 25000;      // [이식] 대기자 생존 신호 신선도 (하트비트의 2.5배)
+        const MATCH_LOCK_MS = 3000;         // 매칭 잠금 유지 시간
 
         // =====================================================================
         // 상태 변수
@@ -344,19 +347,31 @@
         let myScore = { wins: 0, losses: 0, total: 0, forfeits: 0 };
         let serverOffset = 0;
 
+        // [이식] 세션 관리 (오목 방식)
+        let localSessionId = null;   // 기기별 세션 ID → 중복 접속 시 마지막 기기가 이김
+        let isKicked = false;        // 물러난 세션이 유령 쓰기를 하지 않도록 하는 차단 플래그
+        let sessionEnded = false;    // 종료 안내 모달 중복 방지
+        let unsubMe = null;          // 내 플레이어 노드 감시 (세션 인수·삭제 감지)
+
         // 매칭 관련
         let waitingUnsub = null;
         let matchPtrUnsub = null;
+        let matchAttemptInterval = null;   // [이식] 이벤트를 놓쳐도 회복시키는 저빈도 폴링
+        let waitersCache = {};
         let currentMatchUnsub = null;
         let currentMatchId = null;
         let currentMatchData = null;
         let heartbeatInterval = null;
         let isPlayer1 = false;
         let opponentName = "";
-        let lastOpponent = null;
+        let lastOpponent = null;           // DB(players/{me}/lastOpponent)에도 저장되어 새로고침에도 유지
         let isResolvingMatch = false;
         let matchResolutionInFlight = false;
         let isMatching = false;
+
+        // [이식] 경기 onDisconnect 관리
+        let matchDisconnectArmed = false;
+        let armedMatchId = null;
 
         // 타이머
         let awayTimer = null;
@@ -376,12 +391,16 @@
 
         function $(id) { return document.getElementById(id); }
         function serverNow() { return Date.now() + serverOffset; }
+        function isInWaitingRoom() { return $('waiting-section').style.display === 'block'; }
 
         function playerRef(nickname = currentUser) {
             return ref(db, `rooms/${currentRoom}/players/${nickname}`);
         }
         function myWaitRef() {
             return ref(db, `rooms/${currentRoom}/waiting/${currentUser}`);
+        }
+        function matchRefById(matchId) {
+            return ref(db, `rooms/${currentRoom}/matches/${matchId}`);
         }
 
         /** 서버 시각과의 오차를 동기화 (기기 시계가 틀어져 있어도 판정이 정확해짐) */
@@ -397,6 +416,47 @@
                 } catch (e) { finish(); }
                 setTimeout(finish, 1500);
             });
+        }
+
+        // =====================================================================
+        // [이식] 세션 감시 (오목의 subscribeSession)
+        // 내 플레이어 노드 한 칸만 구독하여 (1) 방/노드 삭제 (2) 다른 기기의 세션 인수를 감지.
+        // 감지 즉시 모든 예약과 구독을 정리해 유령 쓰기를 차단합니다.
+        // =====================================================================
+        function subscribeSession() {
+            if (unsubMe) { unsubMe(); unsubMe = null; }
+            unsubMe = onValue(playerRef(), (snap) => {
+                if (!currentRoom || sessionEnded || isTeacher) return;
+                if (!snap.exists()) {
+                    sessionEnded = true; isKicked = true;
+                    cleanupSession();
+                    customAlert('안내', '방 정보가 삭제되어 첫 화면으로 이동합니다.').then(() => location.reload());
+                    return;
+                }
+                const d = snap.val();
+                if (d.sessionId && d.sessionId !== localSessionId) {
+                    sessionEnded = true; isKicked = true;
+                    cleanupSession();
+                    customAlert('중복 접속', '다른 기기에서 같은 이름으로 접속하여<br>이 화면의 연결이 끊어졌습니다.').then(() => location.reload());
+                }
+            });
+        }
+
+        /**
+         * [이식] 세션 종료 정리 — 오목 cleanupAll에서 배운 교훈 그대로.
+         * onDisconnect 예약을 해제하지 않으면 곧 이어지는 location.reload()가 연결 종료로 인식되어
+         * 서버가 (1) 진행 중이던 경기를 무효로 덮고 (2) 새 기기의 대기열 항목을 지우고
+         * (3) 새 기기의 상태를 offline으로 덮어씁니다. 반드시 전부 취소합니다.
+         */
+        function cleanupSession() {
+            disarmMatchDisconnect();
+            if (currentRoom && currentUser) {
+                try { onDisconnect(playerRef()).cancel(); } catch (e) { }
+            }
+            stopWaiting(false);   // 구독·예약만 해제, 대기열 항목은 삭제하지 않음 (새 기기 것일 수 있음)
+            if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
+            clearMatchTimers();
+            stopHeartbeat();
         }
 
         // =====================================================================
@@ -429,32 +489,40 @@
             awayTimer = null;
         }
 
+        // [이식] 트랜잭션 하트비트 (오목 방식)
+        // 방이 삭제되어 노드가 사라진 경우 되살리지 않고 중단합니다.
+        // (기존 단순 update는 삭제된 방을 유령 노드로 부활시킬 수 있었음)
         async function updateHeartbeat() {
-            if (!currentRoom || !currentUser) return;
+            if (!currentRoom || !currentUser || isKicked) return;
             try {
-                await update(playerRef(), {
-                    lastHeartbeat: serverTimestamp(),
-                    status: document.hidden ? 'away' : 'online'
+                await runTransaction(playerRef(), (cur) => {
+                    if (cur === null) return;   // 삭제됨 → 부활 금지
+                    cur.lastHeartbeat = serverNow();
+                    cur.status = document.hidden ? 'away' : 'online';
+                    return cur;
                 });
             } catch (e) { }
+
+            // [이식] 대기실이면 대기열 생존 신호도 함께 갱신
+            // → 탭이 켜진 채 조용히 끊긴 유령 대기자가 25초 뒤 자동으로 매칭 후보에서 빠짐
+            if (isInWaitingRoom()) {
+                update(myWaitRef(), { alive: serverTimestamp() }).catch(() => { });
+            }
         }
 
         function handleVisibility() {
-            if (!currentRoom || !currentUser) return;
+            if (!currentRoom || !currentUser || isKicked) return;
             const isHidden = document.hidden;
 
-            update(playerRef(), {
-                status: isHidden ? 'away' : 'online',
-                lastHeartbeat: serverTimestamp()
-            }).catch(() => { });
+            updateHeartbeat();
 
-            // 대기방에 있는 경우 매칭 대상 여부를 갱신
-            if ($('waiting-section').style.display === 'block') {
-                update(myWaitRef(), { visible: !isHidden }).catch(() => { });
+            // 대기방에 있는 경우 매칭 대상 여부를 즉시 갱신
+            if (isInWaitingRoom()) {
+                update(myWaitRef(), { visible: !isHidden, alive: serverTimestamp() }).catch(() => { });
             }
 
             if (isHidden) {
-                // 즉시 몰수하지 않고 유예 시간을 준다 (화면 절전, 알림 확인 등 오탐 방지)
+                // 즉시 무효 처리하지 않고 유예 시간을 준다 (화면 절전, 알림 확인 등 오탐 방지)
                 if (currentMatchId && currentMatchData
                     && currentMatchData.status === 'playing' && !isResolvingMatch) {
                     clearTimeout(awayTimer);
@@ -469,12 +537,11 @@
         /** 유예 시간이 지나도 돌아오지 않으면 경기를 '무효'로 종료 (승패 기록 없음) */
         async function forfeitByAway() {
             if (!document.hidden) return;
-            if (!currentRoom || !currentUser || !currentMatchId) return;
+            if (!currentRoom || !currentUser || !currentMatchId || isKicked) return;
             if (isResolvingMatch || matchResolutionInFlight) return;
 
-            const mRef = ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`);
             try {
-                const result = await runTransaction(mRef, (match) => {
+                const result = await runTransaction(matchRefById(currentMatchId), (match) => {
                     if (match && match.status === 'playing') {
                         match.status = 'finished';
                         match.endReason = 'forfeit';
@@ -491,6 +558,58 @@
             } catch (e) {
                 console.error(e);
             }
+        }
+
+        // =====================================================================
+        // [이식] 경기 onDisconnect (오목 방식)
+        // 브라우저 강제 종료·네트워크 단절 시 서버가 즉시 경기를 '무효'로 정리.
+        // → 상대가 30초 탈출 버튼을 기다릴 필요 없이 몇 초 안에 풀려남.
+        // 오목과 달리 몰수'패'가 아니라 '무효'(승패 미기록)로 처리해
+        // 상대빈도 수업의 승률 데이터를 오염시키지 않습니다.
+        // =====================================================================
+        function armMatchDisconnect(matchId) {
+            try {
+                onDisconnect(matchRefById(matchId)).update({
+                    status: 'finished', endReason: 'forfeit', leftBy: currentUser
+                });
+                matchDisconnectArmed = true;
+                armedMatchId = matchId;
+            } catch (e) { }
+        }
+
+        // 해제를 잊으면 나중에 브라우저를 닫는 순간 끝난 경기가 무효로 덮어써지므로,
+        // 경기가 끝나는 '모든' 경로에서 반드시 호출합니다.
+        function disarmMatchDisconnect() {
+            if (!matchDisconnectArmed || !currentRoom || !armedMatchId) return;
+            matchDisconnectArmed = false;
+            try { onDisconnect(matchRefById(armedMatchId)).cancel(); } catch (e) { }
+            armedMatchId = null;
+        }
+
+        // =====================================================================
+        // [이식] 경기 포인터 복구 (오목의 resolveMyMatch)
+        // 항상 서버에서 직접 읽어 캐시 낡음 문제를 원천 차단합니다.
+        // =====================================================================
+        async function resolveMyMatch() {
+            if (!currentRoom || !currentUser) return null;
+            let mid = null;
+            try {
+                const s = await get(ref(db, `rooms/${currentRoom}/players/${currentUser}/currentMatch`));
+                mid = s.val();
+            } catch (e) { return null; }
+            if (!mid) return null;
+
+            const mSnap = await get(matchRefById(mid));
+            if (!mSnap.exists()) {
+                await update(playerRef(), { currentMatch: null }).catch(() => { });
+                return null;
+            }
+            const data = mSnap.val();
+            if (data.status !== 'playing' || (data.p1 !== currentUser && data.p2 !== currentUser)) {
+                await update(playerRef(), { currentMatch: null }).catch(() => { });
+                return null;
+            }
+            return { id: mid, data };
         }
 
         // =====================================================================
@@ -516,18 +635,30 @@
                     return await customAlert('입장 불가', '이미 종료된 게임이며, 참여 기록이 없습니다.');
                 }
 
+                // [이식] 기기별 세션 ID 발급 — 마지막에 접속한 기기가 이깁니다
+                localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+                isKicked = false;
+                sessionEnded = false;
+                let prevHbGap = 0;   // 재접속 판정용: 직전 하트비트와의 간격
+
                 if (playerSnap.exists()) {
                     const p = playerSnap.val();
                     const hb = typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0;
+                    prevHbGap = serverNow() - hb;
                     const looksOnline = p.status && p.status !== 'offline'
-                        && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+                        && prevHbGap < ONLINE_THRESHOLD_MS;
 
                     if (looksOnline) {
+                        // [이식+모서리1] 확인 후 이어받기.
+                        // 와이파이가 끊긴 학생이 곧바로 재접속하면 자기 자신의 유령이 online으로
+                        // 남아 있을 수 있습니다. 진짜 다른 기기라도 아래에서 새 sessionId가 기록되는
+                        // 순간 옛 기기가 스스로 물러나므로 이중 집계가 생기지 않습니다.
                         const ok = await customConfirm(
-                            '중복 접속 확인',
-                            `<b>${escapeHtml(nickname)}</b> 이름으로 이미 접속 중인 기기가 있습니다.<br>` +
-                            `같은 이름으로 두 곳에서 접속하면 기록이 두 번 올라갈 수 있어요.<br><br>` +
-                            `연결이 끊겼던 것이라면 그대로 이어서 접속해도 됩니다. 계속할까요?`
+                            '이어서 접속할까요?',
+                            `<b>${escapeHtml(nickname)}</b> 이름으로 접속 중인 기기가 있습니다.<br><br>` +
+                            `내가 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
+                            `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 기록은 그대로 이어집니다)</span><br><br>` +
+                            `<b class="text-danger">다른 친구가 쓰는 이름이라면</b> [취소]를 누르고<br>다른 닉네임을 사용해주세요.`
                         );
                         if (!ok) return;
                     }
@@ -538,29 +669,67 @@
                         total: p.total || 0,
                         forfeits: p.forfeits || 0
                     };
+                    lastOpponent = p.lastOpponent || null;   // [이식] 직전 상대 기억을 DB에서 복원
+
+                    await update(targetPlayerRef, {
+                        status: 'online',
+                        lastHeartbeat: serverTimestamp(),
+                        sessionId: localSessionId
+                    });
                 } else {
                     myScore = { wins: 0, losses: 0, total: 0, forfeits: 0 };
+                    lastOpponent = null;
                     await set(targetPlayerRef, {
                         ...myScore,
                         status: 'online',
                         lastHeartbeat: serverTimestamp(),
+                        sessionId: localSessionId,
                         currentMatch: null
                     });
                 }
 
                 currentRoom = roomCode;
                 currentUser = nickname;
+
+                // 입장에 성공한 방 코드·닉네임을 기기에 저장 → 다음 접속 때 자동 입력
+                rememberEntrance(roomCode, nickname);
+
                 $('nav-room-info').textContent = `${roomCode}번 방 (학생: ${nickname})`;
                 $('waiting-nickname-display').textContent = nickname;
 
+                subscribeSession();
                 await startHeartbeat();
                 updateStudentScoreUI();
                 listenToRoomStatus();
 
-                if (roomStatus !== 'finished') {
-                    enterWaitingRoom();
-                } else {
+                if (roomStatus === 'finished') {
                     showFinishedScreen();
+                    return;
+                }
+
+                // [이식] 재접속 복구 (오목 방식): 하다 만 경기가 있으면 상태에 따라 분기
+                const existing = await resolveMyMatch();
+                if (existing && prevHbGap > ONLINE_THRESHOLD_MS) {
+                    // 오래 끊겼던 경기 → 무효 처리 후 대기실 (오목은 몰수패, 여기서는 수업 데이터 보호를 위해 무효)
+                    try {
+                        const voided = await runTransaction(matchRefById(existing.id), (m) => {
+                            if (m && m.status === 'playing') {
+                                m.status = 'finished'; m.endReason = 'forfeit'; m.leftBy = currentUser;
+                                return m;
+                            }
+                            return;
+                        });
+                        if (voided.committed) await update(playerRef(), { forfeits: increment(1) }).catch(() => { });
+                    } catch (e) { }
+                    await update(playerRef(), { currentMatch: null }).catch(() => { });
+                    await customAlert('경기 무효',
+                        '접속이 끊긴 사이 진행 중이던 경기가 무효 처리되었습니다.<br>승패에는 반영되지 않습니다.');
+                    enterWaitingRoom();
+                } else if (existing) {
+                    // 짧은 순단 → 하던 판으로 복귀
+                    handleMatchFound(existing.id, existing.data);
+                } else {
+                    enterWaitingRoom();
                 }
             },
             onAdminSuccess: async () => {
@@ -585,19 +754,22 @@
             countdownTimer = matchTimeoutTimer = returnTimer = awayTimer = null;
         }
 
-        function stopWaiting() {
+        // removeEntry=false: 구독·예약만 해제 (중복 접속으로 물러날 때 — 대기열 항목은 새 기기 것일 수 있음)
+        function stopWaiting(removeEntry = true) {
             if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
             if (matchPtrUnsub) { matchPtrUnsub(); matchPtrUnsub = null; }
+            if (matchAttemptInterval) { clearInterval(matchAttemptInterval); matchAttemptInterval = null; }
             if (currentRoom && currentUser) {
                 const wRef = myWaitRef();
                 onDisconnect(wRef).cancel().catch(() => { });
-                remove(wRef).catch(() => { });
+                if (removeEntry) remove(wRef).catch(() => { });
             }
         }
 
         async function enterWaitingRoom() {
-            if (!currentRoom || !currentUser) return;
+            if (!currentRoom || !currentUser || isKicked) return;
 
+            disarmMatchDisconnect();
             clearMatchTimers();
             if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
             currentMatchId = null;
@@ -625,6 +797,7 @@
                         total: p.total || 0,
                         forfeits: p.forfeits || 0
                     };
+                    lastOpponent = p.lastOpponent || lastOpponent || null;
                     updateStudentScoreUI();
                 }
             } catch (e) { }
@@ -635,95 +808,137 @@
             showSection('waiting-section');
             $('waiting-count').textContent = '대기 중...';
 
-            await set(myWaitRef(), { ts: serverTimestamp(), visible: !document.hidden });
+            // [이식] 대기열 항목: ts(순서, 고정) + alive(생존 신호, 하트비트마다 갱신)
+            //        + visible(즉시 반영) + last(직전 상대 — 양방향 회피 판단용)
+            await set(myWaitRef(), {
+                ts: serverTimestamp(),
+                alive: serverTimestamp(),
+                visible: !document.hidden,
+                last: lastOpponent || null
+            });
             // 브라우저를 닫거나 네트워크가 끊기면 서버가 대기 목록에서 지워준다 (대기실 잠김 방지)
             onDisconnect(myWaitRef()).remove().catch(() => { });
 
             // 내 경기 포인터 하나만 구독 (matches 전체 구독 대비 트래픽 대폭 감소)
             matchPtrUnsub = onValue(ref(db, `rooms/${currentRoom}/players/${currentUser}/currentMatch`), async (snap) => {
                 const matchId = snap.val();
-                if (!matchId || matchId === currentMatchId) return;
+                if (!matchId || matchId === currentMatchId || isKicked) return;
 
                 try {
-                    const mSnap = await get(ref(db, `rooms/${currentRoom}/matches/${matchId}`));
+                    const mSnap = await get(matchRefById(matchId));
                     if (!mSnap.exists()) return;
                     const m = mSnap.val();
                     if (m.status !== 'playing') return;
                     if (m.p1 !== currentUser && m.p2 !== currentUser) return;
+                    if (currentMatchId) return;   // 다른 경로가 먼저 진입한 경우
 
                     stopWaiting();
                     handleMatchFound(matchId, m);
                 } catch (e) { }
             });
 
-            const waitingListRef = ref(db, `rooms/${currentRoom}/waiting`);
-            waitingUnsub = onValue(waitingListRef, async (snap) => {
-                if (!snap.exists()) return;
-                const waiters = snap.val();
+            // 대기 목록 구독: 캐시 갱신 + 매칭 시도 (매칭 로직 본체는 attemptMatch로 분리)
+            waitingUnsub = onValue(ref(db, `rooms/${currentRoom}/waiting`), (snap) => {
+                waitersCache = snap.exists() ? snap.val() : {};
+                if (waitersCache[currentUser]) {
+                    $('waiting-count').textContent = `대기 중: ${Object.keys(waitersCache).length}명`;
+                }
+                attemptMatch();
+            });
+
+            // [이식] 저빈도 폴링 안전망 (오목 방식): 스냅샷을 놓쳐도 매칭이 멈추지 않음
+            if (matchAttemptInterval) clearInterval(matchAttemptInterval);
+            matchAttemptInterval = setInterval(attemptMatch, 1500);
+        }
+
+        /**
+         * [이식] 매칭 시도 — 오목의 attemptSmartMatch 구조.
+         * 활성 판정은 visible + waiting 노드 안의 alive 신선도로 합니다.
+         * (오목처럼 players 전체를 구독하지 않고도 같은 견고함을 얻는 방식:
+         *  기존 visible만 보던 방식은 탭이 켜진 채 조용히 끊긴 유령이
+         *  대기열 맨 앞에 남아 교실 전체 매칭을 잠그는 문제가 있었음)
+         */
+        async function attemptMatch() {
+            if (currentMatchId || isMatching || isKicked || !currentRoom || !currentUser) return;
+            if (!isInWaitingRoom()) return;
+            isMatching = true;
+            let lockHeld = false;
+            const lockRef = ref(db, `rooms/${currentRoom}/matchLock`);
+            try {
+                // 이중 안전망: 포인터를 서버에서 직접 확인 (포인터 구독이 주 방어선)
+                const my = await resolveMyMatch();
+                if (my) {
+                    if (currentMatchId) return;
+                    stopWaiting();
+                    handleMatchFound(my.id, my.data);
+                    return;
+                }
+                if (currentMatchId) return;
+
+                const waiters = waitersCache;
                 if (!waiters[currentUser]) return;
 
-                $('waiting-count').textContent = `대기 중: ${Object.keys(waiters).length}명`;
+                // ① 활성 대기자: 화면을 보고 있고(visible) 생존 신호가 신선한(alive) 사람만
+                const active = Object.keys(waiters).filter(k => {
+                    const w = waiters[k];
+                    if (w.visible !== true) return false;
+                    const aliveTs = typeof w.alive === 'number' ? w.alive : (typeof w.ts === 'number' ? w.ts : 0);
+                    return (serverNow() - aliveTs) < WAITER_STALE_MS;
+                }).sort((a, b) => (waiters[a].ts || 0) - (waiters[b].ts || 0));
 
-                if (isMatching) return;
+                // ② 리더 선출: 가장 오래 기다린 활성 대기자만 진행
+                if (active.length < 2 || active[0] !== currentUser) return;
 
-                // 화면을 보고 있는 사람만 필터링 후 타임스탬프 순 정렬
-                const visibleWaiters = Object.keys(waiters).filter(k => waiters[k].visible === true);
-                visibleWaiters.sort((a, b) => (waiters[a].ts || 0) - (waiters[b].ts || 0));
-
-                if (visibleWaiters.length < 2 || visibleWaiters[0] !== currentUser) return;
-
-                // 같은 상대와 계속 만나지 않도록 후보 중에서 무작위 선택
-                let candidates = visibleWaiters.slice(1);
-                if (lastOpponent && candidates.length > 1) {
-                    const filtered = candidates.filter(c => c !== lastOpponent);
-                    if (filtered.length) candidates = filtered;
-                }
-                const opponent = candidates[Math.floor(Math.random() * candidates.length)];
+                // ③ 상대 고르기: 직전 상대 양방향 회피 + 즉시 폴백 + 무작위 선택
+                //    (무작위 선택은 상대빈도 수업의 표본 독립성을 위해 반드시 유지)
+                const candidates = active.slice(1);
+                const preferred = candidates.filter(c =>
+                    c !== lastOpponent && (waiters[c].last || null) !== currentUser
+                );
+                const pool = preferred.length ? preferred : candidates;   // 대안이 없으면 즉시 재대결 허용
+                const opponent = pool[Math.floor(Math.random() * pool.length)];
                 if (!opponent) return;
 
-                isMatching = true;
-                const lockRef = ref(db, `rooms/${currentRoom}/matchLock`);
+                // ④ 매칭 잠금: 시계 오차로 두 명이 동시에 리더라고 착각하는 경합 차단 (TTL 3초)
+                const lock = await runTransaction(lockRef, (cur) => {
+                    const now = serverNow();
+                    if (cur && cur.until && cur.until > now) return; // 다른 사람이 매칭 중
+                    return { by: currentUser, until: now + MATCH_LOCK_MS };
+                });
+                if (!lock.committed) return;
+                lockHeld = true;
 
-                try {
-                    // 시계 오차로 두 명이 동시에 '내가 0번'이라고 착각하는 상황 방지
-                    const lock = await runTransaction(lockRef, (cur) => {
-                        const now = serverNow();
-                        if (cur && cur.until && cur.until > now) return; // 다른 사람이 매칭 중
-                        return { by: currentUser, until: now + 3000 };
-                    });
-                    if (!lock.committed) { isMatching = false; return; }
+                // ⑤ 재확인: 잠금을 얻는 사이 상대가 빠졌을 수 있음
+                const fresh = await get(ref(db, `rooms/${currentRoom}/waiting`));
+                const w = fresh.val() || {};
+                if (!w[currentUser] || !w[opponent]) return;
 
-                    // 잠금을 얻는 사이 상대가 빠졌을 수 있으므로 재확인
-                    const fresh = await get(waitingListRef);
-                    const w = fresh.val() || {};
-                    if (!w[currentUser] || !w[opponent]) {
-                        await set(lockRef, null).catch(() => { });
-                        isMatching = false;
-                        return;
-                    }
+                // ⑥ 원자적 성사 (+ 직전 상대 기록 + 잠금 동시 해제)
+                const matchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                const updates = {};
+                updates[`waiting/${currentUser}`] = null;
+                updates[`waiting/${opponent}`] = null;
+                updates[`matches/${matchId}`] = {
+                    p1: currentUser,
+                    p2: opponent,
+                    p1_choice: "",
+                    p2_choice: "",
+                    status: 'playing',
+                    createdAt: serverTimestamp()
+                };
+                updates[`players/${currentUser}/currentMatch`] = matchId;
+                updates[`players/${opponent}/currentMatch`] = matchId;
+                updates[`players/${currentUser}/lastOpponent`] = opponent;
+                updates[`players/${opponent}/lastOpponent`] = currentUser;
+                updates[`matchLock`] = null;
 
-                    const matchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                    const updates = {};
-                    updates[`waiting/${currentUser}`] = null;
-                    updates[`waiting/${opponent}`] = null;
-                    updates[`matches/${matchId}`] = {
-                        p1: currentUser,
-                        p2: opponent,
-                        p1_choice: "",
-                        p2_choice: "",
-                        status: 'playing',
-                        createdAt: serverTimestamp()
-                    };
-                    updates[`players/${currentUser}/currentMatch`] = matchId;
-                    updates[`players/${opponent}/currentMatch`] = matchId;
-                    updates[`matchLock`] = null;
-
-                    await update(ref(db, `rooms/${currentRoom}`), updates);
-                } catch (e) {
-                    await set(lockRef, null).catch(() => { });
-                    isMatching = false;
-                }
-            });
+                await update(ref(db, `rooms/${currentRoom}`), updates);
+                lockHeld = false;
+            } catch (e) {
+            } finally {
+                isMatching = false;
+                if (lockHeld) { try { await set(lockRef, null); } catch (e) { } }
+            }
         }
 
         function resetChoiceUI() {
@@ -735,6 +950,7 @@
         }
 
         function handleMatchFound(matchId, m) {
+            if (currentMatchId) return;   // 중복 진입 방지
             currentMatchId = matchId;
             currentMatchData = m;
             isPlayer1 = (m.p1 === currentUser);
@@ -754,14 +970,17 @@
 
             showSection('student-section');
 
+            // [이식] 내 연결이 끊기면 서버가 경기를 즉시 '무효'로 정리 (상대를 오래 기다리게 하지 않음)
+            armMatchDisconnect(matchId);
+
             // 상대가 끝까지 반응하지 않는 경우를 위한 탈출구
             matchTimeoutTimer = setTimeout(() => {
                 $('btn-abandon-match').classList.remove('d-none');
             }, MATCH_TIMEOUT_MS);
 
-            const matchRef = ref(db, `rooms/${currentRoom}/matches/${matchId}`);
-            currentMatchUnsub = onValue(matchRef, (snap) => {
+            currentMatchUnsub = onValue(matchRefById(matchId), (snap) => {
                 if (!snap.exists()) {
+                    disarmMatchDisconnect();
                     returnToWaiting('안내', '경기 정보가 사라져 대기실로 돌아갑니다.');
                     return;
                 }
@@ -769,6 +988,7 @@
                 currentMatchData = match;
 
                 if (match.status === 'finished') {
+                    disarmMatchDisconnect();   // 어떤 사유로 끝났든 예약 즉시 해제
                     if (match.endReason === 'forfeit') {
                         if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
                         clearMatchTimers();
@@ -799,14 +1019,26 @@
                         isResolvingMatch = false;
                         matchResolutionInFlight = false;
                         resetChoiceUI();
-                    } else if ((isPlayer1 && match.p2_choice) || (!isPlayer1 && match.p1_choice)) {
-                        $('game-status-text').textContent = '상대방이 선택을 완료했습니다!';
+                    } else {
+                        const myChoiceNow = isPlayer1 ? match.p1_choice : match.p2_choice;
+                        if (myChoiceNow) {
+                            // [이식] 순단 복귀 시 내가 이미 선택한 상태를 복원
+                            // (기존에는 버튼이 다시 활성화되어 선택을 덮어쓸 수 있었음)
+                            document.querySelectorAll('.rps-btn').forEach(b => {
+                                b.disabled = true;
+                                b.classList.toggle('active', b.getAttribute('data-choice') === myChoiceNow);
+                            });
+                            $('game-status-text').textContent = '상대방 기다리는 중...';
+                        } else {
+                            $('game-status-text').textContent = '상대방이 선택을 완료했습니다!';
+                        }
                     }
                 }
             });
         }
 
         function returnToWaiting(title, message) {
+            disarmMatchDisconnect();
             if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
             clearMatchTimers();
             customAlert(title, message).then(() => enterWaitingRoom());
@@ -880,7 +1112,7 @@
                 // (기존에는 p1만 초기화해서 p1이 이탈하면 p2가 멈췄음)
                 setTimeout(async () => {
                     try {
-                        await runTransaction(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), (m) => {
+                        await runTransaction(matchRefById(currentMatchId), (m) => {
                             if (m && m.status === 'playing'
                                 && m.p1_choice && m.p2_choice && m.p1_choice === m.p2_choice) {
                                 m.p1_choice = "";
@@ -897,6 +1129,7 @@
             }
 
             // ---------- 승패 결정 ----------
+            disarmMatchDisconnect();   // 결과가 확정되었으므로 무효 예약 해제
             if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
             clearTimeout(matchTimeoutTimer);
             $('btn-abandon-match').classList.add('d-none');
@@ -930,11 +1163,11 @@
             } catch (e) { }
 
             if (isPlayer1) {
-                update(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), { status: 'finished' })
+                update(matchRefById(currentMatchId), { status: 'finished' })
                     .catch(() => { });
             }
 
-            // 화면 이탈 감지가 이 경기를 다시 몰수 처리하지 않도록 로컬 상태도 갱신
+            // 화면 이탈 감지가 이 경기를 다시 무효 처리하지 않도록 로컬 상태도 갱신
             if (currentMatchData) currentMatchData.status = 'finished';
             clearTimeout(awayTimer);
             awayTimer = null;
@@ -956,7 +1189,7 @@
         document.querySelectorAll('.rps-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const choice = btn.getAttribute('data-choice');
-                if (!currentRoom || !currentUser || !currentMatchId || !choice) return;
+                if (!currentRoom || !currentUser || !currentMatchId || !choice || isKicked) return;
                 if (btn.disabled) return;
 
                 document.querySelectorAll('.rps-btn').forEach(b => b.disabled = true);
@@ -965,7 +1198,7 @@
 
                 const updateKey = isPlayer1 ? 'p1_choice' : 'p2_choice';
                 try {
-                    await update(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), { [updateKey]: choice });
+                    await update(matchRefById(currentMatchId), { [updateKey]: choice });
                 } catch (e) {
                     resetChoiceUI();
                     $('game-status-text').textContent = '전송에 실패했어요. 다시 선택해주세요.';
@@ -975,13 +1208,13 @@
 
         // 상대가 반응하지 않을 때 학생이 스스로 빠져나오는 버튼
         $('btn-abandon-match').addEventListener('click', async () => {
-            if (!currentMatchId || !currentRoom) return;
+            if (!currentMatchId || !currentRoom || isKicked) return;
             const ok = await customConfirm('매칭 취소',
                 '이 경기를 취소하고 다른 상대를 찾을까요?<br>승패는 기록되지 않습니다.');
             if (!ok) return;
 
             try {
-                await runTransaction(ref(db, `rooms/${currentRoom}/matches/${currentMatchId}`), (m) => {
+                await runTransaction(matchRefById(currentMatchId), (m) => {
                     if (m && m.status === 'playing') {
                         m.status = 'finished';
                         m.endReason = 'abandoned';
@@ -1002,6 +1235,7 @@
         }
 
         function showFinishedScreen() {
+            disarmMatchDisconnect();
             stopWaiting();
             if (currentMatchUnsub) { currentMatchUnsub(); currentMatchUnsub = null; }
             clearMatchTimers();
@@ -1021,7 +1255,9 @@
 
             onValue(ref(db, `rooms/${currentRoom}/status`), (snapshot) => {
                 if (!snapshot.exists()) {
-                    stopHeartbeat();
+                    if (sessionEnded) return;   // 세션 감시와 안내가 겹치지 않도록
+                    sessionEnded = true;
+                    cleanupSession();
                     customAlert('안내', '방이 삭제되어 첫 화면으로 이동합니다.').then(() => location.reload());
                     return;
                 }
@@ -1093,7 +1329,7 @@
         });
 
         // =====================================================================
-        // 관리자 화면
+        // 관리자 화면 (변경 없음)
         // =====================================================================
 
         /** 헷갈리는 문자(0/O, 1/I)를 제외한 방 코드 생성 + 중복 확인 */
