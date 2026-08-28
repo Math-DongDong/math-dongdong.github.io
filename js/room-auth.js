@@ -53,6 +53,41 @@ export function sanitizeKey(str) {
 }
 
 // =====================================================================
+// 0.5 입장 정보 기억 (방 코드·닉네임 자동 입력)
+// =====================================================================
+// - 방 코드: 페이지(게임)마다 다르므로 경로별로 따로 저장
+// - 닉네임: 같은 학생이 다른 게임에서도 쓰므로 전체 공용으로 저장
+// - 저장 시점은 각 페이지가 "입장 성공" 지점에서 rememberEntrance()를 호출해 결정
+//   (실패한 입력까지 저장되지 않도록 자동 저장하지 않습니다)
+// - localStorage가 막힌 환경(사생활 보호 모드 등)에서는 조용히 무시됩니다.
+const ENTRANCE_NICK_KEY = 'roomEntrance:nickname';
+function entranceRoomKey() { return `roomEntrance:room:${location.pathname}`; }
+
+export function rememberEntrance(roomCode, nickname) {
+    try {
+        localStorage.setItem(entranceRoomKey(), String(roomCode ?? ''));
+        localStorage.setItem(ENTRANCE_NICK_KEY, String(nickname ?? ''));
+    } catch (e) { }
+}
+
+export function loadRememberedEntrance() {
+    try {
+        // 저장값도 입력값과 같은 규칙으로 정제해서 돌려줍니다 (조작·손상 대비)
+        const room = String(localStorage.getItem(entranceRoomKey()) || '')
+            .replace(/\s/g, '').slice(0, 4).toUpperCase();
+        const nick = sanitizeKey(localStorage.getItem(ENTRANCE_NICK_KEY) || '').trim().slice(0, 10);
+        return { room, nick };
+    } catch (e) { return { room: '', nick: '' }; }
+}
+
+export function clearRememberedEntrance() {
+    try {
+        localStorage.removeItem(entranceRoomKey());
+        localStorage.removeItem(ENTRANCE_NICK_KEY);
+    } catch (e) { }
+}
+
+// =====================================================================
 // 1. 공통 모달 DOM 자동 생성 및 유틸
 // =====================================================================
 function ensureModalDOM() {
@@ -333,6 +368,8 @@ export function renderRoomEntrance(container, options = {}) {
         guideSlides = null,
         guideBtnText = "📖 게임방법 보기",
         guideTitle = "게임 방법",
+        // [추가] 지난 접속 정보 자동 입력 (끄고 싶은 페이지는 false 전달)
+        rememberLastEntry = true,
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -369,6 +406,27 @@ export function renderRoomEntrance(container, options = {}) {
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
+
+    // [추가] 지난 접속 정보 자동 입력
+    // 공용 기기(학급 태블릿)를 여러 학생이 돌려 쓸 수 있으므로,
+    // 무엇이 채워졌는지 명확히 보여주고 한 번에 지울 수 있는 링크를 함께 제공합니다.
+    if (rememberLastEntry) {
+        const saved = loadRememberedEntrance();
+        if (saved.room) roomInput.value = saved.room;
+        if (saved.nick) nameInput.value = saved.nick;
+        if (saved.room || saved.nick) {
+            nameHint.innerHTML =
+                `지난 접속 정보를 불러왔어요 · <a href="#" id="btnClearSaved" class="link-secondary">내 정보가 아니에요 (지우기)</a>`;
+            target.querySelector('#btnClearSaved')?.addEventListener('click', (e) => {
+                e.preventDefault();
+                clearRememberedEntrance();
+                roomInput.value = '';
+                nameInput.value = '';
+                nameHint.textContent = '';
+                roomInput.focus();
+            });
+        }
+    }
 
     roomInput.addEventListener('input', () => {
         roomInput.value = roomInput.value.replace(/\s/g, '').slice(0, 4).toUpperCase();

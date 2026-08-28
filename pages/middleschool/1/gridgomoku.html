@@ -338,7 +338,7 @@
     <script type="module">
         import { rtdbGridGomoku as db } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customConfirm, escapeHtml
+            renderRoomEntrance, customAlert, customConfirm, escapeHtml, rememberEntrance
         } from "../../../js/room-auth.js";
         import {
             ref, set, get, update, remove, onValue, serverTimestamp,
@@ -563,8 +563,18 @@
                         const lastBeat = typeof pData.lastHeartbeat === 'number' ? pData.lastHeartbeat : 0;
                         const diff = getServerTime() - lastBeat;
 
+                        // [모서리 1 수정] 하드 차단 대신 확인 후 이어받기.
+                        // 와이파이가 끊긴 학생이 곧바로 재접속하면 서버가 아직 끊김을 감지하기 전이라
+                        // 자기 자신의 유령 세션이 'online'으로 남아 있어 스스로에게 막히는 문제가 있었습니다.
+                        // 진짜 다른 기기가 살아 있는 경우라도, 아래에서 새 sessionId를 기록하는 순간
+                        // 옛 기기가 subscribeSession에서 불일치를 감지하고 스스로 물러나므로 안전합니다.
                         if (diff <= OFFLINE_MS && pData.status === 'online') {
-                            return await customAlert("접속 불가", "현재 사용 중인 닉네임입니다. 다른 닉네임을 사용해주세요.");
+                            const ok = await customConfirm("이어서 접속할까요?",
+                                `<b>${escapeHtml(nickname)}</b> 이름으로 접속 중인 기기가 있습니다.<br><br>` +
+                                `내가 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
+                                `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 전적은 그대로 이어집니다)</span><br><br>` +
+                                `<b class="text-danger">다른 친구가 쓰는 이름이라면</b> [취소]를 누르고<br>다른 닉네임을 사용해주세요.`);
+                            if (!ok) return;
                         }
                         if (diff > AFK_LIMIT_MS) wasOfflineTooLong = true;
 
@@ -579,6 +589,9 @@
                     }
 
                     currentRoomCode = code; currentNickname = nickname;
+
+                    // [추가] 입장에 성공한 방 코드·닉네임을 기기에 저장 → 다음 접속 때 자동 입력
+                    rememberEntrance(code, nickname);
 
                     // 브라우저를 강제 종료해도 서버가 즉시 offline 처리
                     try {
