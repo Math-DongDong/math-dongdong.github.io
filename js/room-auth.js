@@ -109,6 +109,15 @@ function ensureModalDOM() {
         </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // [수정] X 버튼·ESC·배경 클릭으로 닫는 경로는 handleConfirm/handleCancel을 거치지 않으므로,
+    // 모든 닫힘 경로를 한 번에 커버하도록 hide.bs.modal에 포커스 해제를 걸어둡니다.
+    // (bootstrap이 aria-hidden을 적용하기 전에 먼저 실행되어야 하므로 hide.bs.modal 단계에서 처리)
+    document.getElementById('customModal').addEventListener('hide.bs.modal', function () {
+        if (document.activeElement && this.contains(document.activeElement)) {
+            document.activeElement.blur();
+        }
+    });
 }
 
 function ensureShakeStyle() {
@@ -175,16 +184,27 @@ function openCustomModal(title, message, isPrompt, isPassword, isConfirm) {
         let resolveValue = null;
         let settled = false;
 
+        // [수정] 부트스트랩이 모달에 aria-hidden을 거는 순간 방금 클릭한 버튼이
+        // 여전히 포커스를 쥐고 있으면 "포커스가 숨겨진 조상 안에 있다"는 접근성 경고가 뜹니다.
+        // hide() 호출 직전에 포커스를 명시적으로 빼서 이 경합을 없앱니다.
+        const blurBeforeHide = () => {
+            if (document.activeElement && modalEl.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+        };
+
         const handleConfirm = () => {
             if (settled) return;
             settled = true;
             resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value ?? "") : true;
+            blurBeforeHide();
             customModalInstance.hide();
         };
         const handleCancel = () => {
             if (settled) return;
             settled = true;
             resolveValue = isConfirm ? false : null;
+            blurBeforeHide();
             customModalInstance.hide();
         };
         const handleHidden = () => {
@@ -273,6 +293,13 @@ function ensureGuideModalDOM() {
         </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
+
+    // [수정] 캐러셀 이전/다음 버튼이 포커스를 쥔 채 닫힐 때 나는 aria-hidden 경고 방지
+    document.getElementById('guideModal').addEventListener('hide.bs.modal', function () {
+        if (document.activeElement && this.contains(document.activeElement)) {
+            document.activeElement.blur();
+        }
+    });
 }
 
 let guideModalInstance = null;
