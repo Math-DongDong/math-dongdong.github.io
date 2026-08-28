@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-bs-theme="light">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="color-scheme" content="light only">
     <title>좀비헌터</title>
     <!-- 파비콘 및 외부 라이브러리 -->
     <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
@@ -14,6 +15,16 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
+        /* 라이트 모드 고정: 다크모드 기기·브라우저 강제 다크에서도 좌표평면이 항상 밝게 보이도록 */
+        :root {
+            color-scheme: light only;
+        }
+
+        body {
+            background-color: #f8fafc !important;
+            color: #1e293b !important;
+        }
+
         /* Landing */
         .landing-card {
             max-width: 480px;
@@ -236,6 +247,63 @@
         .fire-btn:hover {
             background: #dc2626;
         }
+
+        /* 모바일 컴팩트 레이아웃: 게임 화면 세로 길이 축소 */
+        @media (max-width: 767px) {
+            #game-section.pt-4 {
+                padding-top: 0.5rem !important;
+            }
+
+            .game-top-header {
+                margin: 0 auto 0.75rem;
+                padding: 0.6rem 1rem;
+            }
+
+            .game-layout {
+                gap: 0.75rem;
+            }
+
+            .controls-container {
+                padding: 1rem;
+            }
+
+            .controls-container .mb-4 {
+                margin-bottom: 0.75rem !important;
+            }
+
+            .slider-container {
+                margin: 0.75rem 0;
+            }
+
+            .slider-ticks {
+                display: none !important;
+            }
+
+            .function-type-btn {
+                padding: 0.5rem;
+                font-size: 1rem;
+            }
+
+            .equation-display {
+                min-height: 56px;
+                font-size: 1.4rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .equation-display .math-fraction {
+                font-size: 1.25rem;
+            }
+
+            .fire-btn {
+                padding: 0.75rem;
+                font-size: 1.15rem;
+            }
+
+            #feedbackText {
+                margin-top: 0.5rem !important;
+                min-height: 20px !important;
+            }
+        }
     </style>
 </head>
 
@@ -358,7 +426,7 @@
                         <span id="aValueDisplay" class="badge bg-primary fs-6">2</span>
                     </div>
                     <input type="range" id="aSlider" min="-24" max="24" value="2" step="1">
-                    <div class="d-flex justify-content-between mt-1 small text-muted">
+                    <div class="slider-ticks d-flex justify-content-between mt-1 small text-muted">
                         <span>-24</span><span>0</span><span>24</span>
                     </div>
                 </div>
@@ -480,6 +548,15 @@
         navScript.src = '../../../js/navbar.js';
         document.body.appendChild(navScript);
 
+        // 이 페이지는 항상 라이트 모드 유지 (좌표평면 가독성).
+        // 네비바 등 공통 스크립트가 나중에 다크 테마를 적용해도 즉시 라이트로 되돌린다.
+        document.documentElement.setAttribute('data-bs-theme', 'light');
+        new MutationObserver(() => {
+            if (document.documentElement.getAttribute('data-bs-theme') !== 'light') {
+                document.documentElement.setAttribute('data-bs-theme', 'light');
+            }
+        }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
+
         // 전역 상태
         let currentRoomCode = '';
         let myName = '';
@@ -499,8 +576,8 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const GRID_LIMIT = 10;
-        const scale = 28, centerX = canvas.width / 2, centerY = canvas.height / 2;
+        const GRID_LIMIT = 8;
+        const scale = 34, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
         function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
         function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
@@ -647,10 +724,12 @@
                 conceptForThisProblem = Math.floor(Math.random() * (currentStage - 1)) + 1;
             }
 
+            // ±8 격자 기준 a값 풀: 모든 식이 최소 4개의 격자점(좀비 후보)을 갖도록 구성
+            // (정비례 a=±5는 격자점이 2개뿐이라 제외)
             if (conceptForThisProblem === 1) {
-                baseType = 'linear'; baseA = [1, 2, 3, 4, 5][Math.floor(Math.random() * 5)];
+                baseType = 'linear'; baseA = [1, 2, 3, 4][Math.floor(Math.random() * 4)];
             } else if (conceptForThisProblem === 2) {
-                baseType = 'linear'; baseA = [-5, -4, -3, -2, -1][Math.floor(Math.random() * 5)];
+                baseType = 'linear'; baseA = [-4, -3, -2, -1][Math.floor(Math.random() * 4)];
             } else if (conceptForThisProblem === 3) {
                 baseType = 'inverse'; baseA = [12, 16, 18, 20, 24][Math.floor(Math.random() * 5)];
             } else if (conceptForThisProblem === 4) {
@@ -670,8 +749,8 @@
                 for (let i = 0; i < numCurves; i++) {
                     const stg = Math.floor(Math.random() * 4) + 1;
                     let t = 'linear', a = 1;
-                    if (stg === 1) { t = 'linear'; a = [1, 2, 3, 4, 5][Math.floor(Math.random() * 5)]; }
-                    if (stg === 2) { t = 'linear'; a = [-5, -4, -3, -2, -1][Math.floor(Math.random() * 5)]; }
+                    if (stg === 1) { t = 'linear'; a = [1, 2, 3, 4][Math.floor(Math.random() * 4)]; }
+                    if (stg === 2) { t = 'linear'; a = [-4, -3, -2, -1][Math.floor(Math.random() * 4)]; }
                     if (stg === 3) { t = 'inverse'; a = [12, 16, 18, 20, 24][Math.floor(Math.random() * 5)]; }
                     if (stg === 4) { t = 'inverse'; a = [-24, -20, -18, -16, -12][Math.floor(Math.random() * 5)]; }
                     pickedCurves.push({ type: t, a: a });
@@ -747,12 +826,12 @@
             ctx.restore();
 
             ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
-            ctx.fillStyle = '#64748b'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillStyle = '#64748b'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
             for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 2) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
             ctx.fillText('0', centerX - 5, centerY + 5);
-            ctx.font = '28px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = '34px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
 
             if (laserAnimX !== null) {
