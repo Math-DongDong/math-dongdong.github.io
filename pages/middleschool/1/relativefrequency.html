@@ -109,7 +109,8 @@
         }
 
         .status-offline {
-            background-color: #adb5bd;
+            background-color: #dc3545;
+            /* [통일] 오목 대시보드와 동일한 빨강 (기존 회색 → 빨강) */
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -684,7 +685,8 @@
                         status: 'online',
                         lastHeartbeat: serverTimestamp(),
                         sessionId: localSessionId,
-                        currentMatch: null
+                        currentMatch: null,
+                        joinedAt: serverTimestamp()   // [추가] 대시보드 정렬용 — 최초 입장 시 1회만 기록, 재접속해도 안 바뀜
                     });
                 }
 
@@ -1315,10 +1317,15 @@
 
             btn.disabled = true;
             try {
-                await set(ref(db, `rooms/${currentRoom}/feedbacks/${currentUser}`), {
-                    text: text,
-                    timestamp: Date.now()
-                });
+                // [변경] 최초 제출 시각(createdAt)은 한 번만 기록하고 이후 수정에서는 건드리지 않습니다.
+                // 그래야 의견을 고쳐도 포스트잇이 원래 자리에 그대로 남습니다.
+                const fbRef = ref(db, `rooms/${currentRoom}/feedbacks/${currentUser}`);
+                const existing = await get(fbRef);
+                if (existing.exists()) {
+                    await update(fbRef, { text: text, updatedAt: serverTimestamp() });
+                } else {
+                    await set(fbRef, { text: text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+                }
                 await customAlert("제출 완료", "성공적으로 제출/수정 되었습니다!");
                 btn.textContent = "의견 수정하기";
             } catch (e) {
@@ -1439,16 +1446,17 @@
             listenToAdminRoom();
         });
 
+        // [통일] 오목 대시보드와 문구·색을 맞춤: 접속중(녹색)/다른화면(노랑)/접속 끊김(빨강)
         function statusBadge(player) {
             const hb = typeof player.lastHeartbeat === 'number' ? player.lastHeartbeat : 0;
             const fresh = (serverNow() - hb) < ONLINE_THRESHOLD_MS;
             if (!fresh || player.status === 'offline') {
-                return '<span class="status-dot status-offline"></span><span class="text-muted small">종료</span>';
+                return '<span class="status-dot status-offline"></span><span class="text-danger small fw-bold">접속 끊김</span>';
             }
             if (player.status === 'away') {
-                return '<span class="status-dot status-away"></span><span class="text-warning small">자리비움</span>';
+                return '<span class="status-dot status-away"></span><span class="text-warning small fw-bold">다른화면</span>';
             }
-            return '<span class="status-dot status-online"></span><span class="text-success small">접속중</span>';
+            return '<span class="status-dot status-online"></span><span class="text-success small fw-bold">접속중</span>';
         }
 
         function renderDrawResult(drawResult) {
@@ -1525,18 +1533,26 @@
                 allPlayersData = [];
 
                 if (data.players && Object.keys(data.players).length > 0) {
-                    Object.keys(data.players).sort().forEach(nickname => {
-                        const score = data.players[nickname] || {};
-                        allPlayersData.push({
-                            nickname,
-                            wins: score.wins || 0,
-                            losses: score.losses || 0,
-                            total: score.total || 0,
-                            forfeits: score.forfeits || 0
-                        });
+                    // [변경] 알파벳순 대신 입장한 순서대로 표시.
+                    // joinedAt이 없는 옛 데이터(이 기능 추가 이전에 생성된 학생)는 맨 뒤로 보냅니다.
+                    Object.keys(data.players)
+                        .sort((a, b) => {
+                            const ja = data.players[a].joinedAt ?? Infinity;
+                            const jb = data.players[b].joinedAt ?? Infinity;
+                            return ja - jb;
+                        })
+                        .forEach(nickname => {
+                            const score = data.players[nickname] || {};
+                            allPlayersData.push({
+                                nickname,
+                                wins: score.wins || 0,
+                                losses: score.losses || 0,
+                                total: score.total || 0,
+                                forfeits: score.forfeits || 0
+                            });
 
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
                             <td>${statusBadge(score)}</td>
                             <td class="fw-bold">${escapeHtml(nickname)}</td>
                             <td class="text-success fw-bold">${score.wins || 0}</td>
@@ -1544,8 +1560,8 @@
                             <td class="fw-bold text-primary">${score.total || 0}</td>
                             <td class="text-muted">${score.forfeits || 0}</td>
                         `;
-                        tbody.appendChild(tr);
-                    });
+                            tbody.appendChild(tr);
+                        });
                 } else {
                     tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
                 }
@@ -1560,23 +1576,32 @@
                     $('admin-feedbacks-area').style.display = 'block';
                     if (data.feedbacks) {
                         const colors = ['post-it-1', 'post-it-2', 'post-it-3', 'post-it-4', 'post-it-5'];
-                        Object.keys(data.feedbacks).forEach(nickname => {
-                            const fb = data.feedbacks[nickname] || {};
-                            const charSum = nickname.split('')
-                                .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-                            const colorClass = colors[charSum % colors.length];
+                        // [변경] 최초 제출 순서(createdAt)대로 쌓이게 정렬.
+                        // 수정해도 createdAt은 안 바뀌므로 위치가 그대로 유지됩니다.
+                        // createdAt이 없는 옛 데이터(이 기능 추가 이전 제출분)는 맨 뒤로 보냅니다.
+                        Object.keys(data.feedbacks)
+                            .sort((a, b) => {
+                                const ca = data.feedbacks[a].createdAt ?? Infinity;
+                                const cb = data.feedbacks[b].createdAt ?? Infinity;
+                                return ca - cb;
+                            })
+                            .forEach(nickname => {
+                                const fb = data.feedbacks[nickname] || {};
+                                const charSum = nickname.split('')
+                                    .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+                                const colorClass = colors[charSum % colors.length];
 
-                            const col = document.createElement('div');
-                            col.className = 'col-md-4 col-sm-6';
-                            // 학생이 입력한 값은 반드시 이스케이프 후 표시
-                            col.innerHTML = `
+                                const col = document.createElement('div');
+                                col.className = 'col-md-4 col-sm-6';
+                                // 학생이 입력한 값은 반드시 이스케이프 후 표시
+                                col.innerHTML = `
                                 <div class="post-it ${colorClass} text-dark">
                                     <div class="post-it-author">👤 ${escapeHtml(nickname)}</div>
                                     <div>${escapeHtml(fb.text || '').replace(/\n/g, '<br>')}</div>
                                 </div>
                             `;
-                            fbContainer.appendChild(col);
-                        });
+                                fbContainer.appendChild(col);
+                            });
                     }
                 } else {
                     $('admin-feedbacks-area').style.display = 'none';
