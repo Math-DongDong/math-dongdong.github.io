@@ -430,6 +430,18 @@
         function roomRef(code) { return ref(db, `blotto_rooms/${code}`); }
         function playerRef(code, nick) { return ref(db, `blotto_rooms/${code}/players/${nick}`); }
 
+        // 자식 노드 개수 세기.
+        // 모듈러 SDK(v9+)의 DataSnapshot은 size '속성'을 쓰고, 구버전(v8)은 numChildren() '메서드'를 씁니다.
+        // SDK 버전이 바뀌어도 깨지지 않도록 둘 다 확인하고, 마지막에는 직접 세는 방법으로 폴백합니다.
+        function countChildren(snap) {
+            if (!snap || !snap.exists()) return 0;
+            if (typeof snap.size === 'number') return snap.size;
+            if (typeof snap.numChildren === 'function') return snap.numChildren();
+            let n = 0;
+            snap.forEach(() => { n++; });
+            return n;
+        }
+
         // 기기 시계가 틀어져 있어도 접속 판정이 정확하도록 서버 시각과 동기화
         onValue(ref(db, '.info/serverTimeOffset'), (snap) => { serverOffset = snap.val() || 0; });
 
@@ -585,9 +597,8 @@
                         // ── 신규 입장(또는 손상 노드 복구) ──
                         if (!prev) {
                             // 자리를 새로 차지하는 경우에만 정원을 확인합니다.
-                            // (RTDB 스냅샷은 .size가 아니라 numChildren()을 씁니다)
                             const currentPlayersSnap = await get(ref(db, `blotto_rooms/${code}/players`));
-                            const joined = currentPlayersSnap.exists() ? currentPlayersSnap.numChildren() : 0;
+                            const joined = countChildren(currentPlayersSnap);
                             if (joined >= teamsMax) {
                                 return await customAlert("입장 불가", "해당 게임의 모둠 수가 꽉 찼습니다.");
                             }
