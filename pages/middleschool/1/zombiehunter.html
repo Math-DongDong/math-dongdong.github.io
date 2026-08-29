@@ -187,10 +187,15 @@
         }
 
         .roulette-wrapper {
-            width: 150px;
+            flex: 1 1 0;
+            min-width: 0;
             height: 38px;
             overflow-x: scroll;
             overflow-y: hidden;
+            overscroll-behavior-x: contain;
+            /* 안드로이드 크롬 등에서 스크롤이 끝(±20)에 닿을 때 나오는 파란 글로우 차단 */
+            -webkit-tap-highlight-color: transparent;
+            /* 터치 시 기본으로 깜빡이는 파란 하이라이트 차단 */
             scroll-snap-type: x mandatory;
             scroll-behavior: smooth;
             scrollbar-width: none;
@@ -216,10 +221,11 @@
         .roulette-wrapper::after {
             content: '';
             position: absolute;
-            left: 60px;
+            left: 50%;
             top: 0;
             width: 30px;
             height: 100%;
+            transform: translateX(-50%);
             border-left: 2px solid #4f46e5;
             border-right: 2px solid #4f46e5;
             background: rgba(79, 70, 229, 0.08);
@@ -242,6 +248,7 @@
             font-size: 1rem;
             transition: color 0.2s;
             user-select: none;
+            -webkit-tap-highlight-color: transparent;
             display: inline-block;
             flex-shrink: 0;
         }
@@ -722,6 +729,7 @@
                 generateProblem();
                 updateUI();
                 showSection('game-section');
+                requestAnimationFrame(buildARouletteItems); // 화면 전환 직후 룰렛 실측 폭 확정
             },
             onAdminSuccess: () => {
                 showSection('admin-section');
@@ -823,49 +831,62 @@
         const ROULETTE_ITEM_W = 30;   // CSS .roulette-item width와 반드시 동일
         const A_MIN = -20, A_MAX = 20;
         const rouletteA = document.getElementById('roulette-a');
+        let aRouletteLastPad = -1;
 
-        (function initARoulette() {
+        // 룰렛 폭이 컨트롤 영역을 꽉 채우도록 가변이라, 양옆 여백(패딩)은 고정값이 아니라
+        // 실측 폭에서 매번 계산한다: (실측 폭 - 항목 폭) / 2.
+        // 이 식이면 어떤 폭에서도 가운데 강조창(CSS로 항상 중앙 고정)과 정확히 맞는다.
+        function buildARouletteItems() {
+            const w = rouletteA.clientWidth;
+            if (w <= 0) return; // 화면이 아직 숨겨진 상태(display:none) — 보일 때 다시 호출됨
+            const padWidth = Math.max(0, (w - ROULETTE_ITEM_W) / 2);
+            if (Math.abs(padWidth - aRouletteLastPad) < 0.5) return; // 폭이 그대로면 재생성 생략
+            aRouletteLastPad = padWidth;
+
             const inner = rouletteA.querySelector('.roulette-inner');
-            const pad = `<div class="roulette-item" style="width:60px;"></div>`; // (150px 창 - 30px 항목) / 2
+            const pad = `<div class="roulette-item" style="width:${padWidth}px;"></div>`;
             let html = pad;
             for (let v = A_MIN; v <= A_MAX; v++) {
                 if (v === 0) continue; // y=0x, 0/x는 출제되지 않으므로 선택지에서 0 제외
                 html += `<div class="roulette-item coord-item" data-val="${v}">${v}</div>`;
             }
             inner.innerHTML = html + pad;
+            setARouletteValue(currentA); // 새 레이아웃 기준으로 선택 표시·스크롤 위치 재적용
+        }
+        // 최초로 화면에 보이는 순간 + 창 크기·화면 회전이 바뀔 때마다 자동 재계산
+        new ResizeObserver(buildARouletteItems).observe(rouletteA);
 
-            rouletteA.addEventListener('scroll', () => {
-                const items = rouletteA.querySelectorAll('.coord-item');
-                const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W)));
-                items.forEach((item, index) => item.classList.toggle('selected', index === selIdx));
-                const val = parseInt(items[selIdx].dataset.val);
-                if (val !== currentA) {
-                    currentA = val;
-                    document.getElementById('aValueDisplay').innerText = val;
-                    updateEquationDisplay();
-                }
-            });
+        rouletteA.addEventListener('scroll', () => {
+            const items = rouletteA.querySelectorAll('.coord-item');
+            const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W)));
+            items.forEach((item, index) => item.classList.toggle('selected', index === selIdx));
+            const val = parseInt(items[selIdx].dataset.val);
+            if (val !== currentA) {
+                currentA = val;
+                document.getElementById('aValueDisplay').innerText = val;
+                updateEquationDisplay();
+            }
+        });
 
-            // 마우스 드래그 지원 (터치는 브라우저 기본 스크롤로 동작)
-            let isDragging = false, startX = 0, startScroll = 0;
-            rouletteA.addEventListener('pointerdown', (e) => {
-                if (e.pointerType !== 'mouse') return;
-                isDragging = true; startX = e.clientX; startScroll = rouletteA.scrollLeft;
-                rouletteA.classList.add('dragging');
-                rouletteA.style.scrollSnapType = 'none'; rouletteA.style.scrollBehavior = 'auto';
-                rouletteA.setPointerCapture(e.pointerId);
-            });
-            rouletteA.addEventListener('pointermove', (e) => { if (isDragging) rouletteA.scrollLeft = startScroll - (e.clientX - startX); });
-            const stopDrag = (e) => {
-                if (!isDragging) return;
-                isDragging = false; rouletteA.classList.remove('dragging');
-                rouletteA.style.scrollSnapType = 'x mandatory'; rouletteA.style.scrollBehavior = 'smooth';
-                if (rouletteA.hasPointerCapture(e.pointerId)) rouletteA.releasePointerCapture(e.pointerId);
-                rouletteA.scrollTo({ left: Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W) * ROULETTE_ITEM_W, behavior: 'smooth' });
-            };
-            rouletteA.addEventListener('pointerup', stopDrag);
-            rouletteA.addEventListener('pointercancel', stopDrag);
-        })();
+        // 마우스 드래그 지원 (터치는 브라우저 기본 스크롤로 동작)
+        let aRouletteDragging = false, aRouletteStartX = 0, aRouletteStartScroll = 0;
+        rouletteA.addEventListener('pointerdown', (e) => {
+            if (e.pointerType !== 'mouse') return;
+            aRouletteDragging = true; aRouletteStartX = e.clientX; aRouletteStartScroll = rouletteA.scrollLeft;
+            rouletteA.classList.add('dragging');
+            rouletteA.style.scrollSnapType = 'none'; rouletteA.style.scrollBehavior = 'auto';
+            rouletteA.setPointerCapture(e.pointerId);
+        });
+        rouletteA.addEventListener('pointermove', (e) => { if (aRouletteDragging) rouletteA.scrollLeft = aRouletteStartScroll - (e.clientX - aRouletteStartX); });
+        const stopARouletteDrag = (e) => {
+            if (!aRouletteDragging) return;
+            aRouletteDragging = false; rouletteA.classList.remove('dragging');
+            rouletteA.style.scrollSnapType = 'x mandatory'; rouletteA.style.scrollBehavior = 'smooth';
+            if (rouletteA.hasPointerCapture(e.pointerId)) rouletteA.releasePointerCapture(e.pointerId);
+            rouletteA.scrollTo({ left: Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W) * ROULETTE_ITEM_W, behavior: 'smooth' });
+        };
+        rouletteA.addEventListener('pointerup', stopARouletteDrag);
+        rouletteA.addEventListener('pointercancel', stopARouletteDrag);
 
         // 값 지정: 배지·수식·선택 강조는 즉시 반영, 스크롤 위치는 레이아웃 확정 후 이동
         // (게임 화면이 아직 숨겨진 상태에서 호출돼도 다음 프레임이면 화면 전환이 끝나 있음)
@@ -1245,6 +1266,7 @@
             generateProblem();
             updateUI();
             showSection('game-section');
+            requestAnimationFrame(buildARouletteItems); // 화면 전환 직후 룰렛 실측 폭 확정
         });
 
 
