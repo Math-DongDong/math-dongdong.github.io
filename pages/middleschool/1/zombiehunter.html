@@ -186,14 +186,24 @@
             font-weight: 700;
         }
 
+        /* 배지 폭을 고정해 "-20"처럼 자리수가 늘어나도 룰렛 폭이 밀리지 않게 함
+           (배지가 커지면 flex 행에서 룰렛-wrapper 폭이 줄어들고, 그 순간 리사이즈 감지가
+           스크롤 도중 항목을 다시 만들어 위치가 튀는 원인이었음 — 매끄럽지 않던 진짜 이유) */
+        #aValueDisplay {
+            display: inline-block;
+            min-width: 3.5ch;
+            text-align: center;
+        }
+
         .roulette-wrapper {
             flex: 1 1 0;
             min-width: 0;
             height: 38px;
             overflow-x: scroll;
             overflow-y: hidden;
-            overscroll-behavior-x: contain;
-            /* 안드로이드 크롬 등에서 스크롤이 끝(±20)에 닿을 때 나오는 파란 글로우 차단 */
+            overscroll-behavior-x: none;
+            /* contain은 부모로의 스크롤 전파만 막고, 이 요소 자체의 파란 오버스크롤 글로우는 남겨둔다.
+               경계(±20)에서 그 글로우가 세로선처럼 보였으므로 none으로 완전히 꺼야 함 */
             -webkit-tap-highlight-color: transparent;
             /* 터치 시 기본으로 깜빡이는 파란 하이라이트 차단 */
             scroll-snap-type: x mandatory;
@@ -243,7 +253,6 @@
             height: 38px;
             line-height: 38px;
             text-align: center;
-            scroll-snap-align: center;
             color: #cbd5e1;
             font-size: 1rem;
             transition: color 0.2s;
@@ -251,6 +260,13 @@
             -webkit-tap-highlight-color: transparent;
             display: inline-block;
             flex-shrink: 0;
+        }
+
+        .coord-item {
+            scroll-snap-align: center;
+            scroll-snap-stop: always;
+            /* always: 값이 40개라 세게 플릭하면 여러 칸을 건너뛰어 홱 튀는 느낌이 났음.
+               한 칸씩 반드시 멎게 해 스와이프가 계단식으로 부드럽게 느껴지도록 함 */
         }
 
         .roulette-item.selected {
@@ -888,8 +904,9 @@
         rouletteA.addEventListener('pointerup', stopARouletteDrag);
         rouletteA.addEventListener('pointercancel', stopARouletteDrag);
 
-        // 값 지정: 배지·수식·선택 강조는 즉시 반영, 스크롤 위치는 레이아웃 확정 후 이동
-        // (게임 화면이 아직 숨겨진 상태에서 호출돼도 다음 프레임이면 화면 전환이 끝나 있음)
+        // 값 지정: 배지·수식·선택 강조·스크롤 위치를 전부 같은 프레임에서 동기 처리.
+        // (예전엔 스크롤만 requestAnimationFrame으로 한 프레임 미뤘는데, 그 사이 룰렛의
+        //  기본 스크롤 위치(0 = -20 항목)가 잠깐 그려졌다가 1로 튀어 보이는 원인이었음)
         function setARouletteValue(value) {
             if (value === 0) value = 1;
             currentA = value;
@@ -902,7 +919,7 @@
                 item.classList.toggle('selected', match);
                 if (match) idx = i;
             });
-            if (idx !== -1) requestAnimationFrame(() => rouletteA.scrollTo({ left: idx * ROULETTE_ITEM_W, behavior: 'auto' }));
+            if (idx !== -1) rouletteA.scrollLeft = idx * ROULETTE_ITEM_W;
         }
         function updateEquationDisplay() {
             document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
@@ -936,7 +953,7 @@
             ctx.rect(clipLeft, clipTop, clipWidth, clipHeight);
             ctx.clip();
 
-            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2; // 모눈: 기존 좌표축 굵기만큼
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x++) {
                 const px = centerX + x * scale;
                 ctx.beginPath(); ctx.moveTo(px, clipTop); ctx.lineTo(px, clipTop + clipHeight); ctx.stroke();
@@ -947,7 +964,7 @@
             }
             ctx.restore();
 
-            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
+            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke(); // 좌표축: 모눈보다 굵게
             ctx.fillStyle = '#dc2626'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; // 축 숫자: 라이트/다크 공통 진한 빨강
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
