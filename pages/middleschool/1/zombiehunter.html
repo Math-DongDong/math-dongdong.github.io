@@ -233,7 +233,7 @@
             position: absolute;
             left: 50%;
             top: 0;
-            width: 30px;
+            width: var(--a-item-w, 30px);
             height: 100%;
             transform: translateX(-50%);
             border-left: 2px solid #4f46e5;
@@ -249,12 +249,12 @@
         }
 
         .roulette-item {
-            width: 30px;
+            width: var(--a-item-w, 30px);
             height: 38px;
             line-height: 38px;
             text-align: center;
             color: #cbd5e1;
-            font-size: 1rem;
+            font-size: 0.95rem;
             transition: color 0.2s;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
@@ -264,9 +264,6 @@
 
         .coord-item {
             scroll-snap-align: center;
-            scroll-snap-stop: always;
-            /* always: 값이 40개라 세게 플릭하면 여러 칸을 건너뛰어 홱 튀는 느낌이 났음.
-               한 칸씩 반드시 멎게 해 스와이프가 계단식으로 부드럽게 느껴지도록 함 */
         }
 
         .roulette-item.selected {
@@ -844,21 +841,24 @@
         document.querySelectorAll('.function-type-btn').forEach(btn => btn.addEventListener('click', (e) => setFuncType(e.currentTarget.dataset.type)));
         function setFuncType(type) { currentFuncType = type; document.querySelectorAll('.function-type-btn').forEach(b => b.classList.remove('active')); document.querySelector(`.function-type-btn[data-type="${type}"]`).classList.add('active'); updateEquationDisplay(); }
         // ── a값 룰렛 (좌표평면 오목의 룰렛 패턴 이식) ──
-        const ROULETTE_ITEM_W = 30;   // CSS .roulette-item width와 반드시 동일
         const A_MIN = -20, A_MAX = 20;
         const rouletteA = document.getElementById('roulette-a');
-        let aRouletteLastPad = -1;
+        let A_ITEM_W = 30;            // 항목 1칸의 실제 폭(px) — 아래에서 실측 폭 ÷ 7로 갱신됨
+        let aRouletteBuilt = false;
 
-        // 룰렛 폭이 컨트롤 영역을 꽉 채우도록 가변이라, 양옆 여백(패딩)은 고정값이 아니라
-        // 실측 폭에서 매번 계산한다: (실측 폭 - 항목 폭) / 2.
-        // 이 식이면 어떤 폭에서도 가운데 강조창(CSS로 항상 중앙 고정)과 정확히 맞는다.
+        // 항상 "가운데 1칸 + 양옆 3칸씩 = 7칸"이 보이도록, 항목 폭을 실측 폭 ÷ 7로 잡는다.
+        // 양옆 여백(패딩)은 정확히 3칸 폭( = (실측 폭 - 항목 폭) / 2 )이라
+        // 어떤 화면 폭에서도 가운데 강조창(CSS로 항상 중앙 고정)과 수학적으로 정확히 맞는다.
         function buildARouletteItems() {
             const w = rouletteA.clientWidth;
             if (w <= 0) return; // 화면이 아직 숨겨진 상태(display:none) — 보일 때 다시 호출됨
-            const padWidth = Math.max(0, (w - ROULETTE_ITEM_W) / 2);
-            if (Math.abs(padWidth - aRouletteLastPad) < 0.5) return; // 폭이 그대로면 재생성 생략
-            aRouletteLastPad = padWidth;
+            const itemW = w / 7;
+            if (aRouletteBuilt && Math.abs(itemW - A_ITEM_W) < 0.25) return; // 폭이 그대로면 생략
+            A_ITEM_W = itemW;
+            aRouletteBuilt = true;
+            rouletteA.style.setProperty('--a-item-w', itemW + 'px'); // 항목·강조창 폭이 함께 따라감
 
+            const padWidth = itemW * 3;
             const inner = rouletteA.querySelector('.roulette-inner');
             const pad = `<div class="roulette-item" style="width:${padWidth}px;"></div>`;
             let html = pad;
@@ -874,7 +874,8 @@
 
         rouletteA.addEventListener('scroll', () => {
             const items = rouletteA.querySelectorAll('.coord-item');
-            const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W)));
+            if (!items.length) return;
+            const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / A_ITEM_W)));
             items.forEach((item, index) => item.classList.toggle('selected', index === selIdx));
             const val = parseInt(items[selIdx].dataset.val);
             if (val !== currentA) {
@@ -899,7 +900,7 @@
             aRouletteDragging = false; rouletteA.classList.remove('dragging');
             rouletteA.style.scrollSnapType = 'x mandatory'; rouletteA.style.scrollBehavior = 'smooth';
             if (rouletteA.hasPointerCapture(e.pointerId)) rouletteA.releasePointerCapture(e.pointerId);
-            rouletteA.scrollTo({ left: Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W) * ROULETTE_ITEM_W, behavior: 'smooth' });
+            rouletteA.scrollTo({ left: Math.round(rouletteA.scrollLeft / A_ITEM_W) * A_ITEM_W, behavior: 'smooth' });
         };
         rouletteA.addEventListener('pointerup', stopARouletteDrag);
         rouletteA.addEventListener('pointercancel', stopARouletteDrag);
@@ -919,7 +920,7 @@
                 item.classList.toggle('selected', match);
                 if (match) idx = i;
             });
-            if (idx !== -1) rouletteA.scrollLeft = idx * ROULETTE_ITEM_W;
+            if (idx !== -1) rouletteA.scrollLeft = idx * A_ITEM_W;
         }
         function updateEquationDisplay() {
             document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
@@ -974,6 +975,12 @@
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
 
             if (laserAnimX !== null) {
+                // 곡선이 격자 밖으로 삐져나가지 않도록 격자 사각형으로 클리핑한 뒤,
+                // y값 크기와 무관하게 곡선 전체를 그린다.
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(clipLeft, clipTop, clipWidth, clipHeight);
+                ctx.clip();
                 ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
                 const drawSegment = (points) => {
                     if (!points.length) return;
@@ -984,21 +991,22 @@
                 };
 
                 if (currentFuncType === 'inverse') {
-                    let leftPoints = [], rightPoints = [];
-                    for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 0.1) {
-                        if (x > laserAnimX) break;
-                        if (Math.abs(x) < 0.2) {
-                            if (leftPoints.length > 0) { drawSegment(leftPoints); leftPoints = []; }
-                            if (rightPoints.length > 0) { drawSegment(rightPoints); rightPoints = []; }
-                            continue;
+                    // 예전에는 |x| < 0.2 구간을 통째로 건너뛰어서, a가 작으면(예: y=1/x)
+                    // 곡선이 y=±5 부근에서 뚝 끊겨 보였다(출제 풀 |a|≥12에서는 안 보이던 문제).
+                    // 이제 클리핑이 격자 밖을 잘라 주므로 점근선(x=0) 바로 옆(±0.02)까지
+                    // 촘촘히(0.05 간격) 그려서, 어떤 a든 곡선이 격자 위/아래 끝까지 닿는다.
+                    const EPS = 0.02, STEP = 0.05;
+                    const drawBranch = (from, to) => {
+                        const pts = [];
+                        for (let x = from; x <= to + 1e-9; x += STEP) {
+                            if (x > laserAnimX) break;
+                            const y = currentA / x;
+                            pts.push({ px: centerX + x * scale, py: centerY - y * scale });
                         }
-                        let y = currentA / x;
-                        const px = centerX + x * scale, py = centerY - y * scale;
-                        if (x < 0) leftPoints.push({ px, py });
-                        else rightPoints.push({ px, py });
-                    }
-                    drawSegment(leftPoints);
-                    drawSegment(rightPoints);
+                        drawSegment(pts);
+                    };
+                    drawBranch(-GRID_LIMIT, -EPS);
+                    if (laserAnimX > EPS) drawBranch(EPS, GRID_LIMIT);
                 } else {
                     let points = [];
                     for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 0.1) {
@@ -1009,6 +1017,7 @@
                     }
                     drawSegment(points);
                 }
+                ctx.restore();
             }
         }
 
