@@ -176,13 +176,79 @@
             color: #4f46e5;
         }
 
-        .slider-container {
-            margin: 1.5rem 0;
+        /* a값 룰렛 (좌표평면 오목의 룰렛과 동일한 스크롤 스냅 방식) */
+        .a-roulette-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin: 1.25rem 0;
+            font-weight: 700;
         }
 
-        input[type="range"] {
-            width: 100%;
-            accent-color: #4f46e5;
+        .roulette-wrapper {
+            width: 150px;
+            height: 38px;
+            overflow-x: scroll;
+            overflow-y: hidden;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            background: #fff;
+            position: relative;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.08);
+            white-space: nowrap;
+            cursor: grab;
+        }
+
+        .roulette-wrapper::-webkit-scrollbar {
+            display: none;
+        }
+
+        .roulette-wrapper.dragging {
+            cursor: grabbing;
+            user-select: none;
+        }
+
+        .roulette-wrapper::after {
+            content: '';
+            position: absolute;
+            left: 60px;
+            top: 0;
+            width: 30px;
+            height: 100%;
+            border-left: 2px solid #4f46e5;
+            border-right: 2px solid #4f46e5;
+            background: rgba(79, 70, 229, 0.08);
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        .roulette-inner {
+            display: inline-flex;
+            flex-direction: row;
+        }
+
+        .roulette-item {
+            width: 30px;
+            height: 38px;
+            line-height: 38px;
+            text-align: center;
+            scroll-snap-align: center;
+            color: #cbd5e1;
+            font-size: 1rem;
+            transition: color 0.2s;
+            user-select: none;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        .roulette-item.selected {
+            color: #1e293b;
+            font-weight: 900;
         }
 
         /* 무기 버튼 2개 + 수식 표시를 같은 행 3열로 균등 분할 */
@@ -267,12 +333,8 @@
                 margin-bottom: 0.75rem !important;
             }
 
-            .slider-container {
-                margin: 0.75rem 0;
-            }
-
-            .slider-ticks {
-                display: none !important;
+            .a-roulette-row {
+                margin: 0.6rem 0;
             }
 
             .function-type-btn {
@@ -407,15 +469,12 @@
                     </div>
                 </div>
 
-                <div class="slider-container">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="fw-bold">a 값 조절</span>
-                        <span id="aValueDisplay" class="badge bg-primary fs-6">2</span>
+                <div class="a-roulette-row">
+                    <span class="fw-bold">a 값</span>
+                    <div class="roulette-wrapper" id="roulette-a" aria-label="a 값 선택 룰렛">
+                        <div class="roulette-inner"></div>
                     </div>
-                    <input type="range" id="aSlider" min="-20" max="20" value="2" step="1">
-                    <div class="slider-ticks d-flex justify-content-between mt-1 small text-muted">
-                        <span>-20</span><span>0</span><span>20</span>
-                    </div>
+                    <span id="aValueDisplay" class="badge bg-primary fs-6">1</span>
                 </div>
 
                 <button id="fireBtn" class="fire-btn"><i class="bi bi-lightning-fill"></i> 레이저 발사!</button>
@@ -556,10 +615,7 @@
         const GRID_LIMIT = 8;
         const scale = 34, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
-        // 시스템 다크모드에서는 좌표축 숫자를 밝은색으로 (캔버스 내부는 CSS 미디어쿼리가 안 통하므로 JS로 감지)
-        const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        function axisLabelColor() { return darkModeQuery.matches ? '#e2e8f0' : '#1e293b'; }
-        if (darkModeQuery.addEventListener) darkModeQuery.addEventListener('change', () => drawCanvas());
+
 
         function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
         function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
@@ -754,9 +810,7 @@
 
             currentZombies = mixedPoints.map((point) => ({ ...point, active: true }));
             currentProblemShots = 0;
-            currentA = 1;
-            document.getElementById('aSlider').value = 1;
-            document.getElementById('aValueDisplay').innerText = 1;
+            setARouletteValue(1);
             setFuncType('linear');
             drawCanvas();
             document.getElementById('feedbackText').innerText = '';
@@ -765,7 +819,70 @@
 
         document.querySelectorAll('.function-type-btn').forEach(btn => btn.addEventListener('click', (e) => setFuncType(e.currentTarget.dataset.type)));
         function setFuncType(type) { currentFuncType = type; document.querySelectorAll('.function-type-btn').forEach(b => b.classList.remove('active')); document.querySelector(`.function-type-btn[data-type="${type}"]`).classList.add('active'); updateEquationDisplay(); }
-        document.getElementById('aSlider').addEventListener('input', (e) => { let val = parseInt(e.target.value); if (val === 0) val = currentA > 0 ? 1 : -1; e.target.value = val; currentA = val; document.getElementById('aValueDisplay').innerText = val; updateEquationDisplay(); });
+        // ── a값 룰렛 (좌표평면 오목의 룰렛 패턴 이식) ──
+        const ROULETTE_ITEM_W = 30;   // CSS .roulette-item width와 반드시 동일
+        const A_MIN = -20, A_MAX = 20;
+        const rouletteA = document.getElementById('roulette-a');
+
+        (function initARoulette() {
+            const inner = rouletteA.querySelector('.roulette-inner');
+            const pad = `<div class="roulette-item" style="width:60px;"></div>`; // (150px 창 - 30px 항목) / 2
+            let html = pad;
+            for (let v = A_MIN; v <= A_MAX; v++) {
+                if (v === 0) continue; // y=0x, 0/x는 출제되지 않으므로 선택지에서 0 제외
+                html += `<div class="roulette-item coord-item" data-val="${v}">${v}</div>`;
+            }
+            inner.innerHTML = html + pad;
+
+            rouletteA.addEventListener('scroll', () => {
+                const items = rouletteA.querySelectorAll('.coord-item');
+                const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W)));
+                items.forEach((item, index) => item.classList.toggle('selected', index === selIdx));
+                const val = parseInt(items[selIdx].dataset.val);
+                if (val !== currentA) {
+                    currentA = val;
+                    document.getElementById('aValueDisplay').innerText = val;
+                    updateEquationDisplay();
+                }
+            });
+
+            // 마우스 드래그 지원 (터치는 브라우저 기본 스크롤로 동작)
+            let isDragging = false, startX = 0, startScroll = 0;
+            rouletteA.addEventListener('pointerdown', (e) => {
+                if (e.pointerType !== 'mouse') return;
+                isDragging = true; startX = e.clientX; startScroll = rouletteA.scrollLeft;
+                rouletteA.classList.add('dragging');
+                rouletteA.style.scrollSnapType = 'none'; rouletteA.style.scrollBehavior = 'auto';
+                rouletteA.setPointerCapture(e.pointerId);
+            });
+            rouletteA.addEventListener('pointermove', (e) => { if (isDragging) rouletteA.scrollLeft = startScroll - (e.clientX - startX); });
+            const stopDrag = (e) => {
+                if (!isDragging) return;
+                isDragging = false; rouletteA.classList.remove('dragging');
+                rouletteA.style.scrollSnapType = 'x mandatory'; rouletteA.style.scrollBehavior = 'smooth';
+                if (rouletteA.hasPointerCapture(e.pointerId)) rouletteA.releasePointerCapture(e.pointerId);
+                rouletteA.scrollTo({ left: Math.round(rouletteA.scrollLeft / ROULETTE_ITEM_W) * ROULETTE_ITEM_W, behavior: 'smooth' });
+            };
+            rouletteA.addEventListener('pointerup', stopDrag);
+            rouletteA.addEventListener('pointercancel', stopDrag);
+        })();
+
+        // 값 지정: 배지·수식·선택 강조는 즉시 반영, 스크롤 위치는 레이아웃 확정 후 이동
+        // (게임 화면이 아직 숨겨진 상태에서 호출돼도 다음 프레임이면 화면 전환이 끝나 있음)
+        function setARouletteValue(value) {
+            if (value === 0) value = 1;
+            currentA = value;
+            document.getElementById('aValueDisplay').innerText = value;
+            updateEquationDisplay();
+            const items = rouletteA.querySelectorAll('.coord-item');
+            let idx = -1;
+            items.forEach((item, i) => {
+                const match = parseInt(item.dataset.val) === value;
+                item.classList.toggle('selected', match);
+                if (match) idx = i;
+            });
+            if (idx !== -1) requestAnimationFrame(() => rouletteA.scrollTo({ left: idx * ROULETTE_ITEM_W, behavior: 'auto' }));
+        }
         function updateEquationDisplay() {
             document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
         }
@@ -810,11 +927,11 @@
             ctx.restore();
 
             ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
-            ctx.fillStyle = axisLabelColor(); ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillStyle = '#dc2626'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; // 축 숫자: 라이트/다크 공통 진한 빨강
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
             for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 2) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
-            ctx.fillText('0', centerX - 5, centerY + 5);
+            ctx.fillText('O', centerX - 5, centerY + 5); // 원점은 숫자 0이 아닌 O로 표기
             ctx.font = '34px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
 
