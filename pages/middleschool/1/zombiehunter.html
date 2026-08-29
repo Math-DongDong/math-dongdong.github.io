@@ -232,20 +232,9 @@
             user-select: none;
         }
 
-        .roulette-wrapper::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 0;
-            width: var(--a-item-w, 30px);
-            height: 100%;
-            transform: translateX(-50%);
-            border-left: 2px solid #4f46e5;
-            border-right: 2px solid #4f46e5;
-            background: rgba(79, 70, 229, 0.08);
-            pointer-events: none;
-            box-sizing: border-box;
-        }
+        /* 고정 강조창(::after 테두리 상자)은 제거됨 — ±20처럼 옆이 빈 여백일 때
+           테두리가 '숫자 옆의 이상한 파란 선'처럼 보이는 문제의 원인이었다.
+           선택 표시는 아래 .selected 알약(pill) 스타일이 숫자 자체에 붙어 따라다닌다. */
 
         .roulette-inner {
             display: inline-flex;
@@ -271,8 +260,10 @@
         }
 
         .roulette-item.selected {
-            color: #1e293b;
+            color: #4f46e5;
             font-weight: 900;
+            background: #e0e7ff;
+            border-radius: 8px;
         }
 
         /* 무기 버튼 2개 + 수식 표시를 같은 행 3열로 균등 분할 */
@@ -853,8 +844,16 @@
         let aRouletteDragging = false, aRouletteStartX = 0, aRouletteStartScroll = 0;
 
         // 항상 "가운데 1칸 + 양옆 3칸씩 = 7칸"이 보이도록, 항목 폭을 실측 폭 ÷ 7로 잡는다.
-        // 양옆 여백(패딩)은 정확히 3칸 폭( = (실측 폭 - 항목 폭) / 2 )이라
-        // 어떤 화면 폭에서도 가운데 강조창(CSS로 항상 중앙 고정)과 수학적으로 정확히 맞는다.
+        // 양옆 여백(패딩)은 3칸 + 여유 1칸(A_SLACK) = 4칸 폭으로 둔다.
+        // 여유 1칸 덕분에 ±20의 스냅 위치도 스크롤 범위의 '경계'가 아니라 '안쪽'에 있어서,
+        // 끝값도 중간값과 완전히 같은 스냅 메커니즘으로 중앙 정렬된다.
+        // (여유가 없으면 ±20만 경계 클램프에 의존해, 폭이 1~2px만 어긋나도 끝값만 비뚤어진다)
+        const A_SLACK = 1; // 좌우 여유 슬롯 수
+        function aScrollForIdx(i) { return (i + A_SLACK) * A_ITEM_W; }
+        function aIdxFromScroll(s, count) {
+            return Math.max(0, Math.min(count - 1, Math.round(s / A_ITEM_W) - A_SLACK));
+        }
+
         function buildARouletteItems() {
             // 스크롤/드래그 도중에는 절대 재생성하지 않는다. 도중에 항목을 갈아끼우면 위치가 튀며
             // "값 변경 → 레이아웃 변화 → 리사이즈 감지 → 재생성 → 값 변경…" 진동이 생길 수 있어,
@@ -866,9 +865,9 @@
             if (aRouletteBuilt && Math.abs(itemW - A_ITEM_W) < 0.25) return; // 폭이 그대로면 생략
             A_ITEM_W = itemW;
             aRouletteBuilt = true;
-            rouletteA.style.setProperty('--a-item-w', itemW + 'px'); // 항목·강조창 폭이 함께 따라감
+            rouletteA.style.setProperty('--a-item-w', itemW + 'px'); // 항목·선택 알약 폭이 함께 따라감
 
-            const padWidth = itemW * 3;
+            const padWidth = itemW * (3 + A_SLACK);
             const inner = rouletteA.querySelector('.roulette-inner');
             const pad = `<div class="roulette-item" style="width:${padWidth}px;"></div>`;
             let html = pad;
@@ -890,7 +889,7 @@
             }, 200);
             const items = rouletteA.querySelectorAll('.coord-item');
             if (!items.length) return;
-            const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / A_ITEM_W)));
+            const selIdx = aIdxFromScroll(rouletteA.scrollLeft, items.length);
             items.forEach((item, index) => item.classList.toggle('selected', index === selIdx));
             const val = parseInt(items[selIdx].dataset.val);
             if (val !== currentA) {
@@ -914,7 +913,8 @@
             aRouletteDragging = false; rouletteA.classList.remove('dragging');
             rouletteA.style.scrollSnapType = 'x mandatory'; rouletteA.style.scrollBehavior = 'smooth';
             if (rouletteA.hasPointerCapture(e.pointerId)) rouletteA.releasePointerCapture(e.pointerId);
-            rouletteA.scrollTo({ left: Math.round(rouletteA.scrollLeft / A_ITEM_W) * A_ITEM_W, behavior: 'smooth' });
+            const n = rouletteA.querySelectorAll('.coord-item').length;
+            rouletteA.scrollTo({ left: aScrollForIdx(aIdxFromScroll(rouletteA.scrollLeft, n)), behavior: 'smooth' });
         };
         rouletteA.addEventListener('pointerup', stopARouletteDrag);
         rouletteA.addEventListener('pointercancel', stopARouletteDrag);
@@ -934,7 +934,7 @@
                 item.classList.toggle('selected', match);
                 if (match) idx = i;
             });
-            if (idx !== -1) rouletteA.scrollLeft = idx * A_ITEM_W;
+            if (idx !== -1) rouletteA.scrollLeft = aScrollForIdx(idx);
         }
         function updateEquationDisplay() {
             document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
