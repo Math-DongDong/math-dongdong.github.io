@@ -186,12 +186,16 @@
             font-weight: 700;
         }
 
-        /* 배지 폭을 고정해 "-20"처럼 자리수가 늘어나도 룰렛 폭이 밀리지 않게 함
-           (배지가 커지면 flex 행에서 룰렛-wrapper 폭이 줄어들고, 그 순간 리사이즈 감지가
-           스크롤 도중 항목을 다시 만들어 위치가 튀는 원인이었음 — 매끄럽지 않던 진짜 이유) */
+        /* 배지는 폭을 '완전 고정'한다. min-width만으로는 부족했다 — 배지의 좌우 패딩 때문에
+           "-20"이 min-width를 넘어 자라면서 룰렛 폭을 밀었고, 그 리사이즈가
+           "재생성 → 값 변경 → 배지 폭 변경 → 재생성…" 진동 루프(자릿수 경계에서 흔들림)의
+           진짜 원인이었다. 폭이 고정이면 어떤 값이든 룰렛 폭이 1px도 변하지 않는다. */
         #aValueDisplay {
             display: inline-block;
-            min-width: 3.5ch;
+            width: 3.4rem;
+            flex-shrink: 0;
+            padding-left: 0;
+            padding-right: 0;
             text-align: center;
         }
 
@@ -845,11 +849,17 @@
         const rouletteA = document.getElementById('roulette-a');
         let A_ITEM_W = 30;            // 항목 1칸의 실제 폭(px) — 아래에서 실측 폭 ÷ 7로 갱신됨
         let aRouletteBuilt = false;
+        let aRouletteSettleTimer = null, aRouletteRebuildPending = false;
+        let aRouletteDragging = false, aRouletteStartX = 0, aRouletteStartScroll = 0;
 
         // 항상 "가운데 1칸 + 양옆 3칸씩 = 7칸"이 보이도록, 항목 폭을 실측 폭 ÷ 7로 잡는다.
         // 양옆 여백(패딩)은 정확히 3칸 폭( = (실측 폭 - 항목 폭) / 2 )이라
         // 어떤 화면 폭에서도 가운데 강조창(CSS로 항상 중앙 고정)과 수학적으로 정확히 맞는다.
         function buildARouletteItems() {
+            // 스크롤/드래그 도중에는 절대 재생성하지 않는다. 도중에 항목을 갈아끼우면 위치가 튀며
+            // "값 변경 → 레이아웃 변화 → 리사이즈 감지 → 재생성 → 값 변경…" 진동이 생길 수 있어,
+            // 손을 뗀 뒤(스크롤 200ms 유휴)로 미룬다.
+            if (aRouletteDragging || aRouletteSettleTimer !== null) { aRouletteRebuildPending = true; return; }
             const w = rouletteA.clientWidth;
             if (w <= 0) return; // 화면이 아직 숨겨진 상태(display:none) — 보일 때 다시 호출됨
             const itemW = w / 7;
@@ -873,6 +883,11 @@
         new ResizeObserver(buildARouletteItems).observe(rouletteA);
 
         rouletteA.addEventListener('scroll', () => {
+            clearTimeout(aRouletteSettleTimer);
+            aRouletteSettleTimer = setTimeout(() => {
+                aRouletteSettleTimer = null;
+                if (aRouletteRebuildPending) { aRouletteRebuildPending = false; buildARouletteItems(); }
+            }, 200);
             const items = rouletteA.querySelectorAll('.coord-item');
             if (!items.length) return;
             const selIdx = Math.max(0, Math.min(items.length - 1, Math.round(rouletteA.scrollLeft / A_ITEM_W)));
@@ -886,7 +901,6 @@
         });
 
         // 마우스 드래그 지원 (터치는 브라우저 기본 스크롤로 동작)
-        let aRouletteDragging = false, aRouletteStartX = 0, aRouletteStartScroll = 0;
         rouletteA.addEventListener('pointerdown', (e) => {
             if (e.pointerType !== 'mouse') return;
             aRouletteDragging = true; aRouletteStartX = e.clientX; aRouletteStartScroll = rouletteA.scrollLeft;
