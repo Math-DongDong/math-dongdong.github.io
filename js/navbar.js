@@ -23,12 +23,6 @@
                     ]
                 },
                 {
-                    "title": "중2 수학",
-                    "items": [
-                        { "name": "지수법칙", "path": "pages/middleschool/2/exponents.html" }
-                    ]
-                },
-                {
                     "title": "체험수학",
                     "items": [
                         { "name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html" },
@@ -86,6 +80,7 @@
                     "items": [
                         { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" },
                         { "name": "PDF 편집 도구", "path": "pages/automation/work/pdfedit.html" },
+                        { "name": "GIF 편집 도구", "path": "pages/automation/work/gifedit.html" },
                         { "name": "엑셀 이미지 추출기", "path": "pages/automation/work/xlimagedownloader.html" }
                     ]
                 },
