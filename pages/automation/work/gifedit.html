@@ -565,6 +565,19 @@
                     <span class="text-muted small" id="previewStats">-</span>
                 </div>
 
+                <!-- 실시간 변화 정보 -->
+                <div class="row g-2 mt-3">
+                    <div class="col-4">
+                        <div class="info-chip"><span class="label">원본 용량</span><span class="value" id="liveOriginSize">-</span></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="info-chip"><span class="label">예상 결과 용량</span><span class="value text-primary" id="liveEstimatedSize">-</span></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="info-chip"><span class="label">예상 용량 변화</span><span class="value" id="liveDiff">-</span></div>
+                    </div>
+                </div>
+
                 <hr class="my-4">
 
                 <div class="row g-3 align-items-end">
@@ -579,40 +592,13 @@
                         </div>
                     </div>
                     <div class="col-md-7 text-md-end">
-                        <button class="btn btn-primary" id="btnRender"><i class="bi bi-magic"></i> GIF 만들기</button>
+                        <button class="btn btn-primary" id="btnRender"><i class="bi bi-download"></i> GIF 생성 및 자동 다운로드</button>
                     </div>
                 </div>
 
                 <div class="progress mt-3 d-none" id="renderProgressWrapper" style="height:8px;">
                     <div class="progress-bar progress-bar-striped progress-bar-animated" id="renderProgress"
                         style="width:0%"></div>
-                </div>
-
-                <div id="resultArea" class="d-none mt-4">
-                    <div class="preview-label"><i class="bi bi-check2-circle text-success"></i> 생성 결과</div>
-                    <div class="preview-stage checker">
-                        <img id="resultImage" class="result-image" alt="생성된 GIF 미리보기">
-                    </div>
-                    <div class="row g-2 mt-2">
-                        <div class="col-4">
-                            <div class="info-chip"><span class="label">원본 용량</span><span class="value"
-                                    id="resultOriginSize">-</span></div>
-                        </div>
-                        <div class="col-4">
-                            <div class="info-chip"><span class="label">결과 용량</span><span class="value"
-                                    id="resultNewSize">-</span></div>
-                        </div>
-                        <div class="col-4">
-                            <div class="info-chip"><span class="label">변화</span><span class="value"
-                                    id="resultDiff">-</span></div>
-                        </div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2 mt-3">
-                        <button class="btn btn-success" id="btnDownload"><i class="bi bi-download"></i> GIF
-                            다운로드</button>
-                        <button class="btn btn-outline-primary" id="btnChain"><i class="bi bi-arrow-repeat"></i> 이 결과로
-                            이어서 편집</button>
-                    </div>
                 </div>
             </section>
         </div>
@@ -1250,6 +1236,21 @@
             player.load(processedResult.frames, processedResult.width, processedResult.height);
             document.getElementById('previewStats').textContent =
                 `${processedResult.width} × ${processedResult.height} · ${processedResult.frames.length}프레임 · ${formatSeconds(totalDuration(processedResult.frames))}`;
+            
+            // 실시간 예상 용량 계산 및 UI 업데이트
+            if (typeof sourceSize !== 'undefined' && sourceSize) {
+                const sizeRatio = (processedResult.width * processedResult.height) / (sourceWidth * sourceHeight) || 1;
+                const frameRatio = processedResult.frames.length / sourceFrames.length || 1;
+                const estimatedSize = sourceSize * sizeRatio * frameRatio;
+                const diff = (1 - estimatedSize / sourceSize) * 100;
+
+                document.getElementById('liveOriginSize').textContent = formatBytes(sourceSize);
+                document.getElementById('liveEstimatedSize').textContent = formatBytes(estimatedSize);
+                
+                const diffElement = document.getElementById('liveDiff');
+                diffElement.textContent = (diff >= 0 ? '-' : '+') + Math.abs(diff).toFixed(1) + '%';
+                diffElement.className = 'value ' + (diff >= 0 ? 'text-success' : 'text-danger');
+            }
         }
 
         const debouncedPreview = debounce(refreshPreview, 250);
@@ -1369,7 +1370,9 @@
                     gif.render();
                 });
 
-                showResult(blob);
+                // 바로 다운로드 처리
+                const baseName = sourceName.replace(/\.gif$/i, '');
+                saveAs(blob, `${baseName}_edited.gif`);
             } catch (err) {
                 console.error(err);
                 alert('GIF 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
@@ -1378,45 +1381,6 @@
                 button.disabled = false;
                 isRendering = false;
                 document.getElementById('renderProgressWrapper').classList.add('d-none');
-            }
-        });
-
-        function showResult(blob) {
-            resultBlob = blob;
-            if (resultObjectUrl) URL.revokeObjectURL(resultObjectUrl);
-            resultObjectUrl = URL.createObjectURL(blob);
-
-            document.getElementById('resultImage').src = resultObjectUrl;
-            document.getElementById('resultOriginSize').textContent = formatBytes(sourceSize);
-            document.getElementById('resultNewSize').textContent = formatBytes(blob.size);
-
-            const diff = (1 - blob.size / sourceSize) * 100;
-            const diffElement = document.getElementById('resultDiff');
-            diffElement.textContent = (diff >= 0 ? '-' : '+') + Math.abs(diff).toFixed(1) + '%';
-            diffElement.className = 'value ' + (diff >= 0 ? 'text-success' : 'text-danger');
-
-            document.getElementById('resultArea').classList.remove('d-none');
-            document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-
-        document.getElementById('btnDownload').addEventListener('click', () => {
-            if (!resultBlob) return;
-            const baseName = sourceName.replace(/\.gif$/i, '');
-            saveAs(resultBlob, `${baseName}_edited.gif`);
-        });
-
-        document.getElementById('btnChain').addEventListener('click', async () => {
-            if (!resultBlob) return;
-            document.getElementById('loadingBox').classList.remove('d-none');
-            try {
-                const buffer = await resultBlob.arrayBuffer();
-                await loadGif(buffer, sourceName, resultBlob.size);
-                document.getElementById('resultArea').classList.add('d-none');
-            } catch (err) {
-                console.error(err);
-                alert('결과를 다시 불러오는 중 오류가 발생했습니다.');
-            } finally {
-                document.getElementById('loadingBox').classList.add('d-none');
             }
         });
     </script>
