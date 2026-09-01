@@ -16,9 +16,9 @@
     <!-- 공통 CSS -->
     <link rel="stylesheet" href="../../../css/navbar.css">
 
-    <!-- gifuct-js(디코딩), gif.js(인코딩), FileSaver.js -->
-    <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+    <!-- gif.js(인코딩), FileSaver.js -->
+    <!-- ※ GIF 디코더(gifuct-js)는 전역 변수를 만들지 않는 모듈 빌드이므로 아래 스크립트에서 import()로 동적 로드합니다. -->
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 
     <style>
@@ -630,15 +630,34 @@
             return canvas;
         }
 
-        // gifuct-js 전역 이름이 빌드에 따라 다를 수 있어 방어적으로 접근
-        function getGifDecoder() {
-            const candidate = window.gifuct || window.gifuctJs || window.GIFUCT;
-            if (candidate && candidate.parseGIF) return candidate;
-            if (window.parseGIF && window.decompressFrames) {
-                return { parseGIF: window.parseGIF, decompressFrames: window.decompressFrames };
-            }
-            return null;
+        // gifuct-js는 ESM 전용 배포이므로 import()로 불러오고, CDN 장애 시 대체 주소를 시도한다.
+        const DECODER_SOURCES = [
+            'https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/+esm',
+            'https://esm.sh/gifuct-js@2.1.2',
+            'https://cdn.skypack.dev/gifuct-js@2.1.2'
+        ];
+        let decoderPromise = null;
+
+        function loadGifDecoder() {
+            if (decoderPromise) return decoderPromise;
+            decoderPromise = (async () => {
+                for (const url of DECODER_SOURCES) {
+                    try {
+                        const module = await import(url);
+                        const parseGIF = module.parseGIF || (module.default && module.default.parseGIF);
+                        const decompressFrames = module.decompressFrames || (module.default && module.default.decompressFrames);
+                        if (parseGIF && decompressFrames) return { parseGIF, decompressFrames };
+                    } catch (err) {
+                        console.warn('GIF 디코더 로드 실패:', url, err);
+                    }
+                }
+                throw new Error('모든 CDN에서 GIF 디코더를 불러오지 못했습니다.');
+            })();
+            return decoderPromise;
         }
+
+        // 첫 업로드 지연을 줄이기 위해 미리 로드
+        loadGifDecoder().catch(() => { });
 
         // =====================================================
         // 전역 상태
@@ -692,9 +711,12 @@
         }
 
         async function loadGif(buffer, name, size) {
-            const decoder = getGifDecoder();
-            if (!decoder) {
-                alert('GIF 디코더를 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 새로고침해 주세요.');
+            let decoder;
+            try {
+                decoder = await loadGifDecoder();
+            } catch (err) {
+                console.error(err);
+                alert('GIF 디코더를 불러오지 못했습니다.\n\n광고 차단 확장 프로그램이나 사내/학교 방화벽이 cdn.jsdelivr.net 접속을 막고 있는지 확인해 주세요.');
                 return;
             }
             const gif = decoder.parseGIF(buffer);
@@ -1279,6 +1301,10 @@
 
         document.getElementById('btnRender').addEventListener('click', async () => {
             if (isRendering || !sourceFrames.length) return;
+            if (typeof GIF === 'undefined') {
+                alert('GIF 인코더(gif.js)를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+                return;
+            }
             const data = processFrames();
             if (!data || !data.frames.length) return alert('생성할 프레임이 없습니다.');
 
