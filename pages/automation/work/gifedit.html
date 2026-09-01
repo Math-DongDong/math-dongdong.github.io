@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIF 편집 도구</title>
+    <!-- 파비콘 및 PWA 설정 -->
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <meta name="description" content="GIF 용량 줄이기, 재생 구간 자르기, 화면 크기 자르기, 부분 흐림 처리를 브라우저에서 안전하게 처리하는 무료 GIF 편집 도구입니다.">
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 공통 CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+
+    <!-- gifuct-js(디코딩), gif.js(인코딩), FileSaver.js -->
+    <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+    <style>
+        body {
+            background-color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #333;
+        }
+
+        .container-main {
+            max-width: 960px;
+            margin: 30px auto;
+            padding: 0 15px;
+        }
+
+        .card-custom {
+            background: #fff;
+            border: 1px solid #edf0f2;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        /* Tabs */
+        .nav-tabs .nav-link {
+            color: #6c757d;
+            font-weight: 500;
+            border: none;
+            border-bottom: 3px solid transparent;
+            padding: 10px 18px;
+        }
+
+        .nav-tabs .nav-link.active {
+            color: #0d6efd;
+            border-color: #0d6efd;
+            background: transparent;
+        }
+
+        .nav-tabs {
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 20px;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed #dee2e6;
+            border-radius: 10px;
+            padding: 16px;
+            transition: border-color .15s, background-color .15s;
+        }
+
+        .drop-zone.dragover {
+            border-color: #0d6efd;
+            background-color: #f1f6ff;
+        }
+
+        /* 정보 칩 */
+        .info-chip {
+            background: #f8f9fa;
+            border: 1px solid #edf0f2;
+            border-radius: 8px;
+            padding: 8px 12px;
+            height: 100%;
+        }
+
+        .info-chip .label {
+            font-size: 0.72rem;
+            color: #8a9199;
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .info-chip .value {
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: #343a40;
+            word-break: break-all;
+        }
+
+        /* 투명 배경 체크무늬 */
+        .checker {
+            background-image:
+                linear-gradient(45deg, #eceff1 25%, transparent 25%),
+                linear-gradient(-45deg, #eceff1 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #eceff1 75%),
+                linear-gradient(-45deg, transparent 75%, #eceff1 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+        }
+
+        .preview-stage {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            overflow: auto;
+        }
+
+        .preview-stage canvas,
+        .result-image {
+            max-width: 100%;
+            max-height: 400px;
+            display: block;
+        }
+
+        .preview-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #6c757d;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .placeholder-box {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #adb5bd;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .placeholder-box i {
+            font-size: 2.6rem;
+            margin-bottom: 10px;
+        }
+
+        /* 영역 선택기 */
+        .select-stage {
+            position: relative;
+            display: inline-block;
+            line-height: 0;
+            touch-action: none;
+            user-select: none;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: crosshair;
+            max-width: 100%;
+        }
+
+        .select-stage canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 340px;
+        }
+
+        .sel-box {
+            position: absolute;
+            box-sizing: border-box;
+            border: 2px dashed #0d6efd;
+            background: rgba(13, 110, 253, 0.14);
+            cursor: move;
+        }
+
+        .sel-handle {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            background: #fff;
+            border: 2px solid #0d6efd;
+            border-radius: 3px;
+        }
+
+        .sel-handle[data-pos="nw"] {
+            left: -8px;
+            top: -8px;
+            cursor: nwse-resize;
+        }
+
+        .sel-handle[data-pos="ne"] {
+            right: -8px;
+            top: -8px;
+            cursor: nesw-resize;
+        }
+
+        .sel-handle[data-pos="sw"] {
+            left: -8px;
+            bottom: -8px;
+            cursor: nesw-resize;
+        }
+
+        .sel-handle[data-pos="se"] {
+            right: -8px;
+            bottom: -8px;
+            cursor: nwse-resize;
+        }
+
+        .range-value {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            color: #0d6efd;
+        }
+
+        kbd {
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 공통 네비게이션바 -->
+    <div id="navbar-container"></div>
+
+    <main class="container-main">
+        <header class="mb-4">
+            <h1 class="h3 mb-1 fw-bold"><i class="bi bi-filetype-gif text-primary"></i> GIF 편집 도구</h1>
+            <p class="text-muted mb-0 small">모든 GIF 처리는 브라우저 내에서 실행됩니다. 파일이 서버로 전송되지 않습니다.</p>
+        </header>
+
+        <!-- ===== 파일 업로드 ===== -->
+        <section class="card-custom">
+            <label for="gifFile" class="form-label fw-semibold">GIF 파일 선택</label>
+            <div class="drop-zone" id="dropZone">
+                <input class="form-control" type="file" id="gifFile" accept="image/gif">
+                <div class="form-text mb-0"><i class="bi bi-upload"></i> 파일을 이 영역에 끌어다 놓아도 됩니다.</div>
+            </div>
+
+            <div id="loadingBox" class="d-none mt-3 text-primary small">
+                <span class="spinner-border spinner-border-sm"></span> GIF를 분석하는 중입니다...
+            </div>
+
+            <div id="sourceInfo" class="d-none mt-3">
+                <div class="row g-2">
+                    <div class="col-6 col-md-3">
+                        <div class="info-chip"><span class="label">파일명</span><span class="value" id="infoName">-</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="info-chip"><span class="label">용량</span><span class="value" id="infoSize">-</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="info-chip"><span class="label">해상도</span><span class="value"
+                                id="infoDimension">-</span></div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="info-chip"><span class="label">프레임</span><span class="value"
+                                id="infoFrames">-</span></div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="info-chip"><span class="label">재생시간</span><span class="value"
+                                id="infoDuration">-</span></div>
+                    </div>
+                </div>
+                <div id="heavyWarning" class="alert alert-warning py-2 px-3 small mt-2 mb-0 d-none">
+                    <i class="bi bi-exclamation-triangle"></i> 프레임이 많거나 해상도가 큰 GIF입니다. 미리보기와 생성에 시간이 걸릴 수 있습니다.
+                </div>
+            </div>
+        </section>
+
+        <div id="emptyState" class="placeholder-box">
+            <i class="bi bi-image"></i>
+            <span>GIF 파일을 선택하면 편집 도구가 표시됩니다.</span>
+        </div>
+
+        <!-- ===== 편집 영역 ===== -->
+        <div id="editorArea" class="d-none">
+            <ul class="nav nav-tabs" id="gifTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pane-compress"
+                        data-tool="compress" type="button" role="tab">
+                        <i class="bi bi-arrows-angle-contract"></i> 용량 줄이기
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#pane-trim" data-tool="trim"
+                        type="button" role="tab">
+                        <i class="bi bi-scissors"></i> 재생 구간 자르기
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#pane-crop" data-tool="crop"
+                        type="button" role="tab">
+                        <i class="bi bi-crop"></i> 화면 크기 자르기
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#pane-blur" data-tool="blur"
+                        type="button" role="tab">
+                        <i class="bi bi-eye-slash"></i> 부분 흐림 처리
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+
+                <!-- ===== 1. 용량 줄이기 ===== -->
+                <section class="tab-pane fade show active" id="pane-compress" role="tabpanel">
+                    <div class="card-custom">
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label for="scaleRange" class="form-label fw-semibold">화면 배율 <span class="range-value"
+                                        id="scaleValue">100%</span></label>
+                                <input type="range" class="form-range" id="scaleRange" min="10" max="100" step="5"
+                                    value="100">
+                                <div class="form-text" id="scaleSizeText">-</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="frameStep" class="form-label fw-semibold">프레임 솎아내기</label>
+                                <select class="form-select" id="frameStep">
+                                    <option value="1" selected>모든 프레임 유지</option>
+                                    <option value="2">2장 중 1장 유지</option>
+                                    <option value="3">3장 중 1장 유지</option>
+                                    <option value="4">4장 중 1장 유지</option>
+                                </select>
+                                <div class="form-text">재생 속도는 유지되고 부드러움만 줄어듭니다.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="qualityLevel" class="form-label fw-semibold">색상 품질</label>
+                                <select class="form-select" id="qualityLevel">
+                                    <option value="5">높음 (색상 유지, 용량 큼)</option>
+                                    <option value="10" selected>보통 (권장)</option>
+                                    <option value="20">낮음 (용량 작음)</option>
+                                    <option value="30">최소 (용량 매우 작음)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">디더링</label>
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="ditherToggle">
+                                    <label class="form-check-label small" for="ditherToggle">계단 현상을 줄입니다 (용량이 늘어날 수
+                                        있음)</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="alert alert-info py-2 small mt-3 mb-0">
+                            <i class="bi bi-lightbulb"></i> 용량 감소 효과는 <strong>배율 축소 &gt; 프레임 솎아내기 &gt; 색상 품질</strong>
+                            순으로 큽니다.
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== 2. 재생 구간 자르기 ===== -->
+                <section class="tab-pane fade" id="pane-trim" role="tabpanel">
+                    <div class="card-custom">
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label for="trimStart" class="form-label fw-semibold">시작 프레임 <span class="range-value"
+                                        id="trimStartLabel">1</span></label>
+                                <input type="range" class="form-range" id="trimStart" min="0" max="0" value="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="trimEnd" class="form-label fw-semibold">끝 프레임 <span class="range-value"
+                                        id="trimEndLabel">1</span></label>
+                                <input type="range" class="form-range" id="trimEnd" min="0" max="0" value="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="speedRate" class="form-label fw-semibold">재생 속도</label>
+                                <select class="form-select" id="speedRate">
+                                    <option value="0.25">0.25배 (매우 느리게)</option>
+                                    <option value="0.5">0.5배 (느리게)</option>
+                                    <option value="1" selected>1배 (원본)</option>
+                                    <option value="1.5">1.5배</option>
+                                    <option value="2">2배 (빠르게)</option>
+                                    <option value="4">4배 (매우 빠르게)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="playDirection" class="form-label fw-semibold">재생 방향</label>
+                                <select class="form-select" id="playDirection">
+                                    <option value="forward" selected>정방향</option>
+                                    <option value="reverse">역방향</option>
+                                    <option value="boomerang">부메랑 (앞뒤 반복)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-outline-secondary btn-sm" id="btnTrimReset"><i
+                                    class="bi bi-arrow-counterclockwise"></i> 전체 구간으로 되돌리기</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== 3. 화면 크기 자르기 ===== -->
+                <section class="tab-pane fade" id="pane-crop" role="tabpanel">
+                    <div class="card-custom">
+                        <div class="row g-4">
+                            <div class="col-lg-7">
+                                <div class="preview-label"><i class="bi bi-crop"></i> 드래그하여 남길 영역을 선택하세요</div>
+                                <div class="select-stage checker" id="cropStage">
+                                    <canvas></canvas>
+                                    <div class="sel-box d-none">
+                                        <span class="sel-handle" data-pos="nw"></span>
+                                        <span class="sel-handle" data-pos="ne"></span>
+                                        <span class="sel-handle" data-pos="sw"></span>
+                                        <span class="sel-handle" data-pos="se"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-5">
+                                <label class="form-label fw-semibold">자르기 영역 (px)</label>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">X</span>
+                                            <input type="number" class="form-control crop-input" id="cropX" min="0"
+                                                value="0">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">Y</span>
+                                            <input type="number" class="form-control crop-input" id="cropY" min="0"
+                                                value="0">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">가로</span>
+                                            <input type="number" class="form-control crop-input" id="cropW" min="1"
+                                                value="1">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">세로</span>
+                                            <input type="number" class="form-control crop-input" id="cropH" min="1"
+                                                value="1">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <label class="form-label fw-semibold mt-3">비율 맞추기</label>
+                                <div class="btn-group btn-group-sm d-flex flex-wrap" role="group">
+                                    <button class="btn btn-outline-secondary ratio-btn" data-ratio="0">자유</button>
+                                    <button class="btn btn-outline-secondary ratio-btn" data-ratio="1">1:1</button>
+                                    <button class="btn btn-outline-secondary ratio-btn" data-ratio="1.3333">4:3</button>
+                                    <button class="btn btn-outline-secondary ratio-btn"
+                                        data-ratio="1.7778">16:9</button>
+                                </div>
+                                <button class="btn btn-outline-secondary btn-sm w-100 mt-3" id="btnCropReset">
+                                    <i class="bi bi-arrows-fullscreen"></i> 전체 화면 선택
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== 4. 부분 흐림 처리 ===== -->
+                <section class="tab-pane fade" id="pane-blur" role="tabpanel">
+                    <div class="card-custom">
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label for="blurStart" class="form-label fw-semibold">흐림 시작 프레임 <span
+                                        class="range-value" id="blurStartLabel">1</span></label>
+                                <input type="range" class="form-range" id="blurStart" min="0" max="0" value="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="blurEnd" class="form-label fw-semibold">흐림 끝 프레임 <span class="range-value"
+                                        id="blurEndLabel">1</span></label>
+                                <input type="range" class="form-range" id="blurEnd" min="0" max="0" value="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="blurType" class="form-label fw-semibold">효과 종류</label>
+                                <select class="form-select" id="blurType">
+                                    <option value="blur" selected>블러 (흐리게)</option>
+                                    <option value="pixelate">모자이크</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="blurStrength" class="form-label fw-semibold">강도 <span class="range-value"
+                                        id="blurStrengthLabel">8</span></label>
+                                <input type="range" class="form-range" id="blurStrength" min="2" max="40" value="8">
+                            </div>
+                        </div>
+
+                        <div class="form-check form-switch mt-3">
+                            <input class="form-check-input" type="checkbox" id="blurWholeFrame">
+                            <label class="form-check-label small" for="blurWholeFrame">화면 전체에 적용</label>
+                        </div>
+
+                        <div class="mt-3" id="blurRegionWrapper">
+                            <div class="preview-label"><i class="bi bi-bounding-box"></i> 드래그하여 흐림 영역을 선택하세요</div>
+                            <div class="select-stage checker" id="blurStage">
+                                <canvas></canvas>
+                                <div class="sel-box d-none">
+                                    <span class="sel-handle" data-pos="nw"></span>
+                                    <span class="sel-handle" data-pos="ne"></span>
+                                    <span class="sel-handle" data-pos="sw"></span>
+                                    <span class="sel-handle" data-pos="se"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ===== 미리보기 & 생성 ===== -->
+            <section class="card-custom">
+                <div class="preview-label"><i class="bi bi-eye"></i> 편집 미리보기 (실시간)</div>
+                <div class="preview-stage checker">
+                    <canvas id="previewCanvas"></canvas>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                    <button class="btn btn-outline-secondary btn-sm" id="btnPlayToggle"><i class="bi bi-pause-fill"></i>
+                        일시정지</button>
+                    <span class="text-muted small" id="previewStats">-</span>
+                </div>
+
+                <hr class="my-4">
+
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label for="bgColor" class="form-label fw-semibold small mb-1">투명 배경 채우기</label>
+                        <div class="input-group input-group-sm">
+                            <div class="input-group-text">
+                                <input class="form-check-input mt-0" type="checkbox" id="bgFillToggle" checked>
+                            </div>
+                            <input type="color" class="form-control form-control-color" id="bgColor" value="#ffffff">
+                            <span class="input-group-text">투명 영역 색상</span>
+                        </div>
+                    </div>
+                    <div class="col-md-7 text-md-end">
+                        <button class="btn btn-primary" id="btnRender"><i class="bi bi-magic"></i> GIF 만들기</button>
+                    </div>
+                </div>
+
+                <div class="progress mt-3 d-none" id="renderProgressWrapper" style="height:8px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="renderProgress"
+                        style="width:0%"></div>
+                </div>
+
+                <div id="resultArea" class="d-none mt-4">
+                    <div class="preview-label"><i class="bi bi-check2-circle text-success"></i> 생성 결과</div>
+                    <div class="preview-stage checker">
+                        <img id="resultImage" class="result-image" alt="생성된 GIF 미리보기">
+                    </div>
+                    <div class="row g-2 mt-2">
+                        <div class="col-4">
+                            <div class="info-chip"><span class="label">원본 용량</span><span class="value"
+                                    id="resultOriginSize">-</span></div>
+                        </div>
+                        <div class="col-4">
+                            <div class="info-chip"><span class="label">결과 용량</span><span class="value"
+                                    id="resultNewSize">-</span></div>
+                        </div>
+                        <div class="col-4">
+                            <div class="info-chip"><span class="label">변화</span><span class="value"
+                                    id="resultDiff">-</span></div>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <button class="btn btn-success" id="btnDownload"><i class="bi bi-download"></i> GIF
+                            다운로드</button>
+                        <button class="btn btn-outline-primary" id="btnChain"><i class="bi bi-arrow-repeat"></i> 이 결과로
+                            이어서 편집</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer class="text-center text-muted small py-4">
+        업로드한 파일은 서버에 저장되지 않으며 브라우저 메모리에서만 처리됩니다.
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 공통 JS -->
+    <script src="../../../js/navbar.js"></script>
+    <script src="../../../js/firebase-config.js"></script>
+
+    <script>
+        // =====================================================
+        // 공통 유틸
+        // =====================================================
+        function debounce(fn, delay) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn(...args), delay);
+            };
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes && bytes !== 0) return '-';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        function formatSeconds(ms) {
+            return (ms / 1000).toFixed(2) + '초';
+        }
+
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function createCanvas(width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(width));
+            canvas.height = Math.max(1, Math.round(height));
+            return canvas;
+        }
+
+        // gifuct-js 전역 이름이 빌드에 따라 다를 수 있어 방어적으로 접근
+        function getGifDecoder() {
+            const candidate = window.gifuct || window.gifuctJs || window.GIFUCT;
+            if (candidate && candidate.parseGIF) return candidate;
+            if (window.parseGIF && window.decompressFrames) {
+                return { parseGIF: window.parseGIF, decompressFrames: window.decompressFrames };
+            }
+            return null;
+        }
+
+        // =====================================================
+        // 전역 상태
+        // =====================================================
+        let sourceFrames = [];      // [{ canvas, delay }]
+        let sourceWidth = 0;
+        let sourceHeight = 0;
+        let sourceSize = 0;
+        let sourceName = 'edited.gif';
+        let resultBlob = null;
+        let resultObjectUrl = null;
+        let gifWorkerUrl = null;
+        let isRendering = false;
+
+        // =====================================================
+        // GIF 디코딩
+        // =====================================================
+        function buildFrameCanvases(rawFrames, width, height) {
+            const stage = createCanvas(width, height);
+            const stageCtx = stage.getContext('2d');
+            const patch = createCanvas(1, 1);
+            const patchCtx = patch.getContext('2d');
+            const result = [];
+            let restoreData = null;
+
+            for (const frame of rawFrames) {
+                const dims = frame.dims;
+                if (frame.disposalType === 3) {
+                    restoreData = stageCtx.getImageData(0, 0, width, height);
+                }
+
+                patch.width = dims.width;
+                patch.height = dims.height;
+                const imageData = patchCtx.createImageData(dims.width, dims.height);
+                imageData.data.set(frame.patch);
+                patchCtx.putImageData(imageData, 0, 0);
+                stageCtx.drawImage(patch, dims.left, dims.top);
+
+                const snapshot = createCanvas(width, height);
+                snapshot.getContext('2d').drawImage(stage, 0, 0);
+                const delay = (!frame.delay || frame.delay < 20) ? 100 : frame.delay;
+                result.push({ canvas: snapshot, delay });
+
+                if (frame.disposalType === 2) {
+                    stageCtx.clearRect(dims.left, dims.top, dims.width, dims.height);
+                } else if (frame.disposalType === 3 && restoreData) {
+                    stageCtx.putImageData(restoreData, 0, 0);
+                }
+            }
+            return result;
+        }
+
+        async function loadGif(buffer, name, size) {
+            const decoder = getGifDecoder();
+            if (!decoder) {
+                alert('GIF 디코더를 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 새로고침해 주세요.');
+                return;
+            }
+            const gif = decoder.parseGIF(buffer);
+            const rawFrames = decoder.decompressFrames(gif, true);
+            if (!rawFrames.length) throw new Error('프레임 없음');
+
+            sourceWidth = gif.lsd.width;
+            sourceHeight = gif.lsd.height;
+            sourceFrames = buildFrameCanvases(rawFrames, sourceWidth, sourceHeight);
+            sourceName = name;
+            sourceSize = size;
+
+            updateSourceInfo();
+            initControlsForSource();
+            document.getElementById('editorArea').classList.remove('d-none');
+            document.getElementById('emptyState').classList.add('d-none');
+            refreshPreview();
+        }
+
+        function totalDuration(frames) {
+            return frames.reduce((sum, f) => sum + f.delay, 0);
+        }
+
+        function updateSourceInfo() {
+            document.getElementById('sourceInfo').classList.remove('d-none');
+            document.getElementById('infoName').textContent = sourceName;
+            document.getElementById('infoSize').textContent = formatBytes(sourceSize);
+            document.getElementById('infoDimension').textContent = `${sourceWidth} × ${sourceHeight}`;
+            document.getElementById('infoFrames').textContent = `${sourceFrames.length} 장`;
+            document.getElementById('infoDuration').textContent = formatSeconds(totalDuration(sourceFrames));
+
+            const isHeavy = sourceFrames.length > 150 || sourceWidth * sourceHeight > 640 * 640;
+            document.getElementById('heavyWarning').classList.toggle('d-none', !isHeavy);
+        }
+
+        // 파일 입력 & 드래그 앤 드롭
+        async function handleFile(file) {
+            if (!file) return;
+            if (!/image\/gif/.test(file.type) && !/\.gif$/i.test(file.name)) {
+                alert('GIF 파일만 업로드할 수 있습니다.');
+                return;
+            }
+            document.getElementById('loadingBox').classList.remove('d-none');
+            try {
+                const buffer = await file.arrayBuffer();
+                await loadGif(buffer, file.name, file.size);
+            } catch (err) {
+                console.error(err);
+                alert('GIF 파일을 불러오는 중 오류가 발생했습니다.');
+            } finally {
+                document.getElementById('loadingBox').classList.add('d-none');
+            }
+        }
+
+        document.getElementById('gifFile').addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+        const dropZone = document.getElementById('dropZone');
+        ['dragenter', 'dragover'].forEach(type => {
+            dropZone.addEventListener(type, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        });
+        ['dragleave', 'drop'].forEach(type => {
+            dropZone.addEventListener(type, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+        });
+        dropZone.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
+
+        // =====================================================
+        // 영역 선택기 (크롭 / 흐림 영역 공용)
+        // =====================================================
+        class RectSelector {
+            constructor(stageId, onChange) {
+                this.stage = document.getElementById(stageId);
+                this.canvas = this.stage.querySelector('canvas');
+                this.box = this.stage.querySelector('.sel-box');
+                this.onChange = onChange;
+                this.imageWidth = 0;
+                this.imageHeight = 0;
+                this.rect = { x: 0, y: 0, w: 0, h: 0 };
+                this.ratio = 0;
+                this.bindEvents();
+            }
+
+            setImage(frameCanvas) {
+                this.imageWidth = frameCanvas.width;
+                this.imageHeight = frameCanvas.height;
+                this.canvas.width = frameCanvas.width;
+                this.canvas.height = frameCanvas.height;
+                this.canvas.getContext('2d').drawImage(frameCanvas, 0, 0);
+            }
+
+            getScale() {
+                return this.canvas.clientWidth ? this.canvas.clientWidth / this.imageWidth : 1;
+            }
+
+            setRect(rect, silent) {
+                this.rect = { ...rect };
+                this.normalize();
+                this.updateBox();
+                if (!silent && this.onChange) this.onChange(this.getRect());
+            }
+
+            getRect() {
+                return {
+                    x: Math.round(this.rect.x),
+                    y: Math.round(this.rect.y),
+                    w: Math.round(this.rect.w),
+                    h: Math.round(this.rect.h)
+                };
+            }
+
+            normalize() {
+                const r = this.rect;
+                if (r.w < 0) { r.x += r.w; r.w = -r.w; }
+                if (r.h < 0) { r.y += r.h; r.h = -r.h; }
+                r.x = clamp(r.x, 0, this.imageWidth);
+                r.y = clamp(r.y, 0, this.imageHeight);
+                r.w = clamp(r.w, 0, this.imageWidth - r.x);
+                r.h = clamp(r.h, 0, this.imageHeight - r.y);
+            }
+
+            applyRatio(anchorX, anchorY) {
+                if (!this.ratio) return;
+                const r = this.rect;
+                r.h = r.w / this.ratio;
+                if (r.y + r.h > this.imageHeight) {
+                    r.h = this.imageHeight - r.y;
+                    r.w = r.h * this.ratio;
+                }
+                if (anchorX) r.x = clamp(r.x, 0, this.imageWidth - r.w);
+                if (anchorY) r.y = clamp(r.y, 0, this.imageHeight - r.h);
+            }
+
+            updateBox() {
+                const scale = this.getScale();
+                const r = this.rect;
+                if (r.w < 1 || r.h < 1) {
+                    this.box.classList.add('d-none');
+                    return;
+                }
+                this.box.classList.remove('d-none');
+                this.box.style.left = (r.x * scale) + 'px';
+                this.box.style.top = (r.y * scale) + 'px';
+                this.box.style.width = (r.w * scale) + 'px';
+                this.box.style.height = (r.h * scale) + 'px';
+            }
+
+            bindEvents() {
+                let mode = null;
+                let handlePos = null;
+                let startPoint = null;
+                let startRect = null;
+
+                const toImagePoint = (event) => {
+                    const bounds = this.canvas.getBoundingClientRect();
+                    const scale = this.getScale();
+                    return {
+                        x: clamp((event.clientX - bounds.left) / scale, 0, this.imageWidth),
+                        y: clamp((event.clientY - bounds.top) / scale, 0, this.imageHeight)
+                    };
+                };
+
+                this.stage.addEventListener('pointerdown', (event) => {
+                    if (!this.imageWidth) return;
+                    event.preventDefault();
+                    this.stage.setPointerCapture(event.pointerId);
+                    startPoint = toImagePoint(event);
+                    startRect = { ...this.rect };
+
+                    if (event.target.classList.contains('sel-handle')) {
+                        mode = 'resize';
+                        handlePos = event.target.dataset.pos;
+                    } else if (event.target === this.box) {
+                        mode = 'move';
+                    } else {
+                        mode = 'create';
+                        this.rect = { x: startPoint.x, y: startPoint.y, w: 0, h: 0 };
+                    }
+                });
+
+                this.stage.addEventListener('pointermove', (event) => {
+                    if (!mode) return;
+                    const point = toImagePoint(event);
+
+                    if (mode === 'create') {
+                        this.rect.w = point.x - startPoint.x;
+                        this.rect.h = point.y - startPoint.y;
+                        this.normalize();
+                        this.applyRatio(false, false);
+                    } else if (mode === 'move') {
+                        this.rect.x = clamp(startRect.x + (point.x - startPoint.x), 0, this.imageWidth - startRect.w);
+                        this.rect.y = clamp(startRect.y + (point.y - startPoint.y), 0, this.imageHeight - startRect.h);
+                    } else if (mode === 'resize') {
+                        const right = startRect.x + startRect.w;
+                        const bottom = startRect.y + startRect.h;
+                        if (handlePos.includes('w')) { this.rect.x = point.x; this.rect.w = right - point.x; }
+                        if (handlePos.includes('e')) { this.rect.w = point.x - startRect.x; }
+                        if (handlePos.includes('n')) { this.rect.y = point.y; this.rect.h = bottom - point.y; }
+                        if (handlePos.includes('s')) { this.rect.h = point.y - startRect.y; }
+                        this.normalize();
+                        this.applyRatio(true, true);
+                    }
+
+                    this.normalize();
+                    this.updateBox();
+                    if (this.onChange) this.onChange(this.getRect());
+                });
+
+                const finish = () => {
+                    if (!mode) return;
+                    mode = null;
+                    if (this.rect.w < 4 || this.rect.h < 4) {
+                        this.rect = { x: 0, y: 0, w: this.imageWidth, h: this.imageHeight };
+                    }
+                    this.updateBox();
+                    if (this.onChange) this.onChange(this.getRect());
+                };
+
+                this.stage.addEventListener('pointerup', finish);
+                this.stage.addEventListener('pointercancel', finish);
+            }
+        }
+
+        const cropSelector = new RectSelector('cropStage', (rect) => {
+            document.getElementById('cropX').value = rect.x;
+            document.getElementById('cropY').value = rect.y;
+            document.getElementById('cropW').value = rect.w;
+            document.getElementById('cropH').value = rect.h;
+            debouncedPreview();
+        });
+
+        const blurSelector = new RectSelector('blurStage', () => debouncedPreview());
+
+        window.addEventListener('resize', debounce(() => {
+            cropSelector.updateBox();
+            blurSelector.updateBox();
+        }, 150));
+
+        // =====================================================
+        // 탭별 컨트롤 초기화
+        // =====================================================
+        function initControlsForSource() {
+            const lastIndex = sourceFrames.length - 1;
+
+            ['trimStart', 'trimEnd', 'blurStart', 'blurEnd'].forEach(id => {
+                document.getElementById(id).max = lastIndex;
+            });
+            document.getElementById('trimStart').value = 0;
+            document.getElementById('trimEnd').value = lastIndex;
+            document.getElementById('blurStart').value = 0;
+            document.getElementById('blurEnd').value = lastIndex;
+            updateRangeLabels();
+
+            document.getElementById('scaleRange').value = 100;
+            updateScaleLabel();
+
+            cropSelector.setImage(sourceFrames[0].canvas);
+            cropSelector.setRect({ x: 0, y: 0, w: sourceWidth, h: sourceHeight }, true);
+            document.getElementById('cropX').value = 0;
+            document.getElementById('cropY').value = 0;
+            document.getElementById('cropW').value = sourceWidth;
+            document.getElementById('cropH').value = sourceHeight;
+
+            blurSelector.setImage(sourceFrames[0].canvas);
+            blurSelector.setRect({
+                x: Math.round(sourceWidth * 0.3),
+                y: Math.round(sourceHeight * 0.3),
+                w: Math.round(sourceWidth * 0.4),
+                h: Math.round(sourceHeight * 0.4)
+            }, true);
+
+            setTimeout(() => { cropSelector.updateBox(); blurSelector.updateBox(); }, 50);
+        }
+
+        function updateScaleLabel() {
+            const scale = Number(document.getElementById('scaleRange').value);
+            document.getElementById('scaleValue').textContent = scale + '%';
+            const width = Math.round(sourceWidth * scale / 100);
+            const height = Math.round(sourceHeight * scale / 100);
+            document.getElementById('scaleSizeText').textContent = `결과 해상도: ${width} × ${height}`;
+        }
+
+        function updateRangeLabels() {
+            const startFrame = Number(document.getElementById('trimStart').value);
+            const endFrame = Number(document.getElementById('trimEnd').value);
+            document.getElementById('trimStartLabel').textContent = `${startFrame + 1} (${formatSeconds(timeAt(startFrame))})`;
+            document.getElementById('trimEndLabel').textContent = `${endFrame + 1} (${formatSeconds(timeAt(endFrame))})`;
+
+            const blurStartFrame = Number(document.getElementById('blurStart').value);
+            const blurEndFrame = Number(document.getElementById('blurEnd').value);
+            document.getElementById('blurStartLabel').textContent = `${blurStartFrame + 1} (${formatSeconds(timeAt(blurStartFrame))})`;
+            document.getElementById('blurEndLabel').textContent = `${blurEndFrame + 1} (${formatSeconds(timeAt(blurEndFrame))})`;
+        }
+
+        function timeAt(index) {
+            let sum = 0;
+            for (let i = 0; i < index && i < sourceFrames.length; i++) sum += sourceFrames[i].delay;
+            return sum;
+        }
+
+        // =====================================================
+        // 프레임 가공 파이프라인
+        // =====================================================
+        function getActiveTool() {
+            const activeTab = document.querySelector('#gifTabs .nav-link.active');
+            return activeTab ? activeTab.dataset.tool : 'compress';
+        }
+
+        function paintBackground(ctx, width, height) {
+            if (!document.getElementById('bgFillToggle').checked) return;
+            ctx.save();
+            ctx.fillStyle = document.getElementById('bgColor').value;
+            ctx.fillRect(0, 0, width, height);
+            ctx.restore();
+        }
+
+        function applyCompress() {
+            const scale = Number(document.getElementById('scaleRange').value) / 100;
+            const step = Number(document.getElementById('frameStep').value);
+            const width = Math.max(1, Math.round(sourceWidth * scale));
+            const height = Math.max(1, Math.round(sourceHeight * scale));
+            const frames = [];
+
+            for (let i = 0; i < sourceFrames.length; i += step) {
+                let delay = 0;
+                for (let j = i; j < Math.min(i + step, sourceFrames.length); j++) delay += sourceFrames[j].delay;
+
+                const canvas = createCanvas(width, height);
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingQuality = 'high';
+                paintBackground(ctx, width, height);
+                ctx.drawImage(sourceFrames[i].canvas, 0, 0, width, height);
+                frames.push({ canvas, delay });
+            }
+            return { frames, width, height };
+        }
+
+        function applyTrim() {
+            let startFrame = Number(document.getElementById('trimStart').value);
+            let endFrame = Number(document.getElementById('trimEnd').value);
+            if (startFrame > endFrame) [startFrame, endFrame] = [endFrame, startFrame];
+
+            const speed = Number(document.getElementById('speedRate').value);
+            const direction = document.getElementById('playDirection').value;
+
+            let selected = sourceFrames.slice(startFrame, endFrame + 1);
+            if (direction === 'reverse') {
+                selected = selected.slice().reverse();
+            } else if (direction === 'boomerang' && selected.length > 2) {
+                selected = selected.concat(selected.slice(1, -1).reverse());
+            }
+
+            const frames = selected.map(frame => {
+                const canvas = createCanvas(sourceWidth, sourceHeight);
+                const ctx = canvas.getContext('2d');
+                paintBackground(ctx, sourceWidth, sourceHeight);
+                ctx.drawImage(frame.canvas, 0, 0);
+                return { canvas, delay: Math.max(20, Math.round(frame.delay / speed)) };
+            });
+            return { frames, width: sourceWidth, height: sourceHeight };
+        }
+
+        function applyCrop() {
+            const rect = cropSelector.getRect();
+            const width = Math.max(1, rect.w);
+            const height = Math.max(1, rect.h);
+
+            const frames = sourceFrames.map(frame => {
+                const canvas = createCanvas(width, height);
+                const ctx = canvas.getContext('2d');
+                paintBackground(ctx, width, height);
+                ctx.drawImage(frame.canvas, rect.x, rect.y, width, height, 0, 0, width, height);
+                return { canvas, delay: frame.delay };
+            });
+            return { frames, width, height };
+        }
+
+        function applyBlurEffect(ctx, sourceCanvas, area, type, strength) {
+            const { x, y, w, h } = area;
+            if (w < 1 || h < 1) return;
+
+            if (type === 'pixelate') {
+                const blockSize = Math.max(2, Math.round(strength));
+                const smallWidth = Math.max(1, Math.round(w / blockSize));
+                const smallHeight = Math.max(1, Math.round(h / blockSize));
+                const temp = createCanvas(smallWidth, smallHeight);
+                const tempCtx = temp.getContext('2d');
+                tempCtx.imageSmoothingEnabled = false;
+                tempCtx.drawImage(sourceCanvas, x, y, w, h, 0, 0, smallWidth, smallHeight);
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(temp, 0, 0, smallWidth, smallHeight, x, y, w, h);
+                ctx.restore();
+                return;
+            }
+
+            // 블러: 경계 아티팩트를 막기 위해 주변 픽셀까지 포함해 처리 후 영역만 되그림
+            const pad = Math.ceil(strength * 2);
+            const sx = clamp(x - pad, 0, sourceCanvas.width);
+            const sy = clamp(y - pad, 0, sourceCanvas.height);
+            const sw = clamp(x + w + pad, 0, sourceCanvas.width) - sx;
+            const sh = clamp(y + h + pad, 0, sourceCanvas.height) - sy;
+            const temp = createCanvas(sw, sh);
+            const tempCtx = temp.getContext('2d');
+            tempCtx.filter = `blur(${strength}px)`;
+            tempCtx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+            ctx.drawImage(temp, x - sx, y - sy, w, h, x, y, w, h);
+        }
+
+        function applyBlur() {
+            let startFrame = Number(document.getElementById('blurStart').value);
+            let endFrame = Number(document.getElementById('blurEnd').value);
+            if (startFrame > endFrame) [startFrame, endFrame] = [endFrame, startFrame];
+
+            const type = document.getElementById('blurType').value;
+            const strength = Number(document.getElementById('blurStrength').value);
+            const useWholeFrame = document.getElementById('blurWholeFrame').checked;
+            const region = useWholeFrame
+                ? { x: 0, y: 0, w: sourceWidth, h: sourceHeight }
+                : blurSelector.getRect();
+
+            const frames = sourceFrames.map((frame, index) => {
+                const canvas = createCanvas(sourceWidth, sourceHeight);
+                const ctx = canvas.getContext('2d');
+                paintBackground(ctx, sourceWidth, sourceHeight);
+                ctx.drawImage(frame.canvas, 0, 0);
+                if (index >= startFrame && index <= endFrame) {
+                    applyBlurEffect(ctx, canvas, region, type, strength);
+                }
+                return { canvas, delay: frame.delay };
+            });
+            return { frames, width: sourceWidth, height: sourceHeight };
+        }
+
+        function processFrames() {
+            if (!sourceFrames.length) return null;
+            switch (getActiveTool()) {
+                case 'trim': return applyTrim();
+                case 'crop': return applyCrop();
+                case 'blur': return applyBlur();
+                default: return applyCompress();
+            }
+        }
+
+        // =====================================================
+        // 미리보기 플레이어
+        // =====================================================
+        const player = {
+            frames: [],
+            index: 0,
+            timer: null,
+            playing: true,
+            canvas: document.getElementById('previewCanvas'),
+
+            load(frames, width, height) {
+                this.stop();
+                this.frames = frames;
+                this.index = 0;
+                this.canvas.width = width;
+                this.canvas.height = height;
+                this.draw();
+                if (this.playing) this.play();
+            },
+            draw() {
+                if (!this.frames.length) return;
+                const ctx = this.canvas.getContext('2d');
+                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                ctx.drawImage(this.frames[this.index].canvas, 0, 0);
+            },
+            play() {
+                this.stop();
+                if (this.frames.length < 2) return;
+                const tick = () => {
+                    this.index = (this.index + 1) % this.frames.length;
+                    this.draw();
+                    this.timer = setTimeout(tick, this.frames[this.index].delay);
+                };
+                this.timer = setTimeout(tick, this.frames[this.index].delay);
+            },
+            stop() {
+                if (this.timer) clearTimeout(this.timer);
+                this.timer = null;
+            }
+        };
+
+        document.getElementById('btnPlayToggle').addEventListener('click', function () {
+            player.playing = !player.playing;
+            if (player.playing) {
+                player.play();
+                this.innerHTML = '<i class="bi bi-pause-fill"></i> 일시정지';
+            } else {
+                player.stop();
+                this.innerHTML = '<i class="bi bi-play-fill"></i> 재생';
+            }
+        });
+
+        let processedResult = null;
+
+        function refreshPreview() {
+            processedResult = processFrames();
+            if (!processedResult) return;
+            player.load(processedResult.frames, processedResult.width, processedResult.height);
+            document.getElementById('previewStats').textContent =
+                `${processedResult.width} × ${processedResult.height} · ${processedResult.frames.length}프레임 · ${formatSeconds(totalDuration(processedResult.frames))}`;
+        }
+
+        const debouncedPreview = debounce(refreshPreview, 250);
+
+        // 컨트롤 변경 → 미리보기 갱신
+        ['scaleRange', 'frameStep', 'trimStart', 'trimEnd', 'speedRate', 'playDirection',
+            'blurStart', 'blurEnd', 'blurType', 'blurStrength', 'blurWholeFrame',
+            'bgColor', 'bgFillToggle'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => {
+                    updateScaleLabel();
+                    updateRangeLabels();
+                    document.getElementById('blurStrengthLabel').textContent = document.getElementById('blurStrength').value;
+                    debouncedPreview();
+                });
+            });
+
+        document.getElementById('blurWholeFrame').addEventListener('change', function () {
+            document.getElementById('blurRegionWrapper').classList.toggle('d-none', this.checked);
+        });
+
+        document.querySelectorAll('.crop-input').forEach(input => {
+            input.addEventListener('input', () => {
+                cropSelector.setRect({
+                    x: Number(document.getElementById('cropX').value) || 0,
+                    y: Number(document.getElementById('cropY').value) || 0,
+                    w: Number(document.getElementById('cropW').value) || 1,
+                    h: Number(document.getElementById('cropH').value) || 1
+                }, true);
+                debouncedPreview();
+            });
+        });
+
+        document.querySelectorAll('.ratio-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.ratio-btn').forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+                cropSelector.ratio = Number(button.dataset.ratio);
+                if (cropSelector.ratio) {
+                    cropSelector.applyRatio(true, true);
+                    cropSelector.normalize();
+                    cropSelector.updateBox();
+                    cropSelector.onChange(cropSelector.getRect());
+                }
+            });
+        });
+
+        document.getElementById('btnCropReset').addEventListener('click', () => {
+            cropSelector.ratio = 0;
+            document.querySelectorAll('.ratio-btn').forEach(b => b.classList.remove('active'));
+            cropSelector.setRect({ x: 0, y: 0, w: sourceWidth, h: sourceHeight });
+        });
+
+        document.getElementById('btnTrimReset').addEventListener('click', () => {
+            document.getElementById('trimStart').value = 0;
+            document.getElementById('trimEnd').value = sourceFrames.length - 1;
+            document.getElementById('speedRate').value = '1';
+            document.getElementById('playDirection').value = 'forward';
+            updateRangeLabels();
+            refreshPreview();
+        });
+
+        document.querySelectorAll('#gifTabs .nav-link').forEach(tab => {
+            tab.addEventListener('shown.bs.tab', () => {
+                cropSelector.updateBox();
+                blurSelector.updateBox();
+                refreshPreview();
+            });
+        });
+
+        // =====================================================
+        // GIF 인코딩
+        // =====================================================
+        async function getWorkerUrl() {
+            if (gifWorkerUrl) return gifWorkerUrl;
+            const response = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+            const script = await response.text();
+            gifWorkerUrl = URL.createObjectURL(new Blob([script], { type: 'application/javascript' }));
+            return gifWorkerUrl;
+        }
+
+        document.getElementById('btnRender').addEventListener('click', async () => {
+            if (isRendering || !sourceFrames.length) return;
+            const data = processFrames();
+            if (!data || !data.frames.length) return alert('생성할 프레임이 없습니다.');
+
+            const button = document.getElementById('btnRender');
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 생성 중...';
+            button.disabled = true;
+            isRendering = true;
+            document.getElementById('renderProgressWrapper').classList.remove('d-none');
+            document.getElementById('renderProgress').style.width = '0%';
+
+            try {
+                const workerScript = await getWorkerUrl();
+                const gif = new GIF({
+                    workers: 4,
+                    workerScript,
+                    width: data.width,
+                    height: data.height,
+                    quality: Number(document.getElementById('qualityLevel').value),
+                    dither: document.getElementById('ditherToggle').checked ? 'FloydSteinberg' : false
+                });
+
+                data.frames.forEach(frame => gif.addFrame(frame.canvas, { delay: frame.delay, copy: true }));
+                gif.on('progress', ratio => {
+                    document.getElementById('renderProgress').style.width = Math.round(ratio * 100) + '%';
+                });
+
+                const blob = await new Promise((resolve, reject) => {
+                    gif.on('finished', resolve);
+                    gif.on('abort', () => reject(new Error('중단됨')));
+                    gif.render();
+                });
+
+                showResult(blob);
+            } catch (err) {
+                console.error(err);
+                alert('GIF 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+            } finally {
+                button.innerHTML = originalHTML;
+                button.disabled = false;
+                isRendering = false;
+                document.getElementById('renderProgressWrapper').classList.add('d-none');
+            }
+        });
+
+        function showResult(blob) {
+            resultBlob = blob;
+            if (resultObjectUrl) URL.revokeObjectURL(resultObjectUrl);
+            resultObjectUrl = URL.createObjectURL(blob);
+
+            document.getElementById('resultImage').src = resultObjectUrl;
+            document.getElementById('resultOriginSize').textContent = formatBytes(sourceSize);
+            document.getElementById('resultNewSize').textContent = formatBytes(blob.size);
+
+            const diff = (1 - blob.size / sourceSize) * 100;
+            const diffElement = document.getElementById('resultDiff');
+            diffElement.textContent = (diff >= 0 ? '-' : '+') + Math.abs(diff).toFixed(1) + '%';
+            diffElement.className = 'value ' + (diff >= 0 ? 'text-success' : 'text-danger');
+
+            document.getElementById('resultArea').classList.remove('d-none');
+            document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.getElementById('btnDownload').addEventListener('click', () => {
+            if (!resultBlob) return;
+            const baseName = sourceName.replace(/\.gif$/i, '');
+            saveAs(resultBlob, `${baseName}_edited.gif`);
+        });
+
+        document.getElementById('btnChain').addEventListener('click', async () => {
+            if (!resultBlob) return;
+            document.getElementById('loadingBox').classList.remove('d-none');
+            try {
+                const buffer = await resultBlob.arrayBuffer();
+                await loadGif(buffer, sourceName, resultBlob.size);
+                document.getElementById('resultArea').classList.add('d-none');
+            } catch (err) {
+                console.error(err);
+                alert('결과를 다시 불러오는 중 오류가 발생했습니다.');
+            } finally {
+                document.getElementById('loadingBox').classList.add('d-none');
+            }
+        });
+    </script>
+</body>
+
+</html>
