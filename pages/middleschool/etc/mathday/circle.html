@@ -72,13 +72,13 @@
     #drawCanvas {
       display: block;
       width: 100%;
-      height: 460px;
+      height: 520px;
       touch-action: none;
       cursor: crosshair;
     }
 
     @media (max-width: 640px) {
-      #drawCanvas { height: 340px; }
+      #drawCanvas { height: 380px; }
     }
 
     .canvas-hint {
@@ -94,32 +94,36 @@
       padding: 1.5rem 1rem;
     }
 
-    /* 점수 패널 */
-    .score-panel {
+    /* 점수 오버레이 (캔버스 우측 하단) */
+    .score-overlay {
+      position: absolute;
+      right: 1.25rem;
+      bottom: 1.25rem;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(8px);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 1.2rem;
-      text-align: center;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
+      padding: 0.9rem 1.4rem;
+      text-align: right;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+      pointer-events: none;
+      z-index: 10;
     }
 
     .score-value {
-      font-size: 3.4rem;
+      font-size: 3rem;
       font-weight: 800;
       line-height: 1;
       font-variant-numeric: tabular-nums;
       color: var(--accent);
     }
 
-    .score-value.fail { color: var(--danger); font-size: 1.4rem; }
+    .score-value.fail { color: var(--danger); font-size: 1.15rem; }
 
     .score-unit { font-size: 1.2rem; font-weight: 700; color: var(--muted); }
 
-    .score-comment { margin-top: 0.6rem; font-weight: 600; }
-    .score-detail { margin-top: 0.4rem; font-size: 0.85rem; color: var(--muted); }
+    .score-comment { margin-top: 0.4rem; font-weight: 700; font-size: 0.95rem; color: var(--text); }
+    .score-detail { margin-top: 0.25rem; font-size: 0.82rem; color: var(--muted); }
 
     .rule-list { line-height: 1.9; }
   </style>
@@ -132,26 +136,16 @@
     <h1 class="page-title">완벽한 원 그리기</h1>
 
     <section class="content-card mb-4">
-      <div class="row g-3">
-        <div class="col-12 col-lg-8">
-          <div class="canvas-wrap">
-            <canvas id="drawCanvas"></canvas>
-            <div id="canvasHint" class="canvas-hint">가운데 점을 중심으로, 한 번에 원을 그려보세요.</div>
+      <div class="canvas-wrap">
+        <canvas id="drawCanvas"></canvas>
+        <div id="canvasHint" class="canvas-hint">가운데 점을 중심으로, 한 번에 원을 그려보세요.</div>
+        <div id="scoreOverlay" class="score-overlay d-none">
+          <div class="d-flex align-items-baseline justify-content-end gap-1">
+            <span id="scoreValue" class="score-value">–</span>
+            <span id="scoreUnit" class="score-unit"></span>
           </div>
-        </div>
-
-        <div class="col-12 col-lg-4">
-          <div class="score-panel">
-            <div><span id="scoreValue" class="score-value">–</span><span id="scoreUnit" class="score-unit"></span></div>
-            <div id="scoreComment" class="score-comment">원을 그리면 점수가 계산됩니다.</div>
-            <div id="scoreDetail" class="score-detail"></div>
-
-            <div class="d-grid gap-2 mt-4">
-              <button id="retryBtn" class="btn btn-outline-secondary" disabled>
-                <i class="bi bi-arrow-counterclockwise me-1"></i>다시 그리기
-              </button>
-            </div>
-          </div>
+          <div id="scoreComment" class="score-comment"></div>
+          <div id="scoreDetail" class="score-detail"></div>
         </div>
       </div>
     </section>
@@ -162,7 +156,7 @@
         <li>한 명씩 나와서 화면 앞에 섭니다.</li>
         <li>가운데 점을 중심으로 <strong>한 번에 이어서</strong> 원을 그립니다. (손을 떼면 그리기가 끝납니다.)</li>
         <li>그린 곡선에 가장 잘 맞는 원을 찾아, 반지름이 얼마나 일정한지를 <strong>100점 만점 정확도</strong>로 계산합니다.</li>
-        <li>점수를 확인하고 <strong>[다시 그리기]</strong>를 눌러 다음 사람이 도전합니다.</li>
+        <li>새로 선을 그리면 이전 그림과 점수가 지워지고 다시 측정됩니다.</li>
       </ul>
     </section>
   </main>
@@ -172,11 +166,11 @@
     const canvas = document.getElementById('drawCanvas');
     const context = canvas.getContext('2d');
     const canvasHint = document.getElementById('canvasHint');
+    const scoreOverlay = document.getElementById('scoreOverlay');
     const scoreValue = document.getElementById('scoreValue');
     const scoreUnit = document.getElementById('scoreUnit');
     const scoreComment = document.getElementById('scoreComment');
     const scoreDetail = document.getElementById('scoreDetail');
-    const retryButton = document.getElementById('retryBtn');
 
     let drawnPoints = [];
     let isDrawing = false;
@@ -346,13 +340,11 @@
 
     function showScore(evaluation) {
       if (!evaluation) {
-        scoreValue.textContent = '–';
-        scoreValue.classList.remove('fail');
-        scoreUnit.textContent = '';
-        scoreComment.textContent = '원을 그리면 점수가 계산됩니다.';
-        scoreDetail.textContent = '';
+        scoreOverlay.classList.add('d-none');
         return;
       }
+
+      scoreOverlay.classList.remove('d-none');
 
       if (!evaluation.ok) {
         scoreValue.textContent = evaluation.message;
@@ -378,7 +370,6 @@
       redraw();
       canvasHint.classList.remove('d-none');
       showScore(null);
-      retryButton.disabled = true;
     }
 
     /* ---------- 그리기 이벤트 ---------- */
@@ -388,6 +379,7 @@
       drawnPoints = [pointFromEvent(event)];
       lastEvaluation = null;
       canvasHint.classList.add('d-none');
+      showScore(null);
       canvas.setPointerCapture(event.pointerId);
       redraw();
     });
@@ -407,14 +399,12 @@
       lastEvaluation = evaluateDrawing(drawnPoints);
       redraw();
       showScore(lastEvaluation);
-      retryButton.disabled = false;
     }
 
     canvas.addEventListener('pointerup', finishDrawing);
     canvas.addEventListener('pointercancel', finishDrawing);
     canvas.addEventListener('pointerleave', finishDrawing);
 
-    retryButton.addEventListener('click', clearDrawing);
     window.addEventListener('resize', resizeCanvas);
 
     clearDrawing();
