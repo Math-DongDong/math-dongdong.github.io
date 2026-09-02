@@ -141,9 +141,9 @@
     navData.menu.forEach((group, index) => {
         let itemsHtml = '';
         group.items.forEach(item => {
-            const isExternal = item.external || (item.path && item.path.startsWith('http'));
-            const href = isExternal ? item.path : `${rootPath}${item.path}`;
-            const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
+            const isHttp = item.path && item.path.startsWith('http');
+            const href = isHttp ? item.path : `${rootPath}${item.path}`;
+            const target = (item.external || isHttp) ? ' target="_blank" rel="noopener noreferrer"' : '';
             itemsHtml += `<li><a class="dropdown-item" href="${href}"${target}>${item.name}</a></li>`;
         });
 
