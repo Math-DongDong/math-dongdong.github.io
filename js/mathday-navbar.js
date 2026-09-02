@@ -41,13 +41,8 @@
     '<span class="navbar-toggler-icon"></span>' +
     '</button>' +
     '<div class="collapse navbar-collapse" id="mathdayNavMenu">' +
-    '<ul class="navbar-nav ms-auto align-items-lg-center">' +
+    '<ul class="navbar-nav ms-lg-3 align-items-lg-center">' +
     menuHtml +
-    '<li class="nav-item nav-divider d-none d-lg-block"></li>' +
-    '<li class="nav-item">' +
-    '<a class="nav-link nav-home" href="' + rootPath + 'index.html">' +
-    '<i class="bi bi-box-arrow-up-right me-1"></i>메인으로</a>' +
-    '</li>' +
     '</ul>' +
     '</div>' +
     '</div>' +
