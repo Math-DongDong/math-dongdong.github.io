@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>완벽한 원 그리기 | Math Day</title>
+
+  <link rel="icon" href="../../../../assets/images/mainPage/동동이.jpg" type="image/jpeg" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" />
+  <link rel="stylesheet" href="../../../../css/mathday-navbar.css" />
+
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+    :root {
+      --bg: #ffffff;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #6366f1;
+      --accent-soft: #f0f0ff;
+      --danger: #ef4444;
+      --success: #16a34a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Pretendard Variable', sans-serif;
+    }
+
+    .page-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .content-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+    }
+
+    .section-title { font-size: 1.6rem; font-weight: 700; margin-bottom: 1rem; }
+
+    .page-title {
+      font-size: clamp(2rem, 5vw, 2.6rem);
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    /* 모둠 선택 칩 */
+    .team-chip {
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 999px;
+      padding: 0.45rem 1rem;
+      font-weight: 600;
+      color: #475569;
+      transition: background-color .15s, color .15s, border-color .15s;
+    }
+
+    .team-chip:hover { background: #f1f5f9; }
+
+    .team-chip.current {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .team-chip.done {
+      background: #dcfce7;
+      border-color: #86efac;
+      color: #166534;
+    }
+
+    /* 캔버스 */
+    .canvas-wrap {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background:
+        radial-gradient(circle, #eef2ff 1px, transparent 1.5px) 0 0 / 26px 26px,
+        #ffffff;
+      overflow: hidden;
+    }
+
+    #drawCanvas {
+      display: block;
+      width: 100%;
+      height: 460px;
+      touch-action: none;
+      cursor: crosshair;
+    }
+
+    @media (max-width: 640px) {
+      #drawCanvas { height: 340px; }
+    }
+
+    .canvas-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      font-size: 1.05rem;
+      pointer-events: none;
+      text-align: center;
+      padding: 1rem;
+    }
+
+    /* 점수 패널 */
+    .score-panel {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.2rem;
+      text-align: center;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .score-value {
+      font-size: 3.4rem;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+    }
+
+    .score-value.fail { color: var(--danger); font-size: 1.4rem; }
+
+    .score-unit { font-size: 1.2rem; font-weight: 700; color: var(--muted); }
+
+    .score-comment { margin-top: 0.6rem; font-weight: 600; }
+    .score-detail { margin-top: 0.4rem; font-size: 0.85rem; color: var(--muted); }
+
+    /* 결과표 */
+    .rank-table th, .rank-table td { vertical-align: middle; }
+    .rank-table .point { font-weight: 800; color: var(--danger); }
+
+    .rule-list { line-height: 1.9; }
+  </style>
+</head>
+
+<body>
+  <script src="../../../../js/mathday-navbar.js"></script>
+
+  <main class="page-wrap">
+    <h1 class="page-title">완벽한 원 그리기</h1>
+
+    <section class="content-card mb-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div id="teamChips" class="d-flex flex-wrap gap-2"></div>
+        <button id="resetAllBtn" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>전체 초기화
+        </button>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-lg-8">
+          <div class="canvas-wrap">
+            <canvas id="drawCanvas"></canvas>
+            <div id="canvasHint" class="canvas-hint">가운데 점을 중심으로, 한 번에 원을 그려보세요.</div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-4">
+          <div class="score-panel">
+            <div id="currentTeamLabel" class="text-secondary mb-2">1모둠 차례</div>
+            <div><span id="scoreValue" class="score-value">–</span><span id="scoreUnit" class="score-unit"></span></div>
+            <div id="scoreComment" class="score-comment">원을 그리면 점수가 계산됩니다.</div>
+            <div id="scoreDetail" class="score-detail"></div>
+
+            <div class="d-grid gap-2 mt-3">
+              <button id="retryBtn" class="btn btn-outline-secondary" disabled>
+                <i class="bi bi-eraser me-1"></i>다시 그리기
+              </button>
+              <button id="confirmBtn" class="btn btn-primary" disabled>
+                <i class="bi bi-check2 me-1"></i>이 점수로 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="rankSection" class="content-card mb-4 d-none">
+      <h2 class="section-title">최종 결과</h2>
+      <div class="table-responsive">
+        <table class="table rank-table align-middle">
+          <thead>
+            <tr>
+              <th scope="col">순위</th>
+              <th scope="col">모둠</th>
+              <th scope="col">정확도</th>
+              <th scope="col">점수</th>
+            </tr>
+          </thead>
+          <tbody id="rankBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="content-card">
+      <div class="row g-4">
+        <div class="col-12 col-lg-7">
+          <h2 class="section-title">게임 방법</h2>
+          <ul class="rule-list">
+            <li>각 팀에 한 명씩 나와서 전자칠판 앞에 선다.</li>
+            <li>가운데 점을 중심으로 <strong>한 번에 이어서</strong> 원을 그린다. (손을 떼면 그리기가 끝납니다.)</li>
+            <li>그린 곡선에 가장 잘 맞는 원을 찾아, 반지름이 얼마나 일정한지를 <strong>100점 만점 정확도</strong>로 계산합니다.</li>
+            <li>점수가 마음에 들지 않으면 <strong>[다시 그리기]</strong>, 확정하려면 <strong>[이 점수로 확정]</strong>을 누르고 다음 모둠으로 넘어갑니다.</li>
+          </ul>
+        </div>
+        <div class="col-12 col-lg-5">
+          <h2 class="section-title">점수 부여</h2>
+          <ul class="rule-list">
+            <li>한 바퀴를 다 돌지 않으면 측정되지 않아요.</li>
+            <li>정확도가 가장 높은 모둠은 3점!!!</li>
+            <li>두 번째로 높은 모둠은 2점!!</li>
+            <li>세 번째로 높은 모둠에게 1점!</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const NUM_TEAMS = 5;
+    const RANK_POINTS = [3, 2, 1];
+    const MEDALS = ['🥇', '🥈', '🥉'];
+
+    const canvas = document.getElementById('drawCanvas');
+    const context = canvas.getContext('2d');
+    const canvasHint = document.getElementById('canvasHint');
+    const teamChips = document.getElementById('teamChips');
+    const currentTeamLabel = document.getElementById('currentTeamLabel');
+    const scoreValue = document.getElementById('scoreValue');
+    const scoreUnit = document.getElementById('scoreUnit');
+    const scoreComment = document.getElementById('scoreComment');
+    const scoreDetail = document.getElementById('scoreDetail');
+    const retryButton = document.getElementById('retryBtn');
+    const confirmButton = document.getElementById('confirmBtn');
+    const resetAllButton = document.getElementById('resetAllBtn');
+    const rankSection = document.getElementById('rankSection');
+    const rankBody = document.getElementById('rankBody');
+
+    let teamScores = {};
+    let currentTeam = 1;
+    let drawnPoints = [];
+    let isDrawing = false;
+    let lastEvaluation = null;
+
+    /* ---------- 캔버스 기본 처리 ---------- */
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * ratio);
+      canvas.height = Math.round(rect.height * ratio);
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      redraw();
+    }
+
+    function canvasSize() {
+      const rect = canvas.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    }
+
+    function drawCenterMark() {
+      const size = canvasSize();
+      context.fillStyle = '#cbd5e1';
+      context.beginPath();
+      context.arc(size.width / 2, size.height / 2, 5, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    function drawPath() {
+      if (drawnPoints.length < 2) return;
+      context.strokeStyle = '#6366f1';
+      context.lineWidth = 3.5;
+      context.lineJoin = 'round';
+      context.lineCap = 'round';
+      context.beginPath();
+      context.moveTo(drawnPoints[0].x, drawnPoints[0].y);
+      for (let i = 1; i < drawnPoints.length; i++) {
+        context.lineTo(drawnPoints[i].x, drawnPoints[i].y);
+      }
+      context.stroke();
+    }
+
+    function drawIdealCircle(fit) {
+      context.save();
+      context.strokeStyle = '#ef4444';
+      context.lineWidth = 2;
+      context.setLineDash([7, 6]);
+      context.beginPath();
+      context.arc(fit.cx, fit.cy, fit.r, 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
+    }
+
+    function redraw() {
+      const size = canvasSize();
+      context.clearRect(0, 0, size.width, size.height);
+      drawCenterMark();
+      drawPath();
+      if (lastEvaluation && lastEvaluation.ok) {
+        drawIdealCircle(lastEvaluation.fit);
+      }
+    }
+
+    function pointFromEvent(event) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+
+    /* ---------- 원 적합 및 채점 ---------- */
+
+    function determinant3(m) {
+      return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+           - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+           + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    }
+
+    function replaceColumn(m, index, v) {
+      return m.map((row, i) => row.map((value, j) => (j === index ? v[i] : value)));
+    }
+
+    /** 최소자승법(Kåsa)으로 점들에 가장 잘 맞는 원의 중심과 반지름을 구합니다. */
+    function fitCircle(points) {
+      let sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0, sumXZ = 0, sumYZ = 0, sumZ = 0;
+      points.forEach(p => {
+        const z = p.x * p.x + p.y * p.y;
+        sumX += p.x; sumY += p.y;
+        sumXX += p.x * p.x; sumYY += p.y * p.y; sumXY += p.x * p.y;
+        sumXZ += p.x * z; sumYZ += p.y * z; sumZ += z;
+      });
+
+      const matrix = [[sumXX, sumXY, sumX], [sumXY, sumYY, sumY], [sumX, sumY, points.length]];
+      const vector = [sumXZ, sumYZ, sumZ];
+      const det = determinant3(matrix);
+      if (Math.abs(det) < 1e-6) return null;
+
+      const a = determinant3(replaceColumn(matrix, 0, vector)) / det;
+      const b = determinant3(replaceColumn(matrix, 1, vector)) / det;
+      const c = determinant3(replaceColumn(matrix, 2, vector)) / det;
+
+      const cx = a / 2;
+      const cy = b / 2;
+      const radius = Math.sqrt(Math.max(0, c + cx * cx + cy * cy));
+      return { cx: cx, cy: cy, r: radius };
+    }
+
+    /** 그린 곡선이 얼마나 원에 가까운지 0~100점으로 계산합니다. */
+    function evaluateDrawing(points) {
+      if (points.length < 25) {
+        return { ok: false, message: '선이 너무 짧아요. 크게 한 바퀴 그려주세요.' };
+      }
+
+      const fit = fitCircle(points);
+      if (!fit || !isFinite(fit.r) || fit.r < 40) {
+        return { ok: false, message: '원이 너무 작아요. 조금 더 크게 그려주세요.' };
+      }
+
+      // 중심을 기준으로 한 바퀴(약 306° 이상)를 돌았는지 확인
+      let sweep = 0;
+      let previousAngle = Math.atan2(points[0].y - fit.cy, points[0].x - fit.cx);
+      for (let i = 1; i < points.length; i++) {
+        const angle = Math.atan2(points[i].y - fit.cy, points[i].x - fit.cx);
+        let delta = angle - previousAngle;
+        while (delta > Math.PI) delta -= Math.PI * 2;
+        while (delta < -Math.PI) delta += Math.PI * 2;
+        sweep += delta;
+        previousAngle = angle;
+      }
+      if (Math.abs(sweep) < Math.PI * 1.7) {
+        return { ok: false, message: '한 바퀴를 다 돌지 않았어요. 다시 그려주세요.' };
+      }
+
+      // 반지름이 얼마나 일정한지 → 평균 상대 오차
+      let deviationSum = 0;
+      points.forEach(p => {
+        deviationSum += Math.abs(Math.hypot(p.x - fit.cx, p.y - fit.cy) - fit.r);
+      });
+      const relativeDeviation = (deviationSum / points.length) / fit.r;
+
+      // 시작점과 끝점이 얼마나 잘 만났는지 → 닫힘 정도
+      const first = points[0];
+      const last = points[points.length - 1];
+      const gapRatio = Math.hypot(first.x - last.x, first.y - last.y) / fit.r;
+
+      let score = 100 * (1 - relativeDeviation * 3);
+      if (gapRatio > 0.15) score -= (gapRatio - 0.15) * 60;
+      score = Math.max(0, Math.min(100, score));
+
+      return {
+        ok: true,
+        score: score,
+        fit: fit,
+        relativeDeviation: relativeDeviation,
+        gapRatio: gapRatio
+      };
+    }
+
+    function commentForScore(score) {
+      if (score >= 95) return '거의 완벽한 원이에요!';
+      if (score >= 88) return '훌륭해요! 컴퍼스급 실력';
+      if (score >= 78) return '좋아요! 꽤 동그랗습니다';
+      if (score >= 65) return '조금 찌그러졌어요';
+      return '다시 도전해 볼까요?';
+    }
+
+    /* ---------- 화면 갱신 ---------- */
+
+    function renderTeamChips() {
+      let html = '';
+      for (let id = 1; id <= NUM_TEAMS; id++) {
+        const score = teamScores[id];
+        const stateClass = id === currentTeam ? ' current' : (score !== null ? ' done' : '');
+        const label = score !== null ? id + '모둠 · ' + score.toFixed(1) : id + '모둠';
+        html += '<button type="button" class="team-chip' + stateClass + '" data-team="' + id + '">' + label + '</button>';
+      }
+      teamChips.innerHTML = html;
+      teamChips.querySelectorAll('.team-chip').forEach(chip => {
+        chip.addEventListener('click', () => selectTeam(Number(chip.dataset.team)));
+      });
+      currentTeamLabel.textContent = currentTeam + '모둠 차례';
+    }
+
+    function showScore(evaluation) {
+      if (!evaluation) {
+        scoreValue.textContent = '–';
+        scoreValue.classList.remove('fail');
+        scoreUnit.textContent = '';
+        scoreComment.textContent = '원을 그리면 점수가 계산됩니다.';
+        scoreDetail.textContent = '';
+        return;
+      }
+
+      if (!evaluation.ok) {
+        scoreValue.textContent = evaluation.message;
+        scoreValue.classList.add('fail');
+        scoreUnit.textContent = '';
+        scoreComment.textContent = '';
+        scoreDetail.textContent = '';
+        return;
+      }
+
+      scoreValue.classList.remove('fail');
+      scoreValue.textContent = evaluation.score.toFixed(1);
+      scoreUnit.textContent = '점';
+      scoreComment.textContent = commentForScore(evaluation.score);
+      scoreDetail.textContent =
+        '반지름 평균 오차 ' + (evaluation.relativeDeviation * 100).toFixed(1) + '% · ' +
+        '시작·끝 간격 ' + (evaluation.gapRatio * 100).toFixed(1) + '%';
+    }
+
+    function clearDrawing() {
+      drawnPoints = [];
+      lastEvaluation = null;
+      redraw();
+      canvasHint.classList.remove('d-none');
+      showScore(null);
+      retryButton.disabled = true;
+      confirmButton.disabled = true;
+    }
+
+    function selectTeam(id) {
+      currentTeam = id;
+      clearDrawing();
+      renderTeamChips();
+    }
+
+    function confirmScore() {
+      if (!lastEvaluation || !lastEvaluation.ok) return;
+      teamScores[currentTeam] = lastEvaluation.score;
+
+      const nextTeam = Object.keys(teamScores).map(Number).find(id => teamScores[id] === null);
+      if (nextTeam) {
+        selectTeam(nextTeam);
+      } else {
+        renderTeamChips();
+        clearDrawing();
+      }
+      updateRanking();
+    }
+
+    function updateRanking() {
+      const finished = Object.keys(teamScores)
+        .map(Number)
+        .filter(id => teamScores[id] !== null);
+
+      if (finished.length < NUM_TEAMS) {
+        rankSection.classList.add('d-none');
+        return;
+      }
+
+      const ranked = finished
+        .map(id => ({ id: id, score: teamScores[id] }))
+        .sort((a, b) => b.score - a.score);
+
+      rankBody.innerHTML = ranked.map((item, index) => {
+        const point = index < RANK_POINTS.length ? RANK_POINTS[index] : 0;
+        const medal = index < MEDALS.length ? MEDALS[index] : '';
+        return '<tr>' +
+          '<td>' + (medal || (index + 1)) + '</td>' +
+          '<td>' + item.id + '모둠</td>' +
+          '<td>' + item.score.toFixed(1) + '점</td>' +
+          '<td class="point">' + point + '점</td>' +
+        '</tr>';
+      }).join('');
+
+      rankSection.classList.remove('d-none');
+    }
+
+    function resetAll() {
+      teamScores = {};
+      for (let id = 1; id <= NUM_TEAMS; id++) teamScores[id] = null;
+      currentTeam = 1;
+      rankSection.classList.add('d-none');
+      clearDrawing();
+      renderTeamChips();
+    }
+
+    /* ---------- 그리기 이벤트 ---------- */
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (teamScores[currentTeam] !== null) return; // 이미 확정한 모둠
+      isDrawing = true;
+      drawnPoints = [pointFromEvent(event)];
+      lastEvaluation = null;
+      canvasHint.classList.add('d-none');
+      canvas.setPointerCapture(event.pointerId);
+      redraw();
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+      if (!isDrawing) return;
+      const point = pointFromEvent(event);
+      const previous = drawnPoints[drawnPoints.length - 1];
+      if (Math.hypot(point.x - previous.x, point.y - previous.y) < 2) return;
+      drawnPoints.push(point);
+      redraw();
+    });
+
+    function finishDrawing() {
+      if (!isDrawing) return;
+      isDrawing = false;
+      lastEvaluation = evaluateDrawing(drawnPoints);
+      redraw();
+      showScore(lastEvaluation);
+      retryButton.disabled = false;
+      confirmButton.disabled = !lastEvaluation.ok;
+    }
+
+    canvas.addEventListener('pointerup', finishDrawing);
+    canvas.addEventListener('pointercancel', finishDrawing);
+    canvas.addEventListener('pointerleave', finishDrawing);
+
+    retryButton.addEventListener('click', clearDrawing);
+    confirmButton.addEventListener('click', confirmScore);
+    resetAllButton.addEventListener('click', resetAll);
+    window.addEventListener('resize', resizeCanvas);
+
+    resetAll();
+    resizeCanvas();
+  </script>
+</body>
+
+</html>
