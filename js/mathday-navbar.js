@@ -13,7 +13,7 @@
   // 메뉴 목록: 파일을 추가하면 이 배열에만 항목을 넣으면 됩니다.
   const menuItems = [
     { file: 'memorize.html', label: 'π 외우자!', icon: 'bi-lightbulb' },
-    { file: 'stopwatch.html', label: '31.4초 멈춰라!', icon: 'bi-stopwatch' },
+    { file: 'stopwatch.html', label: 'π×10초 멈춰라!', icon: 'bi-stopwatch' },
     { file: 'slider.html', label: 'π×10 맞추기!', icon: 'bi-sliders' },
     { file: 'circle.html', label: '완벽한 원 그리기', icon: 'bi-circle' },
   ];
