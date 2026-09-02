@@ -26,7 +26,7 @@
                     "title": "체험수학",
                     "items": [
                         { "name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html" },
-                        { "name": "파이데이", "path": "https://mathday.streamlit.app/", "external": true }
+                        { "name": "파이데이", "path": "pages/middleschool/etc/mathday/index.html" }
                     ]
                 },
                 {
