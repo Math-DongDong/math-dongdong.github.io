@@ -127,20 +127,20 @@ async function showRegistrationModal(user) {
     ensureTeacherModalDOM();
     const modalEl = document.getElementById('teacherRegModal');
     const bsModal = new bootstrap.Modal(modalEl);
-    
+
     document.getElementById('teacherSchoolInput').value = '';
     document.getElementById('teacherNameInput').value = '';
-    
+
     return new Promise((resolve) => {
         document.getElementById('btnSubmitReg').onclick = async () => {
             const school = document.getElementById('teacherSchoolInput').value.trim();
             const name = document.getElementById('teacherNameInput').value.trim();
-            
+
             if (!school || !name) {
                 alert("학교명과 이름을 모두 입력해주세요.");
                 return;
             }
-            
+
             try {
                 await setDoc(doc(db, "teachers", user.uid), {
                     email: user.email,
@@ -156,17 +156,17 @@ async function showRegistrationModal(user) {
                 alert("등록 중 오류가 발생했습니다.");
             }
         };
-        
+
         document.getElementById('btnCancelReg').onclick = async () => {
             try {
                 await deleteUser(user);
-            } catch(e) {
+            } catch (e) {
                 await signOut(auth);
             }
             bsModal.hide();
             resolve(false);
         };
-        
+
         bsModal.show();
     });
 }
@@ -175,10 +175,10 @@ async function showTeacherInfoModal(user, docData) {
     ensureTeacherInfoModalDOM();
     const modalEl = document.getElementById('teacherInfoModal');
     const bsModal = new bootstrap.Modal(modalEl);
-    
+
     document.getElementById('editTeacherSchoolInput').value = docData.school || '';
     document.getElementById('editTeacherNameInput').value = docData.name || '';
-    
+
     document.getElementById('btnSaveInfo').onclick = async () => {
         const school = document.getElementById('editTeacherSchoolInput').value.trim();
         if (!school) {
@@ -195,7 +195,7 @@ async function showTeacherInfoModal(user, docData) {
             alert("저장 중 오류가 발생했습니다.");
         }
     };
-    
+
     document.getElementById('btnDeleteAccount').onclick = async () => {
         if (confirm("정말 탈퇴하시겠습니까? (이 작업은 되돌릴 수 없습니다)")) {
             try {
@@ -209,37 +209,37 @@ async function showTeacherInfoModal(user, docData) {
             }
         }
     };
-    
+
     bsModal.show();
 }
 
 function handleAdminAlert() {
     const today = new Date().toLocaleDateString();
     const hideAlertDate = localStorage.getItem('hideAdminAlertDate');
-    
+
     if (hideAlertDate === today) return; // Hidden for today
-    
+
     import("https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js").then(async ({ collection, query, where, getDocs }) => {
         const q = query(collection(db, "teachers"), where("status", "==", "pending"));
         const snapshot = await getDocs(q);
         if (!snapshot.empty) {
             ensureAdminAlertModalDOM();
             document.getElementById('adminAlertMessage').innerHTML = `현재 <strong>${snapshot.size}건</strong>의 교사 가입 승인 요청이 대기 중입니다.`;
-            
+
             const modalEl = document.getElementById('adminAlertModal');
             const bsModal = new bootstrap.Modal(modalEl);
-            
+
             document.getElementById('btnGoToAdmin').onclick = () => {
                 bsModal.hide();
                 goToAdminPage();
             };
-            
+
             modalEl.addEventListener('hidden.bs.modal', () => {
                 if (document.getElementById('chkHideAdminAlert').checked) {
                     localStorage.setItem('hideAdminAlertDate', new Date().toLocaleDateString());
                 }
             });
-            
+
             bsModal.show();
         }
     });
@@ -260,6 +260,12 @@ function getRootPathForAuth() {
 function goToAdminPage() {
     const rootPath = getRootPathForAuth();
     window.location.href = `${rootPath}pages/admin/account_manager.html`;
+}
+
+/** 학생 관리 페이지 (학교별 학생 정보·PIN·기기 관리) */
+function goToStudentManagerPage() {
+    const rootPath = getRootPathForAuth();
+    window.location.href = `${rootPath}pages/admin/student_manager.html`;
 }
 
 function notifyAuthChanged() {
@@ -284,9 +290,9 @@ function renderNavbarAuth(retryCount = 0) {
         }
         return;
     }
-    
+
     const user = auth.currentUser;
-    
+
     if (!user) {
         window.isApprovedTeacher = false;
         window.isAdmin = false;
@@ -319,13 +325,13 @@ function renderNavbarAuth(retryCount = 0) {
 
     window.currentTeacherUid = user.uid;
     window.currentTeacherEmail = user.email;
-    
+
     // User is logged in, check Firestore
     getDoc(doc(db, "teachers", user.uid)).then(docSnap => {
         if (!docSnap.exists()) {
             if (user.email === ADMIN_EMAIL) {
                 // Admin doesn't need to register as a teacher to get access, but let's register them automatically
-                 setDoc(doc(db, "teachers", user.uid), {
+                setDoc(doc(db, "teachers", user.uid), {
                     email: user.email,
                     school: '관리자',
                     name: '관리자',
@@ -334,19 +340,19 @@ function renderNavbarAuth(retryCount = 0) {
                 }).then(() => renderNavbarAuth());
                 return;
             }
-            
+
             // Show registration modal
             showRegistrationModal(user).then(registered => {
                 if (registered) renderNavbarAuth();
             });
             return;
         }
-        
+
         const data = docSnap.data();
         window.currentTeacherName = (data && data.name) || user.displayName || '교사';
         window.currentTeacherSchool = (data && data.school) || '';
         let btnHtml = '';
-        
+
         if (user.email === ADMIN_EMAIL) {
             window.isAdmin = true;
             window.isApprovedTeacher = true; // Admin is also approved
@@ -358,26 +364,31 @@ function renderNavbarAuth(retryCount = 0) {
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoAdmin"><i class="bi bi-gear-fill me-2"></i>계정 관리</a></li>
+                        <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
                     </ul>
                 </div>
             `;
-            
+
             setTimeout(() => {
                 document.getElementById('btnGoAdmin').onclick = (e) => {
                     e.preventDefault();
                     goToAdminPage();
+                };
+                document.getElementById('btnGoStudents').onclick = (e) => {
+                    e.preventDefault();
+                    goToStudentManagerPage();
                 };
                 document.getElementById('btnTeacherLogout').onclick = (e) => {
                     e.preventDefault();
                     signOut(auth);
                 };
             }, 0);
-            
+
             // Check pending requests
             handleAdminAlert();
-            
+
         } else if (data.status === 'pending') {
             window.isApprovedTeacher = false;
             notifyAuthChanged();
@@ -397,6 +408,7 @@ function renderNavbarAuth(retryCount = 0) {
                         ${data.name} 선생님
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
+                        <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
@@ -404,6 +416,10 @@ function renderNavbarAuth(retryCount = 0) {
                 </div>
             `;
             setTimeout(() => {
+                document.getElementById('btnGoStudents').onclick = (e) => {
+                    e.preventDefault();
+                    goToStudentManagerPage();
+                };
                 document.getElementById('btnEditInfo').onclick = (e) => {
                     e.preventDefault();
                     showTeacherInfoModal(user, data);
@@ -414,10 +430,10 @@ function renderNavbarAuth(retryCount = 0) {
                 };
             }, 0);
         }
-        
+
         container.innerHTML = btnHtml;
         notifyAuthChanged();
-        
+
     }).catch(err => {
         console.error("Error fetching teacher info:", err);
         container.innerHTML = `<button class="btn btn-danger btn-sm fw-bold" id="btnTeacherLogout">오류 발생 (로그아웃)</button>`;

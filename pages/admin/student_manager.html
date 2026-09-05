@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학생 관리</title>
+    <link rel="icon" href="../../assets/images/mainPage/동동이.jpg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../css/navbar.css">
+    <link rel="stylesheet" href="../../css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        .filter-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .checkbox-scroll {
+            max-height: 132px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .device-chip {
+            font-size: 0.72rem;
+            background: #eef2ff;
+            color: #4338ca;
+            border-radius: 999px;
+            padding: 2px 8px;
+            display: inline-block;
+            margin: 1px;
+        }
+
+        .nick-chip {
+            font-size: 0.72rem;
+            background: #f1f5f9;
+            color: #475569;
+            border-radius: 6px;
+            padding: 2px 6px;
+            display: inline-block;
+            margin: 1px;
+        }
+
+        #studentTable td,
+        #studentTable th {
+            vertical-align: middle;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="navbar-placeholder"></div>
+    <script src="../../js/navbar.js"></script>
+
+    <!-- 공통 모달 (room-auth.js의 customAlert / customConfirm이 사용) -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
+                        id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="container py-4">
+        <header class="d-flex align-items-center gap-2 mb-4">
+            <div class="fs-3">🧑‍🎓</div>
+            <div>
+                <h2 class="fw-bold mb-0 text-dark">학생 관리</h2>
+                <div class="text-muted small">학교·담당 선생님별로 학생의 PIN과 등록 기기를 관리합니다.</div>
+            </div>
+        </header>
+
+        <!-- 접근 제한 안내 -->
+        <section id="gate-section">
+            <div class="alert alert-warning rounded-4 border-0 shadow-sm">
+                <strong>승인된 선생님만 이용할 수 있습니다.</strong><br>
+                <span class="small">화면 오른쪽 위에서 교사 로그인을 완료한 뒤 다시 시도해주세요.</span>
+            </div>
+        </section>
+
+        <!-- 관리 화면 -->
+        <section id="manager-section" class="d-none">
+            <div class="filter-box mb-4">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold text-secondary">학교</label>
+                        <select id="schoolSelect" class="form-select fw-bold bg-white"></select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold text-secondary">담당 선생님 (다중 선택)</label>
+                        <div id="teacherFilterList" class="checkbox-scroll"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold text-secondary">학번·닉네임 검색</label>
+                        <input type="text" id="searchInput" class="form-control bg-white"
+                            placeholder="예: 20315, 부끄러운 어피치">
+                        <button id="btnReload" class="btn btn-outline-secondary btn-sm w-100 mt-2 fw-bold">
+                            <i class="bi bi-arrow-clockwise"></i> 새로고침
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <div>
+                    <span class="badge bg-primary fs-6" id="countBadge">0명</span>
+                    <span class="badge bg-light text-dark fs-6 ms-1" id="selectedBadge">선택 0명</span>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="btnBulkPin" class="btn btn-outline-danger btn-sm fw-bold"><i class="bi bi-key-fill"></i>
+                        선택 PIN 초기화</button>
+                    <button id="btnBulkDevice" class="btn btn-outline-warning btn-sm fw-bold"><i
+                            class="bi bi-phone"></i> 선택 기기 초기화</button>
+                    <button id="btnBulkPresence" class="btn btn-outline-secondary btn-sm fw-bold"><i
+                            class="bi bi-power"></i> 선택 접속 해제</button>
+                    <button id="btnBulkDelete" class="btn btn-danger btn-sm fw-bold"><i class="bi bi-trash"></i> 선택
+                        삭제</button>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="studentTable">
+                        <thead class="table-light">
+                            <tr class="text-center">
+                                <th style="width:38px;"><input type="checkbox" class="form-check-input" id="checkAll">
+                                </th>
+                                <th class="text-start">학번 / 이름</th>
+                                <th>담당 선생님</th>
+                                <th>PIN</th>
+                                <th>등록 기기</th>
+                                <th class="text-start">게임 닉네임</th>
+                                <th>접속</th>
+                                <th>최근 기록</th>
+                                <th>관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="studentTbody">
+                            <tr>
+                                <td colspan="9" class="py-4 text-muted text-center">학교를 선택해주세요.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <p class="text-muted small mt-3 mb-0">
+                기기는 학생 1명당 최대 <b id="maxDeviceText">3</b>대까지 등록됩니다. 학생이 휴대폰을 바꿔 한도를 넘겼다면 <b>기기 초기화</b>를
+                눌러주세요. 다른 기기에서 접속한 기록이 남아 로그인이 막힐 때는 <b>접속 해제</b>를 사용하면 됩니다.
+            </p>
+        </section>
+    </main>
+
+    <!-- 담당 선생님 수정 모달 -->
+    <div class="modal fade" id="editTeacherModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">담당 선생님 수정</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body py-3">
+                    <p class="text-muted small mb-2" id="editTeacherTarget"></p>
+                    <div id="editTeacherList" class="checkbox-scroll"></div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary rounded-3 px-3" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold"
+                        id="btnSaveTeachers">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from '../../js/firebase-config.js';
+        import {
+            collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+        import {
+            escapeHtml, customAlert, customConfirm, isAccountOnline,
+            fetchApprovedTeachers, fetchSchoolList, MAX_DEVICES
+        } from '../../js/room-auth.js';
+
+        const gateSection = document.getElementById('gate-section');
+        const managerSection = document.getElementById('manager-section');
+        const schoolSelect = document.getElementById('schoolSelect');
+        const teacherFilterList = document.getElementById('teacherFilterList');
+        const searchInput = document.getElementById('searchInput');
+        const tbody = document.getElementById('studentTbody');
+        const countBadge = document.getElementById('countBadge');
+        const selectedBadge = document.getElementById('selectedBadge');
+
+        document.getElementById('maxDeviceText').textContent = MAX_DEVICES;
+
+        let allStudents = [];
+        let initialized = false;
+
+        // ── 권한 확인 ─────────────────────────────────────────────
+        function applyAuthState() {
+            const allowed = !!(window.isApprovedTeacher || window.isAdmin);
+            gateSection.classList.toggle('d-none', allowed);
+            managerSection.classList.toggle('d-none', !allowed);
+            if (allowed && !initialized) { initialized = true; setupSchools(); }
+        }
+        window.addEventListener('teacherAuthChanged', applyAuthState);
+        [0, 400, 1200, 2500].forEach(ms => setTimeout(applyAuthState, ms));
+
+        // ── 학교 목록 ─────────────────────────────────────────────
+        async function setupSchools() {
+            const mySchool = window.currentTeacherSchool || '';
+            if (window.isAdmin) {
+                const schools = await fetchSchoolList();
+                schoolSelect.innerHTML = '<option value="">-- 학교 선택 --</option>'
+                    + schools.map(s => `<option value="${escapeHtml(s)}">🏫 ${escapeHtml(s)}</option>`).join('');
+            } else {
+                schoolSelect.innerHTML = mySchool
+                    ? `<option value="${escapeHtml(mySchool)}">🏫 ${escapeHtml(mySchool)}</option>`
+                    : '<option value="">소속 학교가 없습니다 (정보수정에서 등록해주세요)</option>';
+            }
+            if (schoolSelect.value) loadStudents();
+        }
+
+        // ── 담당 선생님 체크박스(필터) ──────────────────────────────
+        async function renderTeacherFilter(school) {
+            const approved = (await fetchApprovedTeachers()).filter(t => t.school === school).map(t => t.name);
+            const fromStudents = allStudents.flatMap(s => Array.isArray(s.teachers) ? s.teachers : []);
+            const names = [...new Set([...approved, ...fromStudents])].sort((a, b) => a.localeCompare(b, 'ko'));
+            const myName = window.currentTeacherName || '';
+
+            if (names.length === 0) {
+                teacherFilterList.innerHTML = '<div class="text-muted small">등록된 선생님이 없습니다.</div>';
+                return;
+            }
+            teacherFilterList.innerHTML = names.map((n, i) => `
+                <div class="form-check">
+                    <input class="form-check-input teacher-filter" type="checkbox" value="${escapeHtml(n)}" id="tf${i}"
+                        ${(!window.isAdmin && n === myName) ? 'checked' : ''}>
+                    <label class="form-check-label small fw-bold" for="tf${i}">${escapeHtml(n)} 선생님</label>
+                </div>`).join('');
+            teacherFilterList.querySelectorAll('.teacher-filter').forEach(cb => cb.onchange = renderTable);
+        }
+
+        // ── 학생 조회 ─────────────────────────────────────────────
+        async function loadStudents() {
+            const school = schoolSelect.value;
+            if (!school) {
+                allStudents = [];
+                tbody.innerHTML = '<tr><td colspan="9" class="py-4 text-muted text-center">학교를 선택해주세요.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '<tr><td colspan="9" class="py-4 text-muted text-center">불러오는 중...</td></tr>';
+            try {
+                const snap = await getDocs(query(collection(db, "student_auth"), where("school", "==", school)));
+                allStudents = [];
+                snap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
+                allStudents.sort((a, b) =>
+                    String(a.studentId || '').localeCompare(String(b.studentId || ''), 'ko', { numeric: true }));
+            } catch (e) {
+                console.error(e);
+                tbody.innerHTML = '<tr><td colspan="9" class="py-4 text-danger text-center">학생 정보를 불러오지 못했습니다. (Firestore 권한을 확인해주세요)</td></tr>';
+                return;
+            }
+            await renderTeacherFilter(school);
+            renderTable();
+        }
+
+        // ── 표 렌더링 ─────────────────────────────────────────────
+        function selectedTeacherFilters() {
+            return [...teacherFilterList.querySelectorAll('.teacher-filter:checked')].map(cb => cb.value);
+        }
+
+        function visibleStudents() {
+            const filters = selectedTeacherFilters();
+            const keyword = searchInput.value.trim().toLowerCase();
+            return allStudents.filter(s => {
+                const myTeachers = Array.isArray(s.teachers) ? s.teachers : [];
+                if (filters.length > 0 && !myTeachers.some(t => filters.includes(t))) return false;
+                if (!keyword) return true;
+                const nicks = Object.values(s.nicknames || {}).join(' ');
+                return `${s.studentId || ''} ${nicks}`.toLowerCase().includes(keyword);
+            });
+        }
+
+        function formatTime(ts) {
+            try {
+                if (ts?.toMillis) return new Date(ts.toMillis()).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+                if (typeof ts === 'number') return new Date(ts).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+            } catch (e) { }
+            return '-';
+        }
+
+        function renderTable() {
+            const list = visibleStudents();
+            countBadge.textContent = `${list.length}명`;
+            document.getElementById('checkAll').checked = false;
+
+            if (list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="py-4 text-muted text-center">조건에 맞는 학생이 없습니다.</td></tr>';
+                updateSelectedBadge();
+                return;
+            }
+
+            tbody.innerHTML = list.map(s => {
+                const devices = Array.isArray(s.devices) ? s.devices : [];
+                const teachers = Array.isArray(s.teachers) ? s.teachers : [];
+                const nicks = Object.values(s.nicknames || {});
+                const pinBadge = (s.pin === null || s.pin === undefined)
+                    ? '<span class="badge bg-warning text-dark">재설정 대기</span>'
+                    : '<span class="badge bg-success">설정됨</span>';
+                const devBadge = devices.length >= MAX_DEVICES ? 'bg-danger' : 'bg-secondary';
+                const online = isAccountOnline(s);
+                return `
+                <tr>
+                    <td class="text-center"><input type="checkbox" class="form-check-input row-check" data-id="${escapeHtml(s.id)}"></td>
+                    <td class="fw-bold">${escapeHtml(s.studentId || s.id)}</td>
+                    <td class="text-center small">${teachers.length ? escapeHtml(teachers.join(', ')) : '<span class="text-muted">미지정</span>'}</td>
+                    <td class="text-center">${pinBadge}</td>
+                    <td class="text-center">
+                        <span class="badge ${devBadge}">${devices.length}/${MAX_DEVICES}</span>
+                        <div>${devices.map(d => `<span class="device-chip">${escapeHtml(d.label || '기기')}</span>`).join('')}</div>
+                    </td>
+                    <td>${nicks.length ? nicks.map(n => `<span class="nick-chip">${escapeHtml(n)}</span>`).join('') : '<span class="text-muted small">-</span>'}</td>
+                    <td class="text-center">${online ? '<span class="badge bg-success">접속 중</span>' : '<span class="badge bg-light text-muted">대기</span>'}</td>
+                    <td class="text-center small text-muted">${formatTime(s.lastActive || s.updatedAt)}</td>
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-danger btn-act" data-act="pin" data-id="${escapeHtml(s.id)}" title="PIN 초기화"><i class="bi bi-key-fill"></i></button>
+                            <button class="btn btn-outline-warning btn-act" data-act="device" data-id="${escapeHtml(s.id)}" title="기기 초기화"><i class="bi bi-phone"></i></button>
+                            <button class="btn btn-outline-secondary btn-act" data-act="presence" data-id="${escapeHtml(s.id)}" title="접속 해제"><i class="bi bi-power"></i></button>
+                            <button class="btn btn-outline-primary btn-act" data-act="teacher" data-id="${escapeHtml(s.id)}" title="담당 선생님 수정"><i class="bi bi-person-gear"></i></button>
+                            <button class="btn btn-outline-dark btn-act" data-act="delete" data-id="${escapeHtml(s.id)}" title="학생 삭제"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            tbody.querySelectorAll('.row-check').forEach(cb => cb.onchange = updateSelectedBadge);
+            tbody.querySelectorAll('.btn-act').forEach(btn => btn.onclick = () => handleAction(btn.dataset.act, btn.dataset.id));
+            updateSelectedBadge();
+        }
+
+        function checkedIds() {
+            return [...tbody.querySelectorAll('.row-check:checked')].map(cb => cb.dataset.id);
+        }
+        function updateSelectedBadge() {
+            selectedBadge.textContent = `선택 ${checkedIds().length}명`;
+        }
+
+        // ── 개별 작업 ─────────────────────────────────────────────
+        async function handleAction(act, id) {
+            const student = allStudents.find(s => s.id === id);
+            if (!student) return;
+            const label = escapeHtml(student.studentId || id);
+
+            if (act === 'teacher') return openTeacherEditor(student);
+
+            if (act === 'pin') {
+                if (!await customConfirm("PIN 초기화", `<b>${label}</b> 학생의 PIN을 초기화할까요?<br>다음 접속 때 새 PIN을 설정하게 됩니다.`)) return;
+                await updateDoc(doc(db, "student_auth", id), { pin: null, presence: 'offline', updatedAt: serverTimestamp() });
+            } else if (act === 'device') {
+                if (!await customConfirm("기기 초기화", `<b>${label}</b> 학생의 등록 기기(${(student.devices || []).length}대)를 모두 삭제할까요?<br>새 기기에서 다시 등록할 수 있게 됩니다.`)) return;
+                await updateDoc(doc(db, "student_auth", id), { devices: [], updatedAt: serverTimestamp() });
+            } else if (act === 'presence') {
+                if (!await customConfirm("접속 해제", `<b>${label}</b> 학생의 접속 상태를 해제할까요?<br>다른 기기에서 다시 로그인할 수 있게 됩니다.`)) return;
+                await updateDoc(doc(db, "student_auth", id), { presence: 'offline', updatedAt: serverTimestamp() });
+            } else if (act === 'delete') {
+                if (!await customConfirm("학생 삭제", `<b>${label}</b> 학생 정보를 완전히 삭제할까요?<br>되돌릴 수 없습니다.`)) return;
+                await deleteDoc(doc(db, "student_auth", id));
+            }
+            await loadStudents();
+        }
+
+        // ── 일괄 작업 ─────────────────────────────────────────────
+        async function bulkRun(kind) {
+            const ids = checkedIds();
+            if (ids.length === 0) return customAlert("알림", "학생을 먼저 선택해주세요.");
+            const msg = kind === 'pin' ? 'PIN을 초기화'
+                : kind === 'device' ? '등록 기기를 초기화'
+                    : kind === 'presence' ? '접속 상태를 해제'
+                        : '정보를 삭제';
+            if (!await customConfirm("일괄 작업", `선택한 <b>${ids.length}명</b>의 ${msg}할까요?`)) return;
+
+            let done = 0;
+            for (const id of ids) {
+                try {
+                    if (kind === 'pin') await updateDoc(doc(db, "student_auth", id), { pin: null, presence: 'offline', updatedAt: serverTimestamp() });
+                    else if (kind === 'device') await updateDoc(doc(db, "student_auth", id), { devices: [], updatedAt: serverTimestamp() });
+                    else if (kind === 'presence') await updateDoc(doc(db, "student_auth", id), { presence: 'offline', updatedAt: serverTimestamp() });
+                    else await deleteDoc(doc(db, "student_auth", id));
+                    done++;
+                } catch (e) { console.error(id, e); }
+            }
+            await loadStudents();
+            await customAlert("완료", `${done}명 처리되었습니다.`);
+        }
+
+        // ── 담당 선생님 수정 ───────────────────────────────────────
+        let editingId = null;
+        let editModalInstance = null;
+
+        async function openTeacherEditor(student) {
+            editingId = student.id;
+            document.getElementById('editTeacherTarget').innerHTML =
+                `<b>${escapeHtml(student.studentId || student.id)}</b> 학생의 담당 선생님을 선택하세요. (여러 명 선택 가능)`;
+
+            const names = (await fetchApprovedTeachers())
+                .filter(t => t.school === student.school)
+                .map(t => t.name)
+                .sort((a, b) => a.localeCompare(b, 'ko'));
+            const preset = Array.isArray(student.teachers) ? student.teachers : [];
+
+            document.getElementById('editTeacherList').innerHTML = names.length
+                ? names.map((n, i) => `
+                    <div class="form-check">
+                        <input class="form-check-input edit-teacher" type="checkbox" value="${escapeHtml(n)}" id="et${i}" ${preset.includes(n) ? 'checked' : ''}>
+                        <label class="form-check-label small fw-bold" for="et${i}">${escapeHtml(n)} 선생님</label>
+                    </div>`).join('')
+                : '<div class="text-muted small">이 학교에 승인된 선생님이 없습니다.</div>';
+
+            if (!editModalInstance) editModalInstance = new bootstrap.Modal(document.getElementById('editTeacherModal'));
+            editModalInstance.show();
+        }
+
+        document.getElementById('btnSaveTeachers').onclick = async () => {
+            if (!editingId) return;
+            const teachers = [...document.querySelectorAll('.edit-teacher:checked')].map(cb => cb.value);
+            try {
+                await updateDoc(doc(db, "student_auth", editingId), { teachers, updatedAt: serverTimestamp() });
+                editModalInstance.hide();
+                await loadStudents();
+            } catch (e) {
+                await customAlert("오류", "담당 선생님 정보를 저장하지 못했습니다.");
+            }
+        };
+
+        // ── 이벤트 연결 ───────────────────────────────────────────
+        schoolSelect.onchange = loadStudents;
+        searchInput.oninput = renderTable;
+        document.getElementById('btnReload').onclick = loadStudents;
+        document.getElementById('checkAll').onchange = (e) => {
+            tbody.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
+            updateSelectedBadge();
+        };
+        document.getElementById('btnBulkPin').onclick = () => bulkRun('pin');
+        document.getElementById('btnBulkDevice').onclick = () => bulkRun('device');
+        document.getElementById('btnBulkPresence').onclick = () => bulkRun('presence');
+        document.getElementById('btnBulkDelete').onclick = () => bulkRun('delete');
+    </script>
+</body>
+
+</html>
