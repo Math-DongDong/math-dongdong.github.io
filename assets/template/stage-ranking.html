@@ -1048,10 +1048,24 @@
                 const select = document.getElementById('roomSelect');
                 const curr = select.value;
                 select.innerHTML = '<option value="">방을 선택하세요</option>';
-                snap.forEach(d => select.innerHTML += `<option value="${d.id}">${d.id}</option>`);
+                let count = 0;
+                snap.forEach(d => {
+                    const data = d.data();
+                    if (!window.isAdmin) {
+                        const myUid = window.currentTeacherUid;
+                        const myEmail = window.currentTeacherEmail;
+                        if (data.createdBy !== myUid && data.creatorEmail !== myEmail) return;
+                    }
+                    count++;
+                    select.innerHTML += `<option value="${d.id}">${d.id}</option>`;
+                });
+                if (count === 0 && !window.isAdmin) {
+                    select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
+                }
                 if (curr && document.querySelector(`#roomSelect option[value="${curr}"]`)) select.value = curr;
             });
         }
+        window.addEventListener('teacherAuthChanged', () => loadRooms());
 
         document.getElementById('roomSelect').addEventListener('change', (e) => {
             currentAdminRoom = e.target.value;
@@ -1114,7 +1128,13 @@
                 const d = await getDoc(roomDocRef(code));
                 if (!d.exists()) break;
             }
-            await setDoc(roomDocRef(code), { roomCode: code, createdAt: serverTimestamp() });
+            await setDoc(roomDocRef(code), {
+                roomCode: code,
+                createdAt: serverTimestamp(),
+                createdBy: window.currentTeacherUid || '',
+                creatorEmail: window.currentTeacherEmail || '',
+                creatorName: window.currentTeacherName || ''
+            });
             customAlert("방 생성", `새로운 방 코드는 [${code}] 입니다.`);
             document.getElementById('roomSelect').value = code;
             currentAdminRoom = code;
@@ -1123,6 +1143,11 @@
 
         document.getElementById('btn-delete-room').addEventListener('click', async () => {
             if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
+            const rSnapCheck = await getDoc(roomDocRef(currentAdminRoom));
+            const rData = rSnapCheck.data() || {};
+            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
+                return customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
+            }
             const confirmed = await customConfirm("방 삭제", `방 [${currentAdminRoom}] 데이터를 모두 삭제하시겠습니까?`);
             if (!confirmed) return;
             const sSnap = await getDocs(studentsCollectionRef(currentAdminRoom)); sSnap.forEach(d => deleteDoc(d.ref));

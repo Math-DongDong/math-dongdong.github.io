@@ -697,7 +697,10 @@
                 await set(roomRef(roomCode), {
                     settings: { teamsCount: teams, maxSoldiers: soldiers, maxRounds: rounds },
                     state: { currentRound: 1, status: "playing" },
-                    createdAt: serverTimestamp()
+                    createdAt: serverTimestamp(),
+                    createdBy: window.currentTeacherUid || '',
+                    creatorEmail: window.currentTeacherEmail || '',
+                    creatorName: window.currentTeacherName || ''
                 });
 
                 await loadAdminRooms();
@@ -722,7 +725,15 @@
                 select.innerHTML = '<option value="">방을 선택하세요</option>';
                 const rooms = [];
                 if (snapshot.exists()) {
-                    snapshot.forEach(docSnap => { rooms.push({ id: docSnap.key, data: docSnap.val() || {} }); });
+                    snapshot.forEach(docSnap => {
+                        const data = docSnap.val() || {};
+                        if (!window.isAdmin) {
+                            const myUid = window.currentTeacherUid;
+                            const myEmail = window.currentTeacherEmail;
+                            if (data.createdBy !== myUid && data.creatorEmail !== myEmail) return;
+                        }
+                        rooms.push({ id: docSnap.key, data });
+                    });
                     rooms.sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
                     rooms.forEach(room => {
                         const option = document.createElement('option');
@@ -730,6 +741,9 @@
                         option.textContent = room.id;
                         select.appendChild(option);
                     });
+                    if (rooms.length === 0 && !window.isAdmin) {
+                        select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
+                    }
                     if (keep && rooms.some(r => r.id === keep)) select.value = keep;
                 }
             } catch (e) {
@@ -737,6 +751,7 @@
                 await customAlert("오류", "방 목록을 불러오지 못했습니다.<br>네트워크와 접근 권한을 확인해주세요.");
             }
         }
+        window.addEventListener('teacherAuthChanged', () => loadAdminRooms());
 
         function stopAdminMonitoring() {
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
@@ -810,6 +825,12 @@
                 `<small class="text-muted">삭제된 방과 관련된 모든 모둠 데이터는 복구할 수 없습니다.</small>`
             );
             if (!confirmed) return;
+
+            const rSnap = await get(roomRef(roomCode));
+            const rData = rSnap.exists() ? rSnap.val() : {};
+            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
+                return await customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
+            }
 
             const delBtn = $('btn-delete-room');
             if (delBtn) delBtn.disabled = true;

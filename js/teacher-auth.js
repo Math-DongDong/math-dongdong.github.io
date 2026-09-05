@@ -7,6 +7,9 @@ const ADMIN_EMAIL = 'jjes0107@gmail.com';
 window.isApprovedTeacher = false;
 window.isAdmin = false;
 window.pendingTeacherRequests = 0; // For admin alert
+window.currentTeacherUid = null;
+window.currentTeacherEmail = null;
+window.currentTeacherName = null;
 
 export function updateDashboardButtons() {
     const dashBtns = document.querySelectorAll('#btnOpenDashboard, #btn-admin-dash');
@@ -262,7 +265,10 @@ function notifyAuthChanged() {
     window.dispatchEvent(new CustomEvent('teacherAuthChanged', {
         detail: {
             isApproved: window.isApprovedTeacher,
-            isAdmin: window.isAdmin
+            isAdmin: window.isAdmin,
+            uid: window.currentTeacherUid,
+            email: window.currentTeacherEmail,
+            name: window.currentTeacherName
         }
     }));
     updateDashboardButtons();
@@ -282,6 +288,9 @@ function renderNavbarAuth(retryCount = 0) {
     if (!user) {
         window.isApprovedTeacher = false;
         window.isAdmin = false;
+        window.currentTeacherUid = null;
+        window.currentTeacherEmail = null;
+        window.currentTeacherName = null;
         notifyAuthChanged();
         container.innerHTML = `<button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnTeacherLogin"><i class="bi bi-google me-1"></i> 교사 로그인</button>`;
         document.getElementById('btnTeacherLogin').onclick = () => {
@@ -304,6 +313,9 @@ function renderNavbarAuth(retryCount = 0) {
         };
         return;
     }
+
+    window.currentTeacherUid = user.uid;
+    window.currentTeacherEmail = user.email;
     
     // User is logged in, check Firestore
     getDoc(doc(db, "teachers", user.uid)).then(docSnap => {
@@ -328,6 +340,7 @@ function renderNavbarAuth(retryCount = 0) {
         }
         
         const data = docSnap.data();
+        window.currentTeacherName = (data && data.name) || user.displayName || '교사';
         let btnHtml = '';
         
         if (user.email === ADMIN_EMAIL) {
