@@ -789,7 +789,7 @@ export function showGuestExitButton(onExit) {
     document.body.insertAdjacentHTML('beforeend', btnHtml);
 
     document.getElementById('btnExitGuestMode')?.addEventListener('click', async () => {
-        const confirmed = await customConfirm("게스트 모드 종료", "게스트 모드를 종료하고 폰 주인의 계정으로 복구하시겠습니까?");
+        const confirmed = await customConfirm("게스트 모드 종료", "게스트 모드를 종료하시겠습니까?");
         if (!confirmed) return;
         hideGuestExitButton();
         if (typeof onExit === 'function') {
@@ -961,7 +961,7 @@ export function renderRoomEntrance(container, options = {}) {
             <div class="form-check form-switch mb-3 d-flex align-items-center justify-content-center gap-2">
                 <input class="form-check-input" type="checkbox" id="guestModeCheck" style="cursor: pointer;">
                 <label class="form-check-label small fw-bold text-secondary" for="guestModeCheck" style="cursor: pointer;">
-                    게스트 모드
+                    게스트 모드(공용기기 사용)
                 </label>
             </div>
 
