@@ -548,6 +548,9 @@
             <div id="dash-header-placeholder"></div>
             <script src="../../../js/dashboard-header.js" data-title="좀비헌터 대시보드"></script>
 
+            <!-- 게스트 대기자 알림 배너 영역 -->
+            <div id="pendingGuestsContainer" class="mb-3"></div>
+
             <!-- 성취도 오버뷰 -->
             <div class="row g-3 mb-4">
                 <div class="col-md-3">
@@ -601,9 +604,10 @@
     <script type="module">
         import { db } from '../../../js/firebase-config.js';
         import {
-            renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance
-        } from '../../../js/room-auth.js?v=2.1';
-        import { collection, doc, setDoc, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+            renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance,
+            promptRoomMode, showPinResetModal, escapeHtml
+        } from '../../../js/room-auth.js?v=2.2';
+        import { collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // 전역 상태
         let currentRoomCode = '';
@@ -710,7 +714,12 @@
         loadHallOfFame();
 
         renderRoomEntrance('room-entrance-container', {
-            onJoin: async (code, name) => {
+            getRoomData: async (code) => {
+                const snap = await getDoc(roomDocRef(code));
+                return snap.exists() ? snap.data() : null;
+            },
+            studentsCollectionRef: (code) => studentsCollectionRef(code),
+            onJoin: async (code, name, authInfo) => {
                 const roomSnap = await getDoc(roomDocRef(code));
                 if (!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
 
@@ -1408,6 +1417,9 @@
         }
 
         document.getElementById('btn-create-room').addEventListener('click', async () => {
+            const selectedMode = await promptRoomMode();
+            if (!selectedMode) return;
+
             let code;
             while (true) {
                 code = generateRoomCode();
@@ -1416,16 +1428,102 @@
             }
             await setDoc(roomDocRef(code), {
                 roomCode: code,
+                roomMode: selectedMode,
+                settings: { mode: selectedMode },
                 createdAt: serverTimestamp(),
                 createdBy: window.currentTeacherUid || '',
                 creatorEmail: window.currentTeacherEmail || '',
                 creatorName: window.currentTeacherName || ''
             });
-            customAlert("방 생성", `새로운 방 코드는 [${code}] 입니다.`);
+            await customAlert("방 생성 완료", `새로운 방 [<strong>${code}</strong>]이 생성되었습니다.<br>설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
             document.getElementById('roomSelect').value = code;
             currentAdminRoom = code;
             document.getElementById('roomSelect').dispatchEvent(new Event('change'));
         });
+
+        document.getElementById('btn-reset-pin')?.addEventListener('click', () => {
+            showPinResetModal(roomStudents);
+        });
+
+        function renderPendingGuests() {
+            const container = document.getElementById('pendingGuestsContainer');
+            if (!container) return;
+            if (!currentAdminRoom) { container.innerHTML = ''; return; }
+
+            const pendingList = roomStudents.filter(s => s.isGuest && s.status === 'pending');
+            if (pendingList.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="card border-warning bg-warning-subtle shadow-sm rounded-4 p-3 mb-3 animate__animated animate__fadeIn">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                            <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
+                            <span>⏳ 게스트 입장 대기자 (${pendingList.length}명)</span>
+                        </h6>
+                        <span class="badge bg-warning text-dark fw-bold">선생님 승인 필요</span>
+                    </div>
+                    <div class="d-flex flex-column gap-2">
+                        ${pendingList.map(g => `
+                            <div class="bg-white p-2 px-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-sm border">
+                                <div>
+                                    <strong class="text-primary fs-6">${escapeHtml(g.nickname)}</strong>
+                                    <span class="text-secondary small ms-2">(${escapeHtml(g.school || '')} / ${escapeHtml(g.studentId || '')})</span>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-success fw-bold px-3 btn-approve-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
+                                        <i class="bi bi-check-lg"></i> 승인 허용
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger fw-bold px-3 btn-reject-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
+                                        <i class="bi bi-x-lg"></i> 거절
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            container.querySelectorAll('.btn-approve-guest').forEach(btn => {
+                btn.onclick = async () => {
+                    const nick = btn.getAttribute('data-nick');
+                    const sKey = btn.getAttribute('data-key');
+                    btn.disabled = true;
+                    btn.textContent = "처리 중...";
+                    try {
+                        await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'online' });
+                        if (sKey) {
+                            await updateDoc(doc(db, "student_auth", sKey), { presence: 'online' });
+                        }
+                    } catch (err) {
+                        console.error("승인 처리 오류:", err);
+                        btn.disabled = false;
+                        btn.textContent = "승인 허용";
+                    }
+                };
+            });
+
+            container.querySelectorAll('.btn-reject-guest').forEach(btn => {
+                btn.onclick = async () => {
+                    const nick = btn.getAttribute('data-nick');
+                    const sKey = btn.getAttribute('data-key');
+                    btn.disabled = true;
+                    btn.textContent = "처리 중...";
+                    try {
+                        await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'rejected' });
+                        if (sKey) {
+                            await updateDoc(doc(db, "student_auth", sKey), { presence: 'offline' });
+                        }
+                    } catch (err) {
+                        console.error("거절 처리 오류:", err);
+                        btn.disabled = false;
+                        btn.textContent = "거절";
+                    }
+                };
+            });
+        }
 
         document.getElementById('btn-delete-room').addEventListener('click', async () => {
             if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
@@ -1445,6 +1543,7 @@
         });
 
         function renderDashboard() {
+            renderPendingGuests();
             if (!currentAdminRoom) {
                 document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
                 document.getElementById('dashAvgScore').innerText = '-';

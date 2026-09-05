@@ -14,6 +14,18 @@
  *    · guideSlides를 넘기지 않으면 버튼이 렌더링되지 않으므로,
  *      게임방법이 필요 없는 페이지는 기존 호출 코드를 그대로 쓰면 됩니다.
  */
+import { db } from "./firebase-config.js";
+import {
+    doc,
+    getDoc,
+    setDoc,
+    updateDoc,
+    collection,
+    getDocs,
+    onSnapshot,
+    serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
 // =====================================================================
 // 0. 공통 유틸
 // =====================================================================
@@ -85,6 +97,84 @@ export function clearRememberedEntrance() {
 }
 
 // =====================================================================
+// 0.55 학생 인증 정보 저장소 분리 (폰 주인 localStorage vs 게스트 sessionStorage)
+// =====================================================================
+export const OWNER_SCHOOL_KEY = 'studentAuth:school';
+export const OWNER_STUID_KEY = 'studentAuth:studentId';
+export const OWNER_PIN_KEY = 'studentAuth:pin';
+
+export const GUEST_SCHOOL_KEY = 'guestAuth:school';
+export const GUEST_STUID_KEY = 'guestAuth:studentId';
+export const GUEST_PIN_KEY = 'guestAuth:pin';
+export const GUEST_NICK_KEY = 'guestAuth:nickname';
+export const GUEST_FLAG_KEY = 'guestAuth:isGuest';
+
+/** 폰 주인 인증 정보 읽기 (localStorage) */
+export function getPhoneOwnerAuth() {
+    try {
+        const school = (localStorage.getItem(OWNER_SCHOOL_KEY) || '').trim();
+        const studentId = (localStorage.getItem(OWNER_STUID_KEY) || '').trim();
+        const pin = (localStorage.getItem(OWNER_PIN_KEY) || '').trim();
+        if (school && studentId && pin) {
+            return { school, studentId, pin };
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/** 폰 주인 인증 정보 영구 저장 (localStorage) */
+export function savePhoneOwnerAuth(school, studentId, pin) {
+    try {
+        localStorage.setItem(OWNER_SCHOOL_KEY, String(school ?? '').trim());
+        localStorage.setItem(OWNER_STUID_KEY, String(studentId ?? '').trim());
+        localStorage.setItem(OWNER_PIN_KEY, String(pin ?? '').trim());
+    } catch (e) { }
+}
+
+/** 게스트 정보 임시 저장 (sessionStorage만 사용, localStorage 접근 절대 금지) */
+export function saveGuestAuth(school, studentId, pin, nickname) {
+    try {
+        sessionStorage.setItem(GUEST_SCHOOL_KEY, String(school ?? '').trim());
+        sessionStorage.setItem(GUEST_STUID_KEY, String(studentId ?? '').trim());
+        sessionStorage.setItem(GUEST_PIN_KEY, String(pin ?? '').trim());
+        sessionStorage.setItem(GUEST_NICK_KEY, String(nickname ?? '').trim());
+        sessionStorage.setItem(GUEST_FLAG_KEY, 'true');
+    } catch (e) { }
+}
+
+/** 게스트 정보 읽기 (sessionStorage) */
+export function getGuestAuth() {
+    try {
+        if (sessionStorage.getItem(GUEST_FLAG_KEY) !== 'true') return null;
+        const school = (sessionStorage.getItem(GUEST_SCHOOL_KEY) || '').trim();
+        const studentId = (sessionStorage.getItem(GUEST_STUID_KEY) || '').trim();
+        const pin = (sessionStorage.getItem(GUEST_PIN_KEY) || '').trim();
+        const nickname = (sessionStorage.getItem(GUEST_NICK_KEY) || '').trim();
+        return { school, studentId, pin, nickname, isGuest: true };
+    } catch (e) {
+        return null;
+    }
+}
+
+/** 게스트 정보 파기 (sessionStorage) */
+export function clearGuestAuth() {
+    try {
+        sessionStorage.removeItem(GUEST_SCHOOL_KEY);
+        sessionStorage.removeItem(GUEST_STUID_KEY);
+        sessionStorage.removeItem(GUEST_PIN_KEY);
+        sessionStorage.removeItem(GUEST_NICK_KEY);
+        sessionStorage.removeItem(GUEST_FLAG_KEY);
+    } catch (e) { }
+}
+
+export function makeStudentKey(school, studentId) {
+    return `${String(school || '').trim()}_${String(studentId || '').trim()}`
+        .replace(INVALID_KEY_PATTERN, '_');
+}
+
+// =====================================================================
 // 0.6 자동 닉네임 생성기 (형용사 + 동물명/캐릭터)
 // =====================================================================
 // 형용사 60종 (길이 2~4자)
@@ -128,7 +218,6 @@ export function generateRandomNickname() {
 if (typeof window !== 'undefined') {
     window.generateRandomNickname = generateRandomNickname;
 }
-
 // =====================================================================
 // 1. 공통 모달 DOM 자동 생성 및 유틸
 // =====================================================================
@@ -406,11 +495,431 @@ export async function verifyAdminAccess(onSuccess, onFailure) {
     return false;
 }
 
-// ⚠️ 기존의 접속 코드 방식은 제거되고 구글 로그인 기반의 교사 인증으로 대체되었습니다.
+// =====================================================================
+// 3.5 방 모드 선택 및 학생 인증 모달 유틸
+// =====================================================================
 
-// =====================================================================
-// 4. 방 입장 카드 컴포넌트 렌더링
-// =====================================================================
+/** 교사 방 생성 시 빠른 입장 모드 vs 학생 인증 모드 선택 모달 */
+export function promptRoomMode() {
+    return new Promise((resolve) => {
+        let modalEl = document.getElementById('roomModeModal');
+        if (!modalEl) {
+            const html = `
+            <div class="modal fade" id="roomModeModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content rounded-4 border-0 shadow">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title fw-bold">🎯 방 생성 모드 선택</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                        </div>
+                        <div class="modal-body py-3">
+                            <p class="text-muted small mb-3">수업 상황과 학급 운영 방식에 알맞은 입장 모드를 선택해주세요.</p>
+                            <div class="list-group">
+                                <label class="list-group-item list-group-item-action d-flex gap-3 py-3 border rounded-3 mb-2" style="cursor:pointer;">
+                                    <input class="form-check-input flex-shrink-0" type="radio" name="roomModeOption" id="modeQuick" value="quick" checked>
+                                    <span>
+                                        <strong class="d-block text-dark">🚀 A. 빠른 입장 모드</strong>
+                                        <small class="d-block text-muted">학생 개인정보(학교명, 학번, PIN) 입력 없이 방 코드 4자리만으로 즉시 입장합니다.</small>
+                                    </span>
+                                </label>
+                                <label class="list-group-item list-group-item-action d-flex gap-3 py-3 border rounded-3" style="cursor:pointer;">
+                                    <input class="form-check-input flex-shrink-0" type="radio" name="roomModeOption" id="modeAuth" value="auth">
+                                    <span>
+                                        <strong class="d-block text-dark">🔐 B. 학생 인증 모드</strong>
+                                        <small class="d-block text-muted">기기 등록(학교명, 학번, 4자리 PIN) 필수. 친구 폰 게스트 모드 및 교사 승인 시스템이 적용됩니다.</small>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary rounded-3 px-3" data-bs-dismiss="modal">취소</button>
+                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold" id="btnConfirmRoomMode">선택 완료</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            modalEl = document.getElementById('roomModeModal');
+        }
+
+        const bsModal = new bootstrap.Modal(modalEl);
+        const confirmBtn = document.getElementById('btnConfirmRoomMode');
+
+        let selected = null;
+        const onConfirm = () => {
+            const checked = modalEl.querySelector('input[name="roomModeOption"]:checked');
+            selected = checked ? checked.value : 'quick';
+            bsModal.hide();
+        };
+
+        const onHidden = () => {
+            confirmBtn.removeEventListener('click', onConfirm);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(selected);
+        };
+
+        confirmBtn.addEventListener('click', onConfirm);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        bsModal.show();
+    });
+}
+
+/** 학생 본인 인증 및 게스트 인증 모달 */
+export function promptStudentAuthModal({ isGuest = false, initialSchool = '', initialStudentId = '' } = {}) {
+    return new Promise((resolve) => {
+        let modalEl = document.getElementById('studentAuthModal');
+        if (!modalEl) {
+            const html = `
+            <div class="modal fade" id="studentAuthModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content rounded-4 border-0 shadow">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title fw-bold" id="studentAuthModalTitle">📱 학생 본인 인증</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                        </div>
+                        <div class="modal-body py-3">
+                            <div class="alert alert-info py-2 small mb-3" id="studentAuthModalNotice">
+                                최초 1회 인증 후 본인 기기에서는 자동 로그인됩니다.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-secondary">학교명</label>
+                                <input type="text" class="form-control form-control-lg bg-light" id="inputAuthSchool" placeholder="예: 동동중학교" autocomplete="off">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-secondary">학번 또는 이름 (식별번호)</label>
+                                <input type="text" class="form-control form-control-lg bg-light" id="inputAuthStudentId" placeholder="예: 2학년 3반 15번 또는 20315" autocomplete="off">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-bold text-secondary">4자리 숫자 PIN (비밀번호)</label>
+                                <input type="password" class="form-control form-control-lg bg-light text-center fw-bold" id="inputAuthPin" placeholder="••••" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+                                <div class="form-text small text-muted">다른 학생이 내 학번을 도용하지 못하도록 설정하는 4자리 숫자입니다.</div>
+                            </div>
+                            <div id="authModalError" class="text-danger small fw-bold mt-2" style="display:none;"></div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary rounded-3 px-3" data-bs-dismiss="modal">취소</button>
+                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold" id="btnConfirmStudentAuth">확인</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            modalEl = document.getElementById('studentAuthModal');
+        }
+
+        const titleEl = document.getElementById('studentAuthModalTitle');
+        const noticeEl = document.getElementById('studentAuthModalNotice');
+        const schoolIn = document.getElementById('inputAuthSchool');
+        const studentIdIn = document.getElementById('inputAuthStudentId');
+        const pinIn = document.getElementById('inputAuthPin');
+        const errEl = document.getElementById('authModalError');
+        const confirmBtn = document.getElementById('btnConfirmStudentAuth');
+
+        titleEl.textContent = isGuest ? "🤝 친구 폰 빌려쓰기 (게스트 인증)" : "📱 학생 본인 인증";
+        noticeEl.className = isGuest ? "alert alert-warning py-2 small mb-3" : "alert alert-info py-2 small mb-3";
+        noticeEl.innerHTML = isGuest
+            ? "친구 폰을 빌려 쓰는 게스트 모드입니다.<br>선생님의 대시보드 승인 후 입장할 수 있습니다."
+            : "최초 1회 기기 등록 후 다음부터는 자동으로 로그인됩니다.";
+
+        schoolIn.value = initialSchool || '';
+        studentIdIn.value = initialStudentId || '';
+        pinIn.value = '';
+        errEl.style.display = 'none';
+
+        const bsModal = new bootstrap.Modal(modalEl);
+        let result = null;
+
+        const onConfirm = () => {
+            const school = schoolIn.value.trim();
+            const studentId = studentIdIn.value.trim();
+            const pin = pinIn.value.trim();
+
+            if (!school) {
+                errEl.textContent = "학교명을 입력해주세요.";
+                errEl.style.display = 'block';
+                schoolIn.focus();
+                return;
+            }
+            if (!studentId) {
+                errEl.textContent = "학번 또는 식별번호를 입력해주세요.";
+                errEl.style.display = 'block';
+                studentIdIn.focus();
+                return;
+            }
+            if (!/^\d{4}$/.test(pin)) {
+                errEl.textContent = "PIN 번호는 4자리 숫자로 입력해주세요.";
+                errEl.style.display = 'block';
+                pinIn.focus();
+                return;
+            }
+
+            result = { school, studentId, pin };
+            bsModal.hide();
+        };
+
+        const onHidden = () => {
+            confirmBtn.removeEventListener('click', onConfirm);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(result);
+        };
+
+        confirmBtn.addEventListener('click', onConfirm);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        bsModal.show();
+    });
+}
+
+/** PIN 번호 초기화 복구용 재설정 모달 */
+export function promptNewPinModal(studentName = "") {
+    return new Promise((resolve) => {
+        let modalEl = document.getElementById('newPinModal');
+        if (!modalEl) {
+            const html = `
+            <div class="modal fade" id="newPinModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content rounded-4 border-0 shadow">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title fw-bold text-danger">🔑 PIN 번호 재설정</h5>
+                        </div>
+                        <div class="modal-body py-3">
+                            <div class="alert alert-warning py-2 small mb-3">
+                                선생님에 의해 PIN 번호가 초기화되었습니다.<br>
+                                앞으로 사용할 새로운 4자리 숫자 PIN을 입력해주세요.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-secondary">새로운 4자리 PIN</label>
+                                <input type="password" class="form-control form-control-lg bg-light text-center fw-bold" id="inputNewPin" placeholder="••••" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+                            </div>
+                            <div id="newPinModalError" class="text-danger small fw-bold" style="display:none;"></div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold w-100" id="btnConfirmNewPin">PIN 번호 설정 완료</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            modalEl = document.getElementById('newPinModal');
+        }
+
+        const pinIn = document.getElementById('inputNewPin');
+        const errEl = document.getElementById('newPinModalError');
+        const confirmBtn = document.getElementById('btnConfirmNewPin');
+        pinIn.value = '';
+        errEl.style.display = 'none';
+
+        const bsModal = new bootstrap.Modal(modalEl);
+        let newPin = null;
+
+        const onConfirm = () => {
+            const p = pinIn.value.trim();
+            if (!/^\d{4}$/.test(p)) {
+                errEl.textContent = "PIN 번호는 4자리 숫자로 입력해주세요.";
+                errEl.style.display = 'block';
+                pinIn.focus();
+                return;
+            }
+            newPin = p;
+            bsModal.hide();
+        };
+
+        const onHidden = () => {
+            confirmBtn.removeEventListener('click', onConfirm);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(newPin);
+        };
+
+        confirmBtn.addEventListener('click', onConfirm);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        bsModal.show();
+    });
+}
+
+/** 게스트 입장 대기 스피너 모달 */
+export function showGuestWaitingModal(onCancel) {
+    let modalEl = document.getElementById('guestWaitingModal');
+    if (!modalEl) {
+        const html = `
+        <div class="modal fade" id="guestWaitingModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content rounded-4 border-0 shadow text-center p-4">
+                    <div class="spinner-border text-primary mx-auto my-3" style="width: 3.5rem; height: 3.5rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="fw-bold text-dark mb-2">선생님의 승인을 기다리고 있습니다</h5>
+                    <p class="text-muted small mb-4">선생님이 대시보드에서 입장을 승인하면 자동으로 게임 화면으로 이동합니다.</p>
+                    <div>
+                        <button type="button" class="btn btn-outline-secondary rounded-3 px-4" id="btnCancelGuestWait">입장 대기 취소</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', html);
+        modalEl = document.getElementById('guestWaitingModal');
+    }
+
+    const bsModal = new bootstrap.Modal(modalEl);
+    const cancelBtn = document.getElementById('btnCancelGuestWait');
+
+    const handleCancel = () => {
+        bsModal.hide();
+        if (typeof onCancel === 'function') onCancel();
+    };
+
+    cancelBtn.onclick = handleCancel;
+    bsModal.show();
+
+    return {
+        close: () => {
+            cancelBtn.onclick = null;
+            bsModal.hide();
+        }
+    };
+}
+
+/** 화면 우측 상단 게스트 모드 종료 플로팅 버튼 */
+export function showGuestExitButton(onExit) {
+    hideGuestExitButton();
+    const btnHtml = `
+    <div id="guestExitFloatingBadge" style="position: fixed; top: 14px; right: 14px; z-index: 99999;">
+        <button id="btnExitGuestMode" class="btn btn-danger btn-sm rounded-pill fw-bold shadow-lg px-3 py-2 border-2 border-white d-flex align-items-center gap-1 animate__animated animate__fadeIn">
+            🚪 게스트 모드 종료
+        </button>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', btnHtml);
+
+    document.getElementById('btnExitGuestMode')?.addEventListener('click', async () => {
+        const confirmed = await customConfirm("게스트 모드 종료", "게스트 모드를 종료하고 폰 주인의 계정으로 복구하시겠습니까?");
+        if (!confirmed) return;
+        hideGuestExitButton();
+        if (typeof onExit === 'function') {
+            await onExit();
+        }
+    });
+}
+
+export function hideGuestExitButton() {
+    const el = document.getElementById('guestExitFloatingBadge');
+    if (el) el.remove();
+}
+
+/** 교사 대시보드 PIN 초기화 모달 */
+export function showPinResetModal(studentList = []) {
+    return new Promise((resolve) => {
+        let modalEl = document.getElementById('pinResetModal');
+        if (!modalEl) {
+            const html = `
+            <div class="modal fade" id="pinResetModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content rounded-4 border-0 shadow">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title fw-bold text-danger"><i class="bi bi-key-fill"></i> 학생 PIN 초기화</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                        </div>
+                        <div class="modal-body py-3">
+                            <p class="text-muted small mb-3">PIN을 분실한 학생을 선택하거나 직접 입력하여 초기화할 수 있습니다. 초기화된 학생은 다음 접속 시 새로운 4자리 PIN을 설정합니다.</p>
+                            <div class="mb-3" id="pinResetSelectGroup">
+                                <label class="form-label small fw-bold text-secondary">현재 방 학생 목록에서 선택</label>
+                                <select class="form-select bg-light fw-bold" id="pinResetStudentSelect">
+                                    <option value="">직접 입력하기</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-secondary">학교명</label>
+                                <input type="text" class="form-control bg-light" id="pinResetSchoolInput" placeholder="예: 동동중학교" autocomplete="off">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-secondary">학번 또는 식별번호</label>
+                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 20315" autocomplete="off">
+                            </div>
+                            <div id="pinResetError" class="text-danger small fw-bold" style="display:none;"></div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary rounded-3 px-3" data-bs-dismiss="modal">취소</button>
+                            <button type="button" class="btn btn-danger rounded-3 px-4 fw-bold" id="btnExecutePinReset">초기화 실행</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            modalEl = document.getElementById('pinResetModal');
+        }
+
+        const sel = document.getElementById('pinResetStudentSelect');
+        const schoolIn = document.getElementById('pinResetSchoolInput');
+        const studentIdIn = document.getElementById('pinResetStudentIdInput');
+        const errEl = document.getElementById('pinResetError');
+        const confirmBtn = document.getElementById('btnExecutePinReset');
+
+        errEl.style.display = 'none';
+        schoolIn.value = '';
+        studentIdIn.value = '';
+
+        sel.innerHTML = '<option value="">직접 입력하기</option>';
+        if (Array.isArray(studentList)) {
+            studentList.forEach(s => {
+                if (s.school && s.studentId) {
+                    sel.innerHTML += `<option value="${escapeHtml(s.school)}||${escapeHtml(s.studentId)}">${escapeHtml(s.nickname || s.studentId)} (${escapeHtml(s.school)} / ${escapeHtml(s.studentId)})</option>`;
+                } else if (s.studentId) {
+                    sel.innerHTML += `<option value="||${escapeHtml(s.studentId)}">${escapeHtml(s.nickname || s.studentId)}</option>`;
+                }
+            });
+        }
+
+        sel.onchange = () => {
+            if (sel.value) {
+                const parts = sel.value.split('||');
+                schoolIn.value = parts[0] || '';
+                studentIdIn.value = parts[1] || '';
+            }
+        };
+
+        const bsModal = new bootstrap.Modal(modalEl);
+        let executed = false;
+
+        const onConfirm = async () => {
+            const school = schoolIn.value.trim();
+            const studentId = studentIdIn.value.trim();
+            if (!school || !studentId) {
+                errEl.textContent = "학교명과 학번을 모두 입력해주세요.";
+                errEl.style.display = 'block';
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = "처리 중...";
+
+            try {
+                const studentKey = makeStudentKey(school, studentId);
+                const studentRef = doc(db, "student_auth", studentKey);
+                await updateDoc(studentRef, {
+                    pin: null,
+                    updatedAt: serverTimestamp()
+                });
+                executed = true;
+                bsModal.hide();
+                await customAlert("초기화 완료", `<strong>${escapeHtml(studentId)}</strong> 학생의 PIN 번호가 삭제(초기화)되었습니다.<br>학생이 다음 접속 시 새로운 4자리 PIN을 설정하게 됩니다.`);
+            } catch (err) {
+                console.error("PIN reset error:", err);
+                errEl.textContent = "PIN 초기화 중 오류가 발생했습니다. 학번을 다시 확인해주세요.";
+                errEl.style.display = 'block';
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = "초기화 실행";
+            }
+        };
+
+        const onHidden = () => {
+            confirmBtn.removeEventListener('click', onConfirm);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(executed);
+        };
+
+        confirmBtn.addEventListener('click', onConfirm);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        bsModal.show();
+    });
+}
 export function renderRoomEntrance(container, options = {}) {
     const target = typeof container === 'string' ? document.getElementById(container) : container;
     if (!target) return;
@@ -447,7 +956,15 @@ export function renderRoomEntrance(container, options = {}) {
                 placeholder="${roomCodePlaceholder}" maxlength="4"
                 autocomplete="off" autocapitalize="characters" spellcheck="false"
                 style="text-transform: uppercase;">
-            <div class="text-center text-muted small mb-3" id="roomEntranceHint" style="min-height: 1.2rem;"></div>
+            <div class="text-center text-muted small mb-2" id="roomEntranceHint" style="min-height: 1.2rem;"></div>
+            
+            <div class="form-check form-switch mb-3 d-flex align-items-center justify-content-center gap-2">
+                <input class="form-check-input" type="checkbox" id="guestModeCheck" style="cursor: pointer;">
+                <label class="form-check-label small fw-bold text-secondary" for="guestModeCheck" style="cursor: pointer;">
+                    친구 폰 빌려쓰기 (게스트 모드)
+                </label>
+            </div>
+
             <button id="btnJoinRoom" class="btn btn-primary btn-lg w-100 mb-2 fw-bold"
                 style="background:#0d6efd; border:none;">${joinBtnText}</button>
             ${guideBtnHtml}
@@ -457,6 +974,7 @@ export function renderRoomEntrance(container, options = {}) {
 
     const roomInput = target.querySelector('#roomCodeInput');
     const roomHint = target.querySelector('#roomEntranceHint');
+    const guestCheck = target.querySelector('#guestModeCheck');
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
@@ -473,7 +991,6 @@ export function renderRoomEntrance(container, options = {}) {
     window.addEventListener('teacherAuthChanged', updateDashVisibility);
 
     // [추가] 지난 접속 정보 자동 입력
-    // 공용 기기(학급 태블릿)를 여러 학생이 돌려 쓸 수 있으므로 지우기 링크 제공
     if (rememberLastEntry) {
         const saved = loadRememberedEntrance();
         if (saved.room) roomInput.value = saved.room;
@@ -494,6 +1011,22 @@ export function renderRoomEntrance(container, options = {}) {
         roomInput.value = roomInput.value.replace(/\s/g, '').slice(0, 4).toUpperCase();
     });
 
+    // 만약 이미 세션에 게스트 정보가 남아있다면 게스트 모드 종료 버튼 띄우기
+    const activeGuest = getGuestAuth();
+    if (activeGuest) {
+        showGuestExitButton(async () => {
+            const guestKey = makeStudentKey(activeGuest.school, activeGuest.studentId);
+            await updateDoc(doc(db, "student_auth", guestKey), { presence: 'offline' }).catch(() => {});
+            clearGuestAuth();
+            const owner = getPhoneOwnerAuth();
+            if (owner) {
+                const ownerKey = makeStudentKey(owner.school, owner.studentId);
+                await updateDoc(doc(db, "student_auth", ownerKey), { presence: 'online' }).catch(() => {});
+            }
+            location.reload();
+        });
+    }
+
     let joining = false;
 
     const triggerJoin = async () => {
@@ -508,15 +1041,6 @@ export function renderRoomEntrance(container, options = {}) {
             return;
         }
 
-        // 동일 세션 내에서 같은 방 재접속 시 일관된 닉네임 유지 (새로고침/재입장 편의)
-        let nickname = sessionStorage.getItem(`roomEntrance:autoNick:${roomCode}`);
-        if (!nickname) {
-            nickname = generateRandomNickname();
-            try {
-                sessionStorage.setItem(`roomEntrance:autoNick:${roomCode}`, nickname);
-            } catch (e) { }
-        }
-
         if (typeof onJoin !== 'function') return;
 
         joining = true;
@@ -527,7 +1051,272 @@ export function renderRoomEntrance(container, options = {}) {
         joinBtn.innerHTML = '입장하는 중...';
 
         try {
-            await onJoin(roomCode, nickname);
+            // 1. 방 정보 조회 (모드 확인: quick vs auth)
+            let roomData = null;
+            if (typeof options.getRoomData === 'function') {
+                roomData = await options.getRoomData(roomCode);
+            } else if (options.roomCollection) {
+                const snap = await getDoc(doc(db, options.roomCollection, roomCode));
+                if (snap.exists()) roomData = snap.data();
+            }
+
+            // 방이 존재하지 않는 경우 알림
+            if (options.getRoomData && !roomData) {
+                roomInput.classList.add('shake');
+                setTimeout(() => roomInput.classList.remove('shake'), 400);
+                await customAlert("오류", "존재하지 않는 방 코드입니다.");
+                return;
+            }
+
+            const roomMode = roomData?.roomMode || roomData?.settings?.mode || 'quick';
+            const isGuest = guestCheck ? guestCheck.checked : false;
+
+            // [A. 빠른 입장 모드] - 개인정보 입력 없이 랜덤 닉네임으로 즉시 입장
+            if (roomMode === 'quick') {
+                let nickname = sessionStorage.getItem(`roomEntrance:autoNick:${roomCode}`);
+                if (!nickname) {
+                    nickname = generateRandomNickname();
+                    try { sessionStorage.setItem(`roomEntrance:autoNick:${roomCode}`, nickname); } catch (e) { }
+                }
+                rememberEntrance(roomCode, nickname);
+                await onJoin(roomCode, nickname, { mode: 'quick', isGuest: false });
+                return;
+            }
+
+            // [B. 학생 인증 모드]
+            if (isGuest) {
+                // --- 게스트 모드 (친구 폰 빌려쓰기) ---
+                // 1. 폰 주인의 계정을 offline 처리
+                const owner = getPhoneOwnerAuth();
+                if (owner) {
+                    const ownerKey = makeStudentKey(owner.school, owner.studentId);
+                    updateDoc(doc(db, "student_auth", ownerKey), {
+                        presence: 'offline',
+                        lastActive: serverTimestamp()
+                    }).catch(() => {});
+                }
+
+                // 2. 게스트 본인 정보 입력 모달
+                const guestInput = await promptStudentAuthModal({ isGuest: true });
+                if (!guestInput) return; // 취소
+
+                const guestKey = makeStudentKey(guestInput.school, guestInput.studentId);
+                const sDocRef = doc(db, "student_auth", guestKey);
+                const sSnap = await getDoc(sDocRef);
+
+                // 3. 중복 접속 원천 차단: 다른 곳에서 이미 online 상태인지 확인
+                if (sSnap.exists() && sSnap.data().presence === 'online') {
+                    await customAlert("접속 불가", "이미 다른 기기에서 접속 중인 학번입니다.<br>동일 학번으로 동시 접속할 수 없습니다.");
+                    return;
+                }
+
+                // 4. PIN 번호 검증 및 초기화 감지
+                let verifiedPin = guestInput.pin;
+                if (sSnap.exists()) {
+                    const sData = sSnap.data();
+                    if (sData.pin === null) {
+                        const newPin = await promptNewPinModal(guestInput.studentId);
+                        if (!newPin) return;
+                        verifiedPin = newPin;
+                        await updateDoc(sDocRef, {
+                            pin: newPin,
+                            updatedAt: serverTimestamp()
+                        });
+                    } else if (sData.pin !== guestInput.pin) {
+                        await customAlert("인증 실패", "PIN 번호가 일치하지 않습니다.");
+                        return;
+                    }
+                } else {
+                    // 최초 등록 게스트
+                    await setDoc(sDocRef, {
+                        school: guestInput.school,
+                        studentId: guestInput.studentId,
+                        pin: verifiedPin,
+                        presence: 'pending',
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                    });
+                }
+
+                // 5. 게스트 정보 임시 저장 (sessionStorage만 사용)
+                const guestNick = generateRandomNickname();
+                saveGuestAuth(guestInput.school, guestInput.studentId, verifiedPin, guestNick);
+                await updateDoc(sDocRef, {
+                    presence: 'pending',
+                    lastActive: serverTimestamp()
+                });
+
+                // 6. 방 학생 컬렉션에 pending 상태로 등록
+                if (typeof options.studentsCollectionRef === 'function') {
+                    await setDoc(doc(options.studentsCollectionRef(roomCode), guestNick), {
+                        nickname: guestNick,
+                        school: guestInput.school,
+                        studentId: guestInput.studentId,
+                        studentKey: guestKey,
+                        status: 'pending',
+                        isGuest: true,
+                        requestedAt: serverTimestamp()
+                    });
+                }
+
+                // 7. 선생님 승인 대기 스피너 모달
+                let approved = false;
+                let unsubGuest = null;
+
+                const waitingModal = showGuestWaitingModal(async () => {
+                    // 대기 취소 시
+                    if (unsubGuest) unsubGuest();
+                    if (typeof options.studentsCollectionRef === 'function') {
+                        deleteDoc(doc(options.studentsCollectionRef(roomCode), guestNick)).catch(() => {});
+                    }
+                    updateDoc(sDocRef, { presence: 'offline' }).catch(() => {});
+                    clearGuestAuth();
+                });
+
+                // 8. 교사 승인 상태 리스너 (pending -> online)
+                if (typeof options.studentsCollectionRef === 'function') {
+                    unsubGuest = onSnapshot(doc(options.studentsCollectionRef(roomCode), guestNick), async (snap) => {
+                        if (!snap.exists()) return;
+                        const data = snap.data();
+                        if (data.status === 'online' && !approved) {
+                            approved = true;
+                            if (unsubGuest) unsubGuest();
+                            waitingModal.close();
+
+                            // 화면 우측 상단 상시 고정 [게스트 모드 종료] 버튼 활성화
+                            showGuestExitButton(async () => {
+                                if (typeof options.studentsCollectionRef === 'function') {
+                                    await updateDoc(doc(options.studentsCollectionRef(roomCode), guestNick), { status: 'offline' }).catch(() => {});
+                                }
+                                await updateDoc(sDocRef, { presence: 'offline' }).catch(() => {});
+                                clearGuestAuth();
+
+                                // 폰 주인의 데이터를 localStorage에서 읽어와 online 복구
+                                const currentOwner = getPhoneOwnerAuth();
+                                if (currentOwner) {
+                                    const oKey = makeStudentKey(currentOwner.school, currentOwner.studentId);
+                                    await updateDoc(doc(db, "student_auth", oKey), {
+                                        presence: 'online',
+                                        lastActive: serverTimestamp()
+                                    }).catch(() => {});
+                                }
+                                location.reload();
+                            });
+
+                            // 게임 화면 입장
+                            await onJoin(roomCode, guestNick, {
+                                school: guestInput.school,
+                                studentId: guestInput.studentId,
+                                isGuest: true,
+                                mode: 'auth'
+                            });
+                        } else if (data.status === 'rejected') {
+                            if (unsubGuest) unsubGuest();
+                            waitingModal.close();
+                            await updateDoc(sDocRef, { presence: 'offline' }).catch(() => {});
+                            clearGuestAuth();
+                            await customAlert("입장 거절", "선생님이 입장을 거절하셨습니다.");
+                        }
+                    });
+                }
+            } else {
+                // --- 폰 주인 로직 ---
+                const savedOwner = getPhoneOwnerAuth();
+                let school = savedOwner?.school;
+                let studentId = savedOwner?.studentId;
+                let pin = savedOwner?.pin;
+
+                if (savedOwner) {
+                    // 1. 재접속: localStorage 정보 활용 및 Firebase PIN 초기화 여부 확인
+                    const ownerKey = makeStudentKey(school, studentId);
+                    const sDocRef = doc(db, "student_auth", ownerKey);
+                    const sSnap = await getDoc(sDocRef);
+
+                    if (sSnap.exists() && sSnap.data().pin === null) {
+                        // 교사가 PIN을 초기화한 경우
+                        const newPin = await promptNewPinModal(studentId);
+                        if (!newPin) return;
+                        pin = newPin;
+                        await updateDoc(sDocRef, {
+                            pin: newPin,
+                            updatedAt: serverTimestamp()
+                        });
+                        savePhoneOwnerAuth(school, studentId, newPin);
+                    }
+
+                    await updateDoc(sDocRef, {
+                        presence: 'online',
+                        lastActive: serverTimestamp()
+                    }).catch(() => {});
+                } else {
+                    // 2. 최초 접속: 기기 등록 모달
+                    const authInput = await promptStudentAuthModal({ isGuest: false });
+                    if (!authInput) return; // 취소
+
+                    school = authInput.school;
+                    studentId = authInput.studentId;
+                    pin = authInput.pin;
+
+                    const ownerKey = makeStudentKey(school, studentId);
+                    const sDocRef = doc(db, "student_auth", ownerKey);
+                    const sSnap = await getDoc(sDocRef);
+
+                    if (sSnap.exists()) {
+                        const sData = sSnap.data();
+                        if (sData.pin === null) {
+                            const newPin = await promptNewPinModal(studentId);
+                            if (!newPin) return;
+                            pin = newPin;
+                            await updateDoc(sDocRef, {
+                                pin: newPin,
+                                updatedAt: serverTimestamp()
+                            });
+                        } else if (sData.pin !== pin) {
+                            await customAlert("인증 실패", "기존에 등록된 PIN 번호와 일치하지 않습니다.");
+                            return;
+                        }
+                        await updateDoc(sDocRef, {
+                            presence: 'online',
+                            lastActive: serverTimestamp()
+                        });
+                    } else {
+                        await setDoc(sDocRef, {
+                            school: school,
+                            studentId: studentId,
+                            pin: pin,
+                            presence: 'online',
+                            createdAt: serverTimestamp(),
+                            updatedAt: serverTimestamp()
+                        });
+                    }
+
+                    savePhoneOwnerAuth(school, studentId, pin);
+                }
+
+                // 닉네임 자동 생성 및 방 학생 컬렉션 등록
+                const nickname = generateRandomNickname();
+                const ownerKey = makeStudentKey(school, studentId);
+
+                if (typeof options.studentsCollectionRef === 'function') {
+                    await setDoc(doc(options.studentsCollectionRef(roomCode), nickname), {
+                        nickname: nickname,
+                        school: school,
+                        studentId: studentId,
+                        studentKey: ownerKey,
+                        status: 'online',
+                        isGuest: false,
+                        enteredAt: serverTimestamp()
+                    });
+                }
+
+                rememberEntrance(roomCode, nickname);
+                await onJoin(roomCode, nickname, {
+                    school: school,
+                    studentId: studentId,
+                    isGuest: false,
+                    mode: 'auth'
+                });
+            }
         } catch (err) {
             console.error('입장 처리 오류:', err);
             await customAlert("입장 실패", "입장 중 문제가 발생했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.");

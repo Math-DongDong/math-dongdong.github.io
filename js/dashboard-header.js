@@ -34,6 +34,7 @@
                 </select>
                 <button id="btn-create-room" class="btn btn-primary fw-bold dash-create">새로운 방 만들기</button>
                 ${exportBtnHtml}
+                <button id="btn-reset-pin" class="btn btn-outline-danger fw-bold dash-reset-pin"><i class="bi bi-key-fill"></i> PIN 초기화</button>
             </div>
         </div>
     `;
