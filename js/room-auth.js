@@ -526,7 +526,7 @@ export function promptRoomMode() {
                                     <input class="form-check-input flex-shrink-0" type="radio" name="roomModeOption" id="modeAuth" value="auth">
                                     <span>
                                         <strong class="d-block text-dark">🔐 B. 학생 인증 모드</strong>
-                                        <small class="d-block text-muted">기기 등록(학교명, 학번, 4자리 PIN) 필수. 친구 폰 게스트 모드 및 교사 승인 시스템이 적용됩니다.</small>
+                                        <small class="d-block text-muted">기기 등록(학교명, 학번, 4자리 PIN) 필수. 게스트 모드 및 교사 승인 시스템이 적용됩니다.</small>
                                     </span>
                                 </label>
                             </div>
@@ -615,10 +615,10 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
         const errEl = document.getElementById('authModalError');
         const confirmBtn = document.getElementById('btnConfirmStudentAuth');
 
-        titleEl.textContent = isGuest ? "🤝 친구 폰 빌려쓰기 (게스트 인증)" : "📱 학생 본인 인증";
+        titleEl.textContent = isGuest ? "게스트 인증" : "📱 학생 본인 인증";
         noticeEl.className = isGuest ? "alert alert-warning py-2 small mb-3" : "alert alert-info py-2 small mb-3";
         noticeEl.innerHTML = isGuest
-            ? "친구 폰을 빌려 쓰는 게스트 모드입니다.<br>선생님의 대시보드 승인 후 입장할 수 있습니다."
+            ? "게스트 모드입니다.<br>선생님의 대시보드 승인 후 입장할 수 있습니다."
             : "최초 1회 기기 등록 후 다음부터는 자동으로 로그인됩니다.";
 
         schoolIn.value = initialSchool || '';
@@ -961,7 +961,7 @@ export function renderRoomEntrance(container, options = {}) {
             <div class="form-check form-switch mb-3 d-flex align-items-center justify-content-center gap-2">
                 <input class="form-check-input" type="checkbox" id="guestModeCheck" style="cursor: pointer;">
                 <label class="form-check-label small fw-bold text-secondary" for="guestModeCheck" style="cursor: pointer;">
-                    친구 폰 빌려쓰기 (게스트 모드)
+                    게스트 모드
                 </label>
             </div>
 
@@ -1016,12 +1016,12 @@ export function renderRoomEntrance(container, options = {}) {
     if (activeGuest) {
         showGuestExitButton(async () => {
             const guestKey = makeStudentKey(activeGuest.school, activeGuest.studentId);
-            await updateDoc(doc(db, "student_auth", guestKey), { presence: 'offline' }).catch(() => {});
+            await updateDoc(doc(db, "student_auth", guestKey), { presence: 'offline' }).catch(() => { });
             clearGuestAuth();
             const owner = getPhoneOwnerAuth();
             if (owner) {
                 const ownerKey = makeStudentKey(owner.school, owner.studentId);
-                await updateDoc(doc(db, "student_auth", ownerKey), { presence: 'online' }).catch(() => {});
+                await updateDoc(doc(db, "student_auth", ownerKey), { presence: 'online' }).catch(() => { });
             }
             location.reload();
         });
@@ -1085,15 +1085,15 @@ export function renderRoomEntrance(container, options = {}) {
 
             // [B. 학생 인증 모드]
             if (isGuest) {
-                // --- 게스트 모드 (친구 폰 빌려쓰기) ---
-                // 1. 폰 주인의 계정을 offline 처리
+                // --- 게스트 모드 ---
+                // 1. 폰 주인의 계셉정을 offline 처리
                 const owner = getPhoneOwnerAuth();
                 if (owner) {
                     const ownerKey = makeStudentKey(owner.school, owner.studentId);
                     updateDoc(doc(db, "student_auth", ownerKey), {
                         presence: 'offline',
                         lastActive: serverTimestamp()
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
 
                 // 2. 게스트 본인 정보 입력 모달
@@ -1167,9 +1167,9 @@ export function renderRoomEntrance(container, options = {}) {
                     // 대기 취소 시
                     if (unsubGuest) unsubGuest();
                     if (typeof options.studentsCollectionRef === 'function') {
-                        deleteDoc(doc(options.studentsCollectionRef(roomCode), guestNick)).catch(() => {});
+                        deleteDoc(doc(options.studentsCollectionRef(roomCode), guestNick)).catch(() => { });
                     }
-                    updateDoc(sDocRef, { presence: 'offline' }).catch(() => {});
+                    updateDoc(sDocRef, { presence: 'offline' }).catch(() => { });
                     clearGuestAuth();
                 });
 
@@ -1186,9 +1186,9 @@ export function renderRoomEntrance(container, options = {}) {
                             // 화면 우측 상단 상시 고정 [게스트 모드 종료] 버튼 활성화
                             showGuestExitButton(async () => {
                                 if (typeof options.studentsCollectionRef === 'function') {
-                                    await updateDoc(doc(options.studentsCollectionRef(roomCode), guestNick), { status: 'offline' }).catch(() => {});
+                                    await updateDoc(doc(options.studentsCollectionRef(roomCode), guestNick), { status: 'offline' }).catch(() => { });
                                 }
-                                await updateDoc(sDocRef, { presence: 'offline' }).catch(() => {});
+                                await updateDoc(sDocRef, { presence: 'offline' }).catch(() => { });
                                 clearGuestAuth();
 
                                 // 폰 주인의 데이터를 localStorage에서 읽어와 online 복구
@@ -1198,7 +1198,7 @@ export function renderRoomEntrance(container, options = {}) {
                                     await updateDoc(doc(db, "student_auth", oKey), {
                                         presence: 'online',
                                         lastActive: serverTimestamp()
-                                    }).catch(() => {});
+                                    }).catch(() => { });
                                 }
                                 location.reload();
                             });
@@ -1213,7 +1213,7 @@ export function renderRoomEntrance(container, options = {}) {
                         } else if (data.status === 'rejected') {
                             if (unsubGuest) unsubGuest();
                             waitingModal.close();
-                            await updateDoc(sDocRef, { presence: 'offline' }).catch(() => {});
+                            await updateDoc(sDocRef, { presence: 'offline' }).catch(() => { });
                             clearGuestAuth();
                             await customAlert("입장 거절", "선생님이 입장을 거절하셨습니다.");
                         }
@@ -1247,7 +1247,7 @@ export function renderRoomEntrance(container, options = {}) {
                     await updateDoc(sDocRef, {
                         presence: 'online',
                         lastActive: serverTimestamp()
-                    }).catch(() => {});
+                    }).catch(() => { });
                 } else {
                     // 2. 최초 접속: 기기 등록 모달
                     const authInput = await promptStudentAuthModal({ isGuest: false });
