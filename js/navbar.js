@@ -172,6 +172,7 @@
                 <ul class="navbar-nav ms-lg-3">
                     ${menuHtml}
                 </ul>
+                <div id="teacher-auth-container" class="ms-auto d-flex align-items-center"></div>
             </div>
         </div>
     </nav>
@@ -209,5 +210,11 @@
                 }
             }
         });
+        
+        // Load teacher auth module dynamically
+        const authScript = document.createElement('script');
+        authScript.type = 'module';
+        authScript.src = `${rootPath}js/teacher-auth.js`;
+        document.body.appendChild(authScript);
     });
 })();

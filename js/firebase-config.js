@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/fireba
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { getDatabase } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js";
+import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAKsWMTwBY8gPGTB0Q8xWTbxgCHIuGkw9I",
@@ -25,5 +26,8 @@ const rtdbSentiment = getDatabase(app, "https://sentimentanalysis.asia-southeast
 const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
 const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
 
-export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency };
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+
+export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, auth, googleProvider };
 

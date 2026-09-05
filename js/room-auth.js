@@ -14,9 +14,6 @@
  *    · guideSlides를 넘기지 않으면 버튼이 렌더링되지 않으므로,
  *      게임방법이 필요 없는 페이지는 기존 호출 코드를 그대로 쓰면 됩니다.
  */
-
-import { ADMIN_ACCESS_CODE } from './access-code.js';
-
 // =====================================================================
 // 0. 공통 유틸
 // =====================================================================
@@ -354,27 +351,17 @@ export function showGuideModal(slides, title = "게임 방법") {
 let adminFailCount = 0;
 
 export async function verifyAdminAccess(onSuccess, onFailure) {
-    const code = await customPrompt("선생님 대시보드", "접속 코드를 입력하세요.", true);
-    if (code === null) return false;
-
-    if (code === ADMIN_ACCESS_CODE) {
-        adminFailCount = 0;
+    if (window.isApprovedTeacher || window.isAdmin) {
         if (typeof onSuccess === 'function') onSuccess();
         return true;
     }
 
-    // 연타 시도를 조금이라도 늦추기 위한 지연 (근본 대책은 아님, 아래 주석 참고)
-    adminFailCount++;
-    await new Promise(r => setTimeout(r, Math.min(2000, adminFailCount * 400)));
-
-    await customAlert("접속 실패", "접속 코드가 일치하지 않습니다.");
+    await customAlert("접근 권한 없음", "교사 로그인을 완료하고 승인된 선생님만 이용할 수 있습니다.");
     if (typeof onFailure === 'function') onFailure();
     return false;
 }
 
-// ⚠️ 접속 코드는 클라이언트 번들에 포함되므로 개발자 도구로 확인 가능합니다.
-//    "장난 방지" 수준의 잠금장치일 뿐, 진짜 권한 분리가 필요하면
-//    Firebase Authentication + Database Rules로 옮겨야 합니다.
+// ⚠️ 기존의 접속 코드 방식은 제거되고 구글 로그인 기반의 교사 인증으로 대체되었습니다.
 
 // =====================================================================
 // 4. 방 입장 카드 컴포넌트 렌더링
@@ -423,7 +410,7 @@ export function renderRoomEntrance(container, options = {}) {
             <button id="btnJoinRoom" class="btn btn-primary btn-lg w-100 mb-2 fw-bold"
                 style="background:#0d6efd; border:none;">${joinBtnText}</button>
             ${guideBtnHtml}
-            <button id="btnOpenDashboard" class="btn btn-dark btn-lg w-100 fw-bold">${dashBtnText}</button>
+            <button id="btnOpenDashboard" class="btn btn-dark btn-lg w-100 fw-bold" style="display: none;">${dashBtnText}</button>
         </div>
     `;
 
@@ -433,6 +420,11 @@ export function renderRoomEntrance(container, options = {}) {
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
+    
+    // [추가] 선생님/관리자 권한 확인 후 대시보드 버튼 보이기
+    if (window.isApprovedTeacher || window.isAdmin) {
+        dashBtn.style.display = 'block';
+    }
 
     // [추가] 지난 접속 정보 자동 입력
     // 공용 기기(학급 태블릿)를 여러 학생이 돌려 쓸 수 있으므로,
