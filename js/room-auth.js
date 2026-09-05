@@ -309,8 +309,9 @@ export function clearLocalGameNickname() {
 
 /**
  * 이 게임에서 쓸 닉네임을 가져옵니다.
- * 저장된 값이 있으면 그대로 돌려주고, 없을 때만 새로 뽑아 저장합니다.
- * (게임마다 경로가 다르므로 게임별로 각각 다른 닉네임이 유지됩니다)
+ * 저장된 값이 있으면 그대로 돌려주고, 없을 때만(= 이 게임 첫 입장) 새로 뽑아 저장합니다.
+ * 배정 시점은 "방 코드를 넣고 입장하는 순간"이며, 이후에는 계속 같은 닉네임이 유지됩니다.
+ * (게임마다 경로가 다르므로 게임별로 각각 다른 닉네임이 배정됩니다)
  */
 export function getOrCreateGameNickname() {
     let nick = getLocalGameNickname();
@@ -1275,7 +1276,6 @@ export function renderRoomEntrance(container, options = {}) {
         guideBtnText = "📖 게임방법 보기",
         guideTitle = "게임 방법",
         rememberLastEntry = true,
-        showNickname = true,
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -1286,13 +1286,6 @@ export function renderRoomEntrance(container, options = {}) {
         ? `<button id="btnShowGuide" class="btn btn-outline-primary btn-lg w-100 mb-2 fw-bold">${guideBtnText}</button>`
         : '';
 
-    const nicknameHtml = showNickname ? `
-            <div class="d-flex align-items-center justify-content-center gap-2 mb-3 small">
-                <span class="text-muted">내 닉네임</span>
-                <span class="fw-bold text-primary" id="myGameNickname"></span>
-                <a href="#" id="btnRerollNickname" class="link-secondary">새로 뽑기</a>
-            </div>` : '';
-
     target.innerHTML = `
         <div class="card shadow-sm p-4 mb-4 border-0 rounded-4 bg-white" id="room-entrance-card">
             <h5 class="text-center fw-bold mb-4">${title}</h5>
@@ -1302,7 +1295,6 @@ export function renderRoomEntrance(container, options = {}) {
                 autocomplete="off" autocapitalize="characters" spellcheck="false"
                 style="text-transform: uppercase;">
             <div class="text-center text-muted small mb-2" id="roomEntranceHint" style="min-height: 1.2rem;"></div>
-            ${nicknameHtml}
 
             <div class="form-check form-switch mb-3 d-flex align-items-center justify-content-center gap-2">
                 <input class="form-check-input" type="checkbox" id="guestModeCheck" style="cursor: pointer;">
@@ -1324,16 +1316,6 @@ export function renderRoomEntrance(container, options = {}) {
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
-    const nickEl = target.querySelector('#myGameNickname');
-
-    // 이 게임에서 쓸 닉네임 (없으면 지금 뽑아서 저장 → 다음에도 계속 같은 닉네임)
-    if (nickEl) {
-        nickEl.textContent = getOrCreateGameNickname();
-        target.querySelector('#btnRerollNickname')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            nickEl.textContent = rerollGameNickname();
-        });
-    }
 
     const updateDashVisibility = () => {
         dashBtn.style.display = (window.isApprovedTeacher || window.isAdmin) ? 'block' : 'none';
@@ -1719,7 +1701,6 @@ export function renderRoomEntrance(container, options = {}) {
             const freshData = freshSnap.exists() ? freshSnap.data() : null;
             const savedNick = freshData?.nicknames?.[gameKey()] || '';
             const nickname = await resolveGameNickname(sDocRef, freshData, (n) => isNickTakenByOther(n, ownerKey));
-            if (nickEl) nickEl.textContent = nickname;
 
             if (typeof options.studentsCollectionRef === 'function') {
                 await setDoc(doc(options.studentsCollectionRef(roomCode), nickname), {
