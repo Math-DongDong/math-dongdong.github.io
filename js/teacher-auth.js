@@ -8,7 +8,7 @@ window.isApprovedTeacher = false;
 window.isAdmin = false;
 window.pendingTeacherRequests = 0; // For admin alert
 
-function updateDashboardButtons() {
+export function updateDashboardButtons() {
     const dashBtns = document.querySelectorAll('#btnOpenDashboard, #btn-admin-dash');
     dashBtns.forEach(btn => {
         if (window.isApprovedTeacher || window.isAdmin) {
@@ -18,6 +18,7 @@ function updateDashboardButtons() {
         }
     });
 }
+window.updateDashboardButtons = updateDashboardButtons;
 
 // Custom Modal setup for Teacher Registration
 function ensureTeacherModalDOM() {
@@ -257,13 +258,31 @@ function goToAdminPage() {
     window.location.href = `${rootPath}pages/admin/account_manager.html`;
 }
 
-function renderNavbarAuth() {
+function notifyAuthChanged() {
+    window.dispatchEvent(new CustomEvent('teacherAuthChanged', {
+        detail: {
+            isApproved: window.isApprovedTeacher,
+            isAdmin: window.isAdmin
+        }
+    }));
+    updateDashboardButtons();
+}
+
+function renderNavbarAuth(retryCount = 0) {
     const container = document.getElementById('teacher-auth-container');
-    if (!container) return;
+    if (!container) {
+        if (retryCount < 30) {
+            setTimeout(() => renderNavbarAuth(retryCount + 1), 100);
+        }
+        return;
+    }
     
     const user = auth.currentUser;
     
     if (!user) {
+        window.isApprovedTeacher = false;
+        window.isAdmin = false;
+        notifyAuthChanged();
         container.innerHTML = `<button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnTeacherLogin"><i class="bi bi-google me-1"></i> 교사 로그인</button>`;
         document.getElementById('btnTeacherLogin').onclick = () => {
             signInWithPopup(auth, googleProvider).catch(err => {
@@ -314,6 +333,7 @@ function renderNavbarAuth() {
         if (user.email === ADMIN_EMAIL) {
             window.isAdmin = true;
             window.isApprovedTeacher = true; // Admin is also approved
+            notifyAuthChanged();
             btnHtml = `
                 <div class="dropdown">
                     <button class="btn btn-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -343,6 +363,7 @@ function renderNavbarAuth() {
             
         } else if (data.status === 'pending') {
             window.isApprovedTeacher = false;
+            notifyAuthChanged();
             btnHtml = `
                 <button class="btn btn-warning btn-sm fw-bold me-2 shadow-sm" disabled>승인 대기 중</button>
                 <button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" id="btnTeacherLogout">로그아웃</button>
@@ -352,6 +373,7 @@ function renderNavbarAuth() {
             }, 0);
         } else if (data.status === 'approved') {
             window.isApprovedTeacher = true;
+            notifyAuthChanged();
             btnHtml = `
                 <div class="dropdown">
                     <button class="btn btn-outline-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -377,7 +399,7 @@ function renderNavbarAuth() {
         }
         
         container.innerHTML = btnHtml;
-        updateDashboardButtons();
+        notifyAuthChanged();
         
     }).catch(err => {
         console.error("Error fetching teacher info:", err);
@@ -393,12 +415,10 @@ onAuthStateChanged(auth, (user) => {
     if (!user) {
         window.isApprovedTeacher = false;
         window.isAdmin = false;
-        updateDashboardButtons();
+        notifyAuthChanged();
     }
     renderNavbarAuth();
 });
 
-// Init dash buttons on load as hidden if not approved
-document.addEventListener("DOMContentLoaded", () => {
-    updateDashboardButtons();
-});
+// Periodic dashboard button check for dynamically mounted rooms
+[300, 800, 1500, 3000].forEach(ms => setTimeout(updateDashboardButtons, ms));

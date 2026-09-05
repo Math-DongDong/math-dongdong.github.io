@@ -44,9 +44,18 @@
     '<ul class="navbar-nav ms-lg-3 align-items-lg-center">' +
     menuHtml +
     '</ul>' +
+    '<div id="teacher-auth-container" class="ms-auto d-flex align-items-center"></div>' +
     '</div>' +
     '</div>' +
     '</nav>';
 
   currentScript.insertAdjacentHTML('afterend', navbarHtml);
+
+  if (!document.querySelector('script[data-auth="teacher-auth"]')) {
+    const authScript = document.createElement('script');
+    authScript.type = 'module';
+    authScript.dataset.auth = 'teacher-auth';
+    authScript.src = `${rootPath}js/teacher-auth.js`;
+    document.body.appendChild(authScript);
+  }
 })();

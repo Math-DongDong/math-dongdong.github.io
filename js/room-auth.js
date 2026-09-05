@@ -421,10 +421,16 @@ export function renderRoomEntrance(container, options = {}) {
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
     
-    // [추가] 선생님/관리자 권한 확인 후 대시보드 버튼 보이기
-    if (window.isApprovedTeacher || window.isAdmin) {
-        dashBtn.style.display = 'block';
-    }
+    // [추가] 선생님/관리자 권한 확인 후 대시보드 버튼 보이기 (인증 상태 변화 이벤트도 즉시 반영)
+    const updateDashVisibility = () => {
+        if (window.isApprovedTeacher || window.isAdmin) {
+            dashBtn.style.display = 'block';
+        } else {
+            dashBtn.style.display = 'none';
+        }
+    };
+    updateDashVisibility();
+    window.addEventListener('teacherAuthChanged', updateDashVisibility);
 
     // [추가] 지난 접속 정보 자동 입력
     // 공용 기기(학급 태블릿)를 여러 학생이 돌려 쓸 수 있으므로,

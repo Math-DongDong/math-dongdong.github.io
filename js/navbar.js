@@ -192,8 +192,8 @@
         document.write(navbarHtml);
     }
 
-    // 6. 현재 페이지 활성화 표시 로직
-    document.addEventListener('DOMContentLoaded', () => {
+    // 6. 현재 페이지 활성화 표시 로직 및 교사 인증 모듈 로드
+    function initNavbarFeatures() {
         const currentFile = normalizedPath.split('/').pop();
 
         document.querySelectorAll('.dropdown-item').forEach(link => {
@@ -211,10 +211,19 @@
             }
         });
         
-        // Load teacher auth module dynamically
-        const authScript = document.createElement('script');
-        authScript.type = 'module';
-        authScript.src = `${rootPath}js/teacher-auth.js`;
-        document.body.appendChild(authScript);
-    });
+        // Load teacher auth module dynamically if not already added
+        if (!document.querySelector('script[data-auth="teacher-auth"]')) {
+            const authScript = document.createElement('script');
+            authScript.type = 'module';
+            authScript.dataset.auth = 'teacher-auth';
+            authScript.src = `${rootPath}js/teacher-auth.js`;
+            document.body.appendChild(authScript);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initNavbarFeatures);
+    } else {
+        initNavbarFeatures();
+    }
 })();
