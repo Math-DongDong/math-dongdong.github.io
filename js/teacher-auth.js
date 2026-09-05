@@ -10,6 +10,7 @@ window.pendingTeacherRequests = 0; // For admin alert
 window.currentTeacherUid = null;
 window.currentTeacherEmail = null;
 window.currentTeacherName = null;
+window.currentTeacherSchool = null;
 
 export function updateDashboardButtons() {
     const dashBtns = document.querySelectorAll('#btnOpenDashboard, #btn-admin-dash');
@@ -268,7 +269,8 @@ function notifyAuthChanged() {
             isAdmin: window.isAdmin,
             uid: window.currentTeacherUid,
             email: window.currentTeacherEmail,
-            name: window.currentTeacherName
+            name: window.currentTeacherName,
+            school: window.currentTeacherSchool
         }
     }));
     updateDashboardButtons();
@@ -291,6 +293,7 @@ function renderNavbarAuth(retryCount = 0) {
         window.currentTeacherUid = null;
         window.currentTeacherEmail = null;
         window.currentTeacherName = null;
+        window.currentTeacherSchool = null;
         notifyAuthChanged();
         container.innerHTML = `<button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnTeacherLogin"><i class="bi bi-google me-1"></i> 교사 로그인</button>`;
         document.getElementById('btnTeacherLogin').onclick = () => {
@@ -341,6 +344,7 @@ function renderNavbarAuth(retryCount = 0) {
         
         const data = docSnap.data();
         window.currentTeacherName = (data && data.name) || user.displayName || '교사';
+        window.currentTeacherSchool = (data && data.school) || '';
         let btnHtml = '';
         
         if (user.email === ADMIN_EMAIL) {

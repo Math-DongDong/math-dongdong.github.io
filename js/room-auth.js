@@ -804,7 +804,19 @@ export function hideGuestExitButton() {
 }
 
 /** 교사 대시보드 PIN 초기화 모달 */
-export function showPinResetModal(studentList = []) {
+export async function showPinResetModal(studentList = []) {
+    // 1. 교사 계정의 학교명 확인 (전역 변수 또는 Firestore 조회)
+    let teacherSchool = window.currentTeacherSchool || '';
+    if (!teacherSchool && window.currentTeacherUid) {
+        try {
+            const tSnap = await getDoc(doc(db, "teachers", window.currentTeacherUid));
+            if (tSnap.exists()) {
+                teacherSchool = tSnap.data().school || '';
+                window.currentTeacherSchool = teacherSchool;
+            }
+        } catch (e) { }
+    }
+
     return new Promise((resolve) => {
         let modalEl = document.getElementById('pinResetModal');
         if (!modalEl) {
@@ -817,20 +829,31 @@ export function showPinResetModal(studentList = []) {
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
                         </div>
                         <div class="modal-body py-3">
-                            <p class="text-muted small mb-3">PIN을 분실한 학생을 선택하거나 직접 입력하여 초기화할 수 있습니다. 초기화된 학생은 다음 접속 시 새로운 4자리 PIN을 설정합니다.</p>
-                            <div class="mb-3" id="pinResetSelectGroup">
-                                <label class="form-label small fw-bold text-secondary">현재 방 학생 목록에서 선택</label>
-                                <select class="form-select bg-light fw-bold" id="pinResetStudentSelect">
-                                    <option value="">직접 입력하기</option>
-                                </select>
-                            </div>
+                            <p class="text-muted small mb-3">교사 소속 학교 학생의 학번을 선택하거나 직접 입력하여 PIN을 초기화할 수 있습니다. 초기화된 학생은 다음 접속 시 새로운 4자리 PIN을 설정합니다.</p>
+                            
+                            <!-- 학교명 선택 드롭다운 -->
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">학교명</label>
+                                <label class="form-label small fw-bold text-secondary">학교명 선택</label>
+                                <select class="form-select bg-light fw-bold" id="pinResetSchoolSelect"></select>
+                            </div>
+                            <!-- 학교명 직접 입력 (필요 시) -->
+                            <div class="mb-3" id="pinResetCustomSchoolGroup" style="display:none;">
+                                <label class="form-label small fw-bold text-secondary">학교명 직접 입력</label>
                                 <input type="text" class="form-control bg-light" id="pinResetSchoolInput" placeholder="예: 동동중학교" autocomplete="off">
                             </div>
+
+                            <!-- 현재 방 학생 선택 드롭다운 -->
+                            <div class="mb-3" id="pinResetSelectGroup">
+                                <label class="form-label small fw-bold text-secondary">해당 학교 접속 학생 선택</label>
+                                <select class="form-select bg-light fw-bold" id="pinResetStudentSelect">
+                                    <option value="">-- 학생 선택 또는 아래에 직접 학번 입력 --</option>
+                                </select>
+                            </div>
+
+                            <!-- 학번 입력 -->
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-secondary">학번 또는 식별번호</label>
-                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 20315" autocomplete="off">
+                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 20315 또는 2학년 3반 15번" autocomplete="off">
                             </div>
                             <div id="pinResetError" class="text-danger small fw-bold" style="display:none;"></div>
                         </div>
@@ -845,44 +868,96 @@ export function showPinResetModal(studentList = []) {
             modalEl = document.getElementById('pinResetModal');
         }
 
-        const sel = document.getElementById('pinResetStudentSelect');
-        const schoolIn = document.getElementById('pinResetSchoolInput');
-        const studentIdIn = document.getElementById('pinResetStudentIdInput');
+        const schoolSelect = document.getElementById('pinResetSchoolSelect');
+        const customSchoolGroup = document.getElementById('pinResetCustomSchoolGroup');
+        const schoolInput = document.getElementById('pinResetSchoolInput');
+        const studentSelect = document.getElementById('pinResetStudentSelect');
+        const studentIdInput = document.getElementById('pinResetStudentIdInput');
         const errEl = document.getElementById('pinResetError');
         const confirmBtn = document.getElementById('btnExecutePinReset');
 
         errEl.style.display = 'none';
-        schoolIn.value = '';
-        studentIdIn.value = '';
+        studentIdInput.value = '';
 
-        sel.innerHTML = '<option value="">직접 입력하기</option>';
+        // 고유 학교명 목록 생성
+        const schoolSet = new Set();
+        if (teacherSchool) schoolSet.add(teacherSchool);
         if (Array.isArray(studentList)) {
             studentList.forEach(s => {
-                if (s.school && s.studentId) {
-                    sel.innerHTML += `<option value="${escapeHtml(s.school)}||${escapeHtml(s.studentId)}">${escapeHtml(s.nickname || s.studentId)} (${escapeHtml(s.school)} / ${escapeHtml(s.studentId)})</option>`;
-                } else if (s.studentId) {
-                    sel.innerHTML += `<option value="||${escapeHtml(s.studentId)}">${escapeHtml(s.nickname || s.studentId)}</option>`;
-                }
+                if (s.school && s.school.trim()) schoolSet.add(s.school.trim());
             });
         }
 
-        sel.onchange = () => {
-            if (sel.value) {
-                const parts = sel.value.split('||');
-                schoolIn.value = parts[0] || '';
-                studentIdIn.value = parts[1] || '';
+        // 학교 드롭다운 옵션 렌더링
+        let schoolOptionsHtml = '';
+        if (teacherSchool) {
+            schoolOptionsHtml += `<option value="${escapeHtml(teacherSchool)}" selected>🏫 ${escapeHtml(teacherSchool)} (교사 소속 학교)</option>`;
+        }
+        schoolSet.forEach(sch => {
+            if (sch !== teacherSchool) {
+                schoolOptionsHtml += `<option value="${escapeHtml(sch)}">🏫 ${escapeHtml(sch)}</option>`;
+            }
+        });
+        schoolOptionsHtml += `<option value="__direct__">✏️ 직접 학교명 입력</option>`;
+        schoolSelect.innerHTML = schoolOptionsHtml;
+
+        // 선택된 학교 기준 학생 드롭다운 업데이트
+        const updateStudentDropdown = () => {
+            const currentSchool = schoolSelect.value === '__direct__' ? schoolInput.value.trim() : schoolSelect.value;
+            studentSelect.innerHTML = '<option value="">-- 학생 선택 또는 아래에 직접 학번 입력 --</option>';
+            
+            if (Array.isArray(studentList)) {
+                const matched = studentList.filter(s => !currentSchool || s.school === currentSchool);
+                matched.forEach(s => {
+                    const sid = s.studentId || '';
+                    const nick = s.nickname || '';
+                    if (sid) {
+                        studentSelect.innerHTML += `<option value="${escapeHtml(sid)}">${escapeHtml(sid)} (${escapeHtml(nick)})</option>`;
+                    }
+                });
             }
         };
+
+        const handleSchoolChange = () => {
+            if (schoolSelect.value === '__direct__') {
+                customSchoolGroup.style.display = 'block';
+                schoolInput.value = '';
+                schoolInput.focus();
+            } else {
+                customSchoolGroup.style.display = 'none';
+                schoolInput.value = schoolSelect.value;
+            }
+            updateStudentDropdown();
+        };
+
+        schoolSelect.onchange = handleSchoolChange;
+        schoolInput.oninput = updateStudentDropdown;
+
+        studentSelect.onchange = () => {
+            if (studentSelect.value) {
+                studentIdInput.value = studentSelect.value;
+            }
+        };
+
+        // 초기 상태 설정
+        handleSchoolChange();
 
         const bsModal = new bootstrap.Modal(modalEl);
         let executed = false;
 
         const onConfirm = async () => {
-            const school = schoolIn.value.trim();
-            const studentId = studentIdIn.value.trim();
-            if (!school || !studentId) {
-                errEl.textContent = "학교명과 학번을 모두 입력해주세요.";
+            const school = (schoolSelect.value === '__direct__' ? schoolInput.value : schoolSelect.value).trim();
+            const studentId = studentIdInput.value.trim();
+
+            if (!school) {
+                errEl.textContent = "학교명을 선택하거나 입력해주세요.";
                 errEl.style.display = 'block';
+                return;
+            }
+            if (!studentId) {
+                errEl.textContent = "초기화할 학번(식별번호)을 입력해주세요.";
+                errEl.style.display = 'block';
+                studentIdInput.focus();
                 return;
             }
 
@@ -898,7 +973,7 @@ export function showPinResetModal(studentList = []) {
                 });
                 executed = true;
                 bsModal.hide();
-                await customAlert("초기화 완료", `<strong>${escapeHtml(studentId)}</strong> 학생의 PIN 번호가 삭제(초기화)되었습니다.<br>학생이 다음 접속 시 새로운 4자리 PIN을 설정하게 됩니다.`);
+                await customAlert("초기화 완료", `<strong>${escapeHtml(school)}</strong>의 <strong>${escapeHtml(studentId)}</strong> 학생 PIN 번호가 삭제(초기화)되었습니다.<br>학생이 다음 접속 시 새로운 4자리 PIN을 설정하게 됩니다.`);
             } catch (err) {
                 console.error("PIN reset error:", err);
                 errEl.textContent = "PIN 초기화 중 오류가 발생했습니다. 학번을 다시 확인해주세요.";
