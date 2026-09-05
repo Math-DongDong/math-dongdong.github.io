@@ -1259,7 +1259,14 @@ export function renderRoomEntrance(container, options = {}) {
     updateDashVisibility();
     window.addEventListener('teacherAuthChanged', updateDashVisibility);
 
-    if (rememberLastEntry) {
+    // QR 코드로 들어온 경우(?room=XXXX)를 최우선으로 채우고, 없으면 지난 접속 정보를 사용
+    const urlRoom = (new URLSearchParams(location.search).get('room') || '')
+        .replace(/\s/g, '').slice(0, 4).toUpperCase();
+
+    if (urlRoom) {
+        roomInput.value = urlRoom;
+        roomHint.textContent = 'QR 코드로 방 번호가 자동 입력되었어요.';
+    } else if (rememberLastEntry) {
         const saved = loadRememberedEntrance();
         if (saved.room) {
             roomInput.value = saved.room;
