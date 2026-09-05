@@ -6,8 +6,8 @@
  * 대시보드 섹션 내에 <div id="dash-header-placeholder"></div>를 배치하면
  * 해당 위치에 헤더 HTML이 자동 삽입됩니다.
  *
- * [추가] 같은 폴더의 qr-modal.js를 자동으로 불러와 [QR 코드] 버튼과 연결합니다.
- *        (각 게임 페이지는 수정할 필요가 없습니다)
+ * [추가] 같은 폴더의 qr-modal.js를 자동으로 불러옵니다.
+ *        방을 만들거나 선택하면 입장 QR 패널이 자동으로 떠서, 별도 버튼이 없습니다.
  */
 (function () {
     const scriptTag = document.currentScript;
@@ -22,11 +22,6 @@
     const exportBtnHtml = hasExport ? `
         <button id="btn-export-excel" class="btn btn-outline-success fw-bold dash-export"><i
                 class="bi bi-file-earmark-excel"></i> 엑셀 다운로드</button>
-    ` : '';
-
-    const qrBtnHtml = hasQr ? `
-        <button id="btn-show-qr" class="btn btn-outline-dark fw-bold dash-qr" style="white-space: nowrap;"><i
-                class="bi bi-qr-code"></i> 입장 QR</button>
     ` : '';
 
     const headerClass = hasExport ? 'dash-header mb-4' : 'dash-header dash-header-no-export mb-4';
@@ -47,40 +42,9 @@
                 <button id="btn-create-room" class="btn btn-primary fw-bold dash-create">새로운 방 만들기</button>
                 ${exportBtnHtml}
                 <button id="btn-reset-pin" class="btn btn-outline-danger fw-bold dash-reset-pin" style="white-space: nowrap;"><i class="bi bi-key-fill"></i> PIN 초기화</button>
-                ${qrBtnHtml}
             </div>
         </div>
     `;
-
-    // [QR 버튼] 모바일 그리드 배치용 보정 스타일
-    // dashboard.css를 수정하지 않아도 되도록 여기서 주입합니다.
-    if (hasQr && !document.getElementById('dash-qr-style')) {
-        const style = document.createElement('style');
-        style.id = 'dash-qr-style';
-        style.textContent = `
-            .dash-reset-pin { grid-column: 1; grid-row: 4; }
-            .dash-qr { grid-column: 2; grid-row: 4; }
-            .dash-qr {
-                width: 100%;
-                height: 42px;
-                padding: 0.4rem 0.75rem;
-                font-size: 0.95rem;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                white-space: nowrap;
-            }
-            @media (min-width: 768px) {
-                .dash-qr {
-                    height: 42px;
-                    padding: 0.45rem 1rem;
-                    font-size: 1rem;
-                    width: auto;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
 
     const placeholder = document.getElementById('dash-header-placeholder');
     if (placeholder) {

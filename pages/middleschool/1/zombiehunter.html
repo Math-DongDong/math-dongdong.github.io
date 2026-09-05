@@ -14,6 +14,15 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
+        /* 학번 열: 기본 숨김, 토글 시 표시 */
+        .col-studentid {
+            display: none;
+        }
+
+        #adminTableWrap.show-sid .col-studentid {
+            display: table-cell;
+        }
+
         /* Landing */
         .landing-card {
             max-width: 480px;
@@ -578,11 +587,19 @@
             </div>
 
             <!-- 성취수준 상세 테이블 -->
-            <div class="table-responsive">
+            <div class="d-flex justify-content-end align-items-center mb-2">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer;">
+                    <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId"
+                        style="cursor:pointer;">학번 표시</label>
+                </div>
+            </div>
+            <div class="table-responsive" id="adminTableWrap">
                 <table class="table table-hover align-middle mb-0 text-center">
                     <thead class="table-light">
                         <tr>
                             <th>순위</th>
+                            <th class="col-studentid">학번</th>
                             <th>이름</th>
                             <th>종합 성취수준</th>
                             <th>핵심 역량</th>
@@ -593,7 +610,7 @@
                     </thead>
                     <tbody id="adminTableBody">
                         <tr>
-                            <td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td>
+                            <td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -612,6 +629,8 @@
         // 전역 상태
         let currentRoomCode = '';
         let myName = '';
+        let myStudentId = '';
+        let mySchool = '';
         let currentStage = 1, currentProblem = 1, score = 0, lives = 5;
         let currentFuncType = 'linear', currentA = 1;
         let currentZombies = [];
@@ -750,6 +769,9 @@
                 }
 
                 currentRoomCode = code; myName = finalName;
+                // 학생 인증 모드에서만 학번이 있습니다. (빠른 입장 모드는 빈 값)
+                mySchool = authInfo?.school || '';
+                myStudentId = authInfo?.studentId || '';
                 rememberEntrance(code, finalName);   // 입장 성공 시점에만 저장 → 다음 접속 때 자동 입력
                 currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
                 currentTotalShots = 0; currentHitShots = 0;
@@ -1172,7 +1194,7 @@
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
 
             const roomRef = roomDocRef(currentRoomCode);
-            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: true, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
+            const recordData = { nickname: myName, studentId: myStudentId, school: mySchool, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: true, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
 
             const roomSnap = await getDoc(roomRef);
             let updatedRoomData = { roomCode: currentRoomCode, updatedAt: serverTimestamp() };
@@ -1218,7 +1240,7 @@
 
             const roomRef = roomDocRef(currentRoomCode);
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
-            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
+            const recordData = { nickname: myName, studentId: myStudentId, school: mySchool, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
 
             const roomSnap = await getDoc(roomRef);
             let updatedRoomData = { roomCode: currentRoomCode, updatedAt: serverTimestamp() };
@@ -1244,6 +1266,8 @@
             const recordRef = await addDoc(recordsCollectionRef(currentRoomCode), recordData);
             await setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
                 nickname: myName,
+                studentId: myStudentId,
+                school: mySchool,
                 score,
                 stage: currentStage,
                 problem: currentProblem,
@@ -1555,7 +1579,7 @@
         function renderDashboard() {
             renderPendingGuests();
             if (!currentAdminRoom) {
-                document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
                 document.getElementById('dashAvgScore').innerText = '-';
                 document.getElementById('dashAvgAcc').innerText = '-';
                 document.getElementById('dashLevelAcc').innerHTML = '';
@@ -1563,11 +1587,18 @@
                 return;
             }
 
+            // 닉네임 → 학번 (students 문서 우선, 없으면 기록에서 보완)
+            const sidByNick = {};
+            roomStudents.forEach(st => {
+                if (st.nickname && st.studentId) sidByNick[st.nickname] = st.studentId;
+            });
+
             // records(방 별)만 사용하여 통계 생성
             let stats = {};
             roomRecords.forEach(r => {
-                if (!stats[r.nickname]) stats[r.nickname] = { pc: 0, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0, hits: { 1: 0, 2: 0, 3: 0, 4: 0 }, fails: { 1: 0, 2: 0, 3: 0, 4: 0 }, comp: false, playTime: 0 };
+                if (!stats[r.nickname]) stats[r.nickname] = { pc: 0, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0, hits: { 1: 0, 2: 0, 3: 0, 4: 0 }, fails: { 1: 0, 2: 0, 3: 0, 4: 0 }, comp: false, playTime: 0, sid: '' };
                 let s = stats[r.nickname]; s.pc++;
+                if (r.studentId) s.sid = r.studentId;
                 if (r.score > s.ms) s.ms = r.score;
                 if (r.maxStage > s.mStg) { s.mStg = r.maxStage; s.mProb = r.maxProblem || 1; }
                 else if (r.maxStage === s.mStg && (r.maxProblem || 1) > s.mProb) { s.mProb = r.maxProblem || 1; }
@@ -1579,7 +1610,7 @@
             currentStats = stats;
             const keys = Object.keys(stats);
             if (keys.length === 0) {
-                document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="8" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
                 document.getElementById('dashAvgScore').innerText = '-';
                 document.getElementById('dashAvgAcc').innerText = '-';
                 document.getElementById('dashLevelAcc').innerHTML = '';
@@ -1631,9 +1662,11 @@
 
                 let avgTime = avgTimeRaw.toFixed(1);
 
-                tbodyHtml += `<tr style="cursor:pointer;" onclick="showStudentModal('${nick}')"><td class="fw-bold">${rankDisplay}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tBdg} fs-6">${tier}</span></td><td>${compText}</td><td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td><td><span class="fw-bold">${avgTime}초</span></td><td><span class="badge bg-secondary">${s.pc}회</span></td></tr>`;
+                const sid = s.sid || sidByNick[nick] || '';
+                tbodyHtml += `<tr style="cursor:pointer;" onclick="showStudentModal('${nick}')"><td class="fw-bold">${rankDisplay}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tBdg} fs-6">${tier}</span></td><td>${compText}</td><td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td><td><span class="fw-bold">${avgTime}초</span></td><td><span class="badge bg-secondary">${s.pc}회</span></td></tr>`;
 
                 currentExcelData.push({
+                    "학번": sid || '',
                     "순위": idx + 1,
                     "이름": nick,
                     "종합 성취수준": tier,
@@ -1699,6 +1732,10 @@
             speedHtml += '</div>';
             document.getElementById('dashSpeedDist').innerHTML = speedHtml;
         }
+
+        document.getElementById('toggleStudentId').addEventListener('change', (e) => {
+            document.getElementById('adminTableWrap').classList.toggle('show-sid', e.target.checked);
+        });
 
         document.getElementById('btn-export-excel').addEventListener('click', () => {
             if (!currentAdminRoom) return customAlert("알림", "방을 선택해주세요.");

@@ -296,11 +296,13 @@ export function getLocalGameNickname() {
     try { return localStorage.getItem(key) || _memNickname[key] || ''; }
     catch (e) { return _memNickname[key] || ''; }
 }
+
 export function setLocalGameNickname(nick) {
     const key = GAME_NICK_PREFIX + gameKey();
     _memNickname[key] = String(nick || '');
     try { localStorage.setItem(key, _memNickname[key]); } catch (e) { }
 }
+
 export function clearLocalGameNickname() {
     const key = GAME_NICK_PREFIX + gameKey();
     delete _memNickname[key];
@@ -310,8 +312,7 @@ export function clearLocalGameNickname() {
 /**
  * 이 게임에서 쓸 닉네임을 가져옵니다.
  * 저장된 값이 있으면 그대로 돌려주고, 없을 때만(= 이 게임 첫 입장) 새로 뽑아 저장합니다.
- * 배정 시점은 "방 코드를 넣고 입장하는 순간"이며, 이후에는 계속 같은 닉네임이 유지됩니다.
- * (게임마다 경로가 다르므로 게임별로 각각 다른 닉네임이 배정됩니다)
+ * 배정 시점은 "방 코드를 넣고 입장하는 순간"이며, 같은 게임에서는 계속 같은 닉네임이 유지됩니다.
  */
 export function getOrCreateGameNickname() {
     let nick = getLocalGameNickname();
@@ -323,7 +324,7 @@ export function getOrCreateGameNickname() {
     return nick;
 }
 
-/** 닉네임 새로 뽑기 (학생이 직접 바꾸고 싶을 때) */
+/** 방 안에서 이름이 겹쳤을 때 새 닉네임 배정 (이 게임에서 계속 사용) */
 export function rerollGameNickname() {
     const nick = generateRandomNickname();
     setLocalGameNickname(nick);
@@ -344,12 +345,13 @@ export async function generateUniqueNickname(isTakenFn) {
 /**
  * 인증 모드 닉네임 결정
  * - student_auth/{key}.nicknames[gameKey] 에 저장된 닉네임을 계속 사용
- * - 없거나, 같은 방에서 다른 학생이 이미 쓰고 있으면 새로 배정 후 저장
+ * - 없으면 이 기기에 저장된 닉네임을 쓰고, 그것도 없거나 같은 방에서 겹치면 새로 배정
  */
 export async function resolveGameNickname(studentRef, studentData, isTakenByOther) {
     const key = gameKey();
     const free = async (n) => {
-        if (!n || typeof isTakenByOther !== 'function') return !!n;
+        if (!n) return false;
+        if (typeof isTakenByOther !== 'function') return true;
         try { return !(await isTakenByOther(n)); } catch (e) { return true; }
     };
 
@@ -357,13 +359,13 @@ export async function resolveGameNickname(studentRef, studentData, isTakenByOthe
     let nick = studentData?.nicknames?.[key] || '';
     if (nick && !(await free(nick))) nick = '';
 
-    // 2순위: 이 기기에 저장해 둔 닉네임 (입장 화면에 보여 준 그 이름)
+    // 2순위: 이 기기에 저장해 둔 이 게임의 닉네임
     if (!nick) {
         const local = getLocalGameNickname();
         if (local && await free(local)) nick = local;
     }
 
-    // 3순위: 새로 뽑기
+    // 3순위: 새로 배정
     if (!nick) nick = await generateUniqueNickname(isTakenByOther);
 
     if (studentData?.nicknames?.[key] !== nick) {
