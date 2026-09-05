@@ -125,6 +125,9 @@ export function generateRandomNickname() {
     const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
     return `${adj} ${animal}`;
 }
+if (typeof window !== 'undefined') {
+    window.generateRandomNickname = generateRandomNickname;
+}
 
 // =====================================================================
 // 1. 공통 모달 DOM 자동 생성 및 유틸
@@ -457,7 +460,7 @@ export function renderRoomEntrance(container, options = {}) {
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
-    
+
     // [추가] 선생님/관리자 권한 확인 후 대시보드 버튼 보이기 (인증 상태 변화 이벤트도 즉시 반영)
     const updateDashVisibility = () => {
         if (window.isApprovedTeacher || window.isAdmin) {
