@@ -188,7 +188,6 @@ function ensurePanel() {
                 <span class="text-muted small">QR을 만드는 중...</span>
             </div>
             <div class="qr-room-code" id="qrRoomCode"></div>
-            <div class="qr-hint">휴대폰 카메라로 스캔하면 방 코드가 자동 입력됩니다</div>
         </div>
         <div class="qr-resize" id="qrResizeHandle" title="끌어서 크기 조절"></div>
     </div>`);
