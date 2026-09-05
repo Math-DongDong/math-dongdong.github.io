@@ -1,3 +1,6 @@
+/**
+ * teacher-auth.js
+ */
 import { auth, googleProvider, db } from './firebase-config.js';
 import { signInWithPopup, signOut, onAuthStateChanged, deleteUser } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 import { doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
