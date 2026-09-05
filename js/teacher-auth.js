@@ -70,14 +70,15 @@ function ensureTeacherInfoModalDOM() {
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body pb-0">
+                    <div class="alert alert-info py-2 small d-none" id="teacherInfoNote"></div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">학교명</label>
-                        <input type="text" class="form-control" id="editTeacherSchoolInput">
+                        <input type="text" class="form-control" id="editTeacherSchoolInput" placeholder="예: 동동중학교">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">이름</label>
-                        <input type="text" class="form-control" id="editTeacherNameInput" readonly>
-                        <small class="text-muted">이름은 변경할 수 없습니다.</small>
+                        <input type="text" class="form-control" id="editTeacherNameInput" placeholder="예: 홍길동" readonly>
+                        <small class="text-muted" id="editTeacherNameHelp">이름은 변경할 수 없습니다.</small>
                     </div>
                 </div>
                 <div class="modal-footer border-0 pt-3 d-flex justify-content-between">
@@ -176,17 +177,45 @@ async function showTeacherInfoModal(user, docData) {
     const modalEl = document.getElementById('teacherInfoModal');
     const bsModal = new bootstrap.Modal(modalEl);
 
-    document.getElementById('editTeacherSchoolInput').value = docData.school || '';
-    document.getElementById('editTeacherNameInput').value = docData.name || '';
+    const isAdminUser = (user.email === ADMIN_EMAIL);
+    const schoolInput = document.getElementById('editTeacherSchoolInput');
+    const nameInput = document.getElementById('editTeacherNameInput');
+    const nameHelp = document.getElementById('editTeacherNameHelp');
+    const note = document.getElementById('teacherInfoNote');
+
+    schoolInput.value = docData.school || '';
+    nameInput.value = docData.name || '';
+
+    // 관리자 계정은 학교명과 이름을 모두 직접 설정할 수 있습니다.
+    // (학생 등록 화면의 학교·담당 선생님 목록은 이 값을 그대로 사용합니다)
+    nameInput.readOnly = !isAdminUser;
+    nameHelp.textContent = isAdminUser
+        ? '학생 등록 화면의 담당 선생님 목록에 이 이름이 표시됩니다.'
+        : '이름은 변경할 수 없습니다.';
+    note.classList.toggle('d-none', !isAdminUser);
+    if (isAdminUser) {
+        note.innerHTML = '학교명이 <b>관리자</b>로 되어 있으면 학생 화면의 학교 목록에 나타나지 않습니다.<br>' +
+            '실제 학교명과 이름으로 바꾸면 학생이 선택할 수 있습니다.';
+    }
 
     document.getElementById('btnSaveInfo').onclick = async () => {
-        const school = document.getElementById('editTeacherSchoolInput').value.trim();
+        const school = schoolInput.value.trim();
+        const name = nameInput.value.trim();
         if (!school) {
             alert("학교명을 입력해주세요.");
             return;
         }
+        if (isAdminUser && !name) {
+            alert("이름을 입력해주세요.");
+            return;
+        }
         try {
-            await setDoc(doc(db, "teachers", user.uid), { school: school }, { merge: true });
+            const payload = isAdminUser ? { school, name } : { school };
+            await setDoc(doc(db, "teachers", user.uid), payload, { merge: true });
+            window.currentTeacherSchool = school;
+            if (isAdminUser) window.currentTeacherName = name;
+            // 학교·교사 드롭다운 캐시를 비워 새 값이 바로 반영되게 합니다.
+            if (typeof window.clearTeacherCache === 'function') window.clearTeacherCache();
             alert("저장되었습니다.");
             bsModal.hide();
             renderNavbarAuth(); // Refresh
@@ -365,6 +394,7 @@ function renderNavbarAuth(retryCount = 0) {
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoAdmin"><i class="bi bi-gear-fill me-2"></i>계정 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
+                        <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정 (학교명)</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
                     </ul>
@@ -379,6 +409,10 @@ function renderNavbarAuth(retryCount = 0) {
                 document.getElementById('btnGoStudents').onclick = (e) => {
                     e.preventDefault();
                     goToStudentManagerPage();
+                };
+                document.getElementById('btnEditInfo').onclick = (e) => {
+                    e.preventDefault();
+                    showTeacherInfoModal(user, data);
                 };
                 document.getElementById('btnTeacherLogout').onclick = (e) => {
                     e.preventDefault();

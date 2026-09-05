@@ -239,6 +239,9 @@ export function isAccountOnline(data) {
 /** 승인된 교사 목록 (세션 내 1회 캐시) */
 let _teacherCache = null;
 export function clearTeacherCache() { _teacherCache = null; }
+if (typeof window !== 'undefined') {
+    window.clearTeacherCache = clearTeacherCache;
+}
 
 export async function fetchApprovedTeachers(force = false) {
     if (_teacherCache && !force) return _teacherCache;
@@ -279,15 +282,52 @@ export function gameKey() {
         .slice(-60) || 'game';
 }
 
+// 게임(페이지)별 닉네임은 localStorage에 보관합니다.
+// 사생활 보호 모드처럼 localStorage가 막힌 환경에서도 최소한 그 세션 동안은
+// 같은 닉네임이 유지되도록 메모리 폴백을 함께 둡니다.
 const GAME_NICK_PREFIX = 'gameNickname:';
+const _memNickname = {};
+
+/** 이 페이지에서 새로 뽑은 닉네임인지 (게임 쪽 중복 검사 여부 판단용) */
+export let nicknameJustCreated = false;
+
 export function getLocalGameNickname() {
-    try { return localStorage.getItem(GAME_NICK_PREFIX + gameKey()) || ''; } catch (e) { return ''; }
+    const key = GAME_NICK_PREFIX + gameKey();
+    try { return localStorage.getItem(key) || _memNickname[key] || ''; }
+    catch (e) { return _memNickname[key] || ''; }
 }
 export function setLocalGameNickname(nick) {
-    try { localStorage.setItem(GAME_NICK_PREFIX + gameKey(), String(nick || '')); } catch (e) { }
+    const key = GAME_NICK_PREFIX + gameKey();
+    _memNickname[key] = String(nick || '');
+    try { localStorage.setItem(key, _memNickname[key]); } catch (e) { }
 }
 export function clearLocalGameNickname() {
-    try { localStorage.removeItem(GAME_NICK_PREFIX + gameKey()); } catch (e) { }
+    const key = GAME_NICK_PREFIX + gameKey();
+    delete _memNickname[key];
+    try { localStorage.removeItem(key); } catch (e) { }
+}
+
+/**
+ * 이 게임에서 쓸 닉네임을 가져옵니다.
+ * 저장된 값이 있으면 그대로 돌려주고, 없을 때만 새로 뽑아 저장합니다.
+ * (게임마다 경로가 다르므로 게임별로 각각 다른 닉네임이 유지됩니다)
+ */
+export function getOrCreateGameNickname() {
+    let nick = getLocalGameNickname();
+    if (!nick) {
+        nick = generateRandomNickname();
+        setLocalGameNickname(nick);
+        nicknameJustCreated = true;
+    }
+    return nick;
+}
+
+/** 닉네임 새로 뽑기 (학생이 직접 바꾸고 싶을 때) */
+export function rerollGameNickname() {
+    const nick = generateRandomNickname();
+    setLocalGameNickname(nick);
+    nicknameJustCreated = true;
+    return nick;
 }
 
 /** 방 안에서 겹치지 않는 자동 닉네임 생성 (isTakenFn: async (nick) => boolean) */
@@ -307,12 +347,25 @@ export async function generateUniqueNickname(isTakenFn) {
  */
 export async function resolveGameNickname(studentRef, studentData, isTakenByOther) {
     const key = gameKey();
+    const free = async (n) => {
+        if (!n || typeof isTakenByOther !== 'function') return !!n;
+        try { return !(await isTakenByOther(n)); } catch (e) { return true; }
+    };
+
+    // 1순위: 학생 계정에 저장된 이 게임의 닉네임 (다른 기기에서도 같은 이름)
     let nick = studentData?.nicknames?.[key] || '';
-    if (nick && typeof isTakenByOther === 'function') {
-        try { if (await isTakenByOther(nick)) nick = ''; } catch (e) { }
-    }
+    if (nick && !(await free(nick))) nick = '';
+
+    // 2순위: 이 기기에 저장해 둔 닉네임 (입장 화면에 보여 준 그 이름)
     if (!nick) {
-        nick = await generateUniqueNickname(isTakenByOther);
+        const local = getLocalGameNickname();
+        if (local && await free(local)) nick = local;
+    }
+
+    // 3순위: 새로 뽑기
+    if (!nick) nick = await generateUniqueNickname(isTakenByOther);
+
+    if (studentData?.nicknames?.[key] !== nick) {
         try {
             await updateDoc(studentRef, { [`nicknames.${key}`]: nick, updatedAt: serverTimestamp() });
         } catch (e) { }
@@ -741,8 +794,9 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
                                 <div id="authTeacherList" class="border rounded-3 p-2 bg-light" style="max-height:150px; overflow-y:auto;"></div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">학번 또는 이름 (식별번호)</label>
-                                <input type="text" class="form-control form-control-lg bg-light" id="inputAuthStudentId" placeholder="예: 2학년 3반 15번 또는 20315" autocomplete="off">
+                                <label class="form-label small fw-bold text-secondary">학번 <span class="text-muted fw-normal">(숫자만)</span></label>
+                                <input type="text" class="form-control form-control-lg bg-light text-center fw-bold" id="inputAuthStudentId" placeholder="예: 20315" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off">
+                                <div class="form-text small text-muted">학년·반·번호를 붙여 씁니다. 예) 2학년 3반 15번 → <b>20315</b></div>
                             </div>
                             <div class="mb-2">
                                 <label class="form-label small fw-bold text-secondary">4자리 숫자 PIN (비밀번호)</label>
@@ -779,7 +833,13 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
             ? "게스트 모드입니다.<br>선생님의 대시보드 승인 후 입장할 수 있습니다."
             : "최초 1회 기기 등록 후 다음부터는 자동으로 로그인됩니다.";
 
-        studentIdIn.value = initialStudentId || '';
+        studentIdIn.value = String(initialStudentId || '').replace(/[^0-9]/g, '').slice(0, 10);
+        studentIdIn.oninput = () => {
+            studentIdIn.value = studentIdIn.value.replace(/[^0-9]/g, '').slice(0, 10);
+        };
+        pinIn.oninput = () => {
+            pinIn.value = pinIn.value.replace(/[^0-9]/g, '').slice(0, 4);
+        };
         pinIn.value = '';
         errEl.style.display = 'none';
         teacherList.innerHTML = '<div class="text-muted small">학교를 먼저 선택해주세요.</div>';
@@ -854,7 +914,7 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
 
             if (!school) return fail("학교명을 선택하거나 입력해주세요.", schoolSelect);
             if (boxes.length > 0 && teachers.length === 0) return fail("담당 선생님을 1명 이상 선택해주세요.");
-            if (!studentId) return fail("학번 또는 식별번호를 입력해주세요.", studentIdIn);
+            if (!/^\d{2,10}$/.test(studentId)) return fail("학번은 숫자 2~10자리로 입력해주세요. (예: 20315)", studentIdIn);
             if (!/^\d{4}$/.test(pin)) return fail("PIN 번호는 4자리 숫자로 입력해주세요.", pinIn);
 
             result = { school, studentId, pin, teachers };
@@ -1112,8 +1172,8 @@ export async function showPinResetModal() {
                                 <input type="text" class="form-control bg-light" id="pinResetSchoolInput" placeholder="예: 동동중학교" autocomplete="off">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">학번 또는 식별번호</label>
-                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 20315 또는 2학년 3반 15번" autocomplete="off">
+                                <label class="form-label small fw-bold text-secondary">학번 (숫자만)</label>
+                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 20315" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off">
                             </div>
                             <div class="alert alert-light border small text-muted mb-0">
                                 여러 명을 한 번에 처리하거나 기기 등록을 초기화하려면 상단 메뉴의 <b>학생 관리</b> 페이지를 이용하세요.
@@ -1140,6 +1200,9 @@ export async function showPinResetModal() {
 
         errEl.style.display = 'none';
         studentIdInput.value = '';
+        studentIdInput.oninput = () => {
+            studentIdInput.value = studentIdInput.value.replace(/[^0-9]/g, '').slice(0, 10);
+        };
 
         const merged = [...new Set([teacherSchool, ...schools].filter(Boolean))];
         schoolSelect.innerHTML =
@@ -1160,7 +1223,7 @@ export async function showPinResetModal() {
             const studentId = studentIdInput.value.trim();
 
             if (!school) { errEl.textContent = "학교명을 선택하거나 입력해주세요."; errEl.style.display = 'block'; return; }
-            if (!studentId) { errEl.textContent = "초기화할 학번(식별번호)을 입력해주세요."; errEl.style.display = 'block'; studentIdInput.focus(); return; }
+            if (!/^\d{2,10}$/.test(studentId)) { errEl.textContent = "학번은 숫자 2~10자리로 입력해주세요."; errEl.style.display = 'block'; studentIdInput.focus(); return; }
 
             confirmBtn.disabled = true;
             confirmBtn.textContent = "처리 중...";
@@ -1212,6 +1275,7 @@ export function renderRoomEntrance(container, options = {}) {
         guideBtnText = "📖 게임방법 보기",
         guideTitle = "게임 방법",
         rememberLastEntry = true,
+        showNickname = true,
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -1222,6 +1286,13 @@ export function renderRoomEntrance(container, options = {}) {
         ? `<button id="btnShowGuide" class="btn btn-outline-primary btn-lg w-100 mb-2 fw-bold">${guideBtnText}</button>`
         : '';
 
+    const nicknameHtml = showNickname ? `
+            <div class="d-flex align-items-center justify-content-center gap-2 mb-3 small">
+                <span class="text-muted">내 닉네임</span>
+                <span class="fw-bold text-primary" id="myGameNickname"></span>
+                <a href="#" id="btnRerollNickname" class="link-secondary">새로 뽑기</a>
+            </div>` : '';
+
     target.innerHTML = `
         <div class="card shadow-sm p-4 mb-4 border-0 rounded-4 bg-white" id="room-entrance-card">
             <h5 class="text-center fw-bold mb-4">${title}</h5>
@@ -1231,6 +1302,7 @@ export function renderRoomEntrance(container, options = {}) {
                 autocomplete="off" autocapitalize="characters" spellcheck="false"
                 style="text-transform: uppercase;">
             <div class="text-center text-muted small mb-2" id="roomEntranceHint" style="min-height: 1.2rem;"></div>
+            ${nicknameHtml}
 
             <div class="form-check form-switch mb-3 d-flex align-items-center justify-content-center gap-2">
                 <input class="form-check-input" type="checkbox" id="guestModeCheck" style="cursor: pointer;">
@@ -1252,6 +1324,16 @@ export function renderRoomEntrance(container, options = {}) {
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
+    const nickEl = target.querySelector('#myGameNickname');
+
+    // 이 게임에서 쓸 닉네임 (없으면 지금 뽑아서 저장 → 다음에도 계속 같은 닉네임)
+    if (nickEl) {
+        nickEl.textContent = getOrCreateGameNickname();
+        target.querySelector('#btnRerollNickname')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            nickEl.textContent = rerollGameNickname();
+        });
+    }
 
     const updateDashVisibility = () => {
         dashBtn.style.display = (window.isApprovedTeacher || window.isAdmin) ? 'block' : 'none';
@@ -1361,14 +1443,11 @@ export function renderRoomEntrance(container, options = {}) {
             // [A. 빠른 입장 모드] 개인정보 없이 즉시 입장 + 닉네임 고정
             // =========================================================
             if (roomMode === 'quick') {
-                let nickname = getLocalGameNickname();
-                const fixed = !!nickname;
-                if (!nickname) {
-                    nickname = await generateUniqueNickname((n) => isNickTakenByOther(n));
-                    setLocalGameNickname(nickname);
-                }
+                // 저장된 닉네임이 있으면 그대로, 없으면 지금 뽑아서 저장합니다.
+                const nickname = getOrCreateGameNickname();
+                const isNew = nicknameJustCreated;
                 rememberEntrance(roomCode, nickname);
-                await onJoin(roomCode, nickname, { mode: 'quick', isGuest: false, nicknameFixed: fixed });
+                await onJoin(roomCode, nickname, { mode: 'quick', isGuest: false, nicknameFixed: !isNew });
                 return;
             }
 
@@ -1640,6 +1719,7 @@ export function renderRoomEntrance(container, options = {}) {
             const freshData = freshSnap.exists() ? freshSnap.data() : null;
             const savedNick = freshData?.nicknames?.[gameKey()] || '';
             const nickname = await resolveGameNickname(sDocRef, freshData, (n) => isNickTakenByOther(n, ownerKey));
+            if (nickEl) nickEl.textContent = nickname;
 
             if (typeof options.studentsCollectionRef === 'function') {
                 await setDoc(doc(options.studentsCollectionRef(roomCode), nickname), {
