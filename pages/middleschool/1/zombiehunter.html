@@ -601,7 +601,7 @@
     <script type="module">
         import { db } from '../../../js/firebase-config.js';
         import {
-            renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance
+            renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance, generateRandomNickname
         } from '../../../js/room-auth.js';
         import { collection, doc, setDoc, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
@@ -714,18 +714,22 @@
                 const roomSnap = await getDoc(roomDocRef(code));
                 if (!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
 
+                let finalName = name;
                 const allRoomsSnap = await getDocs(collection(db, "zombiehunter_records"));
-                let nameInUse = false;
-                for (const rDoc of allRoomsSnap.docs) {
-                    if (rDoc.id === code) continue;
-                    const stdRef = doc(db, "zombiehunter_records", rDoc.id, "students", name);
-                    const stdSnap = await getDoc(stdRef);
-                    if (stdSnap.exists()) { nameInUse = true; break; }
+                for (let retry = 0; retry < 10; retry++) {
+                    let nameInUse = false;
+                    for (const rDoc of allRoomsSnap.docs) {
+                        if (rDoc.id === code) continue;
+                        const stdRef = doc(db, "zombiehunter_records", rDoc.id, "students", finalName);
+                        const stdSnap = await getDoc(stdRef);
+                        if (stdSnap.exists()) { nameInUse = true; break; }
+                    }
+                    if (!nameInUse) break;
+                    finalName = generateRandomNickname();
                 }
-                if (nameInUse) return customAlert('오류', '다른 방에서 이미 사용 중인 닉네임입니다.');
 
-                currentRoomCode = code; myName = name;
-                rememberEntrance(code, name);   // 입장 성공 시점에만 저장 → 다음 접속 때 자동 입력
+                currentRoomCode = code; myName = finalName;
+                rememberEntrance(code, finalName);   // 입장 성공 시점에만 저장 → 다음 접속 때 자동 입력
                 currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
                 currentTotalShots = 0; currentHitShots = 0;
                 currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };

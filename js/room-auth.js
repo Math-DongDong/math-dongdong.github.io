@@ -85,6 +85,48 @@ export function clearRememberedEntrance() {
 }
 
 // =====================================================================
+// 0.6 자동 닉네임 생성기 (형용사 + 동물명/캐릭터)
+// =====================================================================
+// 형용사 60종 (길이 2~4자)
+export const ADJECTIVES = [
+    "부끄러운", "용감한", "씩씩한", "행복한", "다정한",
+    "신난", "영리한", "날렵한", "귀여운", "멋진",
+    "활기찬", "따뜻한", "지혜로운", "차분한", "유쾌한",
+    "당당한", "느긋한", "순수한", "든든한", "똑똑한",
+    "재빠른", "얌전한", "엉뚱한", "상냥한", "친절한",
+    "쾌활한", "슬기로운", "긍정적인", "열정적인", "침착한",
+    "명랑한", "호기로운", "당찬", "맑은", "눈부신",
+    "풋풋한", "온화한", "부지런한", "성실한", "끈기있는",
+    "반짝이는", "총명한", "사랑스런", "포근한", "듬직한",
+    "깜찍한", "재치있는", "신비로운", "정직한", "솔직한",
+    "똘똘한", "꼼꼼한", "자상한", "패기있는", "호탕한",
+    "용맹한", "기운찬", "재미있는", "빛나는", "장난스런"
+];
+
+// 동물 및 친근한 캐릭터 60종 (길이 1~4자)
+export const ANIMALS = [
+    "어피치", "라이언", "무지", "콘", "프로도",
+    "네오", "튜브", "제이지", "춘식이", "조르디",
+    "호랑이", "사자", "표범", "치타", "늑대",
+    "여우", "북극곰", "판다", "레서판다", "코알라",
+    "캥거루", "알파카", "토끼", "다람쥐", "수달",
+    "해달", "비버", "바다표범", "물개", "돌고래",
+    "고래", "펭귄", "플라밍고", "부엉이", "올빼미",
+    "독수리", "참새", "까치", "앵무새", "두루미",
+    "코끼리", "기린", "얼룩말", "하마", "코뿔소",
+    "사슴", "노루", "고양이", "강아지", "댕댕이",
+    "햄스터", "고슴도치", "미어캣", "쿼카", "나무늘보",
+    "카멜레온", "북극여우", "두더지", "너구리", "라쿤"
+];
+
+/** 랜덤 닉네임 생성 (형용사 + 공백 + 동물/캐릭터) - 최대 길이 9자로 10자 이내 보장 */
+export function generateRandomNickname() {
+    const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+    const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+    return `${adj} ${animal}`;
+}
+
+// =====================================================================
 // 1. 공통 모달 DOM 자동 생성 및 유틸
 // =====================================================================
 function ensureModalDOM() {
@@ -402,11 +444,7 @@ export function renderRoomEntrance(container, options = {}) {
                 placeholder="${roomCodePlaceholder}" maxlength="4"
                 autocomplete="off" autocapitalize="characters" spellcheck="false"
                 style="text-transform: uppercase;">
-            <input type="text" id="playerNameInput"
-                class="form-control form-control-lg text-center mb-2 bg-light border-0 fw-bold"
-                placeholder="${nicknamePlaceholder}" maxlength="10"
-                autocomplete="off" spellcheck="false">
-            <div class="text-center text-muted small mb-3" id="nicknameHint" style="min-height: 1.2rem;"></div>
+            <div class="text-center text-muted small mb-3" id="roomEntranceHint" style="min-height: 1.2rem;"></div>
             <button id="btnJoinRoom" class="btn btn-primary btn-lg w-100 mb-2 fw-bold"
                 style="background:#0d6efd; border:none;">${joinBtnText}</button>
             ${guideBtnHtml}
@@ -415,8 +453,7 @@ export function renderRoomEntrance(container, options = {}) {
     `;
 
     const roomInput = target.querySelector('#roomCodeInput');
-    const nameInput = target.querySelector('#playerNameInput');
-    const nameHint = target.querySelector('#nicknameHint');
+    const roomHint = target.querySelector('#roomEntranceHint');
     const joinBtn = target.querySelector('#btnJoinRoom');
     const guideBtn = target.querySelector('#btnShowGuide');
     const dashBtn = target.querySelector('#btnOpenDashboard');
@@ -433,21 +470,18 @@ export function renderRoomEntrance(container, options = {}) {
     window.addEventListener('teacherAuthChanged', updateDashVisibility);
 
     // [추가] 지난 접속 정보 자동 입력
-    // 공용 기기(학급 태블릿)를 여러 학생이 돌려 쓸 수 있으므로,
-    // 무엇이 채워졌는지 명확히 보여주고 한 번에 지울 수 있는 링크를 함께 제공합니다.
+    // 공용 기기(학급 태블릿)를 여러 학생이 돌려 쓸 수 있으므로 지우기 링크 제공
     if (rememberLastEntry) {
         const saved = loadRememberedEntrance();
         if (saved.room) roomInput.value = saved.room;
-        if (saved.nick) nameInput.value = saved.nick;
-        if (saved.room || saved.nick) {
-            nameHint.innerHTML =
-                `지난 접속 정보를 불러왔어요 · <a href="#" id="btnClearSaved" class="link-secondary">내 정보가 아니에요 (지우기)</a>`;
+        if (saved.room) {
+            roomHint.innerHTML =
+                `지난 접속 방 번호를 불러왔어요 · <a href="#" id="btnClearSaved" class="link-secondary">지우기</a>`;
             target.querySelector('#btnClearSaved')?.addEventListener('click', (e) => {
                 e.preventDefault();
                 clearRememberedEntrance();
                 roomInput.value = '';
-                nameInput.value = '';
-                nameHint.textContent = '';
+                roomHint.textContent = '';
                 roomInput.focus();
             });
         }
@@ -457,25 +491,12 @@ export function renderRoomEntrance(container, options = {}) {
         roomInput.value = roomInput.value.replace(/\s/g, '').slice(0, 4).toUpperCase();
     });
 
-    // 닉네임에서 DB 키로 쓸 수 없는 문자를 즉시 제거하고 안내
-    nameInput.addEventListener('input', () => {
-        const before = nameInput.value;
-        const after = sanitizeKey(before);
-        if (before !== after) {
-            nameInput.value = after;
-            nameHint.textContent = '닉네임에 . # $ [ ] / 는 쓸 수 없어요.';
-        } else {
-            nameHint.textContent = '';
-        }
-    });
-
     let joining = false;
 
     const triggerJoin = async () => {
         if (joining) return;
 
         const roomCode = roomInput.value.trim().toUpperCase();
-        const nickname = sanitizeKey(nameInput.value).trim();
 
         if (!roomCode || roomCode.length !== 4) {
             roomInput.classList.add('shake');
@@ -484,11 +505,13 @@ export function renderRoomEntrance(container, options = {}) {
             return;
         }
 
-        if (!nickname || !isValidRtdbKey(nickname)) {
-            nameInput.classList.add('shake');
-            setTimeout(() => nameInput.classList.remove('shake'), 400);
-            await customAlert("알림", "사용할 수 있는 닉네임을 입력해주세요.");
-            return;
+        // 동일 세션 내에서 같은 방 재접속 시 일관된 닉네임 유지 (새로고침/재입장 편의)
+        let nickname = sessionStorage.getItem(`roomEntrance:autoNick:${roomCode}`);
+        if (!nickname) {
+            nickname = generateRandomNickname();
+            try {
+                sessionStorage.setItem(`roomEntrance:autoNick:${roomCode}`, nickname);
+            } catch (e) { }
         }
 
         if (typeof onJoin !== 'function') return;
@@ -519,9 +542,6 @@ export function renderRoomEntrance(container, options = {}) {
     dashBtn.addEventListener('click', () => verifyAdminAccess(onAdminSuccess, onAdminFailure));
 
     roomInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') nameInput.focus();
-    });
-    nameInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') triggerJoin();
     });
 }
