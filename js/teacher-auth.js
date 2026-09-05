@@ -268,7 +268,19 @@ function renderNavbarAuth() {
         document.getElementById('btnTeacherLogin').onclick = () => {
             signInWithPopup(auth, googleProvider).catch(err => {
                 console.error("Login Failed:", err);
-                alert("로그인에 실패했습니다.");
+                const code = err.code || '';
+                // 사용자가 팝업을 직접 닫은 경우 → 알림 없이 조용히 종료
+                if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+
+                if (code === 'auth/popup-blocked') {
+                    alert("팝업이 차단되었습니다. 브라우저의 팝업 차단 설정을 해제한 뒤 다시 시도해주세요.");
+                } else if (code === 'auth/unauthorized-domain') {
+                    alert("이 도메인은 Firebase에 등록되지 않았습니다.\n\nFirebase Console → Authentication → Settings → 승인된 도메인에 현재 도메인을 추가해주세요.");
+                } else if (code === 'auth/operation-not-allowed') {
+                    alert("Google 로그인이 비활성화 상태입니다.\n\nFirebase Console → Authentication → Sign-in method → Google을 활성화해주세요.");
+                } else {
+                    alert(`로그인에 실패했습니다.\n오류 코드: ${code}\n${err.message}`);
+                }
             });
         };
         return;
