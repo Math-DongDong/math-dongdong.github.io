@@ -70,25 +70,11 @@
             padding-bottom: 4px;
         }
 
-        .post-it-1 {
-            background-color: #ffeb3b;
-        }
-
-        .post-it-2 {
-            background-color: #ffc107;
-        }
-
-        .post-it-3 {
-            background-color: #baffc9;
-        }
-
-        .post-it-4 {
-            background-color: #bae1ff;
-        }
-
-        .post-it-5 {
-            background-color: #ffb3ba;
-        }
+        .post-it-1 { background-color: #ffeb3b; }
+        .post-it-2 { background-color: #ffc107; }
+        .post-it-3 { background-color: #baffc9; }
+        .post-it-4 { background-color: #bae1ff; }
+        .post-it-5 { background-color: #ffb3ba; }
 
         /* 접속 상태 표시 점 */
         .status-dot {
@@ -100,17 +86,9 @@
             vertical-align: middle;
         }
 
-        .status-online {
-            background-color: #198754;
-        }
-
-        .status-away {
-            background-color: #ffc107;
-        }
-
-        .status-offline {
-            background-color: #dc3545;
-        }
+        .status-online { background-color: #198754; }
+        .status-away { background-color: #ffc107; }
+        .status-offline { background-color: #dc3545; }
 
         /* 학번 열: 기본 숨김, 토글 시 표시 (교실 TV 투사 대비)
            ★ 표를 다시 그려도 유지되도록 JS가 아니라 CSS 클래스로 제어합니다. */
@@ -120,6 +98,22 @@
 
         #admin-players-table.show-sid .col-studentid {
             display: table-cell;
+        }
+
+        /* 의견 포스트잇의 학번 칩도 같은 토글로 함께 켜집니다.
+           학생 인증 모드에서만 값이 있고, 빠른 입장 모드에서는 아예 그려지지 않습니다. */
+        .sid-chip {
+            display: none;
+            font-size: 0.72rem;
+            background: #1e293b;
+            color: #fff;
+            border-radius: 6px;
+            padding: 1px 6px;
+            margin-right: 4px;
+        }
+
+        #feedbacks-container.show-sid .sid-chip {
+            display: inline-block;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -273,6 +267,7 @@
                         <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId"
                             style="cursor:pointer;">학번 표시</label>
                     </div>
+                    <span class="text-muted small ms-2">학생 현황표와 의견 포스트잇에 함께 적용됩니다.</span>
                 </div>
 
                 <div class="table-responsive">
@@ -1765,16 +1760,28 @@
         // 방 스냅샷을 기억해 두었다가, Firestore 학번이 늦게 도착해도 표를 다시 그립니다.
         let adminRoomLastData = null;
 
+        /**
+         * 닉네임 → 학번 대응표.
+         *
+         * RTDB에는 학번을 넣지 않습니다(그 노드는 학생도 읽습니다).
+         * 학번은 Firestore students 문서에만 있고 교사만 읽을 수 있어서,
+         * 화면에서 이어 붙이는 방식으로만 합쳐집니다.
+         * 빠른 입장 모드에서는 students 문서 자체가 없어 표가 비어 있습니다.
+         */
+        function buildSidMap() {
+            const map = {};
+            adminStudents.forEach(st => {
+                if (st.nickname && st.studentId) map[st.nickname] = String(st.studentId);
+            });
+            return map;
+        }
+
         function renderPlayersTable(data) {
             const tbody = $('admin-players-tbody');
             tbody.innerHTML = '';
             allPlayersData = [];
 
-            // 닉네임 → 학번 (RTDB에는 학번이 없습니다. Firestore students에서 이어 붙입니다)
-            const sidByNick = {};
-            adminStudents.forEach(st => {
-                if (st.nickname && st.studentId) sidByNick[st.nickname] = String(st.studentId);
-            });
+            const sidByNick = buildSidMap();
 
             if (data.players && Object.keys(data.players).length > 0) {
                 // 알파벳순 대신 입장한 순서대로 표시.
@@ -1856,6 +1863,7 @@
                     $('admin-feedbacks-area').style.display = 'block';
                     if (data.feedbacks) {
                         const colors = ['post-it-1', 'post-it-2', 'post-it-3', 'post-it-4', 'post-it-5'];
+                        const sidByNick = buildSidMap();
                         // 최초 제출 순서(createdAt)대로 쌓이게 정렬. 수정해도 위치가 유지됩니다.
                         Object.keys(data.feedbacks)
                             .sort((a, b) => {
@@ -1869,12 +1877,19 @@
                                     .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
                                 const colorClass = colors[charSum % colors.length];
 
+                                // ★ 학번 표시를 켜면 누가 쓴 의견인지 바로 보입니다.
+                                //   끄면 닉네임만 남아 교실 TV에 그대로 띄울 수 있습니다.
+                                const sid = sidByNick[nickname] || '';
+                                const sidHtml = sid
+                                    ? `<span class="sid-chip">${escapeHtml(sid)}</span>`
+                                    : '';
+
                                 const col = document.createElement('div');
                                 col.className = 'col-md-4 col-sm-6';
                                 // 학생이 입력한 값은 반드시 이스케이프 후 표시
                                 col.innerHTML = `
                                 <div class="post-it ${colorClass} text-dark">
-                                    <div class="post-it-author">👤 ${escapeHtml(nickname)}</div>
+                                    <div class="post-it-author">👤 ${sidHtml}${escapeHtml(nickname)}</div>
                                     <div>${escapeHtml(fb.text || '').replace(/\n/g, '<br>')}</div>
                                 </div>
                             `;
@@ -1887,9 +1902,13 @@
             });
         }
 
-        // 학번 표시 토글 (표를 다시 그려도 유지되도록 테이블에 클래스만 겁니다)
+        // 학번 표시 토글
+        //  표와 포스트잇을 다시 그려도 유지되도록, JS로 각 셀을 만지지 않고
+        //  컨테이너에 클래스 하나만 겁니다.
         $('toggleStudentId').addEventListener('change', (e) => {
-            $('admin-players-table').classList.toggle('show-sid', e.target.checked);
+            const on = e.target.checked;
+            $('admin-players-table').classList.toggle('show-sid', on);
+            $('feedbacks-container').classList.toggle('show-sid', on);
         });
 
         $('btn-toggle-feedback-lock').addEventListener('click', async () => {
