@@ -28,6 +28,9 @@ import {
     query,
     where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import {
+    isCryptoAvailable, verifyPinViaGate, buildPinRecord
+} from "./student-crypto.js";
 
 // =====================================================================
 // 0. 공통 유틸
@@ -175,6 +178,33 @@ export function clearGuestAuth() {
     } catch (e) { }
 }
 
+/**
+ * PIN 인증 (v2 게이트 방식)
+ *
+ * 예전에는 student_auth 문서를 통째로 받아 sData.pin과 비교했습니다.
+ * 화면에는 "인증 실패"만 떴지만 PIN은 이미 브라우저에 들어와 있었습니다.
+ * 이제는 해시를 게이트에 제출하고 서버가 대조합니다 — PIN도 해시도 내려오지 않습니다.
+ *
+ * 반환: 'ok' | 'wrong' | 'new'(등록된 해시가 없어 새로 설정해야 함)
+ */
+async function checkStudentPin(studentKey, pin) {
+    // 학생은 private/auth를 읽지 못합니다. 그래서 '해시가 맞는지'도,
+    // '해시가 있기는 한지'도 게이트 쓰기 결과로만 알 수 있습니다.
+    // 둘 다 permission-denied로 돌아오므로 'wrong' 하나로 묶고,
+    // 초기화된 계정인지는 호출한 쪽에서 writePinHash를 시도해 구분합니다.
+    const ok = await verifyPinViaGate(
+        { db, doc, setDoc, serverTimestamp }, studentKey, getDeviceId(), pin
+    );
+    return ok ? 'ok' : 'wrong';
+}
+
+/** 새 PIN을 해시로 기록합니다 (최초 등록 · 교사 초기화 후 재설정) */
+async function writePinHash(studentKey, pin) {
+    const rec = await buildPinRecord(pin, studentKey);
+    await setDoc(doc(db, "student_auth", studentKey, "private", "auth"),
+        { ...rec, updatedAt: serverTimestamp() }, { merge: true });
+}
+
 export function makeStudentKey(school, studentId) {
     return `${String(school || '').trim()}_${String(studentId || '').trim()}`
         .replace(INVALID_KEY_PATTERN, '_');
@@ -289,129 +319,69 @@ export function gameKey() {
 const GAME_NICK_PREFIX = 'gameNickname:';
 const _memNickname = {};
 
-/** 이 페이지에서 새로 뽑은 닉네임인지 (게임 쪽 중복 검사 여부 판단용) */
-export let nicknameJustCreated = false;
+// 게임별 '기본' 닉네임 (이 기기에서 처음 뽑은 이름)
+function baseNickKey() { return GAME_NICK_PREFIX + gameKey(); }
 
-export function getLocalGameNickname() {
-    const key = GAME_NICK_PREFIX + gameKey();
+// ★ 방별 확정 닉네임.
+//   v2부터 닉네임은 '방 안에서만' 유일하면 됩니다. student_auth에 닉네임 매핑을
+//   저장하지 않기 때문입니다(학번 ↔ 닉네임 연결을 아예 만들지 않으려는 것).
+//   그래서 확정된 이름을 이 기기에, 방 단위로 기억합니다.
+function roomNickKey(roomCode) { return `${GAME_NICK_PREFIX}${gameKey()}:${roomCode}`; }
+
+function readLocal(key) {
     try { return localStorage.getItem(key) || _memNickname[key] || ''; }
     catch (e) { return _memNickname[key] || ''; }
 }
-
-export function setLocalGameNickname(nick) {
-    const key = GAME_NICK_PREFIX + gameKey();
-    _memNickname[key] = String(nick || '');
+function writeLocal(key, value) {
+    _memNickname[key] = String(value || '');
     try { localStorage.setItem(key, _memNickname[key]); } catch (e) { }
 }
 
+export function getLocalGameNickname() { return readLocal(baseNickKey()); }
+export function setLocalGameNickname(nick) { writeLocal(baseNickKey(), nick); }
 export function clearLocalGameNickname() {
-    const key = GAME_NICK_PREFIX + gameKey();
+    const key = baseNickKey();
     delete _memNickname[key];
     try { localStorage.removeItem(key); } catch (e) { }
 }
 
-/**
- * 이 게임에서 쓸 닉네임을 가져옵니다.
- * 저장된 값이 있으면 그대로 돌려주고, 없을 때만(= 이 게임 첫 입장) 새로 뽑아 저장합니다.
- * 배정 시점은 "방 코드를 넣고 입장하는 순간"이며, 같은 게임에서는 계속 같은 닉네임이 유지됩니다.
- */
-export function getOrCreateGameNickname() {
-    let nick = getLocalGameNickname();
-    if (!nick) {
-        nick = generateRandomNickname();
-        setLocalGameNickname(nick);
-        nicknameJustCreated = true;
-    }
-    return nick;
-}
-
-/** 방 안에서 이름이 겹쳤을 때 새 닉네임 배정 (이 게임에서 계속 사용) */
-export function rerollGameNickname() {
-    const nick = generateRandomNickname();
-    setLocalGameNickname(nick);
-    nicknameJustCreated = true;
-    return nick;
-}
+/** 이 기기가 이 방에서 이미 확정한 이름 */
+export function getRoomNickname(roomCode) { return readLocal(roomNickKey(roomCode)); }
+export function setRoomNickname(roomCode, nick) { writeLocal(roomNickKey(roomCode), nick); }
 
 /**
- * 방 안에서 겹치지 않는 자동 닉네임 생성 (isTakenFn: async (nick) => boolean)
+ * 방 안에서 닉네임을 '선점'합니다.
  *
- * ★ 이름이 겹쳐도 숫자를 덧붙이지 않습니다.
- *   "부끄러운 어피치"가 이미 쓰이는 중이면 "부끄러운 어피치07"이 아니라
- *   "씩씩한 라이언"처럼 형용사와 동물이 둘 다 다른 조합을 새로 찾습니다.
- *   조합이 60 × 60 = 3,600개라 한 교실에서 고갈될 일이 없습니다.
+ * {게임}_records/{방}/nicknames/{닉} 는 필드가 하나도 없는 빈 문서입니다.
+ * 보안 규칙이 create만 허용하므로, 쓰기에 성공했다는 것이 곧
+ * "이 이름은 지금 내 것이 되었다"는 뜻입니다. 두 학생이 동시에 시도해도
+ * 한 명만 성공합니다 — 읽고 나서 쓰는 사이의 경합이 원천적으로 없습니다.
  *
- * 무작위로 다시 뽑으면 방금 확인한 조합을 또 뽑아 DB 조회를 낭비할 수 있으므로,
- * 무작위 시작점에서 출발해 3,600과 서로소인 보폭(NICKNAME_STRIDE)으로 건너뜁니다.
- * 같은 조합을 두 번 조회하지 않으면서, 한 걸음마다 형용사와 동물이 함께 바뀝니다.
+ * 마커에 아무 내용도 넣지 않는 것이 핵심입니다. 공개로 읽혀도 잃을 게 없습니다.
  *
- * @param {(nick:string)=>Promise<boolean>} isTakenFn 이미 사용 중인 이름인지
- * @param {number} maxChecks 최대 조회 횟수 (조회 1회당 DB 읽기 1회)
+ * @param {(nick:string)=>DocumentReference} markerRefFn
+ * @returns {Promise<string|null>} 확정된 닉네임 (실패 시 null)
  */
-export async function generateUniqueNickname(isTakenFn, maxChecks = 40) {
-    const start = Math.floor(Math.random() * NICKNAME_POOL_SIZE);
-    if (typeof isTakenFn !== 'function') return nicknameAt(start);
+export async function claimRoomNickname(markerRefFn, startNick, maxTries = 40) {
+    if (typeof markerRefFn !== 'function') return startNick || generateRandomNickname();
 
-    const limit = Math.max(1, Math.min(maxChecks, NICKNAME_POOL_SIZE));
-    for (let step = 0; step < limit; step++) {
-        const cand = nicknameAt(start + step * NICKNAME_STRIDE);
+    // 시작점: 넘겨받은 이름 → 그 다음부터는 조합을 건너뛰며 탐색
+    let candidate = (startNick || '').trim() || generateRandomNickname();
+    let index = nicknameIndexOf(candidate);
+    if (index < 0) { candidate = generateRandomNickname(); index = nicknameIndexOf(candidate); }
+
+    for (let step = 0; step < maxTries; step++) {
+        const nick = step === 0 ? candidate : nicknameAt(index + step * NICKNAME_STRIDE);
         try {
-            if (!(await isTakenFn(cand))) return cand;
-        } catch (e) {
-            return cand;   // 조회에 실패하면 더 확인하지 않고 그대로 사용
+            await setDoc(markerRefFn(nick), {});   // create 전용 → 이미 있으면 거부됨
+            return nick;
+        } catch (err) {
+            const code = String(err?.code || err?.message || '').toLowerCase();
+            if (code.includes('permission')) continue;   // 남이 쓰는 이름 → 다음 조합
+            throw err;                                   // 네트워크·설정 오류는 위로
         }
     }
-    // 확인한 조합이 전부 사용 중 — 숫자를 붙이지 않고 아직 확인하지 않은 다음 조합을 돌려줍니다.
-    return nicknameAt(start + limit * NICKNAME_STRIDE);
-}
-
-/**
- * 인증 모드 닉네임 결정
- * - student_auth/{key}.nicknames[gameKey] 에 저장된 닉네임을 계속 사용
- * - 없으면 이 기기에 저장된 닉네임을 쓰고, 그것도 없거나 같은 방에서 겹치면 새로 배정
- */
-export async function resolveGameNickname(studentRef, studentData, isTakenByOther) {
-    const key = gameKey();
-    const free = async (n) => {
-        if (!n) return false;
-        if (typeof isTakenByOther !== 'function') return true;
-        try { return !(await isTakenByOther(n)); } catch (e) { return true; }
-    };
-
-    // 1순위: 학생 계정에 저장된 이 게임의 닉네임 (다른 기기에서도 같은 이름)
-    let nick = studentData?.nicknames?.[key] || '';
-    if (nick && !(await free(nick))) nick = '';
-
-    // 2순위: 이 기기에 저장해 둔 이 게임의 닉네임
-    if (!nick) {
-        const local = getLocalGameNickname();
-        if (local && await free(local)) nick = local;
-    }
-
-    // 3순위: 새로 배정 (겹치면 숫자가 아니라 다른 조합으로)
-    if (!nick) nick = await generateUniqueNickname(isTakenByOther);
-
-    if (studentData?.nicknames?.[key] !== nick) {
-        try {
-            await updateDoc(studentRef, { [`nicknames.${key}`]: nick, updatedAt: serverTimestamp() });
-        } catch (e) { }
-    }
-    setLocalGameNickname(nick);
-    return nick;
-}
-
-/** 페이지에서 닉네임이 최종 변경됐을 때 되돌려 저장 (다음 입장에도 같은 닉네임 유지) */
-export async function saveGameNickname(nickname, authInfo = {}) {
-    const nick = String(nickname || '').trim();
-    if (!nick) return;
-    setLocalGameNickname(nick);
-    if (!authInfo || authInfo.mode !== 'auth' || !authInfo.school || !authInfo.studentId) return;
-    try {
-        await updateDoc(doc(db, "student_auth", makeStudentKey(authInfo.school, authInfo.studentId)), {
-            [`nicknames.${gameKey()}`]: nick,
-            updatedAt: serverTimestamp()
-        });
-    } catch (e) { }
+    return null;
 }
 
 // =====================================================================
@@ -469,6 +439,16 @@ export function nicknameAt(index) {
     return `${ADJECTIVES[Math.floor(i / ANIMALS.length)]} ${ANIMALS[i % ANIMALS.length]}`;
 }
 
+/** 닉네임 → 조합 번호 (목록에 없는 이름이면 -1) */
+export function nicknameIndexOf(nickname) {
+    const parts = String(nickname || '').split(' ');
+    if (parts.length !== 2) return -1;
+    const a = ADJECTIVES.indexOf(parts[0]);
+    const b = ANIMALS.indexOf(parts[1]);
+    if (a < 0 || b < 0) return -1;
+    return a * ANIMALS.length + b;
+}
+
 /** 랜덤 닉네임 생성 (형용사 + 공백 + 동물/캐릭터) - 최대 9자 */
 export function generateRandomNickname() {
     const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
@@ -477,6 +457,36 @@ export function generateRandomNickname() {
 }
 if (typeof window !== 'undefined') {
     window.generateRandomNickname = generateRandomNickname;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  하위 호환 shim
+//  v2부터 닉네임 확정은 renderRoomEntrance가 claimRoomNickname으로 처리합니다.
+//  게임 페이지가 직접 중복 검사를 할 필요가 없어졌지만, 예전 페이지가
+//  import 해도 깨지지 않도록 남겨 둡니다.
+// ─────────────────────────────────────────────────────────────────────
+
+export function getOrCreateGameNickname() {
+    let nick = getLocalGameNickname();
+    if (!nick) { nick = generateRandomNickname(); setLocalGameNickname(nick); }
+    return nick;
+}
+
+export async function generateUniqueNickname(isTakenFn, maxChecks = 40) {
+    const start = Math.floor(Math.random() * NICKNAME_POOL_SIZE);
+    if (typeof isTakenFn !== 'function') return nicknameAt(start);
+    const limit = Math.max(1, Math.min(maxChecks, NICKNAME_POOL_SIZE));
+    for (let step = 0; step < limit; step++) {
+        const cand = nicknameAt(start + step * NICKNAME_STRIDE);
+        try { if (!(await isTakenFn(cand))) return cand; } catch (e) { return cand; }
+    }
+    return nicknameAt(start + limit * NICKNAME_STRIDE);
+}
+
+/** (하위 호환) 이제 서버에 저장하지 않습니다 — 방별 이름은 입장 시 확정됩니다. */
+export async function saveGameNickname(nickname) {
+    const nick = String(nickname || '').trim();
+    if (nick) setLocalGameNickname(nick);
 }
 
 // =====================================================================
@@ -1276,8 +1286,12 @@ export async function showPinResetModal() {
             confirmBtn.disabled = true;
             confirmBtn.textContent = "처리 중...";
             try {
-                await updateDoc(doc(db, "student_auth", makeStudentKey(school, studentId)), {
-                    pin: null,
+                const sKey = makeStudentKey(school, studentId);
+                // v2: PIN 해시는 하위 문서에 있습니다. null로 비우면
+                //     학생이 다음 접속 때 새 PIN을 설정할 수 있게 됩니다.
+                await setDoc(doc(db, "student_auth", sKey, "private", "auth"),
+                    { pinHash: null, resetAt: serverTimestamp() }, { merge: true });
+                await updateDoc(doc(db, "student_auth", sKey), {
                     presence: 'offline',
                     updatedAt: serverTimestamp()
                 });
@@ -1429,6 +1443,15 @@ export function renderRoomEntrance(container, options = {}) {
 
         if (typeof onJoin !== 'function') return;
 
+        // ★ PIN 인증은 crypto.subtle을 씁니다. https 또는 localhost에서만 동작합니다.
+        //   file://로 열어 테스트하면 여기서 걸립니다 — 흔한 오해라 먼저 안내합니다.
+        if (!isCryptoAvailable()) {
+            await customAlert("보안 연결 필요",
+                "이 페이지는 <b>https</b>로 열어야 합니다.<br>" +
+                '<span class="text-muted small">파일을 직접 연 상태(file://)에서는 인증 기능이 동작하지 않습니다.</span>');
+            return;
+        }
+
         joining = true;
         joinBtn.disabled = true;
         dashBtn.disabled = true;
@@ -1436,16 +1459,53 @@ export function renderRoomEntrance(container, options = {}) {
         const originalText = joinBtn.innerHTML;
         joinBtn.innerHTML = '입장하는 중...';
 
-        /** 같은 방 안에서 그 닉네임을 이미 다른 학생이 쓰고 있는지 */
-        const isNickTakenByOther = async (nick, myKey = null) => {
-            if (typeof options.studentsCollectionRef !== 'function') return false;
-            try {
-                const snap = await getDoc(doc(options.studentsCollectionRef(roomCode), nick));
-                if (!snap.exists()) return false;
-                const d = snap.data() || {};
-                if (myKey && d.studentKey === myKey) return false;   // 내 기록이면 충돌 아님
-                return true;
-            } catch (e) { return false; }
+        // ── v2 닉네임 확정 ────────────────────────────────────────────
+        //
+        //  student_auth에 '학번 → 닉네임' 매핑을 저장하지 않습니다.
+        //  그 매핑 하나가 순위표의 익명성을 통째로 무너뜨리기 때문입니다.
+        //  대신 방마다 빈 마커 문서로 이름을 선점하고, 확정된 이름은
+        //  이 기기에 방 단위로 기억합니다.
+        //
+        //  옵션으로 넘어온 컬렉션 참조에서 형제 컬렉션 nicknames를 찾습니다.
+        const markerRefFn = (nick) => {
+            if (typeof options.nicknameMarkerRef === 'function') {
+                return options.nicknameMarkerRef(roomCode, nick);
+            }
+            if (typeof options.studentsCollectionRef === 'function') {
+                const parent = options.studentsCollectionRef(roomCode).parent;   // 방 문서
+                return doc(collection(parent, 'nicknames'), nick);
+            }
+            return null;
+        };
+
+        /** 게스트 승인 상태 문서 ({방}/guests/{닉}) */
+        const guestStatusRef = (code, nick) => {
+            if (typeof options.guestStatusRef === 'function') return options.guestStatusRef(code, nick);
+            if (typeof options.studentsCollectionRef !== 'function') return null;
+            const parent = options.studentsCollectionRef(code).parent;
+            return doc(collection(parent, 'guests'), nick);
+        };
+
+        /** 이 방에서 쓸 이름을 확정합니다. 이미 확정해 둔 게 있으면 그대로 씁니다. */
+        const resolveRoomNickname = async () => {
+            const remembered = getRoomNickname(roomCode);
+            if (remembered) return { nickname: remembered, isNew: false };
+
+            const start = getLocalGameNickname() || generateRandomNickname();
+            const probe = markerRefFn('__probe__');
+            if (!probe) {
+                // 마커 컬렉션을 쓸 수 없는 페이지(구버전) — 예전처럼 그냥 발급
+                setLocalGameNickname(start);
+                setRoomNickname(roomCode, start);
+                return { nickname: start, isNew: true };
+            }
+
+            const claimed = await claimRoomNickname(markerRefFn, start);
+            if (!claimed) return { nickname: null, isNew: true };
+
+            setLocalGameNickname(claimed);      // 다음 방에서도 이 이름부터 시도
+            setRoomNickname(roomCode, claimed);
+            return { nickname: claimed, isNew: true };
         };
 
         try {
@@ -1472,11 +1532,15 @@ export function renderRoomEntrance(container, options = {}) {
             // [A. 빠른 입장 모드] 개인정보 없이 즉시 입장 + 닉네임 고정
             // =========================================================
             if (roomMode === 'quick') {
-                // 저장된 닉네임이 있으면 그대로, 없으면 지금 뽑아서 저장합니다.
-                const nickname = getOrCreateGameNickname();
-                const isNew = nicknameJustCreated;
+                const { nickname } = await resolveRoomNickname();
+                if (!nickname) {
+                    await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                    return;
+                }
                 rememberEntrance(roomCode, nickname);
-                await onJoin(roomCode, nickname, { mode: 'quick', isGuest: false, nicknameFixed: !isNew });
+                // nicknameFixed: true — 방 안 유일성은 마커가 이미 보장했습니다.
+                //                 게임 페이지가 중복 검사를 또 할 필요가 없습니다.
+                await onJoin(roomCode, nickname, { mode: 'quick', isGuest: false, nicknameFixed: true });
                 return;
             }
 
@@ -1508,44 +1572,51 @@ export function renderRoomEntrance(container, options = {}) {
 
                 let verifiedPin = guestInput.pin;
                 if (sData) {
-                    if (sData.pin === null || sData.pin === undefined) {
+                    // 등록된 계정 — 게이트로 PIN을 확인합니다.
+                    const verdict = await checkStudentPin(guestKey, guestInput.pin);
+                    if (verdict === 'wrong') {
+                        // 교사가 초기화했을 수도 있으므로 새 PIN 설정을 한 번 제안합니다.
                         const newPin = await promptNewPinModal(guestInput.studentId);
                         if (!newPin) return;
-                        verifiedPin = newPin;
-                        await updateDoc(sDocRef, { pin: newPin, updatedAt: serverTimestamp() });
-                    } else if (sData.pin !== guestInput.pin) {
-                        await customAlert("인증 실패", "PIN 번호가 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.");
-                        return;
+                        try {
+                            await writePinHash(guestKey, newPin);   // 초기화된 계정에서만 성공
+                            verifiedPin = newPin;
+                        } catch (e) {
+                            await customAlert("인증 실패",
+                                "PIN 번호가 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
+                                "<span class=\"text-muted small\">잊었다면 선생님께 초기화를 요청하세요.</span>");
+                            return;
+                        }
                     }
                     if (guestInput.teachers?.length) {
                         await updateDoc(sDocRef, { teachers: guestInput.teachers, updatedAt: serverTimestamp() }).catch(() => { });
                     }
                 } else {
                     // 게스트는 공용 기기이므로 devices에 기기를 등록하지 않습니다.
+                    // ★ pin·nicknames는 이 공개 문서에 넣지 않습니다 (보안 규칙이 거부합니다).
                     await setDoc(sDocRef, {
                         school: guestInput.school,
                         studentId: guestInput.studentId,
-                        pin: verifiedPin,
                         teachers: guestInput.teachers || [],
                         devices: [],
-                        nicknames: {},
                         presence: 'pending',
                         createdAt: serverTimestamp(),
                         updatedAt: serverTimestamp()
                     });
+                    await writePinHash(guestKey, verifiedPin);
                 }
 
-                // 게스트도 본인 계정에 저장된 게임 닉네임을 그대로 사용
-                const gFresh = await getDoc(sDocRef);
-                const guestNick = await resolveGameNickname(
-                    sDocRef,
-                    gFresh.exists() ? gFresh.data() : null,
-                    (n) => isNickTakenByOther(n, guestKey)
-                );
+                // 이 방에서 쓸 이름을 마커로 선점합니다 (학번과 연결하지 않습니다)
+                const { nickname: guestNick } = await resolveRoomNickname();
+                if (!guestNick) {
+                    await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                    return;
+                }
 
                 saveGuestAuth(guestInput.school, guestInput.studentId, verifiedPin, guestNick);
                 await updateDoc(sDocRef, { presence: 'pending', lastActive: serverTimestamp() });
 
+                // 학번이 든 요약은 students에 (학생은 쓰기만 하고 읽지 못합니다)
                 if (typeof options.studentsCollectionRef === 'function') {
                     await setDoc(doc(options.studentsCollectionRef(roomCode), guestNick), {
                         nickname: guestNick,
@@ -1558,21 +1629,30 @@ export function renderRoomEntrance(container, options = {}) {
                         requestedAt: serverTimestamp()
                     }, { merge: true });
                 }
+                // ★ 승인 상태만 담은 별도 문서. 게스트가 실시간으로 지켜봐야 하므로
+                //   공개로 읽히는데, status 밖에 없어서 잃을 정보가 없습니다.
+                const guestGateRef = guestStatusRef(roomCode, guestNick);
+                if (guestGateRef) {
+                    await setDoc(guestGateRef, { status: 'pending' });
+                }
 
                 let approved = false;
                 let unsubGuest = null;
 
                 const waitingModal = showGuestWaitingModal(async () => {
                     if (unsubGuest) unsubGuest();
+                    // students 문서는 학생이 지울 수 없으므로(교사 전용) 상태만 내립니다.
+                    if (guestGateRef) deleteDoc(guestGateRef).catch(() => { });
                     if (typeof options.studentsCollectionRef === 'function') {
-                        deleteDoc(doc(options.studentsCollectionRef(roomCode), guestNick)).catch(() => { });
+                        updateDoc(doc(options.studentsCollectionRef(roomCode), guestNick),
+                            { status: 'rejected' }).catch(() => { });
                     }
                     updateDoc(sDocRef, { presence: 'offline' }).catch(() => { });
                     clearGuestAuth();
                 });
 
-                if (typeof options.studentsCollectionRef === 'function') {
-                    unsubGuest = onSnapshot(doc(options.studentsCollectionRef(roomCode), guestNick), async (snap) => {
+                if (guestGateRef) {
+                    unsubGuest = onSnapshot(guestGateRef, async (snap) => {
                         if (!snap.exists()) return;
                         const data = snap.data();
                         if (data.status === 'online' && !approved) {
@@ -1581,6 +1661,9 @@ export function renderRoomEntrance(container, options = {}) {
                             waitingModal.close();
 
                             showGuestExitButton(async () => {
+                                if (guestGateRef) {
+                                    await deleteDoc(guestGateRef).catch(() => { });
+                                }
                                 if (typeof options.studentsCollectionRef === 'function') {
                                     await updateDoc(doc(options.studentsCollectionRef(roomCode), guestNick), { status: 'offline' }).catch(() => { });
                                 }
@@ -1638,17 +1721,22 @@ export function renderRoomEntrance(container, options = {}) {
 
                 if (!sData) {
                     needInput = true;                                   // 선생님이 정보를 삭제 → 재등록
-                } else if (sData.pin != null && sData.pin !== pin) {
-                    needInput = true;                                   // 다른 기기에서 PIN이 바뀜 → 재인증
                 } else {
-                    const answer = await promptStudentConfirmModal({
-                        school, studentId,
-                        teachers: sData.teachers || [],
-                        nickname: sData.nicknames?.[gameKey()] || '',
-                        deviceCount: Array.isArray(sData.devices) ? sData.devices.length : 0
-                    });
-                    if (!answer) return;                                // 창을 닫음
-                    if (answer === 'edit') needInput = true;
+                    // v2: 저장해 둔 PIN이 아직 유효한지 게이트로 확인합니다.
+                    //     (다른 기기에서 바꿨거나 선생님이 초기화했으면 여기서 걸립니다)
+                    const verdict = await checkStudentPin(savedKey, pin);
+                    if (verdict !== 'ok') {
+                        needInput = true;                               // 재인증
+                    } else {
+                        const answer = await promptStudentConfirmModal({
+                            school, studentId,
+                            teachers: sData.teachers || [],
+                            nickname: getRoomNickname(roomCode) || getLocalGameNickname(),
+                            deviceCount: Array.isArray(sData.devices) ? sData.devices.length : 0
+                        });
+                        if (!answer) return;                            // 창을 닫음
+                        if (answer === 'edit') needInput = true;
+                    }
                 }
             }
 
@@ -1675,12 +1763,25 @@ export function renderRoomEntrance(container, options = {}) {
                     continue;
                 }
 
-                // (2) 이미 등록된 학번이면 PIN이 일치해야만 사용 가능
-                //     (기존 PIN은 여기서 절대 덮어쓰지 않습니다 — 초기화는 선생님만)
-                if (nextData && nextData.pin != null && nextData.pin !== input.pin) {
-                    await customAlert("인증 실패",
-                        "등록된 PIN 번호와 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.");
-                    continue;
+                // (2) 이미 등록된 학번이면 PIN이 맞아야 사용할 수 있습니다.
+                //     게이트가 서버에서 대조하므로, 해시가 브라우저로 내려오지 않습니다.
+                //     '초기화된 계정'은 게이트가 거부하는데, 그 경우는 아래에서
+                //     새 PIN 기록을 시도해 구분합니다.
+                if (nextData) {
+                    const verdict = await checkStudentPin(nextKey, input.pin);
+                    if (verdict !== 'ok') {
+                        let recovered = false;
+                        try {
+                            await writePinHash(nextKey, input.pin);   // 초기화된 계정에서만 성공
+                            recovered = true;
+                        } catch (e) { }
+                        if (!recovered) {
+                            await customAlert("인증 실패",
+                                "등록된 PIN 번호와 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
+                                '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
+                            continue;
+                        }
+                    }
                 }
 
                 // (3) 다른 학번으로 갈아탄 경우 이전 계정은 접속 해제
@@ -1700,12 +1801,6 @@ export function renderRoomEntrance(container, options = {}) {
                 needInput = false;
             }
 
-            // PIN이 초기화된 계정이면 새 PIN 설정
-            if (sData && (sData.pin === null || sData.pin === undefined)) {
-                const newPin = await promptNewPinModal(studentId);
-                if (!newPin) return;
-                pin = newPin;
-            }
 
             // 기기 등록 (최대 MAX_DEVICES대)
             const devCheck = deviceCheck(sData?.devices);
@@ -1717,6 +1812,7 @@ export function renderRoomEntrance(container, options = {}) {
             }
 
             const ownerKey = makeStudentKey(school, studentId);
+            // ★ 공개 문서에는 pin·nicknames를 넣지 않습니다 (보안 규칙이 거부합니다).
             if (sData) {
                 const patch = {
                     devices: devCheck.list,
@@ -1724,30 +1820,32 @@ export function renderRoomEntrance(container, options = {}) {
                     lastActive: serverTimestamp(),
                     updatedAt: serverTimestamp()
                 };
-                if (sData.pin === null || sData.pin === undefined) patch.pin = pin;   // 초기화된 계정만 새 PIN 기록
                 if (Array.isArray(teachersToSave) && teachersToSave.length) patch.teachers = teachersToSave;
                 if (!sData.school) patch.school = school;
                 if (!sData.studentId) patch.studentId = studentId;
                 await updateDoc(sDocRef, patch);
             } else {
+                // 신규 등록: 공개 문서 + PIN 해시(하위 문서)
                 await setDoc(sDocRef, {
-                    school, studentId, pin,
+                    school, studentId,
                     teachers: teachersToSave || [],
                     devices: devCheck.list,
-                    nicknames: {},
                     presence: 'online',
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                     lastActive: serverTimestamp()
                 });
+                await writePinHash(ownerKey, pin);
             }
             savePhoneOwnerAuth(school, studentId, pin);
 
-            // 닉네임: 이 게임에서 한 번 배정되면 계속 같은 닉네임 사용
-            const freshSnap = await getDoc(sDocRef);
-            const freshData = freshSnap.exists() ? freshSnap.data() : null;
-            const savedNick = freshData?.nicknames?.[gameKey()] || '';
-            const nickname = await resolveGameNickname(sDocRef, freshData, (n) => isNickTakenByOther(n, ownerKey));
+            // 이 방에서 쓸 이름을 마커로 선점합니다.
+            // 학번과 닉네임을 연결하는 기록은 어디에도 남기지 않습니다.
+            const { nickname } = await resolveRoomNickname();
+            if (!nickname) {
+                await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                return;
+            }
 
             if (typeof options.studentsCollectionRef === 'function') {
                 await setDoc(doc(options.studentsCollectionRef(roomCode), nickname), {
@@ -1768,7 +1866,7 @@ export function renderRoomEntrance(container, options = {}) {
                 studentId,
                 isGuest: false,
                 mode: 'auth',
-                nicknameFixed: savedNick === nickname
+                nicknameFixed: true
             });
         } catch (err) {
             console.error('입장 처리 오류:', err);

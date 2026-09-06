@@ -525,9 +525,9 @@
     <script type="module">
         import { db } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customConfirm, escapeHtml,
-            promptRoomMode, showPinResetModal, saveGameNickname, generateUniqueNickname
-        } from "../../../js/room-auth.js?v=2.4";
+            renderRoomEntrance, customAlert, customConfirm,
+            escapeHtml, promptRoomMode, showPinResetModal
+        } from "../../../js/room-auth.js?v=3.0";
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot,
             serverTimestamp, deleteDoc
@@ -604,6 +604,8 @@
         // Firestore 참조 헬퍼
         function roomDocRef(roomCode) { return doc(db, "multiply_divide_records", roomCode); }
         function studentsCollectionRef(roomCode) { return collection(db, "multiply_divide_records", roomCode, "students"); }
+        function guestStatusCollRef(roomCode) { return collection(db, "multiply_divide_records", roomCode, "guests"); }
+        function nicknameCollRef(roomCode) { return collection(db, "multiply_divide_records", roomCode, "nicknames"); }
         function recordsCollectionRef(roomCode) { return collection(db, "multiply_divide_records", roomCode, "records"); }
 
         // 섹션 전환
@@ -651,18 +653,7 @@
                     //   이미 만들어 두므로 여기서 이름을 바꾸면 기록이 두 갈래로 쪼개집니다.
                     // - 빠른 입장 모드: 이 기기에서 처음 입장할 때만 같은 방 안에서 겹치는지 확인합니다.
                     //   (students 문서 id가 닉네임이므로 '같은 방 안'에서만 겹치지 않으면 충분합니다)
-                    const isAuthMode = authInfo?.mode === 'auth';
-                    if (!isAuthMode && !authInfo?.nicknameFixed) {
-                        const isTakenInRoom = async (nick) => {
-                            const s = await getDoc(doc(studentsCollectionRef(roomCode), nick));
-                            return s.exists();
-                        };
-                        // 겹치면 숫자를 붙이지 않고 형용사·동물이 모두 다른 조합을 새로 받습니다.
-                        if (await isTakenInRoom(finalName)) {
-                            finalName = await generateUniqueNickname(isTakenInRoom, 10);
-                            await saveGameNickname(finalName, authInfo);
-                        }
-                    }
+                    // v2: 방 안 닉네임 유일성은 room-auth의 마커 선점이 이미 보장합니다.
 
                     currentRoomCode = roomCode;
                     playerNickname = finalName;
@@ -1262,6 +1253,8 @@
             if (!confirmed) return;
             const sSnap = await getDocs(studentsCollectionRef(currentAdminRoom)); sSnap.forEach(d => deleteDoc(d.ref));
             const rSnap = await getDocs(recordsCollectionRef(currentAdminRoom)); rSnap.forEach(d => deleteDoc(d.ref));
+            const nSnap = await getDocs(nicknameCollRef(currentAdminRoom)); nSnap.forEach(d => deleteDoc(d.ref));
+            const gSnap = await getDocs(guestStatusCollRef(currentAdminRoom)); gSnap.forEach(d => deleteDoc(d.ref));
             await deleteDoc(roomDocRef(currentAdminRoom));
             await customAlert("완료", "방이 삭제되었습니다.");
             document.getElementById('roomSelect').value = '';
@@ -1316,6 +1309,8 @@
                     btn.disabled = true; btn.textContent = "처리 중...";
                     try {
                         await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'online' });
+                        await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
+                            { status: 'online' }, { merge: true });
                         if (sKey) {
                             await updateDoc(doc(db, "student_auth", sKey),
                                 { presence: 'online', lastActive: serverTimestamp() });
@@ -1334,6 +1329,8 @@
                     btn.disabled = true; btn.textContent = "처리 중...";
                     try {
                         await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'rejected' });
+                        await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
+                            { status: 'rejected' }, { merge: true });
                         if (sKey) {
                             await updateDoc(doc(db, "student_auth", sKey), { presence: 'offline' });
                         }
