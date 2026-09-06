@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════════════
+  유형 D — 익명 실시간 대전형 템플릿
+
+  이런 활동에 씁니다
+    학생끼리 짝을 지어 겨루지만, 누가 누구인지는 기록할 필요가 없는 활동.
+    예) 좌표평면 오목
+
+  유형 C와 무엇이 다른가
+    겨루는 방식(대기실·매칭·하트비트)은 완전히 같습니다.
+    학교·학번·PIN·게스트 승인만 빠집니다.
+
+  ★ 그런데 Firestore를 딱 한 가지 용도로는 씁니다 — 닉네임 중복 방지.
+    이 유형은 플레이어 노드의 '키'가 곧 닉네임입니다.
+    이름이 겹치면 한 학생이 튕기거나 두 사람 전적이 합쳐집니다.
+    조합이 3,600개라 30명 교실에서 대략 8번에 한 번꼴로 겹칩니다.
+
+    Firestore는 'create 전용' 규칙으로
+      "쓰기에 성공한 사람만 그 이름을 갖는다"
+    를 만들 수 있지만, RTDB에는 읽고 나서 쓰는 사이의 경합을 막을 방법이 없습니다.
+    그래서 이름표만 Firestore에 둡니다.
+      {게임}_records/{방}/nicknames/{닉}   ← 필드가 하나도 없는 빈 문서
+
+    이름표를 쓰지 않으려면 studentsCollectionRef 를 넘기지 마세요.
+    대신 기기 id 기반 충돌 처리(아래 NICK_RETRY 반복문)만으로 버티게 됩니다.
+
+  ⚠ 아래 네 곳은 지우지 마세요. 전부 교실에서 실제로 사고가 났던 지점입니다.
+    ① 하트비트 트랜잭션   ② onDisconnect 해제
+    ③ 매칭 잠금            ④ 활성 대기자 판정
+═══════════════════════════════════════════════════════════════════════════
+-->
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ★ 여기: 제목 -->
+    <title>새 익명 대전 게임</title>
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <link rel="stylesheet" href="../../../css/dashboard.css">
+    <style>
+        .status-dot { display:inline-block; width:9px; height:9px; border-radius:50%;
+                      margin-right:4px; vertical-align:middle; }
+        .status-online  { background-color:#198754; }
+        .status-away    { background-color:#ffc107; }
+        .status-offline { background-color:#dc3545; }
+
+        .waiting-spinner {
+            width:60px; height:60px; border:5px solid #e9ecef; border-top:5px solid #0d6efd;
+            border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .waiting-spinner { animation:none; } }
+
+        /* ★ 여기: 대전 화면 스타일 */
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="navbar-placeholder"></div>
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info">대기 중</span>
+        </div>
+
+        <!-- ==================== 1. 랜딩 ==================== -->
+        <div id="landing-section" class="section-container active-section text-center py-5">
+            <!-- ★ 여기: 제목과 설명 -->
+            <h1 class="fw-bold mb-4">🎲 새 익명 대전 게임</h1>
+            <p class="text-muted mb-5">방 코드만 입력하면 바로 시작합니다.</p>
+            <div class="row justify-content-center">
+                <div class="col-md-5">
+                    <div id="room-entrance-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 대기실 ==================== -->
+        <div id="waiting-section" class="section-container" style="display:none;">
+            <div class="row justify-content-center">
+                <div class="col-md-6 text-center">
+                    <div class="card shadow-sm border-0 rounded-4 p-5">
+                        <h3 class="fw-bold mb-2 text-primary" id="waiting-nickname">닉네임</h3>
+                        <p class="text-muted mb-4">상대를 기다리고 있습니다...</p>
+                        <div class="waiting-spinner"></div>
+                        <p class="text-muted small">화면을 계속 켜 두어야 매칭됩니다.</p>
+                        <div class="mt-3"><span class="badge bg-light text-dark fs-6" id="waiting-count">대기 중: 1명</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 대전 화면 ==================== -->
+        <div id="game-section" class="section-container" style="display:none;">
+            <div class="row justify-content-center">
+                <div class="col-md-8 text-center">
+                    <h2 class="fw-bold mb-4">대전 중! <br>
+                        <small class="text-muted fs-5">vs <span id="opponent-name">...</span></small>
+                    </h2>
+
+                    <!-- ★ 여기: 대전 UI -->
+                    <div class="card shadow-sm border-0 rounded-4 p-4 mb-4 bg-light">
+                        <h4 id="game-status-text" class="fw-bold text-primary mb-3">차례를 기다리는 중...</h4>
+                        <p class="text-muted mb-0">대전 화면을 여기에 만드세요.</p>
+                        <!-- 상대가 응답하지 않을 때의 탈출구 -->
+                        <button id="btn-abandon-match" class="btn btn-outline-secondary fw-bold mt-3 d-none">
+                            🔄 상대 응답 없음 — 경기 취소하고 다시 매칭
+                        </button>
+                    </div>
+
+                    <div class="card shadow-sm border-0 rounded-4 p-4">
+                        <h5 class="fw-bold mb-3">내 기록</h5>
+                        <div class="row text-center fw-bold fs-5">
+                            <div class="col-6 text-success">승: <span id="score-win">0</span></div>
+                            <div class="col-6 text-danger">패: <span id="score-lose">0</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 4. 교사 대시보드 ==================== -->
+        <div id="admin-section" class="section-container" style="display:none;">
+            <div class="admin-card mb-4">
+                <!-- ★ 학생 정보를 쓰지 않으므로 PIN 초기화 버튼을 만들지 않습니다. -->
+                <div id="dash-header-placeholder"></div>
+                <script src="../../../js/dashboard-header.js" data-title="새 익명 대전 게임 대시보드" data-export="false"
+                    data-pin-reset="false" data-select-id="admin-room-select"></script>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h5 class="fw-bold mb-0">👥 참가자 현황</h5>
+                    <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover text-center align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>상태</th>
+                                <th>닉네임</th>
+                                <th>대전 현황</th>
+                                <th>승</th>
+                                <th>패</th>
+                                <th>관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-players-tbody">
+                            <tr><td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // ★ 여기: 진행용 Realtime Database
+        import { rtdbGridGomoku as db, db as fsdb } from "../../../js/firebase-config.js";
+        import {
+            renderRoomEntrance, customAlert, customConfirm,
+            isValidRtdbKey, rememberEntrance, getDeviceId, rerollRoomNickname
+        } from "../../../js/room-auth.js?v=3.0";
+        import {
+            rtdbRoom, bindDeleteRoomButton, statusBadge, escapeHtml, safeNumber
+        } from "../../../js/game-kit.js?v=3.0";
+        import {
+            ref, set, get, update, remove, onValue, serverTimestamp, increment,
+            runTransaction, onDisconnect
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import {
+            collection, getDocs, deleteDoc
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+        // =====================================================================
+        // 설정  ★ 여기: 수업 상황에 맞게 조절
+        // =====================================================================
+        const HEARTBEAT_MS = 10000;
+        const ONLINE_MS = 40000;
+        const WAITER_STALE_MS = 25000;     // 대기열 생존 신호 신선도 (하트비트의 2.5배)
+        const MATCH_LOCK_MS = 3000;
+        const NICK_RETRY = 5;
+
+        // ★ 여기: 닉네임 이름표용 Firestore 컬렉션.
+        //   '..._records'로 끝나야 보안 규칙이 적용됩니다.
+        //   방 문서 자체는 만들지 않아도 됩니다 — 하위 컬렉션만 씁니다.
+        const FS_COLL = "newanon_records";
+        function studentsRef(code) { return collection(fsdb, FS_COLL, code, "students"); }
+        function nicknamesRef(code) { return collection(fsdb, FS_COLL, code, "nicknames"); }
+
+        const room = rtdbRoom(db, { roomsPath: 'rooms', indexPath: 'room_index' });
+
+        // =====================================================================
+        // 상태
+        // =====================================================================
+        let currentRoom = null, currentUser = null, isTeacher = false;
+        let localSessionId = null, isKicked = false;
+        let myScore = { wins: 0, losses: 0 };
+        let serverOffset = 0;
+        let heartbeatTimer = null;
+        let currentMatchId = null, lastOpponent = null, isMatching = false;
+        let unsubMe = null, unsubWaiting = null, unsubMatchPtr = null, unsubMatch = null;
+        let waitersCache = {};
+
+        function $(id) { return document.getElementById(id); }
+        function serverNow() { return Date.now() + serverOffset; }
+        function showSection(id) {
+            ['landing-section', 'waiting-section', 'game-section', 'admin-section']
+                .forEach(s => { const el = $(s); if (el) el.style.display = 'none'; });
+            $(id).style.display = 'block';
+        }
+        function playerRef(nick = currentUser) { return ref(db, `rooms/${currentRoom}/players/${nick}`); }
+        function waitRef(nick = currentUser) { return ref(db, `rooms/${currentRoom}/waiting/${nick}`); }
+        function matchRef(id) { return ref(db, `rooms/${currentRoom}/matches/${id}`); }
+
+        onValue(ref(db, '.info/serverTimeOffset'), s => { serverOffset = s.val() || 0; });
+
+        // =====================================================================
+        // 1. 방 입장  (빠른 입장 전용)
+        // =====================================================================
+        renderRoomEntrance('room-entrance-container', {
+            joinBtnText: "방 입장하기",
+            // 인증 모드가 없으므로 게스트 체크박스를 보여주지 않습니다.
+            showGuestToggle: false,
+            // ★ 닉네임 이름표(nicknames)를 찾는 데만 씁니다.
+            //   빠른 입장 모드에서는 students 문서를 만들지 않습니다.
+            //   이름표가 필요 없으면 이 줄을 지우세요.
+            studentsCollectionRef: studentsRef,
+            // getRoomData를 넘기지 않으면 항상 빠른 입장으로 동작합니다.
+            //   방 존재 확인은 아래 onJoin에서 status 한 칸으로 합니다.
+
+            onJoin: async (code, nickname) => {
+                if (!isValidRtdbKey(nickname)) {
+                    return await customAlert('입장 실패', '닉네임에 사용할 수 없는 문자가 들어 있습니다.');
+                }
+
+                // ★ RTDB 방 노드를 통째로 읽지 마세요.
+                //   그 안에 players가 있어 전원의 전적이 학생에게 내려갑니다.
+                if (!(await room.exists(code, 'status'))) {
+                    return await customAlert('알림', '존재하지 않는 방 코드입니다.');
+                }
+
+                localSessionId = Date.now().toString() + Math.random().toString(36).slice(2, 6);
+                isKicked = false;
+
+                // ── 닉네임 충돌 안전망 ────────────────────────────────
+                //  Firestore 이름표가 방 안 유일성을 이미 보장하므로 이 경로는
+                //  거의 타지 않습니다. 이름표를 쓰지 않을 때를 대비해 남겨 둡니다.
+                //    · 내 기기      → 조용히 재접속
+                //    · 남이 접속 중 → 묻지 않고 새 이름 (이어받으면 그 학생이 튕깁니다)
+                //    · 남이 끊김    → 내가 기기를 바꾼 것일 수도 있으니 한 번 확인
+                const myDevice = getDeviceId();
+                let joined = false;
+
+                for (let i = 0; i < NICK_RETRY && !joined; i++) {
+                    const pRef = ref(db, `rooms/${code}/players/${nickname}`);
+                    const snap = await get(pRef);
+
+                    if (snap.exists()) {
+                        const p = snap.val();
+                        const gap = serverNow() - (typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0);
+                        const online = p.status && p.status !== 'offline' && gap < ONLINE_MS;
+                        const mine = !!p.deviceId && p.deviceId === myDevice;
+
+                        if (!mine) {
+                            if (online) { nickname = rerollRoomNickname(code, nickname); continue; }
+                            const ok = await customConfirm('내 기록이 맞나요?',
+                                `<b>${escapeHtml(nickname)}</b> 이름으로 남아 있는 전적이 있습니다.<br><br>` +
+                                `내가 다른 기기에서 쓰던 이름이면 <b>[확인]</b>을 눌러 이어받으세요.<br>` +
+                                `<span class="text-muted small">(승·패 기록이 그대로 이어집니다)</span><br><br>` +
+                                `<b class="text-danger">처음 들어온 것이라면</b> [취소]를 누르세요.`);
+                            if (!ok) { nickname = rerollRoomNickname(code, nickname); continue; }
+                        }
+
+                        myScore = { wins: safeNumber(p.wins), losses: safeNumber(p.losses) };
+                        lastOpponent = p.lastOpponent || null;
+                        await update(pRef, {
+                            status: 'online', lastHeartbeat: serverTimestamp(),
+                            sessionId: localSessionId, deviceId: myDevice
+                        });
+                    } else {
+                        myScore = { wins: 0, losses: 0 };
+                        lastOpponent = null;
+                        await set(pRef, {
+                            ...myScore, nickname, status: 'online',
+                            lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp(),
+                            sessionId: localSessionId, deviceId: myDevice, currentMatch: null
+                        });
+                    }
+                    joined = true;
+                }
+                if (!joined) return await customAlert('입장 실패', '이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.');
+
+                currentRoom = code;
+                currentUser = nickname;
+                rememberEntrance(code, nickname);
+
+                $('nav-room-info').textContent = `${code}번 방 (${nickname})`;
+                $('waiting-nickname').textContent = nickname;
+
+                subscribeSession();
+                await startHeartbeat();
+                updateScoreUI();
+                enterWaitingRoom();
+            },
+
+            onAdminSuccess: () => {
+                isTeacher = true;
+                $('nav-room-info').textContent = '대시보드 (교사)';
+                showSection('admin-section');
+                loadRooms();
+            }
+        });
+
+        // =====================================================================
+        // 2. 세션 · 하트비트   ① ② 를 지우지 마세요
+        // =====================================================================
+        function subscribeSession() {
+            if (unsubMe) unsubMe();
+            unsubMe = onValue(playerRef(), (snap) => {
+                if (!currentRoom || isTeacher || isKicked) return;
+                if (!snap.exists()) {
+                    isKicked = true; cleanupAll();
+                    customAlert('안내', '방에서 나가게 되었습니다.').then(() => location.reload());
+                    return;
+                }
+                const d = snap.val();
+                if (d.sessionId && d.sessionId !== localSessionId) {
+                    isKicked = true; cleanupAll();
+                    customAlert('중복 접속', '다른 기기에서 같은 이름으로 접속하여<br>이 화면의 연결이 끊어졌습니다.')
+                        .then(() => location.reload());
+                }
+            });
+        }
+
+        async function startHeartbeat() {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            try {
+                await onDisconnect(playerRef()).update({ status: 'offline', currentMatch: null });
+            } catch (e) { }
+            beat();
+            heartbeatTimer = setInterval(beat, HEARTBEAT_MS);
+            document.removeEventListener('visibilitychange', beat);
+            document.addEventListener('visibilitychange', beat);
+        }
+
+        // ① 트랜잭션 하트비트 — 이미 지워진 노드를 되살리지 않습니다.
+        //    일반 update로 하면 강퇴된 학생이 유령 데이터로 되살아납니다.
+        async function beat() {
+            if (!currentRoom || !currentUser || isKicked) return;
+            try {
+                await runTransaction(playerRef(), (cur) => {
+                    if (cur === null) return;           // 삭제됨 → 부활 금지
+                    cur.lastHeartbeat = serverNow();
+                    cur.status = document.hidden ? 'away' : 'online';
+                    return cur;
+                });
+            } catch (e) { }
+
+            if ($('waiting-section').style.display === 'block') {
+                update(waitRef(), { alive: serverTimestamp(), visible: !document.hidden }).catch(() => { });
+            }
+        }
+
+        // ② 물러날 때 onDisconnect 예약을 반드시 취소합니다.
+        //    취소하지 않으면 곧 이어지는 location.reload()가 '연결 끊김'으로 인식되어
+        //    서버가 진행 중이던 경기를 몰수로 덮고, 새 기기 상태까지 offline으로 만듭니다.
+        function cleanupAll() {
+            if (currentRoom && currentUser) {
+                try { onDisconnect(playerRef()).cancel(); } catch (e) { }
+                try { onDisconnect(waitRef()).cancel(); } catch (e) { }
+                if (currentMatchId) { try { onDisconnect(matchRef(currentMatchId)).cancel(); } catch (e) { } }
+            }
+            if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+            [unsubMe, unsubWaiting, unsubMatchPtr, unsubMatch].forEach(u => { if (u) u(); });
+            unsubMe = unsubWaiting = unsubMatchPtr = unsubMatch = null;
+            document.removeEventListener('visibilitychange', beat);
+        }
+
+        function updateScoreUI() {
+            $('score-win').textContent = safeNumber(myScore.wins);
+            $('score-lose').textContent = safeNumber(myScore.losses);
+        }
+
+        // =====================================================================
+        // 3. 대기실 · 매칭   ③ ④ 를 지우지 마세요
+        // =====================================================================
+        async function enterWaitingRoom() {
+            currentMatchId = null;
+            if (unsubMatch) { unsubMatch(); unsubMatch = null; }
+            showSection('waiting-section');
+
+            await update(playerRef(), { currentMatch: null }).catch(() => { });
+            await set(waitRef(), {
+                ts: serverTimestamp(), alive: serverTimestamp(),
+                visible: !document.hidden, last: lastOpponent || null
+            });
+            onDisconnect(waitRef()).remove().catch(() => { });
+
+            // 매칭 성사를 절대 놓치지 않도록 내 포인터 한 칸만 전용 구독합니다.
+            if (unsubMatchPtr) unsubMatchPtr();
+            unsubMatchPtr = onValue(ref(db, `rooms/${currentRoom}/players/${currentUser}/currentMatch`), async (snap) => {
+                const id = snap.val();
+                if (!id || id === currentMatchId || isKicked) return;
+                const m = await get(matchRef(id));
+                if (!m.exists() || m.val().status !== 'playing') return;
+                startMatch(id, m.val());
+            });
+
+            if (unsubWaiting) unsubWaiting();
+            unsubWaiting = onValue(ref(db, `rooms/${currentRoom}/waiting`), (snap) => {
+                waitersCache = snap.exists() ? snap.val() : {};
+                $('waiting-count').textContent = `대기 중: ${Object.keys(waitersCache).length}명`;
+                attemptMatch();
+            });
+        }
+
+        async function attemptMatch() {
+            if (currentMatchId || isMatching || isKicked) return;
+            isMatching = true;
+            let lockHeld = false;
+            const lockRef = ref(db, `rooms/${currentRoom}/matchLock`);
+            try {
+                const w = waitersCache;
+                if (!w[currentUser]) return;
+
+                // ④ 활성 대기자 판정 — 화면을 보고 있고(visible) 생존 신호가 신선한(alive) 사람만.
+                //    visible만 보면, 탭이 켜진 채 조용히 끊긴 유령이 대기열 맨 앞을 막아
+                //    교실 전체 매칭이 멈춥니다.
+                const active = Object.keys(w).filter(k => {
+                    if (w[k].visible !== true) return false;
+                    const alive = typeof w[k].alive === 'number' ? w[k].alive : (w[k].ts || 0);
+                    return (serverNow() - alive) < WAITER_STALE_MS;
+                }).sort((a, b) => (w[a].ts || 0) - (w[b].ts || 0));
+
+                // 리더 선출: 가장 오래 기다린 활성 대기자만 진행합니다.
+                if (active.length < 2 || active[0] !== currentUser) return;
+
+                // 상대 고르기: 직전 상대를 양방향으로 피하고, 없으면 즉시 폴백.
+                const cands = active.slice(1);
+                const preferred = cands.filter(c => c !== lastOpponent && (w[c].last || null) !== currentUser);
+                const pool = preferred.length ? preferred : cands;
+                const opponent = pool[Math.floor(Math.random() * pool.length)];
+                if (!opponent) return;
+
+                // ③ 매칭 잠금 — 기기 시계 오차로 두 명이 동시에 '내가 리더'라고
+                //    착각하는 경합을 막습니다.
+                const lock = await runTransaction(lockRef, (cur) => {
+                    const now = serverNow();
+                    if (cur && cur.until && cur.until > now) return;
+                    return { by: currentUser, until: now + MATCH_LOCK_MS };
+                });
+                if (!lock.committed) return;
+                lockHeld = true;
+
+                // 잠금을 얻는 사이 상대가 빠졌을 수 있으므로 재확인합니다.
+                const fresh = (await get(ref(db, `rooms/${currentRoom}/waiting`))).val() || {};
+                if (!fresh[currentUser] || !fresh[opponent]) return;
+
+                const matchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                const updates = {};
+                updates[`waiting/${currentUser}`] = null;
+                updates[`waiting/${opponent}`] = null;
+                updates[`matches/${matchId}`] = {
+                    p1: currentUser, p2: opponent, status: 'playing',
+                    createdAt: serverTimestamp(), lastMoveTime: serverTimestamp()
+                    // ★ 여기: 대전 초기 상태 (판, 차례 등)
+                };
+                updates[`players/${currentUser}/currentMatch`] = matchId;
+                updates[`players/${opponent}/currentMatch`] = matchId;
+                updates[`players/${currentUser}/currentOpponent`] = opponent;
+                updates[`players/${opponent}/currentOpponent`] = currentUser;
+                updates[`players/${currentUser}/lastOpponent`] = opponent;
+                updates[`players/${opponent}/lastOpponent`] = currentUser;
+                updates['matchLock'] = null;
+
+                await update(ref(db, `rooms/${currentRoom}`), updates);
+                lastOpponent = opponent;
+                lockHeld = false;
+            } catch (e) {
+            } finally {
+                isMatching = false;
+                if (lockHeld) { try { await set(lockRef, null); } catch (e) { } }
+            }
+        }
+
+        // =====================================================================
+        // 4. 대전   ★ 여기가 게임마다 완전히 달라지는 부분입니다
+        // =====================================================================
+        function startMatch(matchId, m) {
+            if (currentMatchId) return;
+            currentMatchId = matchId;
+
+            if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
+            if (unsubMatchPtr) { unsubMatchPtr(); unsubMatchPtr = null; }
+            remove(waitRef()).catch(() => { });
+
+            const opponent = m.p1 === currentUser ? m.p2 : m.p1;
+            $('opponent-name').textContent = opponent;
+            showSection('game-section');
+
+            try {
+                onDisconnect(matchRef(matchId))
+                    .update({ status: 'finished', winner: opponent, endReason: 'offline' });
+            } catch (e) { }
+
+            unsubMatch = onValue(matchRef(matchId), (snap) => {
+                if (!snap.exists()) return;
+                const match = snap.val();
+
+                if (match.status === 'finished') {
+                    try { onDisconnect(matchRef(matchId)).cancel(); } catch (e) { }
+                    settleMatch(matchId, match);
+                    if (unsubMatch) { unsubMatch(); unsubMatch = null; }
+                    // ★ 여기: 결과 안내
+                    setTimeout(() => enterWaitingRoom(), 2000);
+                    return;
+                }
+
+                // ★ 여기: 대전 화면 갱신
+            });
+        }
+
+        /**
+         * 진행 중인 경기만 원자적으로 끝냅니다.
+         * 먼저 성공한 쪽 하나만 committed=true 를 받습니다.
+         */
+        async function finishMatchAtomic(matchId, winner, reason) {
+            try {
+                const res = await runTransaction(matchRef(matchId), (cur) => {
+                    if (!cur || cur.status !== 'playing') return;
+                    cur.status = 'finished';
+                    cur.winner = winner || null;
+                    cur.endReason = reason;
+                    return cur;
+                });
+                return res.committed;
+            } catch (e) { return false; }
+        }
+
+        /**
+         * 끝난 경기의 승패를 정확히 한 번만 반영합니다.
+         * statsApplied 플래그를 트랜잭션으로 선점한 쪽만 점수를 올립니다.
+         * (양쪽이 동시에 결과를 봐도 두 번 오르지 않습니다)
+         */
+        async function settleMatch(matchId, data) {
+            if (!data || data.status !== 'finished' || data.statsApplied) return;
+
+            let committed = false;
+            try {
+                const res = await runTransaction(
+                    ref(db, `rooms/${currentRoom}/matches/${matchId}/statsApplied`),
+                    (cur) => (cur === true ? undefined : true)
+                );
+                committed = res.committed;
+            } catch (e) { return; }
+            if (!committed) return;
+
+            const { p1, p2, winner } = data;
+            const valid = winner && (winner === p1 || winner === p2);
+
+            for (const [nick, field] of [
+                [p1, valid ? (p1 === winner ? 'wins' : 'losses') : null],
+                [p2, valid ? (p2 === winner ? 'wins' : 'losses') : null]
+            ]) {
+                if (!nick) continue;
+                try {
+                    // 트랜잭션은 캐시가 없으면 null로 중단되므로 서버 값을 먼저 확인합니다
+                    const snap = await get(playerRef(nick));
+                    if (!snap.exists()) continue;          // 강퇴 등으로 이미 삭제됨
+                    const patch = { currentOpponent: null, currentMatch: null };
+                    if (field) patch[field] = increment(1);
+                    await update(playerRef(nick), patch);
+                } catch (e) { }
+            }
+        }
+
+        $('btn-abandon-match').addEventListener('click', async () => {
+            if (!currentMatchId) return;
+            const ok = await customConfirm('매칭 취소',
+                '이 경기를 취소하고 다른 상대를 찾을까요?<br>승패는 기록되지 않습니다.');
+            if (!ok) return;
+            await finishMatchAtomic(currentMatchId, null, 'abandoned');
+        });
+
+        // =====================================================================
+        // 5. 교사 대시보드
+        // =====================================================================
+        let unsubAdminPlayers = null, adminTimer = null;
+        let adminPlayers = {}, adminRoom = '';
+
+        async function loadRooms() { await room.loadRooms($('admin-room-select')); }
+        window.addEventListener('teacherAuthChanged', () => { if (isTeacher) loadRooms(); });
+
+        $('btn-create-room')?.addEventListener('click', async () => {
+            const btn = $('btn-create-room');
+            btn.disabled = true;
+            try {
+                const code = await room.newCode('status');
+                if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다.');
+
+                // status는 학생도 읽습니다(방 존재 확인용 한 칸).
+                await room.createRoom(code, { status: 'playing' });
+
+                await customAlert('생성 완료',
+                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(code)}</b> ]<br>` +
+                    `<span class="text-muted small">학생은 이 코드만 입력하면 바로 시작합니다.</span>`);
+                await loadRooms();
+                $('admin-room-select').value = code;
+                $('admin-room-select').dispatchEvent(new Event('change'));
+            } finally { btn.disabled = false; }
+        });
+
+        bindDeleteRoomButton($('btn-delete-room'), {
+            getCode: () => $('admin-room-select')?.value,
+            canDelete: (code) => room.canDelete(code),
+            doDelete: async (code) => {
+                stopAdminSubs();
+                await room.deleteRoom(code);          // RTDB (하위 경로 함께 삭제)
+                // ★ Firestore에 남은 닉네임 이름표도 비웁니다.
+                //   남겨 두면 같은 방 코드가 다시 나왔을 때 쓸 수 있는 이름이 줄어듭니다.
+                const snap = await getDocs(nicknamesRef(code));
+                await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+            },
+            onDone: async () => { resetAdmin(); await loadRooms(); }
+        });
+
+        function stopAdminSubs() {
+            if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
+            if (adminTimer) { clearInterval(adminTimer); adminTimer = null; }
+        }
+
+        function resetAdmin() {
+            adminRoom = ''; adminPlayers = {};
+            $('admin-players-tbody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+            $('admin-player-count').textContent = '0명 접속';
+            const sel = $('admin-room-select');
+            if (sel) sel.value = '';
+        }
+
+        $('admin-room-select')?.addEventListener('change', (e) => {
+            stopAdminSubs();
+            adminRoom = e.target.value;
+            if (!adminRoom) { resetAdmin(); return; }
+
+            unsubAdminPlayers = onValue(ref(db, `rooms/${adminRoom}/players`), (snap) => {
+                adminPlayers = snap.exists() ? snap.val() : {};
+                renderAdmin();
+            });
+
+            // 조용히 끊긴 학생의 상태를 주기적으로 갱신
+            adminTimer = setInterval(renderAdmin, 5000);
+        });
+
+        function renderAdmin() {
+            const list = Object.entries(adminPlayers);
+            const online = list.filter(([, p]) => {
+                const gap = serverNow() - (typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0);
+                return gap < ONLINE_MS && p.status === 'online';
+            }).length;
+            $('admin-player-count').textContent = `${online}명 접속`;
+
+            if (list.length === 0) {
+                $('admin-players-tbody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                return;
+            }
+
+            $('admin-players-tbody').innerHTML = list
+                .sort((a, b) => (a[1].joinedAt ?? Infinity) - (b[1].joinedAt ?? Infinity))
+                .map(([id, p]) => {
+                    const nick = p.nickname || id;
+                    const badge = statusBadge(p, { now: serverNow(), offlineMs: ONLINE_MS });
+                    const isOnline = badge.includes('status-online');
+                    const vs = p.currentOpponent
+                        ? `<span class="text-primary fw-bold">vs ${escapeHtml(p.currentOpponent)}</span>`
+                        : '<span class="text-muted">대기 중</span>';
+                    return `<tr>
+                        <td>${badge}</td>
+                        <td class="fw-bold">${escapeHtml(nick)}</td>
+                        <td>${vs}</td>
+                        <td class="text-success fw-bold">${safeNumber(p.wins)}</td>
+                        <td class="text-danger fw-bold">${safeNumber(p.losses)}</td>
+                        <td>${isOnline ? '-' : `<button class="btn btn-outline-danger btn-sm btn-kick" data-id="${escapeHtml(id)}">강퇴</button>`}</td>
+                    </tr>`;
+                }).join('');
+
+            // 이벤트 위임 대신 매번 다시 연결합니다 (표가 작아 부담이 없습니다)
+            $('admin-players-tbody').querySelectorAll('.btn-kick').forEach(btn => {
+                btn.onclick = async () => {
+                    const id = btn.dataset.id;
+                    if (!await customConfirm('강퇴', `${escapeHtml(id)} 학생을 강퇴할까요?`)) return;
+                    await remove(ref(db, `rooms/${adminRoom}/waiting/${id}`)).catch(() => { });
+                    await remove(ref(db, `rooms/${adminRoom}/players/${id}`));
+                };
+            });
+        }
+    </script>
+</body>
+
+</html>

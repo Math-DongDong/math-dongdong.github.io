@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════════════
+  유형 A — 개인 기록형 템플릿
+
+  이런 활동에 씁니다
+    학생이 혼자 문제를 풀고, 끝나면 점수가 남고, 순위표가 나오는 활동.
+    예) 정수와 유리수 마스터 / 곱셈과 나눗셈 마스터 / 좀비헌터
+
+  특징
+    · 데이터베이스는 Firestore 하나만 씁니다 (실시간 통신 없음)
+    · 빠른 입장 + 학생 인증 + 게스트 승인 전부 지원
+    · 대시보드에 학번 표시 토글, PIN 초기화, 엑셀 내보내기
+
+  ★ 새 게임을 만들 때 고칠 곳은 "★ 여기" 표시를 따라가면 됩니다.
+  ★ 컬렉션 이름만 '..._records' 로 지으면 보안 규칙은 손댈 필요가 없습니다.
+═══════════════════════════════════════════════════════════════════════════
+-->
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- ★ 여기: 제목 -->
+    <title>새 게임 - 중1 수학</title>
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <link rel="stylesheet" href="../../../css/dashboard.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        .login-card { max-width: 480px; margin: 0 auto; }
+        .game-wrapper { max-width: 800px; margin: 0 auto; }
+
+        /* 학번 열: 기본 숨김. 표를 다시 그려도 유지되도록 클래스로만 제어합니다. */
+        .col-studentid { display: none; }
+        #adminTableWrap.show-sid .col-studentid { display: table-cell; }
+
+        /* ★ 여기: 게임 화면 스타일 */
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 (room-auth.js의 customAlert / customConfirm이 사용) -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="navbar-placeholder"></div>
+    <script src="../../../js/navbar.js"></script>
+
+    <!-- ==================== 1. 입장 화면 ==================== -->
+    <div id="login-section" class="section-container active-section">
+        <div class="container py-4">
+            <div class="login-card">
+                <div class="text-center mb-4">
+                    <!-- ★ 여기: 제목과 설명 -->
+                    <h1 class="fw-bold fs-3">🎮 새 게임</h1>
+                    <p class="text-muted">방 코드를 입력하고 게임을 시작하세요!</p>
+                </div>
+                <!-- 입장 카드는 room-auth.js가 통째로 그립니다 (방 코드 입력 하나뿐) -->
+                <div id="room-entrance-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 2. 게임 화면 ==================== -->
+    <div id="game-section" class="section-container">
+        <div class="container py-3">
+            <div class="game-wrapper">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="badge bg-warning text-dark fw-bold fs-6" id="level-badge">Lv.1</span>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="fw-bold" id="lives-display">❤️❤️❤️❤️❤️</span>
+                        <span class="fw-bold">점수: <span id="score">0</span></span>
+                        <button id="btn-end-play" class="btn btn-danger btn-sm fw-bold">플레이 종료</button>
+                    </div>
+                </div>
+
+                <!-- ★ 여기: 문제 화면·입력 UI를 넣으세요 -->
+                <div class="card border-0 shadow-sm rounded-4 p-5 text-center">
+                    <p class="text-muted mb-0">게임 화면을 여기에 만드세요.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 3. 게임 오버 화면 ==================== -->
+    <div id="gameover-section" class="section-container">
+        <div class="container py-4">
+            <div class="login-card">
+                <div class="card border-0 shadow-sm rounded-4 p-4 text-center mb-4">
+                    <div class="display-4 mb-3">😭</div>
+                    <h2 class="fw-bold text-danger mb-2">게임 종료!</h2>
+                    <div class="bg-light rounded-4 p-3 mb-4">
+                        <p class="fs-5 mb-1">최종 점수: <span id="final-score" class="fw-bold text-primary fs-3">0</span>점</p>
+                        <p class="fs-6 mb-0">정답률: <span id="final-accuracy" class="fw-bold text-info">0%</span></p>
+                    </div>
+                    <div id="save-status" class="text-success fw-bold small mb-3"></div>
+
+                    <div class="bg-light border rounded-4 p-3 mb-4 text-start">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold mb-0">📊 내 순위와 주변 실력</h6>
+                            <span class="badge bg-primary px-3 py-1" id="myRankBadge">-위</span>
+                        </div>
+                        <div class="small text-muted mb-2" id="rankSummaryText">순위를 계산 중입니다.</div>
+                        <table class="table table-sm table-borderless align-middle mb-0" style="font-size:0.9rem;">
+                            <thead>
+                                <tr class="text-muted small">
+                                    <th class="text-center" style="width:15%;">순위</th>
+                                    <th style="width:55%;">닉네임</th>
+                                    <th class="text-center" style="width:30%;">점수</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rankNearbyTable"></tbody>
+                        </table>
+                    </div>
+
+                    <button id="btn-restart" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 4. 대시보드 ==================== -->
+    <div id="dashboard-section" class="section-container">
+        <div class="container py-4">
+            <div class="admin-card mb-4">
+                <!-- ★ 여기: data-title -->
+                <div id="dash-header-placeholder"></div>
+                <script src="../../../js/dashboard-header.js" data-title="새 게임 대시보드"></script>
+
+                <!-- 게스트 대기자 알림 배너 영역 -->
+                <div id="pendingGuestsContainer" class="mb-3"></div>
+
+                <div class="d-flex justify-content-end align-items-center mb-2">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer;">
+                        <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId"
+                            style="cursor:pointer;">학번 표시</label>
+                    </div>
+                </div>
+
+                <div class="table-responsive" id="adminTableWrap">
+                    <table class="table table-hover align-middle mb-0 text-center">
+                        <thead class="table-light">
+                            <tr>
+                                <th>순위</th>
+                                <th class="col-studentid">학번</th>
+                                <th>닉네임</th>
+                                <!-- ★ 여기: 보여줄 항목 -->
+                                <th>최고 점수</th>
+                                <th>정답률</th>
+                                <th>플레이</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminTableBody">
+                            <tr><td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import {
+            renderRoomEntrance, customAlert, showPinResetModal
+        } from "../../../js/room-auth.js?v=3.0";
+        import {
+            firestoreRoom, renderGuestApproval, bindDeleteRoomButton, bindStudentIdToggle,
+            buildSidMap, escapeHtml, safeNumber
+        } from "../../../js/game-kit.js?v=3.0";
+        import {
+            doc, setDoc, addDoc, getDocs, onSnapshot, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+        // ★ 여기: 컬렉션 이름. 반드시 '_records'로 끝나야 보안 규칙이 적용됩니다.
+        const room = firestoreRoom("newgame_records");
+
+        // =====================================================================
+        // 전역 상태
+        // =====================================================================
+        let currentRoomCode = "";
+        let playerNickname = "";
+        let mySchool = "";      // 학생 인증 모드에서만 값이 있음
+        let myStudentId = "";
+
+        // ★ 여기: 게임 상태 변수
+        let score = 0, lives = 5, solved = 0, attempts = 0;
+
+        function $(id) { return document.getElementById(id); }
+        function showSection(id) {
+            document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section'));
+            $(id).classList.add('active-section');
+        }
+
+        // =====================================================================
+        // 1. 방 입장
+        //
+        //  닉네임은 room-auth.js가 자동 발급합니다. 학생이 입력하는 것은 방 코드뿐입니다.
+        // =====================================================================
+        renderRoomEntrance('room-entrance-container', {
+            getRoomData: room.getRoomData,                     // 방 존재 확인 + 모드 판정
+            studentsCollectionRef: room.students,              // 닉네임 이름표·게스트 승인·학번
+            onJoin: async (roomCode, nickname, authInfo) => {
+                currentRoomCode = roomCode;
+                playerNickname = nickname;
+                mySchool = authInfo?.school || '';
+                myStudentId = authInfo?.studentId || '';
+
+                showSection('game-section');
+                initGame();
+            },
+            onAdminSuccess: () => {
+                showSection('dashboard-section');
+                unsubRooms = room.watchRooms($('roomSelect'));
+            }
+        });
+
+        // =====================================================================
+        // 2. 게임 로직   ★ 여기가 게임마다 완전히 달라지는 부분입니다
+        // =====================================================================
+        function initGame() {
+            score = 0; lives = 5; solved = 0; attempts = 0;
+            updateUI();
+            // ★ 여기: 첫 문제 만들기
+        }
+
+        function updateUI() {
+            $('score').textContent = score;
+            $('lives-display').textContent = '❤️'.repeat(lives) + '🖤'.repeat(5 - lives);
+        }
+
+        $('btn-end-play').addEventListener('click', () => endGame());
+        $('btn-restart').addEventListener('click', () => { showSection('game-section'); initGame(); });
+
+        // =====================================================================
+        // 3. 기록 저장
+        //
+        //  ★ records 문서에는 학번·학교를 절대 넣지 않습니다.
+        //    게임오버 순위표가 로그인 없이 이 컬렉션을 읽기 때문입니다.
+        //    (보안 규칙도 studentId·school·studentKey 키를 거부합니다)
+        //    학번은 students 문서에만 두고, 대시보드가 닉네임으로 이어 붙입니다.
+        // =====================================================================
+        async function endGame() {
+            const accuracy = attempts === 0 ? 0 : Math.round((solved / attempts) * 100);
+
+            showSection('gameover-section');
+            $('final-score').textContent = score;
+            $('final-accuracy').textContent = accuracy + '%';
+
+            try {
+                await addDoc(room.records(currentRoomCode), {
+                    nickname: playerNickname,
+                    score,                       // 규칙이 숫자인지 검사합니다
+                    accuracy,
+                    totalSolved: solved,
+                    totalAttempts: attempts,
+                    // ★ 여기: 게임별 기록 항목 (최대 25개 키)
+                    playedAt: serverTimestamp()
+                });
+
+                const patch = { nickname: playerNickname, lastScore: score, updatedAt: serverTimestamp() };
+                if (mySchool) patch.school = mySchool;
+                if (myStudentId) patch.studentId = myStudentId;
+                await setDoc(doc(room.students(currentRoomCode), playerNickname), patch, { merge: true });
+
+                $('save-status').textContent = "✅ 기록이 저장되었습니다!";
+            } catch (e) {
+                console.error('기록 저장 실패:', e);
+                $('save-status').textContent = "⚠️ 기록 저장에 실패했습니다.";
+                $('save-status').classList.replace('text-success', 'text-danger');
+            }
+
+            await loadGameOverRankings();
+        }
+
+        /** 같은 방 안에서 내 위치 ±2명 */
+        async function loadGameOverRankings() {
+            try {
+                const snap = await getDocs(room.records(currentRoomCode));
+                const best = {};
+                snap.forEach(d => {
+                    const r = d.data();
+                    const nick = String(r.nickname || '');
+                    if (!nick) return;
+                    const item = { nickname: nick, score: safeNumber(r.score) };
+                    if (!best[nick] || item.score > best[nick].score) best[nick] = item;
+                });
+
+                const sorted = Object.values(best).sort((a, b) => b.score - a.score);
+                const total = sorted.length;
+                const myIdx = sorted.findIndex(i => i.nickname === playerNickname);
+
+                if (myIdx !== -1) {
+                    const rank = myIdx + 1;
+                    $('myRankBadge').textContent = `${rank}위 / ${total}명`;
+                    $('rankSummaryText').textContent =
+                        `전체 ${total}명 중 상위 ${Math.max(1, Math.round((rank / total) * 100))}%에 해당합니다.`;
+                }
+
+                let start = 0, end = total;
+                if (total > 5) {
+                    start = Math.max(0, myIdx - 2);
+                    end = Math.min(total, start + 5);
+                    if (end - start < 5) start = Math.max(0, end - 5);
+                }
+
+                $('rankNearbyTable').innerHTML = sorted.slice(start, end).map((item, i) => {
+                    const rank = start + i + 1;
+                    const isMe = item.nickname === playerNickname;
+                    return `<tr class="${isMe ? 'table-primary fw-bold' : ''}">
+                        <td class="text-center">${rank}</td>
+                        <td>${escapeHtml(item.nickname)}</td>
+                        <td class="text-center">${safeNumber(item.score)}점</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                console.error('주변 순위 로드 오류:', e);
+            }
+        }
+
+        // =====================================================================
+        // 4. 대시보드
+        // =====================================================================
+        let unsubRooms = null, unsubStudents = null, unsubRecords = null;
+        let roomStudents = [], roomRecords = [];
+        let currentAdminRoom = '';
+        let excelData = [];
+
+        // 교사 로그인 결과는 비동기로 나중에 도착합니다. 이 줄이 없으면 목록이 비어 보입니다.
+        window.addEventListener('teacherAuthChanged', () => {
+            if (unsubRooms) unsubRooms();
+            unsubRooms = room.watchRooms($('roomSelect'));
+        });
+
+        $('roomSelect').addEventListener('change', (e) => {
+            currentAdminRoom = e.target.value;
+            if (unsubStudents) unsubStudents();
+            if (unsubRecords) unsubRecords();
+            if (!currentAdminRoom) { roomStudents = []; roomRecords = []; render(); return; }
+
+            unsubStudents = onSnapshot(room.students(currentAdminRoom), snap => {
+                roomStudents = []; snap.forEach(d => roomStudents.push(d.data())); render();
+            });
+            unsubRecords = onSnapshot(room.records(currentAdminRoom), snap => {
+                roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); render();
+            });
+        });
+
+        $('btn-create-room').addEventListener('click', async () => {
+            const code = await room.createRoom();       // 입장 모드를 묻고 방을 만듭니다
+            if (!code) return;
+            $('roomSelect').value = code;
+            $('roomSelect').dispatchEvent(new Event('change'));
+        });
+
+        $('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
+
+        bindDeleteRoomButton($('btn-delete-room'), {
+            getCode: () => currentAdminRoom,
+            canDelete: (code) => room.canDelete(code),
+            doDelete: (code) => room.deleteRoom(code),
+            onDone: async () => {
+                $('roomSelect').value = '';
+                $('roomSelect').dispatchEvent(new Event('change'));
+            }
+        });
+
+        bindStudentIdToggle($('toggleStudentId'), [$('adminTableWrap')]);
+
+        function render() {
+            renderGuestApproval($('pendingGuestsContainer'), roomStudents, {
+                studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null,
+                guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null
+            });
+
+            if (!currentAdminRoom) {
+                $('adminTableBody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                return;
+            }
+
+            const sidByNick = buildSidMap(roomStudents);
+
+            // ★ records는 로그인 없이 만들 수 있으므로, 숫자로 쓸 값은 전부 safeNumber를 거칩니다.
+            //   문자열이 섞여 들어와도 화면에 코드로 해석되지 않습니다.
+            const stats = {};
+            roomRecords.forEach(r => {
+                const nick = String(r.nickname || '');
+                if (!nick) return;
+                if (!stats[nick]) stats[nick] = { plays: 0, best: 0, solved: 0, attempts: 0 };
+                const s = stats[nick];
+                s.plays++;
+                s.best = Math.max(s.best, safeNumber(r.score));
+                s.solved += safeNumber(r.totalSolved);
+                s.attempts += safeNumber(r.totalAttempts);
+            });
+
+            const keys = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
+            if (keys.length === 0) {
+                $('adminTableBody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                return;
+            }
+
+            excelData = [];
+            $('adminTableBody').innerHTML = keys.map((nick, idx) => {
+                const s = stats[nick];
+                const acc = s.attempts > 0 ? Math.round((s.solved / s.attempts) * 100) : 0;
+                const sid = sidByNick[nick] || '';
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+
+                excelData.push({
+                    "학번": sid, "순위": idx + 1, "닉네임": nick,
+                    "최고 점수": s.best, "정답률(%)": acc, "플레이 횟수": s.plays
+                });
+
+                // ★ 닉네임에 따옴표가 섞여도 안전하도록 onclick 대신 data-* 를 씁니다.
+                return `<tr class="row-student" data-nick="${escapeHtml(nick)}">
+                    <td class="fw-bold">${medal}</td>
+                    <td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td>
+                    <td class="fw-bold">${escapeHtml(nick)}</td>
+                    <td class="fw-bold text-primary">${s.best}점</td>
+                    <td>${acc}%</td>
+                    <td><span class="badge bg-secondary">${s.plays}회</span></td>
+                </tr>`;
+            }).join('');
+        }
+
+        // 학생 상세 보기 — 이벤트 위임 (표를 다시 그려도 동작합니다)
+        $('adminTableBody').addEventListener('click', (e) => {
+            const row = e.target.closest('.row-student');
+            if (!row) return;
+            // ★ 여기: 상세 모달 띄우기
+            console.log('선택한 학생:', row.dataset.nick);
+        });
+
+        $('btn-export-excel').addEventListener('click', () => {
+            if (excelData.length === 0) return customAlert("알림", "다운로드할 데이터가 없습니다.");
+            const ws = XLSX.utils.json_to_sheet(excelData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "평가진단");
+            // ★ 여기: 파일 이름
+            XLSX.writeFile(wb, `새게임_${currentAdminRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        });
+    </script>
+</body>
+
+</html>

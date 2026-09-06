@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════════════
+  유형 B — 빠른 입장 공유형 템플릿
+
+  이런 활동에 씁니다
+    반 전체가 하나의 데이터를 함께 만들고 함께 보는 활동.
+    학생을 구분할 필요가 없고, 개인 점수도 남기지 않습니다.
+    예) 텍스트 감성 분석(단어 모으기) / 실시간 투표 / 브레인스토밍 보드
+
+  특징
+    · Realtime Database 하나만 씁니다 (즉시 반영이 중요)
+    · 빠른 입장 전용 — 학교·학번·PIN·게스트 승인이 전부 없습니다
+    · 대시보드는 방 만들기·삭제·진행 제어만
+
+  ⚠ 새 Realtime Database를 쓸 때 해야 하는 일 (Firestore와 다릅니다)
+    1) firebase-config.js 에 DB 추가
+    2) 보안 규칙 파일 새로 작성 (rules/rtdb-*.txt 를 본으로)
+    3) account_manager.html · migrate_v3.html 의 RTDBS 목록에 추가
+    4) 교사 권한 동기화 다시 실행
+    Firestore는 '..._records' 이름만 지키면 1~4가 전부 불필요합니다.
+
+  ★ 새 활동을 만들 때 고칠 곳은 "★ 여기" 표시를 따라가면 됩니다.
+═══════════════════════════════════════════════════════════════════════════
+-->
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ★ 여기: 제목 -->
+    <title>새 활동</title>
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <link rel="stylesheet" href="../../../css/dashboard.css">
+    <style>
+        .landing-card { max-width: 480px; margin: 0 auto; }
+        .shared-box { height: 260px; overflow-y: auto; }
+
+        /* ★ 여기: 활동 화면 스타일 */
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <!-- 공통 모달 -->
+    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-0" id="customModalBody"></div>
+                <div class="modal-footer border-0 pt-3">
+                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="navbar-placeholder"></div>
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container pt-4">
+        <div class="text-end mb-3">
+            <span class="badge bg-secondary fs-6" id="nav-room-info">대기 중</span>
+        </div>
+
+        <!-- ==================== 1. 랜딩 ==================== -->
+        <div id="landing-section" class="section-container active-section py-5">
+            <div class="text-center mb-4">
+                <!-- ★ 여기: 제목과 설명 -->
+                <h1 class="fw-bold mb-3">🧩 새 활동</h1>
+                <p class="text-muted">방 코드를 입력하여 함께 참여하세요.</p>
+            </div>
+            <div class="landing-card">
+                <div id="room-entrance-container"></div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 학생 화면 ==================== -->
+        <div id="student-section" class="section-container">
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 h-100">
+                        <h5 class="fw-bold mb-3">📝 내 의견 넣기</h5>
+                        <!-- ★ 여기: 입력 UI -->
+                        <label class="visually-hidden" for="item-input">입력</label>
+                        <input type="text" id="item-input" class="form-control mb-3"
+                            placeholder="내용을 입력하세요 (최대 40자)" maxlength="40" autocomplete="off">
+                        <button id="btn-add-item" class="btn btn-success w-100 fw-bold">등록하기</button>
+                    </div>
+                </div>
+
+                <div class="col-md-8">
+                    <div class="card shadow-sm border-0 rounded-4 p-4 h-100">
+                        <h5 class="fw-bold mb-3">🗂️ 함께 모은 것
+                            <span class="badge bg-secondary" id="item-count">0개</span>
+                        </h5>
+                        <div id="items-container" class="border rounded p-3 bg-light shared-box"></div>
+                        <p class="text-muted small mt-2 mb-0">항목을 누르면 고치거나 지울 수 있습니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 교사 대시보드 ==================== -->
+        <div id="admin-section" class="section-container">
+            <div class="admin-card mb-4">
+                <!-- ★ 학생 정보를 쓰지 않는 활동이므로
+                       PIN 초기화 버튼(data-pin-reset)과 엑셀(data-export)을 끕니다. -->
+                <div id="dash-header-placeholder"></div>
+                <script src="../../../js/dashboard-header.js" data-title="새 활동 대시보드" data-export="false"
+                    data-pin-reset="false" data-select-id="admin-room-select"></script>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h5 class="fw-bold mb-0">🗂️ 수집 현황
+                        <span class="badge bg-secondary ms-1" id="admin-item-count">0개</span>
+                    </h5>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge bg-light text-dark fs-6" id="admin-room-title">제목 없음</span>
+                        <!-- ★ 여기: 진행 제어 버튼 (예: 다음 단계 열기) -->
+                        <button id="btn-toggle-phase" class="btn btn-outline-secondary btn-sm fw-bold" disabled>
+                            🔒 다음 단계 잠김
+                        </button>
+                    </div>
+                </div>
+
+                <div id="admin-items-container" class="border rounded p-3 bg-light shared-box">
+                    <span class="text-muted">방을 선택하면 데이터가 표시됩니다.</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // ★ 여기: 사용할 Realtime Database
+        import { rtdbSentiment as db } from "../../../js/firebase-config.js";
+        import {
+            renderRoomEntrance, customAlert, customPrompt, customConfirm
+        } from "../../../js/room-auth.js?v=3.0";
+        import {
+            rtdbRoom, bindDeleteRoomButton, escapeHtml, safeNumber
+        } from "../../../js/game-kit.js?v=3.0";
+        import {
+            ref, get, set, push, update, remove, onValue, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+
+        // 방 도구. roomsPath·indexPath는 보안 규칙의 노드 이름과 같아야 합니다.
+        const room = rtdbRoom(db, { roomsPath: 'rooms', indexPath: 'room_index' });
+
+        // ★ 여기: 방이 살아 있는지 확인할 '한 칸' 이름.
+        //   방 노드를 통째로 읽으면 교사 정보까지 학생 브라우저로 내려옵니다.
+        const PROBE = 'title';
+
+        const MAX_LEN = 40;
+
+        let currentRoomCode = null;
+        let isTeacher = false;
+        let itemsUnsub = null, phaseUnsub = null;
+        let adminItemsUnsub = null, adminPhaseUnsub = null;
+        let itemsData = [], adminItemsData = [];
+        let phaseOpen = false;
+
+        function $(id) { return document.getElementById(id); }
+        function showSection(id) {
+            document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section'));
+            $(id).classList.add('active-section');
+        }
+        function itemsRef(code) { return ref(db, `rooms/${code}/items`); }
+
+        // =====================================================================
+        // 1. 방 입장  (빠른 입장 전용)
+        // =====================================================================
+        renderRoomEntrance('room-entrance-container', {
+            joinBtnText: "방 입장하기",
+            // 인증 모드가 없으므로 게스트 체크박스를 보여주지 않습니다.
+            showGuestToggle: false,
+            // studentsCollectionRef를 넘기지 않으면 닉네임 이름표도 만들지 않습니다.
+            //   (학생을 구분하지 않는 활동이라 필요 없습니다)
+
+            getRoomData: async (code) => {
+                const snap = await get(room.childRef(code, PROBE));
+                return snap.exists() ? { roomMode: 'quick', title: snap.val() } : null;
+            },
+
+            onJoin: async (code) => {
+                try {
+                    const tSnap = await get(room.childRef(code, PROBE));
+                    currentRoomCode = code;
+                    $('nav-room-info').textContent = tSnap.exists() ? `${code} · ${tSnap.val()}` : `${code}번 방`;
+                    showSection('student-section');
+                    startStudentSync();
+                } catch (e) {
+                    console.error('입장 처리 오류:', e);
+                    const msg = String(e?.code || e?.message || e).toLowerCase();
+                    await customAlert("입장 실패", msg.includes('permission')
+                        ? "데이터베이스 접근이 거부되었습니다.<br>네트워크가 아니라 <b>보안 규칙</b> 문제입니다.<br>선생님께 알려주세요."
+                        : "입장 중 문제가 발생했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.");
+                }
+            },
+
+            onAdminSuccess: () => {
+                isTeacher = true;
+                $('nav-room-info').textContent = '대시보드 (교사)';
+                showSection('admin-section');
+                loadRooms();
+            }
+        });
+
+        // =====================================================================
+        // 2. 학생 화면
+        // =====================================================================
+        function startStudentSync() {
+            if (itemsUnsub) itemsUnsub();
+            itemsUnsub = onValue(itemsRef(currentRoomCode), (snap) => {
+                itemsData = [];
+                snap.forEach(child => {
+                    const d = child.val() || {};
+                    itemsData.push({ id: child.key, text: String(d.text || '') });
+                });
+                renderItems($('items-container'), itemsData, currentRoomCode);
+                $('item-count').textContent = `${itemsData.length}개`;
+            });
+
+            // ★ 방 노드 전체가 아니라 진행 상태 한 칸만 구독합니다.
+            if (phaseUnsub) phaseUnsub();
+            phaseUnsub = onValue(room.childRef(currentRoomCode, 'phaseOpen'), (snap) => {
+                phaseOpen = snap.exists() && snap.val() === true;
+                // ★ 여기: 다음 단계가 열렸을 때 학생 화면 변화
+            });
+        }
+
+        /**
+         * 항목 그리기.
+         * ★ textContent로 넣습니다. 학생이 입력한 문자열이라 innerHTML은 위험합니다.
+         */
+        function renderItems(container, list, code) {
+            container.innerHTML = '';
+            if (list.length === 0) {
+                container.innerHTML = '<span class="text-muted">아직 등록된 것이 없습니다.</span>';
+                return;
+            }
+            list.forEach(item => {
+                const badge = document.createElement('span');
+                badge.className = 'badge rounded-pill bg-primary m-1 p-2';
+                badge.style.cursor = 'pointer';
+                badge.textContent = item.text;
+                badge.title = '누르면 수정하거나 삭제할 수 있습니다';
+                badge.onclick = () => editOrDelete(code, item.id, item.text);
+                container.appendChild(badge);
+            });
+        }
+
+        /**
+         * 수정 / 삭제.
+         * ★ 모달 본문은 innerHTML로 들어갑니다. 학생이 입력한 값을 그대로 넣으면
+         *   거기에 코드를 심을 수 있으므로 반드시 escapeHtml을 거칩니다.
+         */
+        async function editOrDelete(code, id, currentText) {
+            const input = await customPrompt("수정 / 삭제",
+                `선택한 항목: <b>${escapeHtml(currentText)}</b><br>` +
+                `<span class="text-muted small">새 내용을 입력하면 수정됩니다.<br>` +
+                `지우려면 <b>삭제</b> 라고 입력하세요.</span>`);
+            if (input === null) return;
+
+            const value = String(input).trim();
+            if (!value) return;
+
+            try {
+                if (value === '삭제') {
+                    const ok = await customConfirm("삭제", `<b>${escapeHtml(currentText)}</b> 을(를) 지울까요?`);
+                    if (!ok) return;
+                    await remove(ref(db, `rooms/${code}/items/${id}`));
+                    return;
+                }
+                if (value.length > MAX_LEN) {
+                    return await customAlert("알림", `${MAX_LEN}자 이내로 입력해주세요.`);
+                }
+                await update(ref(db, `rooms/${code}/items/${id}`), { text: value });
+            } catch (e) {
+                console.error(e);
+                await customAlert("오류", "처리하지 못했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.");
+            }
+        }
+
+        $('btn-add-item').addEventListener('click', async () => {
+            const btn = $('btn-add-item');
+            const text = $('item-input').value.trim();
+
+            if (!text) return await customAlert("알림", "내용을 입력하세요.");
+            if (text.length > MAX_LEN) return await customAlert("알림", `${MAX_LEN}자 이내로 입력해주세요.`);
+            // 서버 왕복 없이 즉시 중복 판정
+            if (itemsData.some(i => i.text === text)) {
+                return await customAlert("알림", "이미 등록된 내용입니다!");
+            }
+
+            btn.disabled = true;
+            try {
+                await push(itemsRef(currentRoomCode), { text, createdAt: serverTimestamp() });
+                $('item-input').value = '';
+                $('item-input').focus();
+            } catch (e) {
+                console.error(e);
+                await customAlert("오류", "등록 중 오류가 발생했습니다.");
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        $('item-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') $('btn-add-item').click();
+        });
+
+        // =====================================================================
+        // 3. 교사 대시보드
+        // =====================================================================
+        async function loadRooms() {
+            await room.loadRooms(
+                $('admin-room-select'),
+                (code, meta) => meta.title ? `[${code}] ${meta.title}` : `[${code}]`,
+                ['title']    // 인덱스가 없던 옛 방을 옮길 때 같이 가져올 필드
+            );
+        }
+        window.addEventListener('teacherAuthChanged', () => { if (isTeacher) loadRooms(); });
+
+        $('btn-create-room')?.addEventListener('click', async () => {
+            const input = await customPrompt("새로운 방 만들기", "이 방의 제목을 입력하세요 (예: 1반 급식 평가)");
+            if (input === null) return;
+            const title = String(input).trim().slice(0, 40);
+            if (!title) return await customAlert("알림", "제목을 입력해주세요.");
+
+            const btn = $('btn-create-room');
+            btn.disabled = true;
+            try {
+                const code = await room.newCode(PROBE);
+                if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
+
+                // ★ 여기: 방 노드에 넣을 초기값 / 인덱스에 넣을 가벼운 값
+                await room.createRoom(code, { title, phaseOpen: false }, { title });
+
+                await customAlert("방 생성 완료",
+                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(code)}</b> ]<br>` +
+                    `제목: <b>${escapeHtml(title)}</b><br>` +
+                    `<span class="text-muted small">학생은 이 코드만 입력하면 바로 참여합니다.</span>`);
+
+                await loadRooms();
+                $('admin-room-select').value = code;
+                $('admin-room-select').dispatchEvent(new Event('change'));
+            } catch (e) {
+                console.error(e);
+                await customAlert("오류", "방을 만들지 못했습니다.");
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        bindDeleteRoomButton($('btn-delete-room'), {
+            getCode: () => $('admin-room-select')?.value,
+            canDelete: (code) => room.canDelete(code),
+            doDelete: async (code) => { stopAdminSubs(); await room.deleteRoom(code); },
+            onDone: async () => { resetAdminPanel(); await loadRooms(); }
+        });
+
+        function stopAdminSubs() {
+            if (adminItemsUnsub) { adminItemsUnsub(); adminItemsUnsub = null; }
+            if (adminPhaseUnsub) { adminPhaseUnsub(); adminPhaseUnsub = null; }
+        }
+
+        function resetAdminPanel() {
+            currentRoomCode = null;
+            adminItemsData = [];
+            $('admin-items-container').innerHTML = '<span class="text-muted">방을 선택하면 데이터가 표시됩니다.</span>';
+            $('admin-item-count').textContent = '0개';
+            $('admin-room-title').textContent = '제목 없음';
+            $('btn-toggle-phase').disabled = true;
+            updatePhaseUI(false);
+            const sel = $('admin-room-select');
+            if (sel) sel.value = '';
+        }
+
+        $('admin-room-select')?.addEventListener('change', async (e) => {
+            const code = e.target.value;
+            stopAdminSubs();
+            if (!code) { resetAdminPanel(); return; }
+
+            currentRoomCode = code;
+            $('btn-toggle-phase').disabled = false;
+
+            const tSnap = await get(room.indexRef(code)).catch(() => null);
+            $('admin-room-title').textContent = (tSnap?.exists() && tSnap.val().title) || '제목 없음';
+
+            adminPhaseUnsub = onValue(room.childRef(code, 'phaseOpen'), (snap) => {
+                updatePhaseUI(snap.exists() && snap.val() === true);
+            });
+
+            adminItemsUnsub = onValue(itemsRef(code), (snap) => {
+                adminItemsData = [];
+                snap.forEach(child => {
+                    const d = child.val() || {};
+                    adminItemsData.push({ id: child.key, text: String(d.text || '') });
+                });
+                renderItems($('admin-items-container'), adminItemsData, code);
+                $('admin-item-count').textContent = `${adminItemsData.length}개`;
+            });
+        });
+
+        function updatePhaseUI(open) {
+            phaseOpen = open;
+            const btn = $('btn-toggle-phase');
+            btn.className = open ? 'btn btn-success btn-sm fw-bold' : 'btn btn-outline-secondary btn-sm fw-bold';
+            btn.innerHTML = open ? '✅ 다음 단계 열림' : '🔒 다음 단계 잠김';
+        }
+
+        $('btn-toggle-phase').addEventListener('click', async () => {
+            if (!currentRoomCode) return;
+            try {
+                await set(room.childRef(currentRoomCode, 'phaseOpen'), !phaseOpen);
+            } catch (e) {
+                console.error(e);
+                await customAlert("오류", "상태를 바꾸지 못했습니다.");
+            }
+        });
+    </script>
+</body>
+
+</html>
