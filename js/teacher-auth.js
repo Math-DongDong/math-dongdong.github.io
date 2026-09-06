@@ -34,32 +34,47 @@ function esc(v) {
 }
 
 /**
- * 네비게이션 바의 실제 높이를 --nav-h 에 넣습니다.
+ * 교사·관리자 드롭다운을 '화면 기준 배치(fixed)'로 열도록 설정합니다.
  *
- * 모바일에서는 교사·관리자 드롭다운을 position: fixed 로 띄웁니다.
- * (가로 스크롤 상자에 잘리는 것을 피하기 위해서입니다 — navbar.css 참고)
- * 그런데 fixed는 화면 기준이라 '네비게이션 바 바로 아래'를 CSS만으로는
- * 알 수 없습니다. 그래서 실제 높이를 재서 알려줍니다.
+ * ── 왜 필요한가 ──────────────────────────────────────────────────────
+ * 모바일 네비게이션 바에는 가로 스크롤을 위해 overflow-x: auto 가 걸려
+ * 있습니다. CSS에서 overflow가 visible이 아닌 요소는 잘라내기 상자가 되고,
+ * 부트스트랩 드롭다운은 position: absolute 로 뜨므로 그 안에 갇혀 잘립니다.
  *
- * 높이는 화면 회전·글꼴 로딩·메뉴 줄바꿈으로 달라지므로 그때마다 다시 잽니다.
+ * ── 왜 CSS만으로는 안 되는가 ─────────────────────────────────────────
+ * CSS로 position: fixed 를 주면 잘리는 건 해결되지만, 이 네비게이션 바는
+ * 화면에 고정된 것이 아니라 페이지와 함께 스크롤됩니다.
+ * 드롭다운만 화면에 못 박히면 스크롤할 때 버튼과 떨어져 허공에 남습니다.
+ *
+ * ── 그래서 이렇게 합니다 ─────────────────────────────────────────────
+ * 위치 계산은 부트스트랩이 쓰는 Popper에게 그대로 맡기고,
+ * 배치 방식(strategy)만 'fixed' 로 바꿉니다.
+ * Popper는 fixed 상태에서도 버튼의 화면상 위치를 매 스크롤마다 다시 계산해
+ * 따라다닙니다. 잘리지도 않고 떨어지지도 않습니다.
+ *
+ * ※ navbar.css 에서 이 드롭다운의 top·left·transform 을 건드리면
+ *   Popper의 계산을 덮어써 다시 허공에 뜹니다. 폭과 크기만 다듬어 주세요.
  */
-export function syncNavHeight() {
-    const bar = document.querySelector('.top-navbar')
-        || document.querySelector('.navbar')
-        || document.getElementById('navbar-placeholder');
-    if (!bar) return;
-    const h = Math.round(bar.getBoundingClientRect().height);
-    if (h > 0) document.documentElement.style.setProperty('--nav-h', h + 'px');
-}
-window.syncNavHeight = syncNavHeight;
+function initAuthDropdown() {
+    const toggle = document.getElementById('authDropdown');
+    if (!toggle || typeof bootstrap === 'undefined' || !bootstrap.Dropdown) return;
 
-if (typeof window !== 'undefined') {
-    window.addEventListener('resize', syncNavHeight);
-    window.addEventListener('orientationchange', syncNavHeight);
-    // 드롭다운이 열리기 직전에 한 번 더 — 그 사이 바 높이가 바뀌었을 수 있습니다
-    document.addEventListener('show.bs.dropdown', syncNavHeight);
-    if (document.fonts?.ready) document.fonts.ready.then(syncNavHeight);
-    [0, 300, 800, 1500].forEach(ms => setTimeout(syncNavHeight, ms));
+    // 부트스트랩은 첫 클릭 때 기본 설정으로 인스턴스를 만듭니다.
+    // 그 전에 우리가 먼저 만들어야 설정이 반영됩니다.
+    bootstrap.Dropdown.getOrCreateInstance(toggle, {
+        popperConfig: (defaultConfig) => ({
+            ...defaultConfig,
+            strategy: 'fixed',
+            modifiers: [
+                ...(defaultConfig.modifiers || []),
+                // 네비게이션 바가 아니라 '화면'을 경계로 삼습니다.
+                // 기본값(clippingParents)이면 스크롤 상자가 경계가 되어
+                // 다시 좁은 영역에 갇힙니다.
+                { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8 } },
+                { name: 'flip', options: { boundary: 'viewport', padding: 8 } }
+            ]
+        })
+    });
 }
 
 export function updateDashboardButtons() {
@@ -375,7 +390,6 @@ function renderNavbarAuth(retryCount = 0) {
         window.currentTeacherSchool = null;
         notifyAuthChanged();
         container.innerHTML = `<button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnTeacherLogin"><i class="bi bi-google me-1"></i> 교사 로그인</button>`;
-        setTimeout(syncNavHeight, 0);
         document.getElementById('btnTeacherLogin').onclick = () => {
             signInWithPopup(auth, googleProvider).catch(err => {
                 const code = err.code || '';
@@ -422,7 +436,7 @@ function renderNavbarAuth(retryCount = 0) {
             notifyAuthChanged();
             btnHtml = `
                 <div class="dropdown">
-                    <button class="btn btn-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">관리자 접속</button>
+                    <button class="btn btn-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">관리자 접속</button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoAdmin"><i class="bi bi-gear-fill me-2"></i>계정 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
@@ -446,7 +460,7 @@ function renderNavbarAuth(retryCount = 0) {
             syncTeacherDirectory(user.uid, data.school, data.name);
             btnHtml = `
                 <div class="dropdown">
-                    <button class="btn btn-outline-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">${esc(data.name)} 선생님</button>
+                    <button class="btn btn-outline-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">${esc(data.name)} 선생님</button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정</a></li>
@@ -472,8 +486,8 @@ function renderNavbarAuth(retryCount = 0) {
         }
 
         container.innerHTML = btnHtml;
-        // 버튼이 바뀌면 네비게이션 바 높이도 달라질 수 있습니다
-        setTimeout(syncNavHeight, 0);
+        // 버튼이 새로 그려졌으므로 드롭다운 설정을 다시 걸어줍니다
+        setTimeout(initAuthDropdown, 0);
         notifyAuthChanged();
 
     }).catch(err => {
