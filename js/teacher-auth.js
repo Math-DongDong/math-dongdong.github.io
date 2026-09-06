@@ -33,49 +33,24 @@ function esc(v) {
     })[c]);
 }
 
-/**
- * 교사·관리자 드롭다운을 '화면 기준 배치(fixed)'로 열도록 설정합니다.
+/*
+ * ── 드롭다운 위치에 대한 메모 ────────────────────────────────────────
  *
- * ── 왜 필요한가 ──────────────────────────────────────────────────────
- * 모바일 네비게이션 바에는 가로 스크롤을 위해 overflow-x: auto 가 걸려
- * 있습니다. CSS에서 overflow가 visible이 아닌 요소는 잘라내기 상자가 되고,
- * 부트스트랩 드롭다운은 position: absolute 로 뜨므로 그 안에 갇혀 잘립니다.
+ * 이 컨테이너는 <nav class="navbar"> 안에 있습니다.
+ * 부트스트랩 드롭다운은 버튼이 .navbar 안에 있으면
  *
- * ── 왜 CSS만으로는 안 되는가 ─────────────────────────────────────────
- * CSS로 position: fixed 를 주면 잘리는 건 해결되지만, 이 네비게이션 바는
- * 화면에 고정된 것이 아니라 페이지와 함께 스크롤됩니다.
- * 드롭다운만 화면에 못 박히면 스크롤할 때 버튼과 떨어져 허공에 남습니다.
+ *     _detectNavbar() { return this._element.closest('.navbar') !== null }
  *
- * ── 그래서 이렇게 합니다 ─────────────────────────────────────────────
- * 위치 계산은 부트스트랩이 쓰는 Popper에게 그대로 맡기고,
- * 배치 방식(strategy)만 'fixed' 로 바꿉니다.
- * Popper는 fixed 상태에서도 버튼의 화면상 위치를 매 스크롤마다 다시 계산해
- * 따라다닙니다. 잘리지도 않고 떨어지지도 않습니다.
+ * 판정에 걸려 **Popper를 스스로 끕니다.**
+ * (applyStyles 모디파이어를 enabled:false 로 바꾸고
+ *  메뉴에 data-bs-popper="static" 을 붙입니다)
  *
- * ※ navbar.css 에서 이 드롭다운의 top·left·transform 을 건드리면
- *   Popper의 계산을 덮어써 다시 허공에 뜹니다. 폭과 크기만 다듬어 주세요.
+ * 그래서 여기서 popperConfig 로 위치를 조정하려는 시도는 전부 무시됩니다.
+ * 위치 문제는 CSS로만 풀 수 있고, navbar.css 에 처방이 들어 있습니다.
+ * 접힌 메뉴에서는 position: static 으로 흐름 안에 펼쳐집니다.
+ *
+ * 이 파일에서 드롭다운 위치를 건드리려 하지 마세요. 동작하지 않습니다.
  */
-function initAuthDropdown() {
-    const toggle = document.getElementById('authDropdown');
-    if (!toggle || typeof bootstrap === 'undefined' || !bootstrap.Dropdown) return;
-
-    // 부트스트랩은 첫 클릭 때 기본 설정으로 인스턴스를 만듭니다.
-    // 그 전에 우리가 먼저 만들어야 설정이 반영됩니다.
-    bootstrap.Dropdown.getOrCreateInstance(toggle, {
-        popperConfig: (defaultConfig) => ({
-            ...defaultConfig,
-            strategy: 'fixed',
-            modifiers: [
-                ...(defaultConfig.modifiers || []),
-                // 네비게이션 바가 아니라 '화면'을 경계로 삼습니다.
-                // 기본값(clippingParents)이면 스크롤 상자가 경계가 되어
-                // 다시 좁은 영역에 갇힙니다.
-                { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8 } },
-                { name: 'flip', options: { boundary: 'viewport', padding: 8 } }
-            ]
-        })
-    });
-}
 
 export function updateDashboardButtons() {
     document.querySelectorAll('#btnOpenDashboard, #btn-admin-dash').forEach(btn => {
@@ -486,8 +461,6 @@ function renderNavbarAuth(retryCount = 0) {
         }
 
         container.innerHTML = btnHtml;
-        // 버튼이 새로 그려졌으므로 드롭다운 설정을 다시 걸어줍니다
-        setTimeout(initAuthDropdown, 0);
         notifyAuthChanged();
 
     }).catch(err => {

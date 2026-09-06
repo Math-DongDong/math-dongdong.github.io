@@ -95,105 +95,186 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   모바일 교사·관리자 드롭다운 잘림 수정  (수정판)
+   모바일 교사·관리자 드롭다운 수정  (최종)
 
    ▸ 사용법
      이 파일의 내용을 css/navbar.css 의 **맨 아래에 그대로 붙여넣으세요.**
-     앞선 버전을 이미 붙여넣으셨다면, 그 블록을 지우고 이걸로 바꿔주세요.
-     (--nav-h 변수와 position: fixed 를 쓰던 블록입니다)
+     앞서 붙여넣으신 블록이 있다면 지우고 이걸로 바꿔주세요.
+     (--nav-h 를 쓰던 것, position: fixed 를 쓰던 것 모두 지우세요)
 
-   ▸ 왜 잘렸나
-     모바일 스타일에 이 줄이 있습니다.
+   ▸ 진짜 원인
+     부트스트랩 드롭다운에는 이런 판정이 있습니다.
 
-         .top-navbar { overflow-x: auto; }
+         _detectNavbar() { return this._element.closest('.navbar') !== null }
 
-     CSS에서 overflow가 visible이 아닌 요소는 **잘라내기 상자**가 됩니다.
-     한 축만 auto로 둬도 나머지 축이 자동으로 auto가 되어 위아래로도 잘립니다.
-     부트스트랩 드롭다운은 position: absolute 로 뜨므로 여기에 갇힙니다.
+     버튼이 .navbar 안에 있으면 부트스트랩이 **Popper를 스스로 끕니다.**
+     applyStyles 모디파이어를 enabled:false 로 바꾸고
+     메뉴에 data-bs-popper="static" 을 붙입니다.
 
-   ▸ 앞선 수정이 왜 실패했나
-     드롭다운을 position: fixed 로 만들어 잘라내기 상자 밖으로 꺼냈습니다.
-     잘리는 건 해결됐지만, 이 네비게이션 바는 화면에 고정된 것이 아니라
-     페이지와 함께 스크롤됩니다. 드롭다운만 화면에 못 박히니
-     스크롤할 때 버튼과 떨어져 허공에 남았습니다.
+     그래서 메뉴는 순수 CSS로만 배치됩니다.
+     dropdown-menu-end 때문에 right:0 이 걸리는데, 접힌 메뉴 안에서
+     '관리자 접속' 버튼은 폭이 좁으니 메뉴가 왼쪽으로 삐져나가
+     화면 밖으로 나갑니다. 그래서 글자가 잘렸습니다.
+
+     ※ 지금까지의 시도가 왜 실패했는지도 같은 이유입니다.
+        · JS로 Popper에 strategy:'fixed' 를 줘도 → applyStyles가 꺼져 있어 무시됨
+        · CSS로 position:fixed 를 줘도 → 잘리진 않지만 좌표가 고정이라
+          스크롤하면 버튼과 떨어짐
 
    ▸ 지금 방식
-     위치 계산은 부트스트랩이 쓰는 Popper에게 맡기고,
-     **배치 방식만 fixed 로 바꿉니다.**
-     Popper는 fixed 상태에서도 버튼의 화면상 위치를 매 스크롤마다 다시 계산해
-     따라다닙니다. 그래서 잘리지도 않고 떨어지지도 않습니다.
-     그 설정은 js/teacher-auth.js 의 initAuthDropdown() 에 있습니다.
+     부트스트랩이 .navbar-nav 안의 드롭다운에 이미 쓰고 있는 방법을
+     그대로 가져옵니다.
 
-     이 CSS가 하는 일은 이제 '폭과 크기 다듬기'뿐입니다.
-     위치는 건드리지 않습니다.
+         .navbar-nav .dropdown-menu { position: static; }
 
-   ▸ 주의
-     조상 요소에 transform·filter·will-change 가 걸리면 fixed 배치가
-     그 요소 기준으로 바뀌어 다시 잘립니다.
-     나중에 네비게이션 바에 슬라이드 애니메이션을 넣으실 때 기억해 주세요.
+     접힌 메뉴 안에서는 메뉴를 **띄우지 않고 흐름 안에 펼칩니다.**
+     아코디언처럼 아래 내용을 밀어내며 열립니다.
+     떠 있지 않으니 잘릴 일도, 떨어질 일도 원천적으로 없습니다.
+
+     펼쳐진 상태(데스크톱)에서는 원래대로 떠 있게 되돌립니다.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 
-@media (max-width: 768px) {
+/* ── 접힌 메뉴 안 (모바일) — 흐름 안에 펼치기 ─────────────────────────── */
 
-    #teacher-auth-container .dropdown-menu {
-        /* ★ 위치(top·left·transform)는 절대 지정하지 않습니다.
-              Popper가 계산한 값을 덮어쓰면 다시 허공에 뜹니다. */
+.navbar #teacher-auth-container {
+    width: 100%;
+}
 
-        /* 화면 밖으로 나가지 않을 만큼만 폭을 제한합니다 */
-        max-width: calc(100vw - 1rem);
-        min-width: 12rem;
+.navbar #teacher-auth-container .dropdown {
+    width: 100%;
+}
 
-        /* 항목이 많아 화면 아래로 넘칠 때를 대비 */
-        max-height: calc(100vh - 6rem);
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
+.navbar #teacher-auth-container .dropdown-menu {
+    /* 핵심. 띄우지 않으므로 잘릴 수도, 떨어질 수도 없습니다. */
+    position: static !important;
+    float: none;
+    width: 100%;
+    margin-top: 0.35rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: none;
+}
 
-        /* 고정 네비게이션 바(1030)보다 위, 모달 배경(1050)보다 아래 */
-        z-index: 1040;
+/* 손가락으로 누르기 편한 크기로 */
+.navbar #teacher-auth-container .dropdown-item {
+    padding: 0.7rem 1rem;
+    font-size: 0.95rem;
+}
 
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+/* ── 펼쳐진 메뉴 (데스크톱) — 원래대로 떠 있게 ──────────────────────── */
+/*
+   navbar-expand-* 클래스에 맞춰 되돌립니다.
+   지금 쓰는 것만 남기고 나머지는 지우셔도 됩니다.
+   (mathday-navbar.js 는 navbar-expand-lg 를 씁니다)
+*/
+
+.navbar-expand #teacher-auth-container,
+.navbar-expand #teacher-auth-container .dropdown {
+    width: auto;
+}
+
+.navbar-expand #teacher-auth-container .dropdown-menu {
+    position: absolute !important;
+    width: auto;
+    margin-top: 0.125rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.navbar-expand #teacher-auth-container .dropdown-item {
+    padding: 0.35rem 1rem;
+    font-size: 0.875rem;
+}
+
+@media (min-width: 768px) {
+
+    .navbar-expand-md #teacher-auth-container,
+    .navbar-expand-md #teacher-auth-container .dropdown {
+        width: auto;
     }
 
-    /* 손가락으로 누르기 편한 크기로 */
-    #teacher-auth-container .dropdown-item {
-        padding: 0.7rem 1rem;
-        font-size: 0.95rem;
+    .navbar-expand-md #teacher-auth-container .dropdown-menu {
+        position: absolute !important;
+        width: auto;
+        margin-top: 0.125rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
     }
 
-    /* 가로 스크롤 영역에서 로그인 버튼이 찌그러지지 않도록 */
-    #teacher-auth-container {
-        flex-shrink: 0;
+    .navbar-expand-md #teacher-auth-container .dropdown-item {
+        padding: 0.35rem 1rem;
+        font-size: 0.875rem;
+    }
+}
+
+@media (min-width: 992px) {
+
+    .navbar-expand-lg #teacher-auth-container,
+    .navbar-expand-lg #teacher-auth-container .dropdown {
+        width: auto;
     }
 
-    #teacher-auth-container .btn {
-        white-space: nowrap;
+    .navbar-expand-lg #teacher-auth-container .dropdown-menu {
+        position: absolute !important;
+        width: auto;
+        margin-top: 0.125rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .navbar-expand-lg #teacher-auth-container .dropdown-item {
+        padding: 0.35rem 1rem;
+        font-size: 0.875rem;
+    }
+}
+
+@media (min-width: 1200px) {
+
+    .navbar-expand-xl #teacher-auth-container,
+    .navbar-expand-xl #teacher-auth-container .dropdown {
+        width: auto;
+    }
+
+    .navbar-expand-xl #teacher-auth-container .dropdown-menu {
+        position: absolute !important;
+        width: auto;
+        margin-top: 0.125rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .navbar-expand-xl #teacher-auth-container .dropdown-item {
+        padding: 0.35rem 1rem;
+        font-size: 0.875rem;
     }
 }
 
 
-/* ───────────────────────────────────────────────────────────────────────────
-   참고 — 더 깔끔한 해결책 (여유 있을 때)
+/* ═══════════════════════════════════════════════════════════════════════════
+   참고 1 — 만약 아직도 잘린다면
 
-   위 처방은 '잘리는 것을 피하는' 방식입니다.
-   근본적으로는 가로 스크롤 상자 안에 드롭다운을 두지 않는 편이 낫습니다.
+   교사 로그인 영역이 .navbar 가 아니라 옛 .top-navbar 안에 있을 수 있습니다.
+   그 경우 overflow-x: auto 가 잘라내기 상자를 만들어 다시 잘립니다.
+   확인 방법: 브라우저 개발자도구에서 #teacher-auth-container 를 선택하고
+   부모를 따라 올라가며 .navbar 가 있는지 보세요.
 
-   navbar.js 가 만드는 HTML을 이렇게 나누면 됩니다.
+   .top-navbar 안이라면 아래를 추가하세요.
 
-       <div class="top-navbar">
-         <div class="nav-scroll">          ← overflow-x: auto 를 여기로
-           ...메뉴 버튼들...
-         </div>
-         <div id="teacher-auth-container"></div>   ← 스크롤 상자 밖
-       </div>
+       @media (max-width: 768px) {
+           .top-navbar #teacher-auth-container { width: 100%; }
+           .top-navbar #teacher-auth-container .dropdown-menu {
+               position: static !important;
+               float: none;
+               width: 100%;
+           }
+       }
 
-   그리고 CSS를 이렇게 바꿉니다.
+   참고 2 — 왜 !important 를 썼나
 
-       .top-navbar  { overflow: visible; }
-       .nav-scroll  { display: flex; gap: .15rem;
-                      overflow-x: auto; -webkit-overflow-scrolling: touch; }
+   부트스트랩이 .dropdown-menu 에 position: absolute 를 직접 지정하고,
+   [data-bs-popper] 선택자로 top/left/right 도 넣습니다.
+   선택자 우선순위가 비슷해 !important 없이는 이기지 못합니다.
 
-   이렇게 하면 fixed 배치 없이 기본 동작만으로 해결됩니다.
-   navbar.js 를 함께 손봐야 해서, 급하지 않으면 나중에 하셔도 됩니다.
-   ─────────────────────────────────────────────────────────────────────────── */
+   참고 3 — 앞으로 주의
+
+   이 드롭다운에 position: fixed 를 다시 주지 마세요.
+   네비게이션 바가 페이지와 함께 스크롤되기 때문에,
+   메뉴만 화면에 못 박히면 스크롤할 때 버튼과 떨어집니다.
+   ═══════════════════════════════════════════════════════════════════════════ */
