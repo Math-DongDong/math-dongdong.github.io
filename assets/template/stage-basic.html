@@ -314,13 +314,6 @@
 
             <!-- 입장 카드는 room-auth.js가 통째로 그립니다 (방 코드 입력 하나뿐) -->
             <div id="room-entrance-container"></div>
-
-            <div class="bg-white p-4 rounded-4 shadow-sm border">
-                <h5 class="fw-bold mb-3 text-center"><i class="bi bi-trophy text-warning"></i> 명예의 전당 (Top 5)</h5>
-                <div id="hofList" class="mt-2">
-                    <div class="text-muted small text-center">데이터를 불러오는 중...</div>
-                </div>
-            </div>
         </div>
     </section>
 
@@ -504,8 +497,8 @@
         import {
             renderRoomEntrance, customAlert, customConfirm, escapeHtml, rememberEntrance,
             // v3: 방 모드 · 자동 닉네임 · 교사 도구
-            promptRoomMode, showPinResetModal, saveGameNickname, generateRandomNickname
-        } from '../../../js/room-auth.js';
+            promptRoomMode, showPinResetModal, saveGameNickname, generateUniqueNickname
+        } from '../../../js/room-auth.js?v=2.4';
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc,
             onSnapshot, serverTimestamp, deleteDoc
@@ -627,77 +620,6 @@
             } catch (e) { return false; }
         }
 
-        /* ═══════════════ 명예의 전당 (전체 방 통합) ═══════════════ */
-
-        async function loadHallOfFame() {
-            try {
-                const roomsSnap = await getDocs(collection(db, `${GAME_KEY}_records`));
-                const promises = [];
-                roomsSnap.forEach(roomDoc => promises.push(getDocs(collection(db, `${GAME_KEY}_records`, roomDoc.id, "records"))));
-                const recordsSnaps = await Promise.all(promises);
-
-                let playerMap = {};
-                recordsSnaps.forEach((rs, idx) => {
-                    const roomCode = roomsSnap.docs[idx].id;
-                    rs.forEach(d => {
-                        const r = d.data();
-                        const key = `${roomCode}_${r.nickname}`;
-                        const rScore = r.score || 0;
-                        const acc = r.totalAttempts > 0 ? Math.round((r.correctAttempts / r.totalAttempts) * 100) : 0;
-                        const time = r.totalAttempts > 0 ? Number((r.playTimeSec / r.totalAttempts).toFixed(1)) : 9999;
-                        if (!playerMap[key]) {
-                            playerMap[key] = { name: r.nickname, score: rScore, acc, time };
-                        } else {
-                            const curr = playerMap[key];
-                            if (rScore > curr.score || (rScore === curr.score && acc > curr.acc) || (rScore === curr.score && acc === curr.acc && time < curr.time)) {
-                                playerMap[key] = { name: r.nickname, score: rScore, acc, time };
-                            }
-                        }
-                    });
-                });
-
-                let allRecs = Object.values(playerMap);
-                allRecs.sort((a, b) => {
-                    if (b.score !== a.score) return b.score - a.score;
-                    if (b.acc !== a.acc) return b.acc - a.acc;
-                    return a.time - b.time;
-                });
-                const top5 = allRecs.slice(0, 5);
-
-                let hofHtml = '';
-                if (top5.length === 0) {
-                    hofHtml = '<div class="text-muted small text-center">아직 기록이 없습니다.</div>';
-                } else {
-                    hofHtml = `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 0.9rem;">
-                    <thead class="table-light"><tr>
-                        <th>#</th>
-                        <th class="text-start">닉네임</th>
-                        <th>점수</th>
-                        <th>정답률</th>
-                        <th>평균풀이</th>
-                    </tr></thead><tbody>`;
-                    hofHtml += top5.map((r, i) => {
-                        let rankHtml = '';
-                        if (i === 0) rankHtml = '🥇';
-                        else if (i === 1) rankHtml = '🥈';
-                        else if (i === 2) rankHtml = '🥉';
-                        else rankHtml = `<span class="text-muted small">${i + 1}</span>`;
-                        return `<tr>
-                            <td>${rankHtml}</td>
-                            <td class="text-start fw-bold">${escapeHtml(r.name)}</td>
-                            <td class="fw-bold text-primary">${r.score}</td>
-                            <td>${r.acc}%</td>
-                            <td>${r.time}초</td>
-                        </tr>`;
-                    }).join('');
-                    hofHtml += `</tbody></table></div>`;
-                }
-                document.getElementById('hofList').innerHTML = hofHtml;
-            } catch (err) {
-                document.getElementById('hofList').innerHTML = '<div class="text-muted small text-center">랭킹을 불러오지 못했습니다.</div>';
-            }
-        }
-        loadHallOfFame();
 
         /* ═══════════════ 입장 ═══════════════
            학생이 입력하는 것은 방 코드 4자리뿐입니다.
@@ -726,18 +648,16 @@
                 //   (명예의 전당이 방 통합이라 이름이 겹치면 기록이 섞입니다)
                 const isAuthMode = authInfo?.mode === 'auth';
                 if (!isAuthMode && !authInfo?.nicknameFixed) {
-                    const allRoomsSnap = await getDocs(collection(db, `${GAME_KEY}_records`));
-                    for (let retry = 0; retry < 10; retry++) {
-                        let nameInUse = false;
-                        for (const rDoc of allRoomsSnap.docs) {
-                            if (rDoc.id === code) continue;
-                            const stdSnap = await getDoc(doc(db, `${GAME_KEY}_records`, rDoc.id, "students", finalName));
-                            if (stdSnap.exists()) { nameInUse = true; break; }
-                        }
-                        if (!nameInUse) break;
-                        finalName = generateRandomNickname();
+                    /** 같은 방 안에서 이미 쓰고 있는 이름인지 (students 문서 id가 닉네임) */
+                    const isTakenInRoom = async (nick) => {
+                        const st = await getDoc(doc(studentsCollectionRef(code), nick));
+                        return st.exists();
+                    };
+                    // 겹치면 숫자를 붙이지 않고 형용사·동물이 모두 다른 조합을 새로 받습니다. (가이드 4.4)
+                    if (await isTakenInRoom(finalName)) {
+                        finalName = await generateUniqueNickname(isTakenInRoom, 10);
+                        await saveGameNickname(finalName, authInfo);
                     }
-                    if (finalName !== name) await saveGameNickname(finalName, authInfo);
                 }
 
                 currentRoomCode = code;
@@ -963,11 +883,12 @@
 
         /* ═══════════════ 저장 (딱 두 시점: 상수준 달성 · 게임 종료) ═══════════════ */
 
+        // ★ records에는 학번·학교를 넣지 않습니다.
+        //   게임오버 랭킹이 로그인 없이 이 컬렉션을 읽기 때문입니다. Firestore 규칙은
+        //   문서 단위라 필드만 가릴 수 없습니다. 학번은 students 문서에만 둡니다. (가이드 21.3)
         function buildRecordData(isCompleted) {
             return {
                 nickname: myName,
-                school: mySchool,        // 인증 모드에서만 값이 있습니다 (대시보드 학번 열·엑셀용)
-                studentId: myStudentId,
                 score,
                 maxStage: currentStage, maxProblem: currentProblem,
                 isCompleted,
@@ -978,26 +899,11 @@
             };
         }
 
-        async function updateRoomBest() {
-            const finalAcc = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
-            const finalTime = totalAttempts > 0 ? (Math.round((Date.now() - gameStartTime) / 1000) / totalAttempts).toFixed(1) : 0;
-            const roomRef = roomDocRef(currentRoomCode);
-            const roomSnap = await getDoc(roomRef);
-            let updated = { roomCode: currentRoomCode, updatedAt: serverTimestamp() };
-            const isBest = !roomSnap.exists() || roomSnap.data().bestScore === undefined || score > roomSnap.data().bestScore;
-            if (isBest) {
-                updated.bestScore = score;
-                updated.bestScoreBy = myName;
-                updated.bestAcc = finalAcc;
-                updated.bestTime = finalTime;
-                updated.bestStage = currentStage;
-            }
-            if (!roomSnap.exists()) updated.createdAt = serverTimestamp();
-            await setDoc(roomRef, updated, { merge: true });
-        }
+        // 방 문서에 최고 기록(best*)을 따로 쌓지 않는다.
+        // 유일한 소비자였던 명예의 전당이 없어졌고, 순위는 records만으로 계산한다.
+        // 판이 끝날 때마다 방 문서를 읽고 쓰던 왕복 2회가 사라진다. (가이드 21.3)
 
         async function saveClearRecord() {
-            await updateRoomBest();
             await addDoc(recordsCollectionRef(currentRoomCode), buildRecordData(true));
             const alertBox = document.createElement('div');
             alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:10px 20px;border-radius:8px;font-weight:bold;z-index:9999;box-shadow:0 4px 6px rgba(0,0,0,0.1);";
@@ -1019,10 +925,11 @@
             document.getElementById('finalAcc').innerText = `${finalAcc}%`;
             document.getElementById('finalTime').innerText = `${finalTime}초`;
 
-            await updateRoomBest();
             await addDoc(recordsCollectionRef(currentRoomCode), buildRecordData(isClear));
             await setDoc(doc(db, `${GAME_KEY}_records`, currentRoomCode, "students", myName), {
-                nickname: myName, school: mySchool, studentId: myStudentId,
+                nickname: myName,
+                ...(mySchool ? { school: mySchool } : {}),
+                ...(myStudentId ? { studentId: myStudentId } : {}),
                 score, stage: currentStage, problem: currentProblem,
                 totalAttempts, correctAttempts, conceptHits, conceptFails,
                 playTimeSec: Math.floor((Date.now() - gameStartTime) / 1000),
@@ -1030,41 +937,29 @@
                 lastActive: serverTimestamp()
             }, { merge: true });
 
-            // 전체 방 통합 순위에서 내 위치 ±2명
-            const roomsSnap = await getDocs(collection(db, `${GAME_KEY}_records`));
-            const promises = [];
-            roomsSnap.forEach(roomDoc => promises.push(getDocs(collection(db, `${GAME_KEY}_records`, roomDoc.id, "records"))));
-            const recordsSnaps = await Promise.all(promises);
-
+            // 같은 방 안에서 내 위치 ±2명 (현재 방 하나만 읽습니다)
+            const rankSnap = await getDocs(recordsCollectionRef(currentRoomCode));
             let playerMap = {};
-            recordsSnaps.forEach((rs, idx) => {
-                const roomCode = roomsSnap.docs[idx].id;
-                rs.forEach(d => {
-                    const r = d.data();
-                    const key = `${roomCode}_${r.nickname}`;
-                    const rScore = r.score || 0;
-                    const acc = r.totalAttempts > 0 ? Math.round((r.correctAttempts / r.totalAttempts) * 100) : 0;
-                    const time = r.totalAttempts > 0 ? Number((r.playTimeSec / r.totalAttempts).toFixed(1)) : 9999;
-                    if (!playerMap[key]) {
-                        playerMap[key] = { ...r, roomCode, acc, time };
-                    } else {
-                        const curr = playerMap[key];
-                        if (rScore > curr.score || (rScore === curr.score && acc > curr.acc) || (rScore === curr.score && acc === curr.acc && time < curr.time)) {
-                            playerMap[key] = { ...r, roomCode, acc, time };
-                        }
-                    }
-                });
+            rankSnap.forEach(d => {
+                const r = d.data();
+                const rScore = r.score || 0;
+                const acc = r.totalAttempts > 0 ? Math.round((r.correctAttempts / r.totalAttempts) * 100) : 0;
+                const time = r.totalAttempts > 0 ? Number((r.playTimeSec / r.totalAttempts).toFixed(1)) : 9999;
+                const curr = playerMap[r.nickname];
+                if (!curr || rScore > curr.score || (rScore === curr.score && acc > curr.acc) ||
+                    (rScore === curr.score && acc === curr.acc && time < curr.time)) {
+                    playerMap[r.nickname] = { nickname: r.nickname, score: rScore, acc, time };
+                }
             });
 
             let allRecords = Object.values(playerMap);
             allRecords.sort((a, b) => {
-                if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0);
+                if (b.score !== a.score) return b.score - a.score;
                 if (b.acc !== a.acc) return b.acc - a.acc;
                 return a.time - b.time;
             });
 
-            const myKey = `${currentRoomCode}_${myName}`;
-            const myIndex = allRecords.findIndex(item => `${item.roomCode}_${item.nickname}` === myKey);
+            const myIndex = allRecords.findIndex(item => item.nickname === myName);
             const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
             const start = Math.max(0, safeIndex - 2);
             const end = Math.min(allRecords.length, safeIndex + 3);
@@ -1073,12 +968,16 @@
             const myRank = safeIndex + 1;
             const totalPlayers = allRecords.length;
             const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
-            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명 (전체 통합)`;
-            document.getElementById('rankSummaryText').innerText = `${myName}님은 모든 방을 통틀어 상위 ${percentile}%에 해당합니다. ${safeIndex > 0 ? `바로 위에는 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.` : '현재 통합 1위로 앞선 사람이 없습니다!'}`;
+            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명`;
+            document.getElementById('rankSummaryText').innerText =
+                `${myName}님은 이 방 ${totalPlayers}명 중 상위 ${percentile}%에 해당합니다.` +
+                (safeIndex > 0
+                    ? ` 바로 위에는 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.`
+                    : ' 현재 1위로 앞선 사람이 없습니다!');
 
             document.getElementById('rankNearbyTable').innerHTML = nearby.map((item, idx) => {
                 const rankNumber = start + idx + 1;
-                const isMe = `${item.roomCode}_${item.nickname}` === myKey;
+                const isMe = item.nickname === myName;
                 const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
                 return `
                     <tr class="${isMe ? 'table-primary fw-bold' : ''}">
@@ -1089,8 +988,6 @@
                     </tr>
                 `;
             }).join('');
-
-            await loadHallOfFame();
         }
 
         document.getElementById('restartBtn').addEventListener('click', () => {
@@ -1538,11 +1435,25 @@
         match /student_auth/{key} { allow read, write: if true; }
 
         match /mystagegame_records/{roomCode} {
-          allow read, write: if true;
-          match /{sub=**} { allow read, write: if true; }
+          allow read: if true;                       // 방 존재 확인 (학생, 미로그인)
+          allow write: if request.auth != null;      // 방 생성·삭제는 교사만
+
+          match /students/{nick} {
+            allow get: if true;                      // 방 안 닉네임 중복 확인 (개별 조회)
+            allow write: if true;                    // 학생이 자기 요약을 기록
+            allow list: if request.auth != null;     // ★ 전체 긁기는 교사만 (학번 보호)
+          }
+          match /records/{recId} {
+            allow read, create: if true;             // 게임오버 랭킹 + 기록 저장
+            allow update, delete: if request.auth != null;
+          }
         }
       }
     }
+
+    ★ students의 get과 list를 나누는 것이 핵심입니다.
+      get(개별 문서)은 닉네임 중복 확인 때문에 열어야 하지만,
+      list(컬렉션 통째로)를 열면 로그인 없이 전교생 학번을 긁을 수 있습니다.
 
     ※ 교실용 최소 설정입니다. 알아 둘 한계 (가이드 17.4):
        · PIN은 평문이고 읽을 수 있습니다. 클라이언트가 직접 비교하는 구조라
