@@ -12,6 +12,7 @@
  *      · 이미 등록된 학번이면 PIN이 일치해야만 변경 가능
  *      · 기존 PIN은 클라이언트에서 절대 덮어쓰지 않음 (초기화는 교사만)
  *  - PIN 초기화 모달에서 "현재 방 학생 선택" 제거 (방에 못 들어온 학생을 위한 기능이므로)
+ *  - ★ 닉네임 충돌 시 숫자 접미사를 붙이지 않고 조합 자체를 다시 뽑음 (0.6 참고)
  */
 import { db } from "./firebase-config.js";
 import {
@@ -332,14 +333,36 @@ export function rerollGameNickname() {
     return nick;
 }
 
-/** 방 안에서 겹치지 않는 자동 닉네임 생성 (isTakenFn: async (nick) => boolean) */
-export async function generateUniqueNickname(isTakenFn) {
-    for (let i = 0; i < 15; i++) {
-        const cand = generateRandomNickname();
-        if (typeof isTakenFn !== 'function') return cand;
-        try { if (!(await isTakenFn(cand))) return cand; } catch (e) { return cand; }
+/**
+ * 방 안에서 겹치지 않는 자동 닉네임 생성 (isTakenFn: async (nick) => boolean)
+ *
+ * ★ 이름이 겹쳐도 숫자를 덧붙이지 않습니다.
+ *   "부끄러운 어피치"가 이미 쓰이는 중이면 "부끄러운 어피치07"이 아니라
+ *   "씩씩한 라이언"처럼 형용사와 동물이 둘 다 다른 조합을 새로 찾습니다.
+ *   조합이 60 × 60 = 3,600개라 한 교실에서 고갈될 일이 없습니다.
+ *
+ * 무작위로 다시 뽑으면 방금 확인한 조합을 또 뽑아 DB 조회를 낭비할 수 있으므로,
+ * 무작위 시작점에서 출발해 3,600과 서로소인 보폭(NICKNAME_STRIDE)으로 건너뜁니다.
+ * 같은 조합을 두 번 조회하지 않으면서, 한 걸음마다 형용사와 동물이 함께 바뀝니다.
+ *
+ * @param {(nick:string)=>Promise<boolean>} isTakenFn 이미 사용 중인 이름인지
+ * @param {number} maxChecks 최대 조회 횟수 (조회 1회당 DB 읽기 1회)
+ */
+export async function generateUniqueNickname(isTakenFn, maxChecks = 40) {
+    const start = Math.floor(Math.random() * NICKNAME_POOL_SIZE);
+    if (typeof isTakenFn !== 'function') return nicknameAt(start);
+
+    const limit = Math.max(1, Math.min(maxChecks, NICKNAME_POOL_SIZE));
+    for (let step = 0; step < limit; step++) {
+        const cand = nicknameAt(start + step * NICKNAME_STRIDE);
+        try {
+            if (!(await isTakenFn(cand))) return cand;
+        } catch (e) {
+            return cand;   // 조회에 실패하면 더 확인하지 않고 그대로 사용
+        }
     }
-    return `${generateRandomNickname()}${Math.floor(Math.random() * 90 + 10)}`;
+    // 확인한 조합이 전부 사용 중 — 숫자를 붙이지 않고 아직 확인하지 않은 다음 조합을 돌려줍니다.
+    return nicknameAt(start + limit * NICKNAME_STRIDE);
 }
 
 /**
@@ -365,7 +388,7 @@ export async function resolveGameNickname(studentRef, studentData, isTakenByOthe
         if (local && await free(local)) nick = local;
     }
 
-    // 3순위: 새로 배정
+    // 3순위: 새로 배정 (겹치면 숫자가 아니라 다른 조합으로)
     if (!nick) nick = await generateUniqueNickname(isTakenByOther);
 
     if (studentData?.nicknames?.[key] !== nick) {
@@ -423,6 +446,28 @@ export const ANIMALS = [
     "햄스터", "고슴도치", "미어캣", "쿼카", "나무늘보",
     "카멜레온", "북극여우", "두더지", "너구리", "라쿤"
 ];
+
+/**
+ * 형용사 × 동물 전체 조합 수 (60 × 60 = 3,600)
+ * 한 교실(30~35명)에서 쓰기에 충분히 넉넉하므로, 이름이 겹쳐도
+ * 숫자를 붙일 필요 없이 다른 조합을 고르면 됩니다.
+ */
+export const NICKNAME_POOL_SIZE = ADJECTIVES.length * ANIMALS.length;
+
+/**
+ * 조합을 순회할 때 쓰는 보폭. 3,600과 서로소(1187은 소수)라서
+ * 어떤 시작점에서 출발해도 3,600개 조합을 한 번씩 모두 방문합니다.
+ * 1187 = 19 × 60 + 47 이므로 한 걸음마다 형용사(+19)와 동물(+47)이 함께 바뀝니다.
+ * → 연속으로 뽑히는 후보가 서로 전혀 다른 이름으로 보입니다.
+ */
+const NICKNAME_STRIDE = 1187;
+
+/** 조합 번호 → 닉네임 (범위를 벗어난 번호는 순환) */
+export function nicknameAt(index) {
+    const size = NICKNAME_POOL_SIZE;
+    const i = ((Math.trunc(index) % size) + size) % size;
+    return `${ADJECTIVES[Math.floor(i / ANIMALS.length)]} ${ANIMALS[i % ANIMALS.length]}`;
+}
 
 /** 랜덤 닉네임 생성 (형용사 + 공백 + 동물/캐릭터) - 최대 9자 */
 export function generateRandomNickname() {

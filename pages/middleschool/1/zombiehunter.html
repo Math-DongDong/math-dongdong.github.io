@@ -622,8 +622,9 @@
         import { db } from '../../../js/firebase-config.js';
         import {
             renderRoomEntrance, customAlert, customPrompt, customConfirm, rememberEntrance,
-            promptRoomMode, showPinResetModal, escapeHtml, saveGameNickname
-        } from '../../../js/room-auth.js?v=2.3';
+            promptRoomMode, showPinResetModal, escapeHtml, saveGameNickname,
+            generateUniqueNickname
+        } from '../../../js/room-auth.js?v=2.4';
         import { collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // 전역 상태
@@ -752,18 +753,23 @@
                 const isAuthMode = authInfo?.mode === 'auth';
                 if (!isAuthMode && !authInfo?.nicknameFixed) {
                     const allRoomsSnap = await getDocs(collection(db, "zombiehunter_records"));
-                    for (let retry = 0; retry < 10; retry++) {
-                        let nameInUse = false;
+
+                    /** 다른 방에서 이미 쓰고 있는 닉네임인지 */
+                    const isTakenElsewhere = async (nick) => {
                         for (const rDoc of allRoomsSnap.docs) {
                             if (rDoc.id === code) continue;
-                            const stdRef = doc(db, "zombiehunter_records", rDoc.id, "students", finalName);
-                            const stdSnap = await getDoc(stdRef);
-                            if (stdSnap.exists()) { nameInUse = true; break; }
+                            const stdSnap = await getDoc(
+                                doc(db, "zombiehunter_records", rDoc.id, "students", nick));
+                            if (stdSnap.exists()) return true;
                         }
-                        if (!nameInUse) break;
-                        finalName = (typeof window.generateRandomNickname === 'function')
-                            ? window.generateRandomNickname()
-                            : `${finalName}_${Math.floor(Math.random() * 89 + 10)}`;
+                        return false;
+                    };
+
+                    // 이름이 겹치면 숫자를 붙이지 않고 형용사·동물이 모두 다른 조합을 새로 받습니다.
+                    // (예: "부끄러운 어피치"가 쓰이는 중이면 "부끄러운 어피치07"이 아니라 "씩씩한 라이언")
+                    // 방 전체를 훑는 무거운 검사라 조회 횟수는 10회로 제한합니다.
+                    if (await isTakenElsewhere(finalName)) {
+                        finalName = await generateUniqueNickname(isTakenElsewhere, 10);
                     }
                     if (finalName !== name) await saveGameNickname(finalName, authInfo);
                 }
