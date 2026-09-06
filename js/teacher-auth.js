@@ -33,6 +33,35 @@ function esc(v) {
     })[c]);
 }
 
+/**
+ * 네비게이션 바의 실제 높이를 --nav-h 에 넣습니다.
+ *
+ * 모바일에서는 교사·관리자 드롭다운을 position: fixed 로 띄웁니다.
+ * (가로 스크롤 상자에 잘리는 것을 피하기 위해서입니다 — navbar.css 참고)
+ * 그런데 fixed는 화면 기준이라 '네비게이션 바 바로 아래'를 CSS만으로는
+ * 알 수 없습니다. 그래서 실제 높이를 재서 알려줍니다.
+ *
+ * 높이는 화면 회전·글꼴 로딩·메뉴 줄바꿈으로 달라지므로 그때마다 다시 잽니다.
+ */
+export function syncNavHeight() {
+    const bar = document.querySelector('.top-navbar')
+        || document.querySelector('.navbar')
+        || document.getElementById('navbar-placeholder');
+    if (!bar) return;
+    const h = Math.round(bar.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty('--nav-h', h + 'px');
+}
+window.syncNavHeight = syncNavHeight;
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('resize', syncNavHeight);
+    window.addEventListener('orientationchange', syncNavHeight);
+    // 드롭다운이 열리기 직전에 한 번 더 — 그 사이 바 높이가 바뀌었을 수 있습니다
+    document.addEventListener('show.bs.dropdown', syncNavHeight);
+    if (document.fonts?.ready) document.fonts.ready.then(syncNavHeight);
+    [0, 300, 800, 1500].forEach(ms => setTimeout(syncNavHeight, ms));
+}
+
 export function updateDashboardButtons() {
     document.querySelectorAll('#btnOpenDashboard, #btn-admin-dash').forEach(btn => {
         btn.style.display = (window.isApprovedTeacher || window.isAdmin) ? 'block' : 'none';
@@ -346,6 +375,7 @@ function renderNavbarAuth(retryCount = 0) {
         window.currentTeacherSchool = null;
         notifyAuthChanged();
         container.innerHTML = `<button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnTeacherLogin"><i class="bi bi-google me-1"></i> 교사 로그인</button>`;
+        setTimeout(syncNavHeight, 0);
         document.getElementById('btnTeacherLogin').onclick = () => {
             signInWithPopup(auth, googleProvider).catch(err => {
                 const code = err.code || '';
@@ -392,7 +422,7 @@ function renderNavbarAuth(retryCount = 0) {
             notifyAuthChanged();
             btnHtml = `
                 <div class="dropdown">
-                    <button class="btn btn-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">관리자 접속</button>
+                    <button class="btn btn-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">관리자 접속</button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoAdmin"><i class="bi bi-gear-fill me-2"></i>계정 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
@@ -416,7 +446,7 @@ function renderNavbarAuth(retryCount = 0) {
             syncTeacherDirectory(user.uid, data.school, data.name);
             btnHtml = `
                 <div class="dropdown">
-                    <button class="btn btn-outline-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">${esc(data.name)} 선생님</button>
+                    <button class="btn btn-outline-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">${esc(data.name)} 선생님</button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정</a></li>
@@ -442,6 +472,8 @@ function renderNavbarAuth(retryCount = 0) {
         }
 
         container.innerHTML = btnHtml;
+        // 버튼이 바뀌면 네비게이션 바 높이도 달라질 수 있습니다
+        setTimeout(syncNavHeight, 0);
         notifyAuthChanged();
 
     }).catch(err => {

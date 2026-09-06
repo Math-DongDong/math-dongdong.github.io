@@ -93,3 +93,121 @@
         padding: 0.3rem 0.4rem;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   모바일 교사·관리자 드롭다운 잘림 수정
+
+   ▸ 사용법
+     이 파일의 내용을 css/navbar.css 의 **맨 아래에 그대로 붙여넣으세요.**
+     (별도 파일로 두면 페이지 10개에 <link>를 전부 추가해야 합니다)
+
+   ▸ 왜 잘렸나
+     모바일 스타일에 이 줄이 있습니다.
+
+         .top-navbar { overflow-x: auto; }
+
+     가로 스크롤을 만들려고 넣은 것인데, CSS에서 overflow가 visible이 아닌
+     요소는 **잘라내기 상자(clipping context)** 가 됩니다.
+     게다가 한 축만 auto로 두어도 나머지 축이 자동으로 auto가 되어,
+     위아래로도 잘립니다.
+
+     교사·관리자 드롭다운은 부트스트랩 기본 드롭다운이라
+     position: absolute 로 뜹니다. 그래서 .top-navbar 안에 갇혀
+     보이는 영역 밖이 통째로 잘려 나갑니다.
+
+     같은 파일의 .nav-dropdown(직접 만든 메뉴)에는 이미
+     position: fixed 처방이 들어 있습니다. 그래서 그 메뉴들은 멀쩡하고
+     관리자 메뉴만 깨졌던 겁니다. 같은 처방을 부트스트랩 드롭다운에도
+     해 주는 것이 이 파일입니다.
+
+   ▸ 왜 position: fixed 면 해결되나
+     fixed 요소는 화면(뷰포트)을 기준으로 배치되므로, 조상의 overflow에
+     잘리지 않습니다. 단, 조상 중에 transform·filter·will-change 가 걸린
+     요소가 있으면 그 요소 기준으로 바뀌어 다시 잘립니다.
+     지금 navbar.css에는 그런 속성이 없어 안전합니다.
+     나중에 네비게이션 바에 애니메이션을 넣으실 때 이 점을 기억해 주세요.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* 네비게이션 바 높이.
+   teacher-auth.js 가 실제 높이를 재서 이 값을 덮어씁니다.
+   스크립트가 늦게 뜨는 순간을 위한 기본값입니다. */
+:root {
+    --nav-h: 50px;
+}
+
+
+@media (max-width: 768px) {
+
+    /* ── 교사·관리자 드롭다운을 화면 폭에 맞춘 고정 패널로 ─────────────── */
+    #teacher-auth-container .dropdown-menu {
+        /* 핵심. 스크롤 상자 밖으로 꺼냅니다 */
+        position: fixed !important;
+
+        /* 부트스트랩(Popper)이 넣는 inset·transform 을 모두 무력화합니다.
+           teacher-auth.js 에 data-bs-display="static" 을 넣어 두면
+           애초에 이 값들이 생기지 않지만, 이중으로 막아 둡니다. */
+        top: calc(var(--nav-h) + 4px) !important;
+        left: 0.5rem !important;
+        right: 0.5rem !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 !important;
+
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+
+        /* 항목이 많아 화면 아래로 넘칠 때를 대비 */
+        max-height: calc(100vh - var(--nav-h) - 16px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+
+        /* 고정 네비게이션 바(1030)보다 위, 모달 배경(1050)보다 아래 */
+        z-index: 1040;
+
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    }
+
+    /* 손가락으로 누르기 편한 크기로 */
+    #teacher-auth-container .dropdown-item {
+        padding: 0.7rem 1rem;
+        font-size: 0.95rem;
+    }
+
+    /* 가로 스크롤 영역에서 로그인 버튼이 찌그러지지 않도록 */
+    #teacher-auth-container {
+        flex-shrink: 0;
+    }
+
+    #teacher-auth-container .btn {
+        white-space: nowrap;
+    }
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   참고 — 더 깔끔한 해결책 (여유 있을 때)
+
+   위 처방은 '잘리는 것을 피하는' 방식입니다.
+   근본적으로는 가로 스크롤 상자 안에 드롭다운을 두지 않는 편이 낫습니다.
+
+   navbar.js 가 만드는 HTML을 이렇게 나누면 됩니다.
+
+       <div class="top-navbar">
+         <div class="nav-scroll">          ← overflow-x: auto 를 여기로
+           ...메뉴 버튼들...
+         </div>
+         <div id="teacher-auth-container"></div>   ← 스크롤 상자 밖
+       </div>
+
+   그리고 CSS를 이렇게 바꿉니다.
+
+       .top-navbar  { overflow: visible; }
+       .nav-scroll  { display: flex; gap: .15rem;
+                      overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+   이렇게 하면 위 @media 블록이 없어도 드롭다운이 정상 동작합니다.
+   navbar.js 를 함께 손봐야 해서, 급하지 않으면 나중에 하셔도 됩니다.
+   ─────────────────────────────────────────────────────────────────────────── */
