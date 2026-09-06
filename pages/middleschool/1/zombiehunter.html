@@ -197,8 +197,7 @@
 
         /* 배지는 폭을 '완전 고정'한다. min-width만으로는 부족했다 — 배지의 좌우 패딩 때문에
            "-20"이 min-width를 넘어 자라면서 룰렛 폭을 밀었고, 그 리사이즈가
-           "재생성 → 값 변경 → 배지 폭 변경 → 재생성…" 진동 루프(자릿수 경계에서 흔들림)의
-           진짜 원인이었다. 폭이 고정이면 어떤 값이든 룰렛 폭이 1px도 변하지 않는다. */
+           "재생성 → 값 변경 → 배지 폭 변경 → 재생성…" 진동 루프의 진짜 원인이었다. */
         #aValueDisplay {
             display: inline-block;
             width: 3.4rem;
@@ -215,10 +214,7 @@
             overflow-x: scroll;
             overflow-y: hidden;
             overscroll-behavior-x: none;
-            /* contain은 부모로의 스크롤 전파만 막고, 이 요소 자체의 파란 오버스크롤 글로우는 남겨둔다.
-               경계(±20)에서 그 글로우가 세로선처럼 보였으므로 none으로 완전히 꺼야 함 */
             -webkit-tap-highlight-color: transparent;
-            /* 터치 시 기본으로 깜빡이는 파란 하이라이트 차단 */
             scroll-snap-type: x mandatory;
             scroll-behavior: smooth;
             scrollbar-width: none;
@@ -240,10 +236,6 @@
             cursor: grabbing;
             user-select: none;
         }
-
-        /* 고정 강조창(::after 테두리 상자)은 제거됨 — ±20처럼 옆이 빈 여백일 때
-           테두리가 '숫자 옆의 이상한 파란 선'처럼 보이는 문제의 원인이었다.
-           선택 표시는 아래 .selected 알약(pill) 스타일이 숫자 자체에 붙어 따라다닌다. */
 
         .roulette-inner {
             display: inline-flex;
@@ -275,7 +267,6 @@
             border-radius: 8px;
         }
 
-        /* 무기 버튼 2개 + 수식 표시를 같은 행 3열로 균등 분할 */
         .weapon-equation-row>* {
             flex: 1 1 0;
             min-width: 0;
@@ -334,7 +325,7 @@
             background: #dc2626;
         }
 
-        /* 모바일 컴팩트 레이아웃: 게임 화면 세로 길이 축소 */
+        /* 모바일 컴팩트 레이아웃 */
         @media (max-width: 767px) {
             #game-section.pt-4 {
                 padding-top: 0.5rem !important;
@@ -516,7 +507,6 @@
                 </div>
                 <div id="save-status" class="text-success fw-bold small mb-3">✅ 기록이 저장되었습니다!</div>
 
-                <!-- 주변 순위 테이블 -->
                 <div class="bg-light border rounded-4 p-3 mb-4 text-start">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                         <h6 class="fw-bold mb-0">📊 내 순위와 주변 실력</h6>
@@ -546,14 +536,11 @@
     <!-- 4. 관리자 섹션 -->
     <section id="admin-section" class="section-container container pt-4">
         <div class="admin-card mb-4">
-            <!-- 대시보드 상단 헤더 (공통 모듈) -->
             <div id="dash-header-placeholder"></div>
             <script src="../../../js/dashboard-header.js" data-title="좀비헌터 대시보드"></script>
 
-            <!-- 게스트 대기자 알림 배너 영역 -->
             <div id="pendingGuestsContainer" class="mb-3"></div>
 
-            <!-- 성취도 오버뷰 -->
             <div class="row g-3 mb-4">
                 <div class="col-md-3">
                     <div class="dash-stat-box h-100 d-flex flex-column justify-content-center text-center">
@@ -579,7 +566,6 @@
                 </div>
             </div>
 
-            <!-- 성취수준 상세 테이블 -->
             <div class="d-flex justify-content-end align-items-center mb-2">
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer;">
@@ -614,10 +600,13 @@
     <script type="module">
         import { db } from '../../../js/firebase-config.js';
         import {
-            renderRoomEntrance, customAlert, customConfirm, rememberEntrance,
-            promptRoomMode, showPinResetModal, escapeHtml, saveGameNickname
+            renderRoomEntrance, customAlert, customConfirm,
+            promptRoomMode, showPinResetModal, escapeHtml, safeNumber
         } from '../../../js/room-auth.js?v=3.0';
-        import { collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+        import {
+            collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot,
+            query, where, serverTimestamp, deleteDoc
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // 전역 상태
         let currentRoomCode = '';
@@ -627,7 +616,6 @@
         let currentStage = 1, currentProblem = 1, score = 0, lives = 5;
         let currentFuncType = 'linear', currentA = 1;
         let currentZombies = [];
-        let problemHistory = [];
         let currentProblemShots = 0;
         let currentLaserLimit = 0;
 
@@ -643,15 +631,15 @@
         const GRID_LIMIT = 8;
         const scale = 34, centerX = canvas.width / 2, centerY = canvas.height / 2;
 
-
-
-        function showSection(id) { document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section')); document.getElementById(id).classList.add('active-section'); }
+        function showSection(id) {
+            document.querySelectorAll('.section-container').forEach(el => el.classList.remove('active-section'));
+            document.getElementById(id).classList.add('active-section');
+        }
         function roomDocRef(roomCode) { return doc(db, "zombiehunter_records", roomCode); }
         function studentsCollectionRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "students"); }
         function guestStatusCollRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "guests"); }
         function nicknameCollRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "nicknames"); }
         function recordsCollectionRef(roomCode) { return collection(db, "zombiehunter_records", roomCode, "records"); }
-
 
         renderRoomEntrance('room-entrance-container', {
             getRoomData: async (code) => {
@@ -660,25 +648,13 @@
             },
             studentsCollectionRef: (code) => studentsCollectionRef(code),
             onJoin: async (code, name, authInfo) => {
-                const roomSnap = await getDoc(roomDocRef(code));
-                if (!roomSnap.exists()) return customAlert('오류', '존재하지 않는 방 코드입니다.');
-
-                let finalName = name;
-
-                // [닉네임 고정]
-                // - 인증 모드: room-auth가 student_auth에 저장된 닉네임을 그대로 내려주고
-                //   방의 students 문서까지 이미 만들어 두므로 여기서 이름을 바꾸면 안 됩니다.
-                // - 빠른 입장 모드: 이 기기에서 처음 입장할 때만 다른 방과 겹치지 않는 이름을 찾고,
-                //   확정되면 saveGameNickname으로 저장해 다음부터 계속 같은 닉네임을 씁니다.
-                // v2: 방 안 닉네임 유일성은 room-auth의 마커 선점이 이미 보장합니다.
-                //     게임 페이지가 중복 검사를 따로 할 필요가 없습니다.
-
-                currentRoomCode = code; myName = finalName;
+                currentRoomCode = code;
+                myName = name;
                 // 학생 인증 모드에서만 학번이 있습니다. (빠른 입장 모드는 빈 값)
                 mySchool = authInfo?.school || '';
                 myStudentId = authInfo?.studentId || '';
-                rememberEntrance(code, finalName);   // 입장 성공 시점에만 저장 → 다음 접속 때 자동 입력
-                currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
+
+                currentStage = 1; currentProblem = 1; score = 0; lives = 5;
                 currentTotalShots = 0; currentHitShots = 0;
                 currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
                 gameStartTime = Date.now();
@@ -695,7 +671,7 @@
         });
 
         document.getElementById('endPlayBtn').addEventListener('click', () => {
-            const isClear = (currentStage >= 5 && currentProblem > 1); // Stage 5 문제 1개 이상 클리어 = 상수준
+            const isClear = (currentStage >= 5 && currentProblem > 1);
             gameOver(isClear);
         });
 
@@ -722,13 +698,11 @@
             let conceptForThisProblem = currentStage;
 
             // 스테이지당 3문제: 1·2번은 현재 스테이지 새 문제, 3번은 이전 스테이지 개념 중 무작위 복습
-            // (1스테이지는 이전 개념이 없으므로 3번도 1스테이지 문제 유지, 좀비 수만 복습 규칙 적용)
             if (currentStage > 1 && currentStage <= 4 && currentProblem === 3) {
                 conceptForThisProblem = Math.floor(Math.random() * (currentStage - 1)) + 1;
             }
 
             // ±8 격자 기준 a값 풀: 모든 식이 최소 4개의 격자점(좀비 후보)을 갖도록 구성
-            // (정비례 a=±5는 격자점이 2개뿐이라 제외, 반비례 a=±24는 슬라이더 범위(±20)에 맞춰 제외)
             if (conceptForThisProblem === 1) {
                 baseType = 'linear'; baseA = [1, 2, 3, 4][Math.floor(Math.random() * 4)];
             } else if (conceptForThisProblem === 2) {
@@ -779,42 +753,41 @@
             setFuncType('linear');
             drawCanvas();
             document.getElementById('feedbackText').innerText = '';
-            updateLiveStatus();
         }
 
         document.querySelectorAll('.function-type-btn').forEach(btn => btn.addEventListener('click', (e) => setFuncType(e.currentTarget.dataset.type)));
-        function setFuncType(type) { currentFuncType = type; document.querySelectorAll('.function-type-btn').forEach(b => b.classList.remove('active')); document.querySelector(`.function-type-btn[data-type="${type}"]`).classList.add('active'); updateEquationDisplay(); }
-        // ── a값 룰렛 (좌표평면 오목의 룰렛 패턴 이식) ──
+        function setFuncType(type) {
+            currentFuncType = type;
+            document.querySelectorAll('.function-type-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.function-type-btn[data-type="${type}"]`).classList.add('active');
+            updateEquationDisplay();
+        }
+
+        // ── a값 룰렛 ──
         const A_MIN = -20, A_MAX = 20;
         const rouletteA = document.getElementById('roulette-a');
-        let A_ITEM_W = 30;            // 항목 1칸의 실제 폭(px) — 아래에서 실측 폭 ÷ 7로 갱신됨
+        let A_ITEM_W = 30;
         let aRouletteBuilt = false;
         let aRouletteSettleTimer = null, aRouletteRebuildPending = false;
         let aRouletteDragging = false, aRouletteStartX = 0, aRouletteStartScroll = 0;
 
         // 항상 "가운데 1칸 + 양옆 3칸씩 = 7칸"이 보이도록, 항목 폭을 실측 폭 ÷ 7로 잡는다.
-        // 양옆 여백(패딩)은 3칸 + 여유 1칸(A_SLACK) = 4칸 폭으로 둔다.
-        // 여유 1칸 덕분에 ±20의 스냅 위치도 스크롤 범위의 '경계'가 아니라 '안쪽'에 있어서,
-        // 끝값도 중간값과 완전히 같은 스냅 메커니즘으로 중앙 정렬된다.
-        // (여유가 없으면 ±20만 경계 클램프에 의존해, 폭이 1~2px만 어긋나도 끝값만 비뚤어진다)
-        const A_SLACK = 1; // 좌우 여유 슬롯 수
+        const A_SLACK = 1;
         function aScrollForIdx(i) { return (i + A_SLACK) * A_ITEM_W; }
         function aIdxFromScroll(s, count) {
             return Math.max(0, Math.min(count - 1, Math.round(s / A_ITEM_W) - A_SLACK));
         }
 
         function buildARouletteItems() {
-            // 스크롤/드래그 도중에는 절대 재생성하지 않는다. 도중에 항목을 갈아끼우면 위치가 튀며
-            // "값 변경 → 레이아웃 변화 → 리사이즈 감지 → 재생성 → 값 변경…" 진동이 생길 수 있어,
-            // 손을 뗀 뒤(스크롤 200ms 유휴)로 미룬다.
+            // 스크롤/드래그 도중에는 절대 재생성하지 않는다.
             if (aRouletteDragging || aRouletteSettleTimer !== null) { aRouletteRebuildPending = true; return; }
             const w = rouletteA.clientWidth;
-            if (w <= 0) return; // 화면이 아직 숨겨진 상태(display:none) — 보일 때 다시 호출됨
+            if (w <= 0) return; // 화면이 아직 숨겨진 상태 — 보일 때 다시 호출됨
             const itemW = w / 7;
-            if (aRouletteBuilt && Math.abs(itemW - A_ITEM_W) < 0.25) return; // 폭이 그대로면 생략
+            if (aRouletteBuilt && Math.abs(itemW - A_ITEM_W) < 0.25) return;
             A_ITEM_W = itemW;
             aRouletteBuilt = true;
-            rouletteA.style.setProperty('--a-item-w', itemW + 'px'); // 항목·선택 알약 폭이 함께 따라감
+            rouletteA.style.setProperty('--a-item-w', itemW + 'px');
 
             const padWidth = itemW * (3 + A_SLACK);
             const inner = rouletteA.querySelector('.roulette-inner');
@@ -825,9 +798,8 @@
                 html += `<div class="roulette-item coord-item" data-val="${v}">${v}</div>`;
             }
             inner.innerHTML = html + pad;
-            setARouletteValue(currentA); // 새 레이아웃 기준으로 선택 표시·스크롤 위치 재적용
+            setARouletteValue(currentA);
         }
-        // 최초로 화면에 보이는 순간 + 창 크기·화면 회전이 바뀔 때마다 자동 재계산
         new ResizeObserver(buildARouletteItems).observe(rouletteA);
 
         rouletteA.addEventListener('scroll', () => {
@@ -848,7 +820,6 @@
             }
         });
 
-        // 마우스 드래그 지원 (터치는 브라우저 기본 스크롤로 동작)
         rouletteA.addEventListener('pointerdown', (e) => {
             if (e.pointerType !== 'mouse') return;
             aRouletteDragging = true; aRouletteStartX = e.clientX; aRouletteStartScroll = rouletteA.scrollLeft;
@@ -868,9 +839,6 @@
         rouletteA.addEventListener('pointerup', stopARouletteDrag);
         rouletteA.addEventListener('pointercancel', stopARouletteDrag);
 
-        // 값 지정: 배지·수식·선택 강조·스크롤 위치를 전부 같은 프레임에서 동기 처리.
-        // (예전엔 스크롤만 requestAnimationFrame으로 한 프레임 미뤘는데, 그 사이 룰렛의
-        //  기본 스크롤 위치(0 = -20 항목)가 잠깐 그려졌다가 1로 튀어 보이는 원인이었음)
         function setARouletteValue(value) {
             if (value === 0) value = 1;
             currentA = value;
@@ -886,7 +854,9 @@
             if (idx !== -1) rouletteA.scrollLeft = aScrollForIdx(idx);
         }
         function updateEquationDisplay() {
-            document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear' ? `y = ${currentA}x` : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
+            document.getElementById('equationDisplay').innerHTML = currentFuncType === 'linear'
+                ? `y = ${currentA}x`
+                : `y = <div class="math-fraction"><div class="math-fraction-num">${currentA}</div><div class="math-fraction-den">x</div></div>`;
         }
 
         function updateUI() {
@@ -928,8 +898,10 @@
             }
             ctx.restore();
 
-            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke(); // 좌표축: 모눈보다 굵게
-            ctx.fillStyle = '#dc2626'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; // 축 숫자: 라이트/다크 공통 진한 빨강
+            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
+            ctx.fillStyle = '#dc2626'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
             for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 2) if (x !== 0) ctx.fillText(x, centerX + x * scale, centerY + 5);
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
             for (let y = -GRID_LIMIT; y <= GRID_LIMIT; y += 2) if (y !== 0) ctx.fillText(y, centerX - 5, centerY - y * scale);
@@ -938,8 +910,6 @@
             currentZombies.forEach(z => { if (z.active) ctx.fillText('🧟', centerX + z.x * scale, centerY - z.y * scale); });
 
             if (laserAnimX !== null) {
-                // 곡선이 격자 밖으로 삐져나가지 않도록 격자 사각형으로 클리핑한 뒤,
-                // y값 크기와 무관하게 곡선 전체를 그린다.
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(clipLeft, clipTop, clipWidth, clipHeight);
@@ -954,9 +924,7 @@
                 };
 
                 if (currentFuncType === 'inverse') {
-                    // 예전에는 |x| < 0.2 구간을 통째로 건너뛰어서, a가 작으면(예: y=1/x)
-                    // 곡선이 y=±5 부근에서 뚝 끊겨 보였다(출제 풀 |a|≥12에서는 안 보이던 문제).
-                    // 이제 클리핑이 격자 밖을 잘라 주므로 점근선(x=0) 바로 옆(±0.02)까지
+                    // 클리핑이 격자 밖을 잘라 주므로 점근선(x=0) 바로 옆(±0.02)까지
                     // 촘촘히(0.05 간격) 그려서, 어떤 a든 곡선이 격자 위/아래 끝까지 닿는다.
                     const EPS = 0.02, STEP = 0.05;
                     const drawBranch = (from, to) => {
@@ -975,8 +943,7 @@
                     for (let x = -GRID_LIMIT; x <= GRID_LIMIT; x += 0.1) {
                         if (x > laserAnimX) break;
                         let y = currentA * x;
-                        const px = centerX + x * scale, py = centerY - y * scale;
-                        points.push({ px, py });
+                        points.push({ px: centerX + x * scale, py: centerY - y * scale });
                     }
                     drawSegment(points);
                 }
@@ -1010,7 +977,6 @@
                     if (currentFuncType === 'inverse' && currentA > 0) conceptStage = 3;
                     if (currentFuncType === 'inverse' && currentA < 0) conceptStage = 4;
 
-                    // 발사 단위 기록: 명중/실패 (개념별 통계는 모든 스테이지 공통)
                     if (hitCount === 0) {
                         currentStageFails[conceptStage]++;
                     } else {
@@ -1020,15 +986,12 @@
 
                     if (currentStage >= 5) {
                         // Stage 5 규칙: 레이저가 남아있는 동안은 빗나가도 목숨 유지.
-                        // 레이저를 전부 썼는데 좀비가 남아있으면 목숨 1 차감 후
-                        // 새로운 좀비 배치를 생성하고 레이저를 다시 채운다.
                         if (remaining === 0) {
                             score += 5;
                             document.getElementById('feedbackText').innerText = '모두 명중! +5점';
                             updateUI();
                             document.getElementById('fireBtn').disabled = true;
                             setTimeout(() => {
-                                // Stage 5의 첫 문제를 깨는 순간 상수준 판정 → 이후 무한 챌린지 계속
                                 if (currentProblem === 1) saveClearRecord();
                                 currentProblem++; generateProblem(); updateUI();
                                 document.getElementById('fireBtn').disabled = false;
@@ -1038,11 +1001,9 @@
                             document.getElementById('feedbackText').innerText = '레이저 소진! 좀비 무리가 재배치됩니다.';
                             triggerClawAnimation(); updateUI();
                             if (lives <= 0) {
-                                updateLiveStatus();
                                 setTimeout(() => gameOver(false), 1000);
                                 return;
                             }
-                            updateLiveStatus();
                             document.getElementById('fireBtn').disabled = true;
                             setTimeout(() => {
                                 generateProblem(); updateUI();
@@ -1055,13 +1016,12 @@
                         return;
                     }
 
-                    // Stage 1~4: 빗나가면 목숨 차감 (기존 규칙)
+                    // Stage 1~4: 빗나가면 목숨 차감
                     if (hitCount === 0) {
                         lives--;
                         document.getElementById('feedbackText').innerText = '빗나갔습니다!';
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) {
-                            updateLiveStatus();
                             setTimeout(() => gameOver(false), 1000);
                             return;
                         }
@@ -1085,24 +1045,29 @@
         });
 
         function triggerClawAnimation() {
-            canvas.classList.add('shake-canvas'); document.getElementById('clawMark').classList.add('active');
-            setTimeout(() => { canvas.classList.remove('shake-canvas'); document.getElementById('clawMark').classList.remove('active'); }, 600);
+            canvas.classList.add('shake-canvas');
+            document.getElementById('clawMark').classList.add('active');
+            setTimeout(() => {
+                canvas.classList.remove('shake-canvas');
+                document.getElementById('clawMark').classList.remove('active');
+            }, 600);
         }
 
-        // updateLiveStatus는 무료사용량 절약을 위해 비활성화
-        // 기록은 gameOver() 시점에만 Firestore에 저장됨
-        function updateLiveStatus() { }
-
         // 방 문서에 최고 기록(best*)을 따로 쌓지 않습니다.
-        // 유일한 소비자였던 명예의 전당이 없어졌고, 순위는 records만으로 계산합니다.
-        // 판이 끝날 때마다 방 문서를 읽고 쓰던 왕복 2회가 사라집니다.
+        // 순위는 records만으로 계산하므로, 판이 끝날 때마다 방 문서를 읽고 쓰던 왕복이 없습니다.
         async function saveClearRecord() {
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
 
-            // ★ records에는 학번·학교를 넣지 않습니다 — 게임오버 랭킹이 로그인 없이 읽는 컬렉션입니다.
-            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: true, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
-
-            await addDoc(recordsCollectionRef(currentRoomCode), recordData);
+            // ★ records에는 학번·학교를 넣지 않습니다 — 게임오버 랭킹이 로그인 없이 읽습니다.
+            // ★ isCheckpoint: 중간 저장이라는 표시. 대시보드의 '플레이 횟수'에서 제외합니다.
+            //   (이 표시가 없으면 Stage 5를 깬 학생만 플레이 횟수가 1회 더 세집니다)
+            await addDoc(recordsCollectionRef(currentRoomCode), {
+                nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem,
+                isCompleted: true, isCheckpoint: true,
+                totalShots: currentTotalShots, hitShots: currentHitShots,
+                stageHits: currentStageHits, stageFails: currentStageFails,
+                playTimeSec, playedAt: serverTimestamp()
+            });
 
             const alertBox = document.createElement('div');
             alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:10px 20px;border-radius:8px;font-weight:bold;z-index:9999;box-shadow:0 4px 6px rgba(0,0,0,0.1);";
@@ -1115,7 +1080,9 @@
             showSection('gameover-section');
             document.getElementById('gameoverIcon').innerText = isClear ? "🏆" : "⚔️";
             document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료!" : "게임 종료!";
-            document.getElementById('gameoverDesc').innerText = isClear ? `기본 미션을 모두 완수하고 무한 모드(Prob ${currentProblem})까지 생존했습니다!` : "하트를 모두 소진했습니다.";
+            document.getElementById('gameoverDesc').innerText = isClear
+                ? `기본 미션을 모두 완수하고 무한 모드(Prob ${currentProblem})까지 생존했습니다!`
+                : "하트를 모두 소진했습니다.";
             document.getElementById('finalScore').innerText = score;
             document.getElementById('finalStage').innerText = `Stage ${currentStage}`;
             const finalAcc = currentTotalShots > 0 ? Math.round((currentHitShots / currentTotalShots) * 100) : 0;
@@ -1123,95 +1090,112 @@
             document.getElementById('finalAcc').innerText = `${finalAcc}%`;
             document.getElementById('finalTime').innerText = `${finalTime}초`;
 
+            const saveStatus = document.getElementById('save-status');
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
-            // ★ records에는 학번·학교를 넣지 않습니다 — 게임오버 랭킹이 로그인 없이 읽는 컬렉션입니다.
-            const recordData = { nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem, isCompleted: isClear, totalShots: currentTotalShots, hitShots: currentHitShots, stageHits: currentStageHits, stageFails: currentStageFails, playTimeSec, playedAt: serverTimestamp() };
 
-            await addDoc(recordsCollectionRef(currentRoomCode), recordData);
-            // 학번·학교는 여기(students)에만 둡니다. 대시보드가 닉네임으로 이어 붙입니다.
-            await setDoc(doc(db, "zombiehunter_records", currentRoomCode, "students", myName), {
-                nickname: myName,
-                ...(myStudentId ? { studentId: myStudentId } : {}),
-                ...(mySchool ? { school: mySchool } : {}),
-                score,
-                stage: currentStage,
-                problem: currentProblem,
-                totalShots: currentTotalShots,
-                hitShots: currentHitShots,
-                stageHits: currentStageHits,
-                stageFails: currentStageFails,
-                playTimeSec,
-                isCompleted: isClear,
-                lastActive: serverTimestamp()
-            }, { merge: true });
+            try {
+                await addDoc(recordsCollectionRef(currentRoomCode), {
+                    nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem,
+                    isCompleted: isClear,
+                    totalShots: currentTotalShots, hitShots: currentHitShots,
+                    stageHits: currentStageHits, stageFails: currentStageFails,
+                    playTimeSec, playedAt: serverTimestamp()
+                });
 
-            // 같은 방 안에서 내 위치 ±2명 (현재 방 하나만 읽습니다)
-            const snap = await getDocs(recordsCollectionRef(currentRoomCode));
-            let playerMap = {};
-            snap.forEach(d => {
-                const r = d.data();
-                const rScore = r.score || 0;
-                const acc = r.totalShots > 0 ? Math.round((r.hitShots / r.totalShots) * 100) : 0;
-                const time = r.totalShots > 0 ? Number((r.playTimeSec / r.totalShots).toFixed(1)) : 9999;
-                const curr = playerMap[r.nickname];
-                if (!curr || rScore > curr.score || (rScore === curr.score && acc > curr.acc) ||
-                    (rScore === curr.score && acc === curr.acc && time < curr.time)) {
-                    playerMap[r.nickname] = { nickname: r.nickname, score: rScore, acc, time };
-                }
-            });
+                // 학번·학교는 여기(students)에만 둡니다. 대시보드가 닉네임으로 이어 붙입니다.
+                await setDoc(doc(studentsCollectionRef(currentRoomCode), myName), {
+                    nickname: myName,
+                    ...(myStudentId ? { studentId: myStudentId } : {}),
+                    ...(mySchool ? { school: mySchool } : {}),
+                    score, stage: currentStage, problem: currentProblem,
+                    totalShots: currentTotalShots, hitShots: currentHitShots,
+                    stageHits: currentStageHits, stageFails: currentStageFails,
+                    playTimeSec, isCompleted: isClear,
+                    lastActive: serverTimestamp()
+                }, { merge: true });
 
-            let allRecords = Object.values(playerMap);
-            allRecords.sort((a, b) => {
-                if (b.score !== a.score) return b.score - a.score;
-                if (b.acc !== a.acc) return b.acc - a.acc;
-                return a.time - b.time;
-            });
+                saveStatus.innerText = "✅ 기록이 저장되었습니다!";
+            } catch (err) {
+                console.error('기록 저장 실패:', err);
+                saveStatus.innerText = "⚠️ 기록 저장에 실패했습니다.";
+                saveStatus.classList.replace('text-success', 'text-danger');
+            }
 
-            const myIndex = allRecords.findIndex(item => item.nickname === myName);
-            const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
-            const start = Math.max(0, safeIndex - 2);
-            const end = Math.min(allRecords.length, safeIndex + 3);
-            const nearby = allRecords.slice(start, end);
+            // 같은 방 안에서 내 위치 ±2명
+            try {
+                const snap = await getDocs(recordsCollectionRef(currentRoomCode));
+                let playerMap = {};
+                snap.forEach(d => {
+                    const r = d.data();
+                    const nick = String(r.nickname || '');
+                    if (!nick) return;
+                    const rScore = safeNumber(r.score);
+                    const shots = safeNumber(r.totalShots);
+                    const acc = shots > 0 ? Math.round((safeNumber(r.hitShots) / shots) * 100) : 0;
+                    const time = shots > 0 ? Number((safeNumber(r.playTimeSec) / shots).toFixed(1)) : 9999;
+                    const curr = playerMap[nick];
+                    if (!curr || rScore > curr.score || (rScore === curr.score && acc > curr.acc) ||
+                        (rScore === curr.score && acc === curr.acc && time < curr.time)) {
+                        playerMap[nick] = { nickname: nick, score: rScore, acc, time };
+                    }
+                });
 
-            const myRank = safeIndex + 1;
-            const totalPlayers = allRecords.length;
-            const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
-            document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명`;
-            document.getElementById('rankSummaryText').innerText =
-                `${myName}님은 이 방 ${totalPlayers}명 중 상위 ${percentile}%에 해당합니다.` +
-                (safeIndex > 0
-                    ? ` 바로 위에는 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.`
-                    : ' 현재 1위로 앞선 사람이 없습니다!');
+                let allRecords = Object.values(playerMap);
+                allRecords.sort((a, b) => {
+                    if (b.score !== a.score) return b.score - a.score;
+                    if (b.acc !== a.acc) return b.acc - a.acc;
+                    return a.time - b.time;
+                });
 
-            const rows = nearby.map((item, idx) => {
-                const rankNumber = start + idx + 1;
-                const isMe = item.nickname === myName;
-                const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
-                return `
-                    <tr class="${isMe ? 'table-primary fw-bold' : ''}">
-                        <td class="text-center">${rankNumber}</td>
-                        <td>${escapeHtml(item.nickname)}</td>
-                        <td class="text-center">${item.score}점</td>
-                        <td class="text-center">${percentText}</td>
-                    </tr>
-                `;
-            }).join('');
-            document.getElementById('rankNearbyTable').innerHTML = rows;
+                const myIndex = allRecords.findIndex(item => item.nickname === myName);
+                const safeIndex = myIndex >= 0 ? myIndex : allRecords.length;
+                const start = Math.max(0, safeIndex - 2);
+                const end = Math.min(allRecords.length, safeIndex + 3);
+                const nearby = allRecords.slice(start, end);
+
+                const myRank = safeIndex + 1;
+                const totalPlayers = allRecords.length;
+                const percentile = totalPlayers > 0 ? Math.max(0, Math.min(100, Math.round(((totalPlayers - myRank + 1) / totalPlayers) * 100))) : 0;
+                document.getElementById('myRankBadge').innerText = `${myRank}위 / ${totalPlayers}명`;
+                document.getElementById('rankSummaryText').innerText =
+                    `${myName}님은 이 방 ${totalPlayers}명 중 상위 ${percentile}%에 해당합니다.` +
+                    (safeIndex > 0
+                        ? ` 바로 위에는 ${allRecords[safeIndex - 1].nickname}님이 ${allRecords[safeIndex - 1].score}점으로 앞서 있습니다.`
+                        : ' 현재 1위로 앞선 사람이 없습니다!');
+
+                const rows = nearby.map((item, idx) => {
+                    const rankNumber = start + idx + 1;
+                    const isMe = item.nickname === myName;
+                    const percentText = totalPlayers > 0 ? `${Math.max(0, Math.min(100, Math.round(((totalPlayers - rankNumber + 1) / totalPlayers) * 100)))}%` : '-';
+                    return `
+                        <tr class="${isMe ? 'table-primary fw-bold' : ''}">
+                            <td class="text-center">${rankNumber}</td>
+                            <td>${escapeHtml(item.nickname)}</td>
+                            <td class="text-center">${safeNumber(item.score)}점</td>
+                            <td class="text-center">${percentText}</td>
+                        </tr>
+                    `;
+                }).join('');
+                document.getElementById('rankNearbyTable').innerHTML = rows;
+            } catch (e) {
+                console.error('주변 순위 로드 오류:', e);
+            }
         }
 
         document.getElementById('restartBtn').addEventListener('click', () => {
-            currentStage = 1; currentProblem = 1; score = 0; lives = 5; problemHistory = [];
+            currentStage = 1; currentProblem = 1; score = 0; lives = 5;
             currentTotalShots = 0; currentHitShots = 0;
             currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
             gameStartTime = Date.now();
             generateProblem();
             updateUI();
             showSection('game-section');
-            requestAnimationFrame(buildARouletteItems); // 화면 전환 직후 룰렛 실측 폭 확정
+            requestAnimationFrame(buildARouletteItems);
         });
 
-
-
+        // =====================================================================
+        // 대시보드
+        // =====================================================================
         let unsubRooms = null, unsubStudents = null, unsubRecords = null;
         let roomStudents = [], roomRecords = [];
         let currentAdminRoom = '';
@@ -1219,89 +1203,53 @@
         let currentStats = {};
 
         function loadRooms() {
+            if (!window.isApprovedTeacher && !window.isAdmin) return;
             if (unsubRooms) unsubRooms();
-            unsubRooms = onSnapshot(collection(db, "zombiehunter_records"), snap => {
+
+            const base = collection(db, "zombiehunter_records");
+            const q = window.isAdmin
+                ? base
+                : query(base, where("createdBy", "==", window.currentTeacherUid || "__none__"));
+
+            unsubRooms = onSnapshot(q, snap => {
                 const select = document.getElementById('roomSelect');
+                if (!select) return;
                 const curr = select.value;
-                select.innerHTML = '<option value="">방을 선택하세요</option>';
+
+                let html = '<option value="">방을 선택하세요</option>';
                 let count = 0;
                 snap.forEach(docSnap => {
-                    const data = docSnap.data();
-                    if (!window.isAdmin) {
-                        const myUid = window.currentTeacherUid;
-                        const myEmail = window.currentTeacherEmail;
-                        if (data.createdBy !== myUid && data.creatorEmail !== myEmail) return;
-                    }
                     count++;
-                    select.innerHTML += `<option value="${docSnap.id}">${docSnap.id}</option>`;
+                    html += `<option value="${escapeHtml(docSnap.id)}">${escapeHtml(docSnap.id)}</option>`;
                 });
                 if (count === 0 && !window.isAdmin) {
-                    select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
+                    html = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
                 }
-                if (curr && document.querySelector(`#roomSelect option[value="${curr}"]`)) select.value = curr;
-            });
+                select.innerHTML = html;
+                if (curr && [...select.options].some(o => o.value === curr)) select.value = curr;
+            }, err => console.error('방 목록을 불러오지 못했습니다:', err));
         }
         window.addEventListener('teacherAuthChanged', () => loadRooms());
 
         document.getElementById('roomSelect').addEventListener('change', (e) => {
             currentAdminRoom = e.target.value;
-            if (unsubStudents) unsubStudents(); if (unsubRecords) unsubRecords();
+            if (unsubStudents) unsubStudents();
+            if (unsubRecords) unsubRecords();
             if (!currentAdminRoom) { roomStudents = []; roomRecords = []; renderDashboard(); return; }
 
-            unsubStudents = onSnapshot(studentsCollectionRef(currentAdminRoom), snap => { roomStudents = []; snap.forEach(d => roomStudents.push(d.data())); renderDashboard(); });
-            unsubRecords = onSnapshot(recordsCollectionRef(currentAdminRoom), snap => { roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard(); });
+            unsubStudents = onSnapshot(studentsCollectionRef(currentAdminRoom), snap => {
+                roomStudents = []; snap.forEach(d => roomStudents.push(d.data())); renderDashboard();
+            });
+            unsubRecords = onSnapshot(recordsCollectionRef(currentAdminRoom), snap => {
+                roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); renderDashboard();
+            });
         });
 
-        let studentModalInstance = null;
-        window.showStudentModal = function (nick) {
-            const s = currentStats[nick];
-            if (!s) return;
-
-            document.getElementById('shModalTitle').innerText = nick;
-
-            const myRecords = roomRecords.filter(r => r.nickname === nick).sort((a, b) => (b.playedAt?.toMillis() || 0) - (a.playedAt?.toMillis() || 0));
-
-            let trs = myRecords.map(r => {
-                let dt = r.playedAt ? new Date(r.playedAt.toMillis()).toLocaleString() : '-';
-                let acc = r.totalShots > 0 ? Math.round((r.hitShots / r.totalShots) * 100) : 0;
-                let pTime = r.totalShots > 0 ? (r.playTimeSec / r.totalShots).toFixed(1) : 0;
-                return `<tr><td>${dt}</td><td class="fw-bold text-primary">${r.score}</td><td><span class="badge bg-success">Lv.${r.maxStage}</span></td><td>${acc}%</td><td>${pTime}초</td></tr>`;
-            }).join('');
-
-            document.getElementById('shModalTable').innerHTML = trs.length > 0 ? trs : '<tr><td colspan="5" class="text-muted">기록이 없습니다.</td></tr>';
-
-            let cardsHtml = '';
-            const titles = ["", "Lv.1 양수 정비례", "Lv.2 음수 정비례", "Lv.3 양수 반비례", "Lv.4 음수 반비례"];
-            for (let i = 1; i <= 4; i++) {
-                let h = s.hits[i] || 0; let f = s.fails[i] || 0;
-                let tot = h + f;
-                let p = tot > 0 ? Math.round((h / tot) * 100) : '-';
-                cardsHtml += `
-                    <div class="col-6 col-md-3">
-                        <div class="card h-100 text-center shadow-sm border-0" style="border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0;">
-                            <div class="card-body p-3">
-                                <div class="text-muted small fw-bold mb-1">${titles[i]}</div>
-                                <h4 class="fw-bold text-dark mb-1">${p === '-' ? '-' : p + '%'}</h4>
-                                <div class="small text-muted">${h}맞 / ${f}틀</div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-            document.getElementById('shModalCards').innerHTML = cardsHtml;
-
-            if (!studentModalInstance) studentModalInstance = new bootstrap.Modal(document.getElementById('studentHistoryModal'));
-            studentModalInstance.show();
-        };
-
+        // 헷갈리는 문자(0/O, 1/I) 제외 — 다른 게임과 규칙을 맞췄습니다.
         function generateRoomCode() {
-            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            const digits = '0123456789';
-            const pool = letters + digits;
+            const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
             let code = '';
-            for (let i = 0; i < 4; i++) {
-                code += pool[Math.floor(Math.random() * pool.length)];
-            }
+            for (let i = 0; i < 4; i++) code += pool[Math.floor(Math.random() * pool.length)];
             return code;
         }
 
@@ -1321,17 +1269,45 @@
                 settings: { mode: selectedMode },
                 createdAt: serverTimestamp(),
                 createdBy: window.currentTeacherUid || '',
-                creatorEmail: window.currentTeacherEmail || '',
                 creatorName: window.currentTeacherName || ''
             });
-            await customAlert("방 생성 완료", `새로운 방 [<strong>${code}</strong>]이 생성되었습니다.<br>설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
+            await customAlert("방 생성 완료",
+                `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.<br>설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
             document.getElementById('roomSelect').value = code;
             currentAdminRoom = code;
             document.getElementById('roomSelect').dispatchEvent(new Event('change'));
         });
 
-        document.getElementById('btn-reset-pin')?.addEventListener('click', () => {
-            showPinResetModal();
+        document.getElementById('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
+
+        document.getElementById('btn-delete-room').addEventListener('click', async () => {
+            if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
+            const rSnapCheck = await getDoc(roomDocRef(currentAdminRoom));
+            const rData = rSnapCheck.data() || {};
+            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
+                return customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
+            }
+            const confirmed = await customConfirm("방 삭제",
+                `방 [<b class="text-danger">${escapeHtml(currentAdminRoom)}</b>] 데이터를 모두 삭제하시겠습니까?<br>되돌릴 수 없습니다.`);
+            if (!confirmed) return;
+
+            const delBtn = document.getElementById('btn-delete-room');
+            delBtn.disabled = true;
+            try {
+                for (const collRef of [studentsCollectionRef, recordsCollectionRef, nicknameCollRef, guestStatusCollRef]) {
+                    const snap = await getDocs(collRef(currentAdminRoom));
+                    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+                }
+                await deleteDoc(roomDocRef(currentAdminRoom));
+                await customAlert("완료", "방이 삭제되었습니다.");
+                document.getElementById('roomSelect').value = '';
+                document.getElementById('roomSelect').dispatchEvent(new Event('change'));
+            } catch (e) {
+                console.error(e);
+                await customAlert("오류", "방을 삭제하지 못했습니다.");
+            } finally {
+                delBtn.disabled = false;
+            }
         });
 
         function renderPendingGuests() {
@@ -1340,10 +1316,7 @@
             if (!currentAdminRoom) { container.innerHTML = ''; return; }
 
             const pendingList = roomStudents.filter(s => s.isGuest && s.status === 'pending');
-            if (pendingList.length === 0) {
-                container.innerHTML = '';
-                return;
-            }
+            if (pendingList.length === 0) { container.innerHTML = ''; return; }
 
             container.innerHTML = `
                 <div class="card border-warning bg-warning-subtle shadow-sm rounded-4 p-3 mb-3">
@@ -1379,8 +1352,7 @@
                 btn.onclick = async () => {
                     const nick = btn.getAttribute('data-nick');
                     const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true;
-                    btn.textContent = "처리 중...";
+                    btn.disabled = true; btn.textContent = "처리 중...";
                     try {
                         await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'online' });
                         await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
@@ -1390,8 +1362,7 @@
                         }
                     } catch (err) {
                         console.error("승인 처리 오류:", err);
-                        btn.disabled = false;
-                        btn.textContent = "승인 허용";
+                        btn.disabled = false; btn.textContent = "승인 허용";
                     }
                 };
             });
@@ -1400,8 +1371,7 @@
                 btn.onclick = async () => {
                     const nick = btn.getAttribute('data-nick');
                     const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true;
-                    btn.textContent = "처리 중...";
+                    btn.disabled = true; btn.textContent = "처리 중...";
                     try {
                         await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'rejected' });
                         await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
@@ -1411,31 +1381,11 @@
                         }
                     } catch (err) {
                         console.error("거절 처리 오류:", err);
-                        btn.disabled = false;
-                        btn.textContent = "거절";
+                        btn.disabled = false; btn.textContent = "거절";
                     }
                 };
             });
         }
-
-        document.getElementById('btn-delete-room').addEventListener('click', async () => {
-            if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
-            const rSnapCheck = await getDoc(roomDocRef(currentAdminRoom));
-            const rData = rSnapCheck.data() || {};
-            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
-                return customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
-            }
-            const confirmed = await customConfirm("방 삭제", `방 [${escapeHtml(currentAdminRoom)}] 데이터를 모두 삭제하시겠습니까?`);
-            if (!confirmed) return;
-            const sSnap = await getDocs(studentsCollectionRef(currentAdminRoom)); sSnap.forEach(d => deleteDoc(d.ref));
-            const rSnap = await getDocs(recordsCollectionRef(currentAdminRoom)); rSnap.forEach(d => deleteDoc(d.ref));
-            const nSnap = await getDocs(nicknameCollRef(currentAdminRoom)); nSnap.forEach(d => deleteDoc(d.ref));
-            const gSnap = await getDocs(guestStatusCollRef(currentAdminRoom)); gSnap.forEach(d => deleteDoc(d.ref));
-            await deleteDoc(roomDocRef(currentAdminRoom));
-            customAlert("완료", "방이 삭제되었습니다.");
-            document.getElementById('roomSelect').value = '';
-            document.getElementById('roomSelect').dispatchEvent(new Event('change'));
-        });
 
         function renderDashboard() {
             renderPendingGuests();
@@ -1448,24 +1398,39 @@
                 return;
             }
 
-            // 닉네임 → 학번 (students 문서 우선, 없으면 기록에서 보완)
+            // 닉네임 → 학번 (records에는 학번이 없습니다)
             const sidByNick = {};
             roomStudents.forEach(st => {
-                if (st.nickname && st.studentId) sidByNick[st.nickname] = st.studentId;
+                if (st.nickname && st.studentId) sidByNick[st.nickname] = String(st.studentId);
             });
 
-            // records(방 별)만 사용하여 통계 생성
             let stats = {};
             roomRecords.forEach(r => {
-                if (!stats[r.nickname]) stats[r.nickname] = { pc: 0, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0, hits: { 1: 0, 2: 0, 3: 0, 4: 0 }, fails: { 1: 0, 2: 0, 3: 0, 4: 0 }, comp: false, playTime: 0, sid: '' };
-                let s = stats[r.nickname]; s.pc++;
-                if (r.studentId) s.sid = r.studentId;
-                if (r.score > s.ms) s.ms = r.score;
-                if (r.maxStage > s.mStg) { s.mStg = r.maxStage; s.mProb = r.maxProblem || 1; }
-                else if (r.maxStage === s.mStg && (r.maxProblem || 1) > s.mProb) { s.mProb = r.maxProblem || 1; }
+                const nick = String(r.nickname || '');
+                if (!nick) return;
+                if (!stats[nick]) stats[nick] = {
+                    pc: 0, ms: 0, mStg: 0, mProb: 0, ts: 0, hs: 0,
+                    hits: { 1: 0, 2: 0, 3: 0, 4: 0 }, fails: { 1: 0, 2: 0, 3: 0, 4: 0 },
+                    comp: false, playTime: 0
+                };
+                let s = stats[nick];
+                // ★ 중간 저장(isCheckpoint)은 플레이 횟수에 세지 않습니다.
+                if (!r.isCheckpoint) s.pc++;
+
+                const rScore = safeNumber(r.score);
+                const rStage = safeNumber(r.maxStage);
+                const rProb = safeNumber(r.maxProblem, 1);
+                if (rScore > s.ms) s.ms = rScore;
+                if (rStage > s.mStg) { s.mStg = rStage; s.mProb = rProb; }
+                else if (rStage === s.mStg && rProb > s.mProb) { s.mProb = rProb; }
                 if (r.isCompleted) s.comp = true;
-                s.ts += (r.totalShots || 0); s.hs += (r.hitShots || 0); s.playTime += (r.playTimeSec || 0);
-                for (let i = 1; i <= 4; i++) { s.hits[i] += (r.stageHits?.[i] || 0); s.fails[i] += (r.stageFails?.[i] || 0); }
+                s.ts += safeNumber(r.totalShots);
+                s.hs += safeNumber(r.hitShots);
+                s.playTime += safeNumber(r.playTimeSec);
+                for (let i = 1; i <= 4; i++) {
+                    s.hits[i] += safeNumber(r.stageHits?.[i]);
+                    s.fails[i] += safeNumber(r.stageFails?.[i]);
+                }
             });
 
             currentStats = stats;
@@ -1522,9 +1487,22 @@
                 else compText = "양수 정비례(Stage 1) 진행중";
 
                 let avgTime = avgTimeRaw.toFixed(1);
+                const sid = sidByNick[nick] || '';
 
-                const sid = s.sid || sidByNick[nick] || '';
-                tbodyHtml += `<tr style="cursor:pointer;" onclick="showStudentModal('${nick}')"><td class="fw-bold">${rankDisplay}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tBdg} fs-6">${tier}</span></td><td>${compText}</td><td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td><td><span class="fw-bold">${avgTime}초</span></td><td><span class="badge bg-secondary">${s.pc}회</span></td></tr>`;
+                // ★ v2는 onclick="showStudentModal('${nick}')" 이었습니다.
+                //   records는 로그인 없이 만들 수 있어, 닉네임에 코드를 심은 기록을 하나 남기면
+                //   선생님이 이 표를 여는 순간 교사 세션에서 실행됐습니다.
+                //   data-* + 이벤트 위임으로 바꿔 그 경로를 없앴습니다.
+                tbodyHtml += `<tr style="cursor:pointer;" class="row-student" data-nick="${escapeHtml(nick)}">
+                    <td class="fw-bold">${rankDisplay}</td>
+                    <td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td>
+                    <td class="fw-bold">${escapeHtml(nick)}</td>
+                    <td><span class="badge ${tBdg} fs-6">${tier}</span></td>
+                    <td>${compText}</td>
+                    <td><span class="fw-bold text-primary">${s.ms}점</span> <span class="text-muted small">(${acc}%)</span></td>
+                    <td><span class="fw-bold">${avgTime}초</span></td>
+                    <td><span class="badge bg-secondary">${s.pc}회</span></td>
+                </tr>`;
 
                 currentExcelData.push({
                     "학번": sid || '',
@@ -1594,6 +1572,62 @@
             document.getElementById('dashSpeedDist').innerHTML = speedHtml;
         }
 
+        // 학생 상세 이력 모달 (이벤트 위임)
+        let studentModalInstance = null;
+        document.getElementById('adminTableBody').addEventListener('click', (e) => {
+            const row = e.target.closest('.row-student');
+            if (row) showStudentModal(row.dataset.nick);
+        });
+
+        function showStudentModal(nick) {
+            const s = currentStats[nick];
+            if (!s) return;
+
+            document.getElementById('shModalTitle').innerText = nick;
+
+            const myRecords = roomRecords.filter(r => r.nickname === nick)
+                .sort((a, b) => (b.playedAt?.toMillis?.() || 0) - (a.playedAt?.toMillis?.() || 0));
+
+            let trs = myRecords.map(r => {
+                let dt = r.playedAt?.toMillis ? new Date(r.playedAt.toMillis()).toLocaleString('ko-KR') : '-';
+                const shots = safeNumber(r.totalShots);
+                let acc = shots > 0 ? Math.round((safeNumber(r.hitShots) / shots) * 100) : 0;
+                let pTime = shots > 0 ? (safeNumber(r.playTimeSec) / shots).toFixed(1) : 0;
+                return `<tr>
+                    <td>${escapeHtml(dt)}</td>
+                    <td class="fw-bold text-primary">${safeNumber(r.score)}</td>
+                    <td><span class="badge bg-success">Lv.${safeNumber(r.maxStage, 1)}</span></td>
+                    <td>${acc}%</td>
+                    <td>${pTime}초</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('shModalTable').innerHTML = trs.length > 0 ? trs : '<tr><td colspan="5" class="text-muted">기록이 없습니다.</td></tr>';
+
+            let cardsHtml = '';
+            const titles = ["", "Lv.1 양수 정비례", "Lv.2 음수 정비례", "Lv.3 양수 반비례", "Lv.4 음수 반비례"];
+            for (let i = 1; i <= 4; i++) {
+                let h = s.hits[i] || 0; let f = s.fails[i] || 0;
+                let tot = h + f;
+                let p = tot > 0 ? Math.round((h / tot) * 100) : '-';
+                cardsHtml += `
+                    <div class="col-6 col-md-3">
+                        <div class="card h-100 text-center shadow-sm border-0" style="border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0;">
+                            <div class="card-body p-3">
+                                <div class="text-muted small fw-bold mb-1">${titles[i]}</div>
+                                <h4 class="fw-bold text-dark mb-1">${p === '-' ? '-' : p + '%'}</h4>
+                                <div class="small text-muted">${h}맞 / ${f}틀</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('shModalCards').innerHTML = cardsHtml;
+
+            if (!studentModalInstance) studentModalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('studentHistoryModal'));
+            studentModalInstance.show();
+        }
+
         document.getElementById('toggleStudentId').addEventListener('change', (e) => {
             document.getElementById('adminTableWrap').classList.toggle('show-sid', e.target.checked);
         });
@@ -1610,25 +1644,7 @@
 
     <!--
     ═══════════════════════════════════════════════════════════════════════
-      Firestore 보안 규칙 참고 (명예의 전당을 없앴으므로 records를 잠글 수 있습니다)
-
-      match /zombiehunter_records/{roomCode} {
-        allow read: if true;                       // 방 존재 확인 (학생, 미로그인)
-        allow write: if request.auth != null;      // 방 생성·삭제는 교사만
-
-        match /students/{nick} {
-          allow get: if true;                      // 닉네임 중복 확인 (개별 조회)
-          allow write: if true;                    // 학생이 자기 요약을 기록
-          allow list: if request.auth != null;     // ★ 전체 긁기는 교사만 (학번 보호)
-        }
-        match /records/{recId} {
-          allow read, create: if true;             // 게임오버 랭킹 + 기록 저장
-          allow update, delete: if request.auth != null;
-        }
-      }
-
-      ★ records 문서에는 학번·학교를 넣지 않습니다. Firestore 규칙은 문서 단위라
-        필드만 가릴 수 없기 때문입니다. 학번은 students에만 두고 list를 막습니다.
+      보안 규칙은 프로젝트의 rules/firestore.rules 를 참고하세요.
     ═══════════════════════════════════════════════════════════════════════
     -->
 </body>

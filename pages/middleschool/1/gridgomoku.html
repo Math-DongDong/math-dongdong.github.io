@@ -138,17 +138,9 @@
             display: inline-block;
         }
 
-        .status-dot.online {
-            background: #28a745;
-        }
-
-        .status-dot.away {
-            background: #ffc107;
-        }
-
-        .status-dot.offline {
-            background: #dc3545;
-        }
+        .status-dot.online { background: #28a745; }
+        .status-dot.away { background: #ffc107; }
+        .status-dot.offline { background: #dc3545; }
 
         .waiting-spinner {
             width: 60px;
@@ -161,15 +153,11 @@
         }
 
         @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+            to { transform: rotate(360deg); }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .waiting-spinner {
-                animation: none;
-            }
+            .waiting-spinner { animation: none; }
         }
 
         .win-rate-bar {
@@ -184,6 +172,16 @@
             background: linear-gradient(90deg, #28a745, #20c997);
             border-radius: 3px;
             transition: width 0.5s ease;
+        }
+
+        /* 학번 열: 기본 숨김, 토글 시 표시 (교실 TV 투사 대비)
+           ★ 표를 다시 그려도 유지되도록 JS가 아니라 CSS 클래스로 제어합니다. */
+        .col-studentid {
+            display: none;
+        }
+
+        #admin-record-table.show-sid .col-studentid {
+            display: table-cell;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -207,6 +205,7 @@
         </div>
     </div>
 
+    <div id="navbar-placeholder"></div>
     <script src="../../../js/navbar.js"></script>
 
     <main class="container pt-4">
@@ -226,20 +225,36 @@
 
         <div id="admin-section" class="section-container">
             <div class="admin-card mb-4">
-                <!-- 대시보드 상단 헤더 (공통 모듈) -->
+                <!-- 대시보드 상단 헤더 (공통 모듈)
+                     ★ 이 게임도 학생 인증 모드를 지원하므로 PIN 초기화 버튼을 켜 둡니다. -->
                 <div id="dash-header-placeholder"></div>
                 <script src="../../../js/dashboard-header.js" data-title="좌표평면 오목 대시보드" data-export="false"
                     data-select-id="admin-room-select"></script>
 
+                <!-- 게스트 대기자 알림 배너 영역 -->
+                <div id="pendingGuestsContainer" class="mb-3"></div>
+
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <h5 class="fw-bold mb-0">👥 참가자 및 대전 현황</h5>
-                    <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary fs-6" id="admin-room-mode">-</span>
+                        <span class="badge bg-info fs-6" id="admin-player-count">0명 접속</span>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end align-items-center mb-2">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer;">
+                        <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId"
+                            style="cursor:pointer;">학번 표시</label>
+                    </div>
                 </div>
 
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0 text-center" id="admin-record-table">
                         <thead class="table-light">
                             <tr>
+                                <th class="col-studentid">학번</th>
                                 <th>닉네임</th>
                                 <th>상태</th>
                                 <th>대전 현황</th>
@@ -251,7 +266,7 @@
                         </thead>
                         <tbody id="admin-record-tbody">
                             <tr>
-                                <td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td>
+                                <td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -297,11 +312,11 @@
                     <div class="card shadow-sm border-0 rounded-4 p-3" id="game-input-area">
                         <div class="roulette-input-row">
                             <span class="text-muted">(</span>
-                            <div class="roulette-wrapper" id="roulette-x">
+                            <div class="roulette-wrapper" id="roulette-x" aria-label="x 좌표 선택">
                                 <div class="roulette-inner"></div>
                             </div>
                             <span class="text-muted">,</span>
-                            <div class="roulette-wrapper" id="roulette-y">
+                            <div class="roulette-wrapper" id="roulette-y" aria-label="y 좌표 선택">
                                 <div class="roulette-inner"></div>
                             </div>
                             <span class="text-muted">)</span>
@@ -309,7 +324,7 @@
                         </div>
                         <p class="text-muted small text-center mt-2 mb-0" id="game-status-text">좌우로 스크롤하여 좌표를 선택하고 돌을
                             놓으세요.</p>
-                        <!-- [응급처치 4] 상대가 경기에 들어오지 않을 때의 수동 탈출구 (첫 수 전에만 노출) -->
+                        <!-- 상대가 경기에 들어오지 않을 때의 수동 탈출구 (첫 수 전에만 노출) -->
                         <button id="btn-abandon-match" class="btn btn-outline-secondary fw-bold w-100 mt-2 d-none">
                             🔄 상대 응답 없음 — 경기 취소하고 다시 매칭하기
                         </button>
@@ -330,15 +345,24 @@
     </main>
 
     <script type="module">
-        import { rtdbGridGomoku as db } from "../../../js/firebase-config.js";
+        // ★ 이 게임은 두 데이터베이스를 함께 씁니다.
+        //   · RTDB(db)   : 실시간 대국 — 매칭, 착수, 하트비트
+        //   · Firestore  : 학생 인증 모드에 필요한 것들 —
+        //                  방 모드(quick/auth), 닉네임 마커, 게스트 승인, 학번 보관
+        //   대국 자체는 RTDB로 그대로 두고, 인증 관련만 Firestore에 얹었습니다.
+        import { rtdbGridGomoku as db, db as fsdb } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customConfirm, escapeHtml, rememberEntrance,
-            getDeviceId, rerollRoomNickname
+            renderRoomEntrance, customAlert, customConfirm, escapeHtml, safeNumber, rememberEntrance,
+            getDeviceId, rerollRoomNickname, promptRoomMode, showPinResetModal
         } from "../../../js/room-auth.js?v=3.0";
         import {
             ref, set, get, update, remove, onValue, serverTimestamp,
             query, orderByChild, runTransaction, increment, onDisconnect
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import {
+            collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot,
+            serverTimestamp as fsServerTimestamp
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // =====================================================================
         // 설정 상수 (수업 상황에 맞게 여기만 고치면 됩니다)
@@ -353,16 +377,23 @@
         const AFK_LIMIT_MS = 65000;         // 이 시간 이상 이탈 시 몰수패
         const OFFLINE_MS = 60000;           // 관리자 화면에서 '접속 끊김'으로 표시할 기준
         const HEARTBEAT_MS = 10000;         // 하트비트 주기
-        const WAITER_STALE_MS = 25000;      // [통일] 대기자 생존 신호(alive) 신선도 — 하트비트의 2.5배
-        // (기존 15초는 여유가 5초뿐이라 학교 와이파이 지연에 오탐이 잦았음)
+        const WAITER_STALE_MS = 25000;      // 대기자 생존 신호(alive) 신선도 — 하트비트의 2.5배
         const MAX_CONSECUTIVE_PASS = 4;     // 연속 패스 이 횟수 도달 시 무승부 종료
         const REMATCH_WAIT_SEC = 20;        // 직전 상대와 재대결을 허용하기까지 대기 시간
         const MATCH_LOCK_MS = 3000;         // 매칭 잠금 유지 시간
-        const STALL_LIMIT_MS = 60000;       // [응급처치 3] 상대 턴이 제한시간을 넘겨도 변화가 없을 때 추가로 기다릴 시간
-        const ABANDON_BTN_MS = 40000;       // [응급처치 4] 첫 수가 나오기 전 취소 버튼을 노출하기까지의 시간
-        // 닉네임 입력창은 없앴습니다. 이름은 room-auth.js가 자동 발급하므로
-        // 형식 검사가 필요 없고, "1~10자로 입력해주세요" 안내는 학생을 헷갈리게 합니다.
-        const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;                // 방 코드도 Firebase 경로에 쓰이므로 검증
+        const STALL_LIMIT_MS = 60000;       // 상대 턴이 제한시간을 넘겨도 변화가 없을 때 추가로 기다릴 시간
+        const ABANDON_BTN_MS = 40000;       // 첫 수가 나오기 전 취소 버튼을 노출하기까지의 시간
+        const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
+
+        // =====================================================================
+        // Firestore 참조 헬퍼 (인증 모드 전용)
+        //  gomoku_records/{방}/students · nicknames · guests
+        //  컬렉션 이름이 '..._records'로 끝나야 보안 규칙이 적용됩니다.
+        // =====================================================================
+        function fsRoomDocRef(code) { return doc(fsdb, "gomoku_records", code); }
+        function studentsCollectionRef(code) { return collection(fsdb, "gomoku_records", code, "students"); }
+        function guestStatusCollRef(code) { return collection(fsdb, "gomoku_records", code, "guests"); }
+        function nicknameCollRef(code) { return collection(fsdb, "gomoku_records", code, "nicknames"); }
 
         // =====================================================================
         // 서버 시간 보정
@@ -386,10 +417,8 @@
 
         let unsubMe = null;
         let unsubMatch = null, unsubWaiting = null, unsubOpponent = null;
-        let unsubMatchPtr = null;       // [응급처치 1] 매칭 성사 감지용 포인터 전용 구독
-        // [통일] players 전체 구독(unsubAllPlayers)은 제거되었습니다.
-        // 활성 판정은 waiting 노드 안의 alive/visible로, 직전 상대는 아래 로컬 변수 + waiting.last로 대체.
-        let myLastOpponent = null;      // 입장 시 players/{me}/lastOpponent에서 복원, 매칭 시 갱신
+        let unsubMatchPtr = null;       // 매칭 성사 감지용 포인터 전용 구독
+        let myLastOpponent = null;
 
         let opponentSynced = false;
         let opponentLastHeartbeatValue = null;
@@ -406,12 +435,12 @@
         let boardState = {};
         let winStones = [];
 
-        let isJoining = false;          // 입장 처리 중복 실행 방지 (room-auth도 버튼을 잠급니다)
+        let isJoining = false;
         let matchDisconnectArmed = false;
-        let resultHandled = false;      // 결과 모달 중복 표시 방지
-        let isSubmittingMove = false;   // 착수 연타 / 타임아웃 중복 패스 방지
-        let stallHandled = false;       // [응급처치 3] 정체 판정 1회만 실행
-        let abandonBtnTimer = null;     // [응급처치 4] 취소 버튼 노출 타이머
+        let resultHandled = false;
+        let isSubmittingMove = false;
+        let stallHandled = false;
+        let abandonBtnTimer = null;
 
         const sectionLanding = document.getElementById('landing-section');
         const sectionAdmin = document.getElementById('admin-section');
@@ -423,8 +452,6 @@
             [sectionLanding, sectionAdmin, sectionWaiting, sectionGame].forEach(s => s.classList.remove('active-section'));
             section.classList.add('active-section');
         }
-
-        // escapeHtml은 room-auth.js에서 공용으로 가져옵니다.
 
         function roomRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}`); }
         function playerRef(roomCode, nickname) { return ref(db, `gomoku_rooms/${roomCode}/players/${nickname}`); }
@@ -470,7 +497,6 @@
             const { player1, player2, winner } = data;
             const winnerValid = winner && (winner === player1 || winner === player2);
 
-            // 강퇴 등으로 이미 삭제된 학생 노드를 되살리지 않도록 처리
             async function applyTo(nickname, field) {
                 if (!nickname) return;
                 const pRef = playerRef(roomCode, nickname);
@@ -480,25 +506,23 @@
                     if (!snap.exists()) return;   // 강퇴 등으로 이미 삭제된 학생
 
                     const patch = { currentOpponent: null };
-                    if (field) patch[field] = increment(1);   // 서버 원자 연산 (캐시 불필요)
+                    if (field) patch[field] = increment(1);   // 서버 원자 연산
                     await update(pRef, patch);
                 } catch (e) { }
             }
             await applyTo(player1, winnerValid ? (player1 === winner ? 'wins' : 'losses') : null);
             await applyTo(player2, winnerValid ? (player2 === winner ? 'wins' : 'losses') : null);
-            // currentMatchId는 각자 대기실 복귀 시 정리합니다.
         }
 
         // =====================================================================
         // 대기실 → 게임 화면 전환 공통 처리
-        // (포인터 전용 구독 / 매칭 루프 / 재접속 복구 세 경로가 모두 사용)
         // =====================================================================
         function enterGame(mid, m) {
             if (currentMatchId) return;   // 다른 경로가 먼저 진입한 경우 중복 방지
             cleanupWaiting();
             currentMatchId = mid;
             myColor = m.player1 === currentNickname ? 'black' : 'white';
-            myLastOpponent = m.player1 === currentNickname ? m.player2 : m.player1;   // [통일] 직전 상대 갱신
+            myLastOpponent = m.player1 === currentNickname ? m.player2 : m.player1;
             matchData = m;
             navRoomInfo.innerHTML = `방: <b>${escapeHtml(currentRoomCode)}</b> | <b>${escapeHtml(currentNickname)}</b>`;
             showSection(sectionGame);
@@ -507,10 +531,15 @@
 
         // =====================================================================
         // 랜딩 페이지 로직
+        //
+        //  ★ v3부터 이 게임도 학생 인증 모드를 지원합니다.
+        //    · 빠른 입장 모드 : 방 코드 4자리만으로 즉시 시작 (게스트 체크는 무시)
+        //    · 학생 인증 모드 : 기기 등록 후 자동 로그인, 공용 기기는 게스트 승인
+        //    인증·닉네임 확정은 room-auth.js가 Firestore로 처리하고,
+        //    확정된 이름을 받아 RTDB 대국에 참가하는 구조입니다.
         // =====================================================================
         renderRoomEntrance('room-entrance-container', {
             joinBtnText: "방 입장하기",
-            // [추가] 게임방법 슬라이드: 방 입장하기와 대시보드 열기 사이에 버튼 자동 생성
             guideBtnText: "📖 게임방법 보기",
             guideTitle: "📐 좌표평면 오목 — 게임 방법",
             guideSlides: [
@@ -533,8 +562,30 @@
                     desc: "가로·세로·대각선으로 정확히 5개의 돌을 연속으로 이으면 승리합니다. (6개 이상 장목은 승리로 인정되지 않아요!)"
                 }
             ],
+
+            /**
+             * 방 존재 확인 + 모드 판정
+             *
+             * ★ RTDB 방 노드를 통째로 읽으면 안 됩니다. 그 안에 players가 들어 있어
+             *   전원의 전적이 학생 브라우저로 내려옵니다. status 한 칸만 읽습니다.
+             * ★ 모드(quick/auth)는 Firestore 방 문서에 있습니다.
+             *   문서가 없는 옛 방은 빠른 입장으로 취급합니다.
+             */
+            getRoomData: async (code) => {
+                const statusSnap = await get(ref(db, `gomoku_rooms/${code}/status`));
+                if (!statusSnap.exists()) return null;
+                try {
+                    const fsSnap = await getDoc(fsRoomDocRef(code));
+                    if (fsSnap.exists()) return fsSnap.data();
+                } catch (e) { }
+                return { roomMode: 'quick' };
+            },
+
+            // 닉네임 마커·게스트 승인·학번 보관에 사용
+            studentsCollectionRef: (code) => studentsCollectionRef(code),
+
             // room-auth.js가 onJoin을 await하고 버튼도 잠급니다. 여기서는 로직 중복 실행만 막습니다.
-            onJoin: async (code, nickname) => {
+            onJoin: async (code, nickname, authInfo) => {
                 if (isJoining) return;
                 isJoining = true;
 
@@ -545,7 +596,7 @@
                     if (!ROOM_CODE_RE.test(code)) {
                         return await customAlert("방 코드 확인", "방 코드는 영문 대문자와 숫자 4자리입니다.");
                     }
-                    const snap = await get(roomRef(code));
+                    const snap = await get(ref(db, `gomoku_rooms/${code}/status`));
                     if (!snap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
 
                     localSessionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
@@ -556,14 +607,14 @@
                     //  닉네임 충돌 자동 해결
                     //
                     //  플레이어 노드의 '키'가 곧 닉네임인데, 닉네임은 자동 발급입니다.
-                    //  그래서 이름만 봐서는 "내가 재접속한 것"과 "다른 학생이 우연히
-                    //  같은 이름을 받은 것"을 구분할 수 없습니다. 예전 코드는 접속이
-                    //  끊긴 노드를 아무것도 묻지 않고 이어받아, 남의 전적이 합쳐졌습니다.
-                    //
-                    //  기기 id를 함께 적어 두고 그 값으로 판정합니다.
+                    //  이름만 봐서는 "내가 재접속한 것"과 "다른 학생이 우연히 같은 이름을
+                    //  받은 것"을 구분할 수 없습니다. 기기 id로 판정합니다.
                     //    · 내 기기      → 조용히 재접속
                     //    · 남이 접속 중 → 묻지 않고 새 이름 (이어받으면 그 학생이 튕깁니다)
                     //    · 남이 끊김    → 내가 기기를 바꾼 것일 수도 있으니 한 번 확인
+                    //
+                    //  인증 모드에서는 Firestore 마커가 방 안 유일성을 이미 보장하므로
+                    //  이 경로는 거의 타지 않습니다. 안전망으로 남겨 둡니다.
                     // ─────────────────────────────────────────────────────
                     const myDeviceId = getDeviceId();
                     let joined = false;
@@ -580,8 +631,6 @@
 
                             if (!isMyDevice) {
                                 if (looksOnline) {
-                                    // 다른 기기가 지금 그 이름으로 두고 있습니다.
-                                    // 이어받으면 그 학생이 튕기므로 조용히 다른 이름을 받습니다.
                                     nickname = rerollRoomNickname(code, nickname);
                                     continue;
                                 }
@@ -599,7 +648,7 @@
 
                             if (diff > AFK_LIMIT_MS) wasOfflineTooLong = true;
 
-                            myLastOpponent = pData.lastOpponent || null;   // [통일] 직전 상대 기억을 DB에서 복원
+                            myLastOpponent = pData.lastOpponent || null;
 
                             await update(playerRef(code, nickname), {
                                 status: 'online', lastHeartbeat: serverTimestamp(),
@@ -624,7 +673,20 @@
 
                     currentRoomCode = code; currentNickname = nickname;
 
-                    // [추가] 입장에 성공한 방 코드·닉네임을 기기에 저장 → 다음 접속 때 자동 입력
+                    // ★ 학생 인증 모드에서 학번을 받은 경우, 대시보드가 닉네임 옆에
+                    //   학번을 표시할 수 있도록 Firestore students 문서에 이어 붙입니다.
+                    //   (RTDB에는 학번을 넣지 않습니다 — 그 노드는 학생도 읽을 수 있습니다)
+                    if (authInfo?.studentId) {
+                        setDoc(doc(studentsCollectionRef(code), nickname), {
+                            nickname,
+                            studentId: authInfo.studentId,
+                            ...(authInfo.school ? { school: authInfo.school } : {}),
+                            status: 'online',
+                            isGuest: !!authInfo.isGuest,
+                            updatedAt: fsServerTimestamp()
+                        }, { merge: true }).catch(() => { });
+                    }
+
                     rememberEntrance(code, nickname);
 
                     // 브라우저를 강제 종료해도 서버가 즉시 offline 처리
@@ -654,6 +716,7 @@
                         enterWaitingRoom();
                     }
                 } catch (e) {
+                    console.error('입장 처리 오류:', e);
                     await customAlert("연결 확인", "입장하지 못했습니다.<br>네트워크 상태를 확인한 뒤 다시 시도해주세요.");
                 } finally {
                     isJoining = false;
@@ -708,9 +771,8 @@
                 });
             } catch (e) { }
 
-            // [통일] 대기실이면 대기열 생존 신호도 함께 갱신.
-            // → 탭이 켜진 채 조용히 끊긴 유령 대기자가 25초 뒤 자동으로 매칭 후보에서 빠지고,
-            //   players 전체 구독 없이 waiting 노드만으로 활성 판정이 가능해집니다.
+            // 대기실이면 대기열 생존 신호도 함께 갱신.
+            // → 탭이 켜진 채 조용히 끊긴 유령 대기자가 25초 뒤 자동으로 매칭 후보에서 빠집니다.
             if (sectionWaiting.classList.contains('active-section')) {
                 update(waitingRef(currentRoomCode, currentNickname), { alive: serverTimestamp() }).catch(() => { });
             }
@@ -720,8 +782,6 @@
             if (!currentRoomCode || !currentNickname || isKicked) return;
             const isHidden = document.hidden;
 
-            // [통일] 대기실이면 매칭 대상 여부를 즉시 갱신
-            // (하트비트는 최대 10초 늦지만 visibilitychange는 즉각 반영됨)
             if (sectionWaiting.classList.contains('active-section')) {
                 update(waitingRef(currentRoomCode, currentNickname), {
                     visible: !isHidden, alive: serverTimestamp()
@@ -757,23 +817,29 @@
         async function loadAdminRooms() {
             const select = document.getElementById('admin-room-select');
             if (!select) return;
+            if (!window.isApprovedTeacher && !window.isAdmin) return;
 
             let rooms = {};
-            const idxSnap = await get(roomIndexRef());
-            if (idxSnap.exists()) {
-                rooms = idxSnap.val();
-            } else {
-                // 인덱스가 없던 기존 데이터용 1회 마이그레이션
-                const full = await get(ref(db, 'gomoku_rooms'));
-                if (full.exists()) {
-                    const val = full.val();
-                    const migrate = {};
-                    Object.keys(val).forEach(id => {
-                        rooms[id] = { createdAt: val[id].createdAt || 0 };
-                        migrate[id] = { createdAt: val[id].createdAt || 0 };
-                    });
-                    try { await update(roomIndexRef(), migrate); } catch (e) { }
+            try {
+                const idxSnap = await get(roomIndexRef());
+                if (idxSnap.exists()) {
+                    rooms = idxSnap.val();
+                } else {
+                    // 인덱스가 없던 기존 데이터용 1회 마이그레이션
+                    const full = await get(ref(db, 'gomoku_rooms'));
+                    if (full.exists()) {
+                        const val = full.val();
+                        const migrate = {};
+                        Object.keys(val).forEach(id => {
+                            rooms[id] = { createdAt: val[id].createdAt || 0, createdBy: val[id].createdBy || '' };
+                            migrate[id] = rooms[id];
+                        });
+                        try { await update(roomIndexRef(), migrate); } catch (e) { }
+                    }
                 }
+            } catch (e) {
+                console.error('방 목록 로드 오류:', e);
+                return;
             }
 
             select.innerHTML = '<option value="">방을 선택하세요</option>';
@@ -782,13 +848,14 @@
                 .filter(roomId => {
                     if (window.isAdmin) return true;
                     const r = rooms[roomId];
-                    return (r && (r.createdBy === window.currentTeacherUid || r.creatorEmail === window.currentTeacherEmail));
+                    return (r && r.createdBy === window.currentTeacherUid);
                 })
                 .sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0))
                 .forEach(roomId => {
                     count++;
                     const option = document.createElement('option');
-                    option.value = roomId; option.textContent = roomId;
+                    option.value = roomId;
+                    option.textContent = roomId;   // textContent라 코드 삽입 위험 없음
                     select.appendChild(option);
                 });
             if (count === 0 && !window.isAdmin) {
@@ -807,38 +874,67 @@
 
         document.getElementById('btn-create-room')?.addEventListener('click', async () => {
             const btn = document.getElementById('btn-create-room');
+
+            // ★ v3: 방을 만들 때 입장 모드를 고릅니다.
+            const selectedMode = await promptRoomMode();
+            if (!selectedMode) return;
+
             btn.disabled = true;
             try {
                 let roomCode = null;
                 for (let attempt = 0; attempt < 20; attempt++) {
                     const candidate = generateRoomCode();
-                    if (!(await get(roomRef(candidate))).exists()) { roomCode = candidate; break; }
+                    const exists = (await get(ref(db, `gomoku_rooms/${candidate}/status`))).exists();
+                    if (!exists) { roomCode = candidate; break; }
                 }
                 if (!roomCode) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
 
-                const roomMeta = {
-                    createdAt: serverTimestamp(),
+                const owner = {
                     createdBy: window.currentTeacherUid || '',
-                    creatorEmail: window.currentTeacherEmail || '',
                     creatorName: window.currentTeacherName || ''
                 };
-                await set(roomRef(roomCode), roomMeta);
-                await set(ref(db, `gomoku_room_index/${roomCode}`), roomMeta);
+
+                // ① RTDB — 대국용. status는 학생도 읽습니다(방 존재 확인).
+                await set(roomRef(roomCode), {
+                    status: 'playing',
+                    createdAt: serverTimestamp(),
+                    ...owner
+                });
+                await set(ref(db, `gomoku_room_index/${roomCode}`), {
+                    createdAt: serverTimestamp(), ...owner
+                });
+
+                // ② Firestore — 인증·닉네임·게스트 승인용. 모드가 여기 들어갑니다.
+                await setDoc(fsRoomDocRef(roomCode), {
+                    roomCode,
+                    roomMode: selectedMode,
+                    settings: { mode: selectedMode },
+                    createdAt: fsServerTimestamp(),
+                    ...owner
+                });
+
                 await loadAdminRooms();
                 const sel = document.getElementById('admin-room-select');
                 if (sel) sel.value = roomCode;
                 startAdminMonitoring(roomCode);
-                await customAlert('생성 완료', `방 코드: [ <b class="text-primary fs-3">${roomCode}</b> ]`);
+                await customAlert('생성 완료',
+                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(roomCode)}</b> ]<br>` +
+                    `설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
             } catch (error) {
+                console.error(error);
                 await customAlert('오류', '방을 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
             } finally { btn.disabled = false; }
         });
 
+        // 교사 도구: 학생 PIN 초기화 (dashboard-header가 버튼을 만들어 줍니다)
+        document.getElementById('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
+
         document.getElementById('admin-room-select')?.addEventListener('change', (e) => {
             const code = e.target.value;
             if (!code) {
-                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
                 document.getElementById('admin-player-count').textContent = '0명 접속';
+                document.getElementById('admin-room-mode').textContent = '-';
                 cleanupAdmin();
                 return;
             }
@@ -860,32 +956,57 @@
             if (!confirmed) return;
 
             const delBtn = document.getElementById('btn-delete-room');
-            if (delBtn) delBtn.disabled = true;   // 삭제 중 더블 클릭 방지
+            if (delBtn) delBtn.disabled = true;
             try {
+                // ① RTDB
                 await remove(roomRef(code));
                 await remove(ref(db, `gomoku_room_index/${code}`));
+
+                // ② Firestore (하위 컬렉션은 문서를 지워도 남으므로 직접 비웁니다)
+                for (const collRef of [studentsCollectionRef, nicknameCollRef, guestStatusCollRef]) {
+                    const snap = await getDocs(collRef(code));
+                    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+                }
+                await deleteDoc(fsRoomDocRef(code)).catch(() => { });
+
                 cleanupAdmin();
-                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+                document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="8" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
                 document.getElementById('admin-player-count').textContent = '0명 접속';
+                document.getElementById('admin-room-mode').textContent = '-';
                 await loadAdminRooms();
                 await customAlert("완료", "방이 삭제되었습니다.");
             } catch (e) {
+                console.error(e);
                 await customAlert("오류", "방을 삭제하지 못했습니다.");
             } finally {
                 if (delBtn) delBtn.disabled = false;
             }
         });
 
-        let unsubAdminPlayers = null, adminRenderInterval = null;
+        let unsubAdminPlayers = null, adminRenderInterval = null, unsubAdminStudents = null;
         let adminPlayersData = {};
+        let adminStudents = [];
         let adminRenderPending = false, adminLastRender = 0;
+        let currentAdminRoom = '';
 
         function startAdminMonitoring(roomCode) {
             cleanupAdmin();
             adminPlayersData = {};
+            adminStudents = [];
             currentRoomCode = roomCode;
+            currentAdminRoom = roomCode;
             const sel = document.getElementById('admin-room-select');
             if (sel) sel.value = roomCode;
+
+            // 모드 표시
+            getDoc(fsRoomDocRef(roomCode)).then(s => {
+                const mode = s.exists() ? (s.data().roomMode || 'quick') : 'quick';
+                const el = document.getElementById('admin-room-mode');
+                if (el) {
+                    el.textContent = mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드';
+                    el.className = mode === 'auth' ? 'badge bg-dark fs-6' : 'badge bg-secondary fs-6';
+                }
+            }).catch(() => { });
 
             // matches 컬렉션은 구독하지 않습니다.
             // 대전 현황은 players/{id}/currentOpponent 값으로 표시합니다.
@@ -893,6 +1014,14 @@
                 adminPlayersData = snapshot.exists() ? snapshot.val() : {};
                 scheduleAdminRender();
             });
+
+            // 학생 인증 모드의 학번·게스트 승인 대기자 (Firestore)
+            unsubAdminStudents = onSnapshot(studentsCollectionRef(roomCode), (snap) => {
+                adminStudents = [];
+                snap.forEach(d => adminStudents.push(d.data()));
+                renderPendingGuests();
+                scheduleAdminRender();
+            }, () => { });
 
             // 조용히 끊긴 학생의 상태를 주기적으로 갱신
             adminRenderInterval = setInterval(renderAdminBoard, 5000);
@@ -907,8 +1036,7 @@
             setTimeout(() => { adminRenderPending = false; adminLastRender = Date.now(); renderAdminBoard(); }, 1000);
         }
 
-        // [변경] 상태 판정을 한 곳으로 모음: 접속중(녹색) / 다른화면(노랑) / 접속 끊김(빨강)
-        // order 값은 정렬 우선순위 (접속중 → 다른화면 → 접속 끊김)
+        // 상태 판정: 접속중(녹색) / 다른화면(노랑) / 접속 끊김(빨강)
         function statusInfo(p) {
             const diff = getServerTime() - (p.lastHeartbeat || 0);
             if (diff > OFFLINE_MS || p.status === 'offline') {
@@ -920,26 +1048,113 @@
             return { l: '접속중', c: 'online', t: 'text-success', order: 0 };
         }
 
+        // =====================================================================
+        // 게스트(공용 기기) 입장 승인 배너 — 학생 인증 모드에서만 나타납니다
+        // =====================================================================
+        function renderPendingGuests() {
+            const container = document.getElementById('pendingGuestsContainer');
+            if (!container) return;
+            if (!currentAdminRoom) { container.innerHTML = ''; return; }
+
+            const pendingList = adminStudents.filter(s => s.isGuest && s.status === 'pending');
+            if (pendingList.length === 0) { container.innerHTML = ''; return; }
+
+            container.innerHTML = `
+                <div class="card border-warning bg-warning-subtle shadow-sm rounded-4 p-3 mb-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                            <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
+                            <span>⏳ 게스트 입장 대기자 (${pendingList.length}명)</span>
+                        </h6>
+                        <span class="badge bg-warning text-dark fw-bold">선생님 승인 필요</span>
+                    </div>
+                    <div class="d-flex flex-column gap-2">
+                        ${pendingList.map(g => `
+                            <div class="bg-white p-2 px-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-sm border">
+                                <div>
+                                    <strong class="text-primary fs-6">${escapeHtml(g.nickname)}</strong>
+                                    <span class="text-secondary small ms-2">(${escapeHtml(g.school || '')} / ${escapeHtml(g.studentId || '')})</span>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-success fw-bold px-3 btn-approve-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
+                                        <i class="bi bi-check-lg"></i> 승인 허용
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger fw-bold px-3 btn-reject-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
+                                        <i class="bi bi-x-lg"></i> 거절
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            container.querySelectorAll('.btn-approve-guest').forEach(btn => {
+                btn.onclick = async () => {
+                    const nick = btn.getAttribute('data-nick');
+                    const sKey = btn.getAttribute('data-key');
+                    btn.disabled = true; btn.textContent = "처리 중...";
+                    try {
+                        await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'online' });
+                        await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
+                            { status: 'online' }, { merge: true });
+                        if (sKey) {
+                            await updateDoc(doc(fsdb, "student_auth", sKey),
+                                { presence: 'online', lastActive: fsServerTimestamp() });
+                        }
+                    } catch (err) {
+                        console.error("승인 처리 오류:", err);
+                        btn.disabled = false; btn.textContent = "승인 허용";
+                    }
+                };
+            });
+
+            container.querySelectorAll('.btn-reject-guest').forEach(btn => {
+                btn.onclick = async () => {
+                    const nick = btn.getAttribute('data-nick');
+                    const sKey = btn.getAttribute('data-key');
+                    btn.disabled = true; btn.textContent = "처리 중...";
+                    try {
+                        await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'rejected' });
+                        await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
+                            { status: 'rejected' }, { merge: true });
+                        if (sKey) {
+                            await updateDoc(doc(fsdb, "student_auth", sKey), { presence: 'offline' });
+                        }
+                    } catch (err) {
+                        console.error("거절 처리 오류:", err);
+                        btn.disabled = false; btn.textContent = "거절";
+                    }
+                };
+            });
+        }
+
         function renderAdminBoard() {
             const recordTbody = document.getElementById('admin-record-tbody');
             const countEl = document.getElementById('admin-player-count');
             if (!recordTbody || !countEl) return;
+
+            // 닉네임 → 학번 (RTDB에는 학번이 없습니다. Firestore students에서 이어 붙입니다)
+            const sidByNick = {};
+            adminStudents.forEach(st => {
+                if (st.nickname && st.studentId) sidByNick[st.nickname] = String(st.studentId);
+            });
 
             const playersList = Object.entries(adminPlayersData);
             const onlineCount = playersList.filter(([, p]) => statusInfo(p).order === 0).length;
             countEl.textContent = `${onlineCount}명 접속`;
 
             if (playersList.length === 0) {
-                recordTbody.innerHTML = '<tr><td colspan="7" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                recordTbody.innerHTML = '<tr><td colspan="8" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
                 return;
             }
 
-            // [변경] 1순위: 접속 상태(접속중 → 다른화면 → 접속 끊김), 2순위: 승수, 3순위: 승률
+            // 1순위: 접속 상태, 2순위: 승수, 3순위: 승률
             const sorted = [...playersList].sort((a, b) => {
                 const sa = statusInfo(a[1]).order, sb = statusInfo(b[1]).order;
                 if (sa !== sb) return sa - sb;
-                const aW = a[1].wins || 0, bW = b[1].wins || 0;
-                const aT = aW + (a[1].losses || 0), bT = bW + (b[1].losses || 0);
+                const aW = safeNumber(a[1].wins), bW = safeNumber(b[1].wins);
+                const aT = aW + safeNumber(a[1].losses), bT = bW + safeNumber(b[1].losses);
                 const aR = aT > 0 ? aW / aT : 0, bR = bT > 0 ? bW / bT : 0;
                 return bW !== aW ? bW - aW : bR - aR;
             });
@@ -947,21 +1162,25 @@
             let html = '';
             sorted.forEach(([id, p]) => {
                 const st = statusInfo(p);
-
-                const total = (p.wins || 0) + (p.losses || 0);
-                const rate = total > 0 ? Math.round((p.wins || 0) / total * 100) : 0;
+                const wins = safeNumber(p.wins);
+                const losses = safeNumber(p.losses);
+                const total = wins + losses;
+                const rate = total > 0 ? Math.round((wins / total) * 100) : 0;
                 const rateLabel = total > 0 ? `${rate}%` : '기록 없음';
+                const nick = p.nickname || id;
+                const sid = sidByNick[nick] || '';
 
                 const matchInfo = p.currentOpponent
                     ? `<span class="text-primary fw-bold">vs ${escapeHtml(p.currentOpponent)}</span>`
                     : '<span class="text-muted">대기 중</span>';
 
                 html += `<tr>
-                    <td class="fw-bold">${escapeHtml(p.nickname || id)}</td>
+                    <td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td>
+                    <td class="fw-bold">${escapeHtml(nick)}</td>
                     <td><div class="d-flex align-items-center gap-1 justify-content-center"><span class="status-dot ${st.c}"></span><small class="${st.t} fw-bold">${st.l}</small></div></td>
                     <td>${matchInfo}</td>
-                    <td class="text-success fw-bold">${p.wins || 0}</td>
-                    <td class="text-danger fw-bold">${p.losses || 0}</td>
+                    <td class="text-success fw-bold">${wins}</td>
+                    <td class="text-danger fw-bold">${losses}</td>
                     <td><div class="d-flex align-items-center gap-2 justify-content-center"><div class="win-rate-bar flex-grow-1" style="max-width:80px; min-width:40px"><div class="fill" style="width:${rate}%"></div></div><b class="${total > 0 ? '' : 'text-muted fw-normal small'}">${rateLabel}</b></div></td>
                     <td>${st.c !== 'online' ? `<button class="btn btn-outline-danger btn-sm btn-kick" data-id="${escapeHtml(id)}">강퇴</button>` : '-'}</td>
                 </tr>`;
@@ -989,6 +1208,11 @@
             });
         }
 
+        // 학번 표시 토글 (표를 다시 그려도 유지되도록 테이블에 클래스만 겁니다)
+        document.getElementById('toggleStudentId')?.addEventListener('change', (e) => {
+            document.getElementById('admin-record-table').classList.toggle('show-sid', e.target.checked);
+        });
+
         // =====================================================================
         // 대기실 및 매칭
         // =====================================================================
@@ -999,8 +1223,7 @@
         async function resolveMyMatch() {
             if (!currentRoomCode || !currentNickname) return null;
 
-            // [응급처치 2] 로컬 캐시(playersData)를 신뢰하지 않고 항상 서버에서 포인터를 직접 읽습니다.
-            // 캐시가 낡아 있으면 매칭 성사를 영영 모르는 사고가 있었습니다. (값 하나 읽기라 비용은 미미)
+            // 로컬 캐시를 신뢰하지 않고 항상 서버에서 포인터를 직접 읽습니다.
             let mid = null;
             try {
                 const pSnap = await get(ref(db, `gomoku_rooms/${currentRoomCode}/players/${currentNickname}/currentMatchId`));
@@ -1033,8 +1256,7 @@
             if (waitingInterval) clearInterval(waitingInterval);
             waitingInterval = setInterval(attemptSmartMatch, 1000);
 
-            // [통일] 대기열 항목: joinedAt(순서, 고정) + alive(생존 신호, 하트비트마다 갱신)
-            //        + visible(즉시 반영) + last(직전 상대 — 양방향 회피 판단용)
+            // 대기열 항목: joinedAt(순서, 고정) + alive(생존 신호) + visible + last(직전 상대)
             await set(waitingRef(currentRoomCode, currentNickname), {
                 nickname: currentNickname,
                 joinedAt: serverTimestamp(),
@@ -1044,9 +1266,7 @@
             });
             try { await onDisconnect(waitingRef(currentRoomCode, currentNickname)).remove(); } catch (e) { }
 
-            // [응급처치 1] 매칭 성사를 절대 놓치지 않도록 내 포인터 한 칸만 전용 구독합니다.
-            // isMatching 플래그·로컬 캐시와 무관하게 서버가 값을 밀어주므로,
-            // "A는 게임중인데 B는 대기실" 사고의 세 가지 원인을 모두 우회합니다.
+            // 매칭 성사를 절대 놓치지 않도록 내 포인터 한 칸만 전용 구독합니다.
             if (unsubMatchPtr) { unsubMatchPtr(); unsubMatchPtr = null; }
             unsubMatchPtr = onValue(ref(db, `gomoku_rooms/${currentRoomCode}/players/${currentNickname}/currentMatchId`), async (snap) => {
                 const mid = snap.val();
@@ -1056,16 +1276,10 @@
                     if (!mSnap.exists()) return;
                     const m = mSnap.val();
                     if (m.status !== 'playing') return;                     // 끝난 경기로 되돌아가지 않음
-                    if (m.player1 !== currentNickname && m.player2 !== currentNickname) return;  // 내 경기인지 검증
+                    if (m.player1 !== currentNickname && m.player2 !== currentNickname) return;
                     enterGame(mid, m);
                 } catch (e) { }
             });
-
-            // [통일] players 전체 구독은 제거되었습니다.
-            // 기존에는 isActiveWaiter가 모든 학생의 하트비트를 참조해야 해서 대기실의 전원이
-            // 초당 수 건의 남의 하트비트 델타를 계속 내려받았습니다 (30명 교실 최대 트래픽 원인).
-            // 이제 활성 판정에 필요한 정보(alive/visible/last)가 waiting 노드 안에 있으므로
-            // 아래 waiting 구독 하나로 충분하며, 매칭될수록 트래픽이 0을 향해 줄어듭니다.
 
             if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
             unsubWaiting = onValue(query(waitingCollRef(currentRoomCode), orderByChild('joinedAt')), (snapshot) => {
@@ -1075,9 +1289,7 @@
             });
         }
 
-        // [통일] 활성 대기자 판정 — waiting 항목만으로 판단 (players 참조 없음)
-        // 화면을 실제로 보고 있고(visible), 생존 신호가 25초 이내로 신선한 사람만 매칭 후보.
-        // alive가 없는 옛 형식 항목은 joinedAt으로 폴백되어 25초 뒤 자연스럽게 후보에서 빠집니다.
+        // 활성 대기자 판정 — waiting 항목만으로 판단 (players 참조 없음)
         function isActiveWaiter(w) {
             if (!w) return false;
             if (w.visible !== true) return false;
@@ -1090,14 +1302,12 @@
             if (currentMatchId || isMatching || isKicked) return;
             isMatching = true;
             try {
-                // [응급처치 2] 캐시 조건 없이 매 시도마다 서버에서 포인터를 확인
-                // (응급처치 1의 전용 구독이 주 방어선, 이 확인은 이중 안전망)
                 const myMatch = await resolveMyMatch();
                 if (myMatch) {
                     enterGame(myMatch.id, myMatch.data);
                     return;
                 }
-                if (currentMatchId) return;   // 위 await 사이에 포인터 구독이 먼저 진입한 경우
+                if (currentMatchId) return;
                 if (currentWaitingList.length === 0) return;
 
                 const waitTimeSec = Math.floor((getServerTime() - localJoinedTime) / 1000);
@@ -1113,8 +1323,6 @@
                 }
 
                 // 명단 첫 번째 활성 대기자만 매칭을 진행 (리더 선출)
-                // [통일] 판정에 필요한 정보가 전부 waiting 스냅샷 하나 안에 있으므로,
-                // 서로 다른 시점의 두 스냅샷(waiting/players)을 조인하던 어긋남이 사라집니다.
                 const activeInitiator = currentWaitingList.find(p => isActiveWaiter(p));
                 if (!activeInitiator) return;
                 if (activeInitiator.id !== currentNickname) return;
@@ -1124,7 +1332,6 @@
                 for (const candidate of currentWaitingList) {
                     if (candidate.id === currentNickname) continue;
                     if (!isActiveWaiter(candidate)) continue;
-                    // [통일] 후보의 직전 상대는 waiting 항목의 last로 판정 (players 참조 없음)
                     if (candidate.id !== myLastOpponent && currentNickname !== (candidate.last || null)) {
                         matchPartner = candidate; break;
                     } else if (!oldOpponent) oldOpponent = candidate;
@@ -1170,7 +1377,7 @@
                     updates['matchLock'] = null; // 매칭 성공과 동시에 잠금 해제
 
                     await update(roomRef(currentRoomCode), updates);
-                    myLastOpponent = matchPartner.id;   // [통일] 성사 즉시 로컬 기억 갱신
+                    myLastOpponent = matchPartner.id;
                     lockHeld = false;
                 } catch (err) {
                 } finally {
@@ -1349,7 +1556,7 @@
             document.getElementById('game-result-area').classList.add('d-none');
             document.getElementById('game-input-area').classList.remove('d-none');
 
-            // [응급처치 4] 첫 수가 나오기 전까지 경기가 시작되지 않으면 수동 취소 버튼 노출
+            // 첫 수가 나오기 전까지 경기가 시작되지 않으면 수동 취소 버튼 노출
             const abandonBtn = document.getElementById('btn-abandon-match');
             abandonBtn.classList.add('d-none');
             clearTimeout(abandonBtnTimer);
@@ -1377,7 +1584,7 @@
                 boardState = buildBoard(matchData.moves);
                 winStones = matchData.winLine || [];
 
-                // [응급처치 4] 첫 수가 나오면 취소 버튼은 영구히 숨김 (지는 판 도망 방지)
+                // 첫 수가 나오면 취소 버튼은 영구히 숨김 (지는 판 도망 방지)
                 if ((matchData.moves?.length || 0) > 0) {
                     clearTimeout(abandonBtnTimer);
                     document.getElementById('btn-abandon-match').classList.add('d-none');
@@ -1437,7 +1644,7 @@
                     triggerOpponentForfeit();
                     return;
                 }
-                // 매칭 정보 불일치(드문 경합) 감지: 아직 한 수도 두지 않았고 3초 이상 지났을 때만
+                // 매칭 정보 불일치(드문 경합) 감지
                 if (opponentMatchId && opponentMatchId !== currentMatchId &&
                     (matchData.moves?.length || 0) === 0 && (getServerTime() - gameSyncStartedAt) > 3000) {
                     unsubOpponent(); unsubOpponent = null;
@@ -1450,9 +1657,7 @@
             const elapsedTurnMs = getServerTime() - turnStartTime();
             const remain = Math.max(0, TURN_LIMIT_SEC - (elapsedTurnMs / 1000));
 
-            // [응급처치 3] 상대 턴이 제한시간+여유를 넘겨도 아무 변화가 없으면 경기 정체로 판단.
-            // 상대 클라이언트가 살아 있다면 30초에 스스로 패스하므로, 90초 무변화는
-            // "상대가 이 경기에 들어오지 못한 상태"를 뜻합니다. 승패 없이 종료하고 재매칭합니다.
+            // 상대 턴이 제한시간+여유를 넘겨도 아무 변화가 없으면 경기 정체로 판단.
             if (!isMyTurn && !stallHandled && elapsedTurnMs > TURN_LIMIT_SEC * 1000 + STALL_LIMIT_MS) {
                 stallHandled = true;
                 finishMatchAtomic(currentRoomCode, currentMatchId, null, 'error');
@@ -1549,7 +1754,7 @@
                 if (resultHandled) return;   // 스냅샷이 여러 번 와도 안내는 한 번만
                 resultHandled = true;
 
-                // [응급처치 3·4] 정체(error)·취소(abandoned)는 승패 없이 대기실로 복귀
+                // 정체(error)·취소(abandoned)는 승패 없이 대기실로 복귀
                 if (matchData.endReason === 'error' || matchData.endReason === 'abandoned') {
                     const msg = matchData.endReason === 'abandoned'
                         ? '경기가 취소되었습니다.<br>대기실로 돌아가 새 상대를 찾습니다.<br>(승패는 기록되지 않습니다)'
@@ -1624,7 +1829,7 @@
             }
         });
 
-        // [응급처치 4] 상대가 경기에 들어오지 않을 때 학생이 직접 빠져나오는 탈출구
+        // 상대가 경기에 들어오지 않을 때 학생이 직접 빠져나오는 탈출구
         document.getElementById('btn-abandon-match').addEventListener('click', async () => {
             if (!currentMatchId || !matchData || matchData.status !== 'playing') return;
             if ((matchData.moves?.length || 0) > 0) return;   // 수가 시작된 뒤에는 취소 불가
@@ -1632,7 +1837,6 @@
                 '상대의 응답이 없어 경기를 취소할까요?<br>승패는 기록되지 않고, 대기실로 돌아가 새 상대를 찾습니다.');
             if (!ok) return;
             await finishMatchAtomic(currentRoomCode, currentMatchId, null, 'abandoned');
-            // 이후 처리는 unsubMatch 스냅샷 → updateGameUI의 abandoned 분기가 담당
         });
 
         // =====================================================================
@@ -1673,13 +1877,12 @@
             if (unsubMatch) { unsubMatch(); unsubMatch = null; }
             if (unsubOpponent) { unsubOpponent(); unsubOpponent = null; }
             if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-            // [응급처치 4] 경기 관련 타이머·버튼도 함께 정리
             clearTimeout(abandonBtnTimer); abandonBtnTimer = null;
             document.getElementById('btn-abandon-match')?.classList.add('d-none');
         }
         function cleanupWaiting() {
             if (unsubWaiting) { unsubWaiting(); unsubWaiting = null; }
-            if (unsubMatchPtr) { unsubMatchPtr(); unsubMatchPtr = null; }   // [응급처치 1] 포인터 구독 해제
+            if (unsubMatchPtr) { unsubMatchPtr(); unsubMatchPtr = null; }
             if (waitingInterval) { clearInterval(waitingInterval); waitingInterval = null; }
             if (currentRoomCode && currentNickname) {
                 try { onDisconnect(waitingRef(currentRoomCode, currentNickname)).cancel(); } catch (e) { }
@@ -1687,10 +1890,14 @@
         }
         function cleanupAdmin() {
             if (unsubAdminPlayers) { unsubAdminPlayers(); unsubAdminPlayers = null; }
+            if (unsubAdminStudents) { unsubAdminStudents(); unsubAdminStudents = null; }
             if (adminRenderInterval) { clearInterval(adminRenderInterval); adminRenderInterval = null; }
+            adminStudents = [];
+            const c = document.getElementById('pendingGuestsContainer');
+            if (c) c.innerHTML = '';
         }
         function cleanupAll() {
-            // [보강] 강퇴·중복 접속으로 물러날 때 onDisconnect 예약을 반드시 해제.
+            // 강퇴·중복 접속으로 물러날 때 onDisconnect 예약을 반드시 해제.
             // 해제하지 않으면 곧 이어지는 location.reload()가 연결 종료로 인식되어
             // 서버가 진행 중이던 경기를 몰수패로 덮고, 내 상태를 offline으로 덮어씁니다.
             disarmMatchDisconnect();
