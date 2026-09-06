@@ -10,9 +10,9 @@
 | `multiply_divide.html` | 곱셈과 나눗셈 마스터 | A 개인 기록형 | FS `multiply_divide_records` |
 | `zombiehunter.html` | 좀비헌터 | A 개인 기록형 | FS `zombiehunter_records` |
 | `sentiment.html` | 텍스트 감성 분석 | B 공동 수집형 | RTDB `sentimentanalysis` |
-| `relativefrequency.html` | 가위바위보 | C 실시간 대전형 | RTDB `relativefrequency` + FS `rps_records` |
-| `blotto.html` | 블로토 | C 실시간 대전형 | RTDB `blottogame` + FS `blotto_records` |
+| `blotto.html` | 블로토 | D 익명 대전형 | RTDB `blottogame` + FS `blotto_records`(이름표만) |
 | `gridgomoku.html` | 좌표평면 오목 | D 익명 대전형 | RTDB `gridgomoku` + FS `gomoku_records`(이름표만) |
+| `relativefrequency.html` | 가위바위보 | C 실시간 대전형 | RTDB `relativefrequency` + FS `rps_records` |
 
 ## 활동별로 켜고 끈 것
 
@@ -20,8 +20,8 @@
 |---|---|---|---|---|
 | 수학 게임 3종 | 있음 | 있음 | 있음 | 있음 |
 | 가위바위보 | 있음 | 있음 | 있음 (표 + 의견) | 있음 |
-| 블로토 | 있음 | 있음 | 있음 (표의 '학번' 행) | 있음 |
 | 좌표평면 오목 | 없음 | 없음 | 없음 | 없음 |
+| 블로토 | 없음 | 없음 | 없음 | 없음 (병사 수·라운드만 입력) |
 | 텍스트 감성 분석 | 없음 | 없음 | 없음 | 없음 (제목만 입력) |
 
 ## 파일 이름이 다르다면
