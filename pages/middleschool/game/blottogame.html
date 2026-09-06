@@ -74,16 +74,6 @@
             font-weight: 900;
         }
 
-        /* 학번 행: 기본 숨김, 토글 시 표시 (교실 TV 투사 대비)
-           ★ 이 표는 참가자가 '열'이라, 학번은 '행'으로 붙입니다. */
-        .status-table .row-studentid {
-            display: none;
-        }
-
-        #admin-status-table.show-sid .row-studentid {
-            display: table-row;
-        }
-
         /* 공개 연출 */
         .cell-revealing {
             box-shadow: inset 0 0 0 3px #0d6efd;
@@ -96,9 +86,20 @@
         }
 
         @keyframes pop {
-            0% { transform: scale(0.5); opacity: 0; }
-            50% { transform: scale(1.25); opacity: 1; }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.25);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         .pop {
@@ -116,9 +117,17 @@
             vertical-align: middle;
         }
 
-        .status-online { background-color: #198754; }
-        .status-away { background-color: #ffc107; }
-        .status-offline { background-color: #dc3545; }
+        .status-online {
+            background-color: #198754;
+        }
+
+        .status-away {
+            background-color: #ffc107;
+        }
+
+        .status-offline {
+            background-color: #dc3545;
+        }
 
         .btn-remove-team {
             font-size: 0.72rem;
@@ -126,8 +135,15 @@
         }
 
         @keyframes winner-glow {
-            0%, 100% { box-shadow: inset 0 0 0 2px rgba(255, 193, 7, 0.6); }
-            50% { box-shadow: inset 0 0 0 4px rgba(255, 152, 0, 0.9); }
+
+            0%,
+            100% {
+                box-shadow: inset 0 0 0 2px rgba(255, 193, 7, 0.6);
+            }
+
+            50% {
+                box-shadow: inset 0 0 0 4px rgba(255, 152, 0, 0.9);
+            }
         }
 
         .winner-cell {
@@ -188,13 +204,11 @@
 
         <!-- ==================== 2. 교사(관리자) 대시보드 ==================== -->
         <div id="admin-section" class="section-container">
-            <!-- ★ v3부터 이 게임도 학생 인증 모드를 지원하므로 PIN 초기화 버튼을 켭니다. -->
+            <!-- ★ 이 게임은 학생 정보를 쓰지 않습니다. 빠른 입장 전용이라
+                   PIN 초기화 버튼을 만들지 않습니다(data-pin-reset="false"). -->
             <div id="dash-header-placeholder"></div>
             <script src="../../../js/dashboard-header.js" data-title="블로토 게임 대시보드" data-export="false"
-                data-select-id="admin-room-select"></script>
-
-            <!-- 게스트 대기자 알림 배너 영역 -->
-            <div id="pendingGuestsContainer" class="mb-3"></div>
+                data-pin-reset="false" data-select-id="admin-room-select"></script>
 
             <div class="row g-4" id="admin-settings-area" style="display: none;">
                 <div class="col-12">
@@ -218,7 +232,6 @@
                                     만들기</button>
                             </div>
                         </div>
-                        <p class="text-muted small mt-3 mb-0">다음 화면에서 <b>빠른 입장 / 학생 인증</b> 모드를 고르게 됩니다.</p>
                     </div>
                 </div>
             </div>
@@ -227,17 +240,8 @@
                 <div class="col-12">
                     <div class="card shadow-sm border-0 rounded-4 p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                            <div class="d-flex align-items-center gap-2">
-                                <h5 class="fw-bold mb-0">📊 현황판</h5>
-                                <span class="badge bg-secondary fs-6" id="admin-room-mode">-</span>
-                            </div>
+                            <h5 class="fw-bold mb-0">📊 현황판</h5>
                             <div class="d-flex gap-2 flex-wrap align-items-center">
-                                <div class="form-check form-switch me-2">
-                                    <input class="form-check-input" type="checkbox" id="toggleStudentId"
-                                        style="cursor:pointer;">
-                                    <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId"
-                                        style="cursor:pointer;">학번 표시</label>
-                                </div>
                                 <button id="btn-start-game" class="btn btn-success fw-bold d-none">▶ 게임 시작</button>
                                 <button id="btn-auto-reveal" class="btn btn-outline-primary fw-bold" disabled>⚡ 자동
                                     공개</button>
@@ -317,23 +321,28 @@
 
     <!-- 스크립트 로직 -->
     <script type="module">
-        // ★ 이 게임은 두 데이터베이스를 함께 씁니다.
-        //   · RTDB(db)  : 실시간 진행 — 라운드 상태, 제출, 점수
-        //   · Firestore : 학생 인증 모드에 필요한 것들 —
-        //                 방 모드(quick/auth), 닉네임 마커, 게스트 승인, 학번 보관
+        // ★ 이 게임은 학생 정보를 쓰지 않습니다. 방 코드 4자리만으로 바로 시작하는
+        //   빠른 입장 전용입니다. 학교·학번·PIN·게스트 승인이 모두 없습니다.
+        //
+        // ★ 다만 Firestore를 딱 한 가지 용도로 씁니다 — '닉네임 중복 방지'.
+        //   이 게임은 참가자 노드의 키가 곧 닉네임인데, 이름이 겹치면
+        //   한 학생이 튕기거나 두 사람의 점수가 합쳐집니다.
+        //   조합이 3,600개라 30명 교실에서 8번에 한 번꼴로 겹칩니다.
+        //   Firestore는 'create 전용' 규칙으로 "먼저 쓴 사람만 그 이름을 갖는다"를
+        //   만들 수 있지만 RTDB에는 그 방법이 없어, 이름표만 Firestore에 둡니다.
+        //   blotto_records/{방}/nicknames/{닉} — 필드가 하나도 없는 빈 문서입니다.
         import { rtdbBlotto as db, db as fsdb } from "../../../js/firebase-config.js";
         import {
             renderRoomEntrance, customAlert, customConfirm, escapeHtml, safeNumber, isValidRtdbKey,
             rememberEntrance, saveGameNickname, generateRandomNickname,
-            getDeviceId, setRoomNickname, promptRoomMode, showPinResetModal
+            getDeviceId, setRoomNickname
         } from "../../../js/room-auth.js?v=3.0";
         import {
             ref, set, get, onValue, update, remove, serverTimestamp,
             runTransaction, onDisconnect
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import {
-            collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot,
-            serverTimestamp as fsServerTimestamp
+            collection, getDocs, deleteDoc
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // =====================================================================
@@ -349,13 +358,13 @@
         const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
 
         // =====================================================================
-        // Firestore 참조 헬퍼 (인증 모드 전용)
-        //  blotto_records/{방}/students · nicknames · guests
+        // Firestore 참조 (닉네임 이름표 전용)
         //  컬렉션 이름이 '..._records'로 끝나야 보안 규칙이 적용됩니다.
+        //  room-auth.js 가 studentsCollectionRef(code).parent 를 통해
+        //  형제 컬렉션 nicknames 를 찾아 이름표를 만듭니다.
+        //  blotto_records/{방} 문서 자체는 만들지 않아도 됩니다.
         // =====================================================================
-        function fsRoomDocRef(code) { return doc(fsdb, "blotto_records", code); }
         function studentsCollectionRef(code) { return collection(fsdb, "blotto_records", code, "students"); }
-        function guestStatusCollRef(code) { return collection(fsdb, "blotto_records", code, "guests"); }
         function nicknameCollRef(code) { return collection(fsdb, "blotto_records", code, "nicknames"); }
 
         // =====================================================================
@@ -368,12 +377,10 @@
         let roomState = null;
         let playersData = {};        // key: nickname, value: player data
         let submissionsData = {};    // { 라운드: { 닉네임: 병사수 } } — 선생님만 읽습니다
-        let adminStudents = [];      // Firestore students (학번·게스트 대기자)
 
         let unsubRoom = null;
         let unsubPlayers = null;
         let unsubSubs = null;
-        let unsubStudents = null;
         let unsubMe = null;
 
         // 세션 관리
@@ -581,14 +588,14 @@
 
         renderRoomEntrance('room-entrance-container', {
             joinBtnText: "방 입장하기",
+            // 이 게임은 인증 모드가 없으므로 게스트 체크박스를 보여주지 않습니다.
+            showGuestToggle: false,
 
             /**
-             * 방 존재 확인 + 모드 판정
+             * 방 존재 확인.
              * ★ 방 노드를 통째로 읽으면 안 됩니다. 그 안에 players가 들어 있어서,
              *   콘솔을 연 학생이 남들의 배치를 미리 볼 수 있습니다.
              *   settings와 state 두 칸만 읽습니다.
-             * ★ 모드(quick/auth)는 Firestore 방 문서에 있습니다.
-             *   문서가 없는 옛 방은 빠른 입장으로 취급합니다.
              */
             getRoomData: async (code) => {
                 const [setSnap, stSnap] = await Promise.all([
@@ -596,18 +603,15 @@
                     get(ref(db, `blotto_rooms/${code}/state`))
                 ]);
                 if (!setSnap.exists() || !stSnap.exists()) return null;
-                try {
-                    const fsSnap = await getDoc(fsRoomDocRef(code));
-                    if (fsSnap.exists()) return fsSnap.data();
-                } catch (e) { }
                 return { roomMode: 'quick' };
             },
 
-            // 닉네임 마커·게스트 승인·학번 보관에 사용
+            // 닉네임 이름표(nicknames)를 찾는 데만 씁니다.
+            // 빠른 입장 모드에서는 students 문서를 만들지 않습니다.
             studentsCollectionRef: (code) => studentsCollectionRef(code),
 
             // 닉네임은 room-auth.js가 자동 발급하고, 이 게임에서는 계속 같은 닉네임이 유지됩니다.
-            onJoin: async (code, autoNickname, authInfo) => {
+            onJoin: async (code, autoNickname) => {
                 code = (code || '').trim().toUpperCase();
 
                 if (!ROOM_CODE_RE.test(code)) {
@@ -661,20 +665,6 @@
 
                     currentRoomCode = code;
                     currentNickname = nickname;
-
-                    // ★ 학생 인증 모드에서 학번을 받은 경우, 대시보드가 닉네임 옆에
-                    //   학번을 표시할 수 있도록 Firestore students 문서에 이어 붙입니다.
-                    //   (RTDB에는 학번을 넣지 않습니다 — 그 노드는 학생도 읽을 수 있습니다)
-                    if (authInfo?.studentId) {
-                        setDoc(doc(studentsCollectionRef(code), nickname), {
-                            nickname,
-                            studentId: authInfo.studentId,
-                            ...(authInfo.school ? { school: authInfo.school } : {}),
-                            status: 'online',
-                            isGuest: !!authInfo.isGuest,
-                            updatedAt: fsServerTimestamp()
-                        }, { merge: true }).catch(() => { });
-                    }
 
                     rememberEntrance(code, nickname);
 
@@ -734,9 +724,6 @@
             currentRoomCode = null;
         });
 
-        // 교사 도구: 학생 PIN 초기화 (dashboard-header가 버튼을 만들어 줍니다)
-        $('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
-
         $('btn-confirm-create').addEventListener('click', async () => {
             const btn = $('btn-confirm-create');
             const soldiers = parseInt($('setting-soldiers').value, 10);
@@ -746,10 +733,6 @@
                 return await customAlert("오류", "설정 값을 모두 올바르게 입력하세요.");
             }
 
-            // ★ v3: 방을 만들 때 입장 모드를 고릅니다.
-            const selectedMode = await promptRoomMode();
-            if (!selectedMode) return;
-
             btn.disabled = true;
             try {
                 const roomCode = await generateUniqueRoomCode();
@@ -757,7 +740,7 @@
                     return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
                 }
 
-                // ① RTDB — 게임 진행용. settings·state는 학생도 읽습니다.
+                // settings·state는 학생도 읽습니다(방 존재 확인 + 라운드 진행).
                 await set(roomRef(roomCode), {
                     settings: { maxSoldiers: soldiers, maxRounds: rounds },
                     state: { currentRound: 1, status: "waiting" },
@@ -766,21 +749,11 @@
                     creatorName: window.currentTeacherName || ''
                 });
 
-                // ② Firestore — 인증·닉네임·게스트 승인용. 모드가 여기 들어갑니다.
-                await setDoc(fsRoomDocRef(roomCode), {
-                    roomCode,
-                    roomMode: selectedMode,
-                    settings: { mode: selectedMode },
-                    createdAt: fsServerTimestamp(),
-                    createdBy: window.currentTeacherUid || '',
-                    creatorName: window.currentTeacherName || ''
-                });
-
                 await loadAdminRooms();
                 await customAlert("방 생성 완료",
                     `게임 방이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${escapeHtml(roomCode)}</b> ]<br>` +
-                    `설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong><br>` +
-                    `<span class="text-muted small">학생들이 모두 입장하면 [게임 시작] 버튼을 눌러주세요.</span>`);
+                    `<span class="text-muted small">학생은 이 코드만 입력하면 바로 참여합니다.<br>` +
+                    `모두 입장하면 [게임 시작] 버튼을 눌러주세요.</span>`);
 
                 startAdminMonitoring(roomCode);
             } catch (error) {
@@ -831,7 +804,6 @@
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
             if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
             if (unsubSubs) { unsubSubs(); unsubSubs = null; }
-            if (unsubStudents) { unsubStudents(); unsubStudents = null; }
             stopAutoReveal();
             revealIndex = -1;
             currentRoundDeployments = [];
@@ -841,11 +813,6 @@
             roomState = null;
             playersData = {};
             submissionsData = {};
-            adminStudents = [];
-            const c = $('pendingGuestsContainer');
-            if (c) c.innerHTML = '';
-            const m = $('admin-room-mode');
-            if (m) { m.textContent = '-'; m.className = 'badge bg-secondary fs-6'; }
         }
 
         function startAdminMonitoring(roomCode) {
@@ -856,16 +823,6 @@
 
             const select = $('admin-room-select');
             if (select) select.value = roomCode;
-
-            // 모드 표시
-            getDoc(fsRoomDocRef(roomCode)).then(s => {
-                const mode = s.exists() ? (s.data().roomMode || 'quick') : 'quick';
-                const el = $('admin-room-mode');
-                if (el) {
-                    el.textContent = mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드';
-                    el.className = mode === 'auth' ? 'badge bg-dark fs-6' : 'badge bg-secondary fs-6';
-                }
-            }).catch(() => { });
 
             // 이전 세션이 공개 도중 중단됐을 수 있으므로 잠금 해제
             update(ref(db, `blotto_rooms/${roomCode}/state`), { revealing: null }).catch(() => { });
@@ -896,13 +853,6 @@
                 renderAdminBoard();
             });
 
-            // 학생 인증 모드의 학번·게스트 승인 대기자 (Firestore)
-            unsubStudents = onSnapshot(studentsCollectionRef(roomCode), (snap) => {
-                adminStudents = [];
-                snap.forEach(d => adminStudents.push(d.data()));
-                renderPendingGuests();
-                renderAdminBoard();
-            }, () => { });
         }
 
         $('admin-room-select')?.addEventListener('change', (e) => {
@@ -941,15 +891,13 @@
             try {
                 stopAdminMonitoring();
 
-                // ① RTDB
+                // ① RTDB — 부모 경로를 지우면 하위 경로도 함께 지워집니다.
                 await remove(roomRef(roomCode));
 
-                // ② Firestore (하위 컬렉션은 문서를 지워도 남으므로 직접 비웁니다)
-                for (const collRef of [studentsCollectionRef, nicknameCollRef, guestStatusCollRef]) {
-                    const snap = await getDocs(collRef(roomCode));
-                    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
-                }
-                await deleteDoc(fsRoomDocRef(roomCode)).catch(() => { });
+                // ② Firestore에 남은 닉네임 이름표도 비웁니다.
+                //    남겨 두면 같은 방 코드가 다시 나왔을 때 쓸 수 있는 이름이 줄어듭니다.
+                const nickSnap = await getDocs(nicknameCollRef(roomCode));
+                await Promise.all(nickSnap.docs.map(d => deleteDoc(d.ref)));
 
                 currentRoomCode = null;
                 $('admin-settings-area').style.display = 'block';
@@ -965,87 +913,6 @@
                 if (delBtn) delBtn.disabled = false;
             }
         });
-
-        // =====================================================================
-        // 게스트(공용 기기) 입장 승인 배너 — 학생 인증 모드에서만 나타납니다
-        // =====================================================================
-        function renderPendingGuests() {
-            const container = $('pendingGuestsContainer');
-            if (!container) return;
-            if (!currentRoomCode) { container.innerHTML = ''; return; }
-
-            const pendingList = adminStudents.filter(s => s.isGuest && s.status === 'pending');
-            if (pendingList.length === 0) { container.innerHTML = ''; return; }
-
-            container.innerHTML = `
-                <div class="card border-warning bg-warning-subtle shadow-sm rounded-4 p-3 mb-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
-                            <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
-                            <span>⏳ 게스트 입장 대기자 (${pendingList.length}명)</span>
-                        </h6>
-                        <span class="badge bg-warning text-dark fw-bold">선생님 승인 필요</span>
-                    </div>
-                    <div class="d-flex flex-column gap-2">
-                        ${pendingList.map(g => `
-                            <div class="bg-white p-2 px-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-sm border">
-                                <div>
-                                    <strong class="text-primary fs-6">${escapeHtml(g.nickname)}</strong>
-                                    <span class="text-secondary small ms-2">(${escapeHtml(g.school || '')} / ${escapeHtml(g.studentId || '')})</span>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <button class="btn btn-sm btn-success fw-bold px-3 btn-approve-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
-                                        <i class="bi bi-check-lg"></i> 승인 허용
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger fw-bold px-3 btn-reject-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
-                                        <i class="bi bi-x-lg"></i> 거절
-                                    </button>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-
-            container.querySelectorAll('.btn-approve-guest').forEach(btn => {
-                btn.onclick = async () => {
-                    const nick = btn.getAttribute('data-nick');
-                    const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true; btn.textContent = "처리 중...";
-                    try {
-                        await updateDoc(doc(studentsCollectionRef(currentRoomCode), nick), { status: 'online' });
-                        await setDoc(doc(guestStatusCollRef(currentRoomCode), nick),
-                            { status: 'online' }, { merge: true });
-                        if (sKey) {
-                            await updateDoc(doc(fsdb, "student_auth", sKey),
-                                { presence: 'online', lastActive: fsServerTimestamp() });
-                        }
-                    } catch (err) {
-                        console.error("승인 처리 오류:", err);
-                        btn.disabled = false; btn.textContent = "승인 허용";
-                    }
-                };
-            });
-
-            container.querySelectorAll('.btn-reject-guest').forEach(btn => {
-                btn.onclick = async () => {
-                    const nick = btn.getAttribute('data-nick');
-                    const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true; btn.textContent = "처리 중...";
-                    try {
-                        await updateDoc(doc(studentsCollectionRef(currentRoomCode), nick), { status: 'rejected' });
-                        await setDoc(doc(guestStatusCollRef(currentRoomCode), nick),
-                            { status: 'rejected' }, { merge: true });
-                        if (sKey) {
-                            await updateDoc(doc(fsdb, "student_auth", sKey), { presence: 'offline' });
-                        }
-                    } catch (err) {
-                        console.error("거절 처리 오류:", err);
-                        btn.disabled = false; btn.textContent = "거절";
-                    }
-                };
-            });
-        }
 
         // 접속 상태 표시 (접속중 / 다른화면 / 끊김)
         function statusBadge(p) {
@@ -1086,12 +953,6 @@
             colIndexByNickname = {};
             players.forEach((p, i) => { colIndexByNickname[p.nickname] = i; });
 
-            // 닉네임 → 학번 (RTDB에는 학번이 없습니다. Firestore students에서 이어 붙입니다)
-            const sidByNick = {};
-            adminStudents.forEach(st => {
-                if (st.nickname && st.studentId) sidByNick[st.nickname] = String(st.studentId);
-            });
-
             if (players.length === 0) {
                 thead.innerHTML = '';
                 tbody.innerHTML = '<tr><td class="py-5 text-muted">아직 입장한 참가자가 없습니다. 방 코드를 안내해 주세요.</td></tr>';
@@ -1128,14 +989,6 @@
 
             // ── 표 본문 ──
             let bodyHtml = '';
-
-            // (0) 학번 — 학생 인증 모드에서만 값이 있고, 토글로 숨길 수 있습니다
-            bodyHtml += '<tr class="row-studentid"><th>학번</th>';
-            players.forEach(p => {
-                const sid = sidByNick[p.nickname] || '';
-                bodyHtml += `<td class="fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td>`;
-            });
-            bodyHtml += '</tr>';
 
             // (1) 접속 상태
             bodyHtml += '<tr><th>접속 상태</th>';
@@ -1284,16 +1137,10 @@
             if (!ok) return;
             try {
                 await remove(playerRef(currentRoomCode, nickname));
-                await deleteDoc(doc(studentsCollectionRef(currentRoomCode), nickname)).catch(() => { });
             } catch (e) {
                 await customAlert('오류', '참가자를 삭제하지 못했습니다.');
             }
         }
-
-        // 학번 표시 토글 (표를 다시 그려도 유지되도록 테이블에 클래스만 겁니다)
-        $('toggleStudentId').addEventListener('change', (e) => {
-            $('admin-status-table').classList.toggle('show-sid', e.target.checked);
-        });
 
         // ── 게임 시작 ──
         $('btn-start-game').addEventListener('click', async () => {
