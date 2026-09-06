@@ -333,8 +333,9 @@
         import { rtdbBlotto as db } from "../../../js/firebase-config.js";
         import {
             renderRoomEntrance, customAlert, customConfirm, escapeHtml, isValidRtdbKey,
-            rememberEntrance, saveGameNickname, generateRandomNickname, showPinResetModal
-        } from "../../../js/room-auth.js";
+            rememberEntrance, saveGameNickname, generateRandomNickname, showPinResetModal,
+            getDeviceId, setRoomNickname
+        } from "../../../js/room-auth.js?v=3.0";
         import {
             ref, set, get, onValue, update, remove, serverTimestamp,
             runTransaction, onDisconnect
@@ -496,33 +497,43 @@
                 && typeof prev.score === 'number'
                 && typeof prev.remaining === 'number';
 
+            const myDeviceId = getDeviceId();
+
             if (isComplete) {
                 // ── 재접속 경로 ──
+                //
+                //  닉네임이 자동 발급이라, 이름만으로는 "내가 재접속한 것"과
+                //  "다른 학생이 우연히 같은 이름을 받은 것"을 구분할 수 없습니다.
+                //  예전에는 접속이 끊긴 노드를 아무것도 묻지 않고 이어받아,
+                //  남의 점수와 남은 병사 수가 그대로 합쳐졌습니다.
+                //  그래서 기기 id로 판정합니다.
                 const hb = typeof prev.lastHeartbeat === 'number' ? prev.lastHeartbeat : 0;
                 const looksOnline = prev.status && prev.status !== 'offline'
                     && (serverNow() - hb) < ONLINE_THRESHOLD_MS;
+                const isMyDevice = !!prev.deviceId && prev.deviceId === myDeviceId;
 
-                if (looksOnline) {
-                    // 네트워크가 끊긴 기기는 서버가 끊김을 감지하기 전까지 online으로 남아 있어,
-                    // 하드 차단하면 본인이 자기 유령에게 막힙니다. 확인 후 이어받도록 합니다.
-                    const ok = await customConfirm(
-                        '이어서 접속할까요?',
-                        `<b>${escapeHtml(nickname)}</b> 닉네임으로 접속 중인 기기가 있습니다.<br><br>` +
-                        `내가 쓰던 닉네임이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
-                        `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 점수와 병사 수는 그대로 이어집니다)</span><br><br>` +
-                        `<b class="text-danger">다른 사람이 쓰는 닉네임이라면</b> [취소]를 눌러주세요.`
-                    );
-                    if (!ok) {
-                        const renick = await customConfirm('새 닉네임 발급',
-                            '새로운 닉네임을 받아서 접속할까요?');
-                        return renick ? 'renick' : 'abort';
+                if (!isMyDevice) {
+                    if (looksOnline) {
+                        // 다른 기기가 지금 그 이름으로 플레이 중입니다.
+                        // 이어받으면 그 학생이 튕기므로, 묻지 않고 새 이름을 받습니다.
+                        return 'renick';
                     }
+                    const ok = await customConfirm(
+                        '내 기록이 맞나요?',
+                        `<b>${escapeHtml(nickname)}</b> 닉네임으로 남아 있는 기록이 있습니다.<br><br>` +
+                        `내가 다른 기기에서 쓰던 닉네임이면 <b>[확인]</b>을 눌러 이어받으세요.<br>` +
+                        `<span class="text-muted small">(점수와 남은 병사 수가 그대로 이어집니다)</span><br><br>` +
+                        `<b class="text-danger">처음 들어온 것이라면</b> [취소]를 누르세요.<br>` +
+                        `<span class="text-muted small">새 닉네임을 받아 깨끗하게 시작합니다.</span>`
+                    );
+                    if (!ok) return 'renick';
                 }
 
                 await update(pRef, {
                     status: 'online',
                     lastHeartbeat: serverTimestamp(),
-                    sessionId: localSessionId
+                    sessionId: localSessionId,
+                    deviceId: myDeviceId
                 });
             } else {
                 // ── 신규 입장(또는 손상 노드 복구) ── 인원 제한 없음
@@ -538,7 +549,8 @@
                     joinedAt: serverTimestamp(),
                     status: 'online',
                     lastHeartbeat: serverTimestamp(),
-                    sessionId: localSessionId
+                    sessionId: localSessionId,
+                    deviceId: myDeviceId
                 });
             }
             return 'ok';
@@ -573,18 +585,29 @@
                     let nickname = (autoNickname || '').trim();
                     if (!isValidRtdbKey(nickname)) {
                         nickname = generateRandomNickname();
-                        await saveGameNickname(nickname, authInfo);
+                        setRoomNickname(code, nickname);
+                        await saveGameNickname(nickname);
                     }
 
+                    // ★ setRoomNickname을 함께 불러야 합니다.
+                    //   방별 확정 이름은 room-auth가 setRoomNickname에 기억해 둡니다.
+                    //   이걸 빼먹으면 다음 접속 때 기억된 '옛 이름'으로 되돌아가
+                    //   같은 충돌을 반복하고, 그 사이 쌓은 점수는 버려진 이름에 남습니다.
+                    let joined = false;
                     for (let attempt = 0; attempt < 5; attempt++) {
                         const result = await tryJoinRoom(code, roomData, nickname);
-                        if (result === 'ok') break;
+                        if (result === 'ok') { joined = true; break; }
                         if (result === 'renick') {
                             nickname = generateRandomNickname();
-                            await saveGameNickname(nickname, authInfo);   // 이후에도 이 닉네임을 계속 사용
+                            setRoomNickname(code, nickname);
+                            await saveGameNickname(nickname);
                             continue;
                         }
                         return;   // abort
+                    }
+                    if (!joined) {
+                        return await customAlert("입장 실패",
+                            "닉네임을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
                     }
 
                     currentRoomCode = code;
@@ -597,7 +620,7 @@
                     sectionLanding.classList.remove('active-section');
                     sectionStudent.classList.add('active-section');
 
-                    startStudentRealtimeSync();
+                    await startStudentRealtimeSync();
                 } catch (e) {
                     console.error('입장 처리 오류:', e);
                     const msg = String((e && e.message) || e).toLowerCase();
@@ -1354,24 +1377,33 @@
         // =====================================================================
         // 3. 학생 플레이 로직
         // =====================================================================
-        function startStudentRealtimeSync() {
+        async function startStudentRealtimeSync() {
             navRoomInfo.innerHTML =
                 `방 코드: <b>${escapeHtml(currentRoomCode)}</b> | <b>${escapeHtml(currentNickname)}</b>`;
             $('student-nickname-display').textContent = currentNickname;
 
-            // 방 정보 구독 (라운드 진행 상황)
+            // ★ 방 노드를 통째로 구독하면 안 됩니다.
+            //   그 안에 players가 들어 있어서, 콘솔을 연 학생이 남들의 배치를
+            //   제출 전에 미리 볼 수 있습니다. 동시에 몰래 배치하는 게임에서는
+            //   그 자체로 게임이 깨집니다. 아래 players 구독에 '내 것만 받는다'고
+            //   적어 두었지만, 방 구독이 그 의도를 무효로 만들고 있었습니다.
+            //
+            //   settings는 방을 만든 뒤 바뀌지 않으므로 한 번만 읽고,
+            //   실시간 구독은 state(라운드 진행 상황)에만 겁니다.
+            const setSnap = await get(ref(db, `blotto_rooms/${currentRoomCode}/settings`));
+            roomSettings = setSnap.exists() ? setSnap.val() : null;
+
             if (unsubRoom) { unsubRoom(); unsubRoom = null; }
-            unsubRoom = onValue(roomRef(currentRoomCode), (docSnap) => {
-                if (!docSnap.exists()) {
+            unsubRoom = onValue(ref(db, `blotto_rooms/${currentRoomCode}/state`), (snap) => {
+                if (!snap.exists()) {
+                    // state가 사라졌다 = 방이 삭제되었다
                     if (sessionEnded) return;
                     sessionEnded = true;
                     cleanupSession();
                     customAlert('안내', '방이 삭제되어 첫 화면으로 이동합니다.').then(() => location.reload());
                     return;
                 }
-                const d = docSnap.val();
-                roomSettings = d.settings;
-                roomState = d.state;
+                roomState = snap.val();
                 updateStudentUI();
             });
 

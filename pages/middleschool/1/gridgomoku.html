@@ -332,8 +332,9 @@
     <script type="module">
         import { rtdbGridGomoku as db } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customConfirm, escapeHtml, rememberEntrance
-        } from "../../../js/room-auth.js";
+            renderRoomEntrance, customAlert, customConfirm, escapeHtml, rememberEntrance,
+            getDeviceId, rerollRoomNickname
+        } from "../../../js/room-auth.js?v=3.0";
         import {
             ref, set, get, update, remove, onValue, serverTimestamp,
             query, orderByChild, runTransaction, increment, onDisconnect
@@ -359,7 +360,8 @@
         const MATCH_LOCK_MS = 3000;         // 매칭 잠금 유지 시간
         const STALL_LIMIT_MS = 60000;       // [응급처치 3] 상대 턴이 제한시간을 넘겨도 변화가 없을 때 추가로 기다릴 시간
         const ABANDON_BTN_MS = 40000;       // [응급처치 4] 첫 수가 나오기 전 취소 버튼을 노출하기까지의 시간
-        const NICKNAME_RE = /^[가-힣a-zA-Z0-9_\- ]{1,10}$/;  // 입력창 maxlength=10과 동일하게 맞춤
+        // 닉네임 입력창은 없앴습니다. 이름은 room-auth.js가 자동 발급하므로
+        // 형식 검사가 필요 없고, "1~10자로 입력해주세요" 안내는 학생을 헷갈리게 합니다.
         const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;                // 방 코드도 Firebase 경로에 쓰이므로 검증
 
         // =====================================================================
@@ -543,11 +545,6 @@
                     if (!ROOM_CODE_RE.test(code)) {
                         return await customAlert("방 코드 확인", "방 코드는 영문 대문자와 숫자 4자리입니다.");
                     }
-                    if (!NICKNAME_RE.test(nickname)) {
-                        return await customAlert("닉네임 확인",
-                            "닉네임은 한글·영문·숫자·밑줄·하이픈만 사용해 1~10자로 입력해주세요.");
-                    }
-
                     const snap = await get(roomRef(code));
                     if (!snap.exists()) return await customAlert("알림", "존재하지 않는 방 코드입니다.");
 
@@ -555,38 +552,74 @@
                     isKicked = false;
                     let wasOfflineTooLong = false;
 
-                    const pSnap = await get(playerRef(code, nickname));
-                    if (pSnap.exists()) {
-                        const pData = pSnap.val();
-                        const lastBeat = typeof pData.lastHeartbeat === 'number' ? pData.lastHeartbeat : 0;
-                        const diff = getServerTime() - lastBeat;
+                    // ─────────────────────────────────────────────────────
+                    //  닉네임 충돌 자동 해결
+                    //
+                    //  플레이어 노드의 '키'가 곧 닉네임인데, 닉네임은 자동 발급입니다.
+                    //  그래서 이름만 봐서는 "내가 재접속한 것"과 "다른 학생이 우연히
+                    //  같은 이름을 받은 것"을 구분할 수 없습니다. 예전 코드는 접속이
+                    //  끊긴 노드를 아무것도 묻지 않고 이어받아, 남의 전적이 합쳐졌습니다.
+                    //
+                    //  기기 id를 함께 적어 두고 그 값으로 판정합니다.
+                    //    · 내 기기      → 조용히 재접속
+                    //    · 남이 접속 중 → 묻지 않고 새 이름 (이어받으면 그 학생이 튕깁니다)
+                    //    · 남이 끊김    → 내가 기기를 바꾼 것일 수도 있으니 한 번 확인
+                    // ─────────────────────────────────────────────────────
+                    const myDeviceId = getDeviceId();
+                    let joined = false;
 
-                        // [모서리 1 수정] 하드 차단 대신 확인 후 이어받기.
-                        // 와이파이가 끊긴 학생이 곧바로 재접속하면 서버가 아직 끊김을 감지하기 전이라
-                        // 자기 자신의 유령 세션이 'online'으로 남아 있어 스스로에게 막히는 문제가 있었습니다.
-                        // 진짜 다른 기기가 살아 있는 경우라도, 아래에서 새 sessionId를 기록하는 순간
-                        // 옛 기기가 subscribeSession에서 불일치를 감지하고 스스로 물러나므로 안전합니다.
-                        if (diff <= OFFLINE_MS && pData.status === 'online') {
-                            const ok = await customConfirm("이어서 접속할까요?",
-                                `<b>${escapeHtml(nickname)}</b> 이름으로 접속 중인 기기가 있습니다.<br><br>` +
-                                `내가 쓰던 이름이 맞다면 <b>[확인]</b>을 눌러 이어서 접속하세요.<br>` +
-                                `<span class="text-muted small">(기존 기기의 연결은 끊어지고, 전적은 그대로 이어집니다)</span><br><br>` +
-                                `<b class="text-danger">다른 친구가 쓰는 이름이라면</b> [취소]를 누르고<br>다른 닉네임을 사용해주세요.`);
-                            if (!ok) return;
+                    for (let attempt = 0; attempt < 5 && !joined; attempt++) {
+                        const pSnap = await get(playerRef(code, nickname));
+
+                        if (pSnap.exists()) {
+                            const pData = pSnap.val();
+                            const lastBeat = typeof pData.lastHeartbeat === 'number' ? pData.lastHeartbeat : 0;
+                            const diff = getServerTime() - lastBeat;
+                            const looksOnline = (diff <= OFFLINE_MS && pData.status === 'online');
+                            const isMyDevice = !!pData.deviceId && pData.deviceId === myDeviceId;
+
+                            if (!isMyDevice) {
+                                if (looksOnline) {
+                                    // 다른 기기가 지금 그 이름으로 두고 있습니다.
+                                    // 이어받으면 그 학생이 튕기므로 조용히 다른 이름을 받습니다.
+                                    nickname = rerollRoomNickname(code, nickname);
+                                    continue;
+                                }
+                                const ok = await customConfirm("내 기록이 맞나요?",
+                                    `<b>${escapeHtml(nickname)}</b> 이름으로 남아 있는 전적이 있습니다.<br><br>` +
+                                    `내가 다른 기기에서 쓰던 이름이면 <b>[확인]</b>을 눌러 이어받으세요.<br>` +
+                                    `<span class="text-muted small">(승·패 기록이 그대로 이어집니다)</span><br><br>` +
+                                    `<b class="text-danger">처음 들어온 것이라면</b> [취소]를 누르세요.<br>` +
+                                    `<span class="text-muted small">새 이름을 받아 깨끗하게 시작합니다.</span>`);
+                                if (!ok) {
+                                    nickname = rerollRoomNickname(code, nickname);
+                                    continue;
+                                }
+                            }
+
+                            if (diff > AFK_LIMIT_MS) wasOfflineTooLong = true;
+
+                            myLastOpponent = pData.lastOpponent || null;   // [통일] 직전 상대 기억을 DB에서 복원
+
+                            await update(playerRef(code, nickname), {
+                                status: 'online', lastHeartbeat: serverTimestamp(),
+                                sessionId: localSessionId, deviceId: myDeviceId
+                            });
+                        } else {
+                            myLastOpponent = null;
+                            wasOfflineTooLong = false;
+                            await set(playerRef(code, nickname), {
+                                nickname, wins: 0, losses: 0, status: 'online',
+                                lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp(),
+                                sessionId: localSessionId, deviceId: myDeviceId
+                            });
                         }
-                        if (diff > AFK_LIMIT_MS) wasOfflineTooLong = true;
+                        joined = true;
+                    }
 
-                        myLastOpponent = pData.lastOpponent || null;   // [통일] 직전 상대 기억을 DB에서 복원
-
-                        await update(playerRef(code, nickname), {
-                            status: 'online', lastHeartbeat: serverTimestamp(), sessionId: localSessionId
-                        });
-                    } else {
-                        myLastOpponent = null;
-                        await set(playerRef(code, nickname), {
-                            nickname, wins: 0, losses: 0, status: 'online',
-                            lastHeartbeat: serverTimestamp(), joinedAt: serverTimestamp(), sessionId: localSessionId
-                        });
+                    if (!joined) {
+                        return await customAlert("입장 실패",
+                            "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
                     }
 
                     currentRoomCode = code; currentNickname = nickname;

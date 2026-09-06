@@ -350,6 +350,30 @@ export function getRoomNickname(roomCode) { return readLocal(roomNickKey(roomCod
 export function setRoomNickname(roomCode, nick) { writeLocal(roomNickKey(roomCode), nick); }
 
 /**
+ * 이 방에서 쓸 이름을 새로 받습니다.
+ *
+ * 닉네임 입력창을 없앤 뒤로, 이름이 겹쳤을 때 학생이 직접 바꿀 방법이 없어졌습니다.
+ * RTDB 게임(가위바위보·오목·블로토)은 플레이어 노드 키가 곧 닉네임이라
+ * '이어받기'를 거절한 학생이 아무것도 못 하고 막히는 막다른 길이 생깁니다.
+ * 그 경로에서 이 함수를 불러 새 이름을 받고 다시 시도하게 합니다.
+ *
+ * ★ setRoomNickname까지 함께 갱신하는 것이 핵심입니다.
+ *   이걸 빼먹으면 다음 접속 때 기억된 옛 이름으로 되돌아가 같은 충돌을 반복하고,
+ *   그 사이에 쌓은 점수가 버려진 이름에 남아 사라집니다.
+ */
+export function rerollRoomNickname(roomCode, avoid = '') {
+    // ★ 반드시 '무작위'로 다시 뽑습니다.
+    //   규칙적으로(예: 다음 조합으로) 옮기면, 같은 이름을 받은 두 학생이
+    //   똑같이 옮겨 가 영원히 같은 이름으로 부딪칩니다. 무작위가 그 대칭을 깹니다.
+    const cur = String(avoid || '');
+    let nick = generateRandomNickname();
+    for (let i = 0; i < 10 && nick === cur; i++) nick = generateRandomNickname();
+    setLocalGameNickname(nick);
+    setRoomNickname(roomCode, nick);
+    return nick;
+}
+
+/**
  * 방 안에서 닉네임을 '선점'합니다.
  *
  * {게임}_records/{방}/nicknames/{닉} 는 필드가 하나도 없는 빈 문서입니다.
@@ -1443,15 +1467,6 @@ export function renderRoomEntrance(container, options = {}) {
 
         if (typeof onJoin !== 'function') return;
 
-        // ★ PIN 인증은 crypto.subtle을 씁니다. https 또는 localhost에서만 동작합니다.
-        //   file://로 열어 테스트하면 여기서 걸립니다 — 흔한 오해라 먼저 안내합니다.
-        if (!isCryptoAvailable()) {
-            await customAlert("보안 연결 필요",
-                "이 페이지는 <b>https</b>로 열어야 합니다.<br>" +
-                '<span class="text-muted small">파일을 직접 연 상태(file://)에서는 인증 기능이 동작하지 않습니다.</span>');
-            return;
-        }
-
         joining = true;
         joinBtn.disabled = true;
         dashBtn.disabled = true;
@@ -1541,6 +1556,16 @@ export function renderRoomEntrance(container, options = {}) {
                 // nicknameFixed: true — 방 안 유일성은 마커가 이미 보장했습니다.
                 //                 게임 페이지가 중복 검사를 또 할 필요가 없습니다.
                 await onJoin(roomCode, nickname, { mode: 'quick', isGuest: false, nicknameFixed: true });
+                return;
+            }
+
+            // ★ 여기서부터는 PIN 인증이 필요하고, PIN 해시는 crypto.subtle로 만듭니다.
+            //   https 또는 localhost에서만 동작합니다. 빠른 입장 모드는 위에서 이미
+            //   끝났으므로 RTDB 게임(가위바위보·오목·블로토)은 이 검사를 타지 않습니다.
+            if (!isCryptoAvailable()) {
+                await customAlert("보안 연결 필요",
+                    "학생 인증 모드는 <b>https</b>로 열어야 동작합니다.<br>" +
+                    '<span class="text-muted small">파일을 직접 연 상태(file://)에서는 PIN 인증을 쓸 수 없습니다.</span>');
                 return;
             }
 
