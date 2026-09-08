@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>수직선 만들기</title>
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" />
+
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        :root {
+            --bg: #ffffff;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --primary: #2563eb;
+            --primary-soft: #eff6ff;
+            --point: #e11d48;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Pretendard Variable', system-ui, sans-serif;
+        }
+
+        .page-wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem 1rem 4rem;
+        }
+
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .page-desc {
+            color: var(--muted);
+            font-size: 0.92rem;
+            margin: 0.35rem 0 0;
+        }
+
+        .content-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+        }
+
+        .panel-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .canvas-wrap {
+            position: relative;
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        #board {
+            display: block;
+            width: 100%;
+            height: auto;
+            touch-action: none;
+            cursor: crosshair;
+            user-select: none;
+        }
+
+        .pt-label {
+            cursor: text;
+        }
+
+        .pt-dot {
+            cursor: grab;
+        }
+
+        .dragging .pt-dot {
+            cursor: grabbing;
+        }
+
+        #nameEditor {
+            position: absolute;
+            display: none;
+            width: 84px;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-weight: 600;
+            padding: 0.15rem 0.3rem;
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            outline: none;
+            z-index: 5;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.6;
+        }
+
+        .form-label {
+            font-size: 0.84rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: #374151;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-outline-secondary,
+        .btn-outline-primary,
+        .btn-outline-danger {
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .list-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #fff;
+        }
+
+        .list-row .name-input {
+            width: 64px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .list-row .val {
+            flex: 1;
+            font-size: 0.88rem;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .empty {
+            color: var(--muted);
+            font-size: 0.85rem;
+            padding: 0.6rem 0.2rem;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--primary-soft);
+            color: #1d4ed8;
+            border: 1px solid #dbeafe;
+            border-radius: 999px;
+            padding: 0.25rem 0.7rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin: 0 0.3rem 0.3rem 0;
+        }
+
+        .chip button {
+            border: none;
+            background: transparent;
+            color: #1d4ed8;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 0.75rem 1.1rem;
+        }
+
+        .toolbar .field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar .field .form-control,
+        .toolbar .field .form-select {
+            width: 116px;
+        }
+
+        .toolbar .v-divider {
+            width: 1px;
+            align-self: stretch;
+            background: var(--border);
+            margin: 0 0.2rem;
+        }
+
+        .point-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+
+        .point-grid .empty {
+            grid-column: 1 / -1;
+        }
+
+        #board.picking {
+            cursor: cell;
+        }
+
+        .pick-guide {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--primary-soft);
+            border: 1px solid #dbeafe;
+            color: #1d4ed8;
+            border-radius: 10px;
+            padding: 0.5rem 0.8rem;
+            font-size: 0.86rem;
+            font-weight: 600;
+        }
+
+        .bar-preview {
+            font-family: 'Times New Roman', serif;
+            letter-spacing: 1px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 991.98px) {
+            .content-card {
+                padding: 1rem;
+            }
+
+            .point-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .point-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="page-wrap pb-0">
+        <h1 class="page-title">수직선 만들기</h1>
+        <p class="page-desc">범위와 등분을 정하고 수직선을 클릭해 점을 찍은 뒤 이미지로 저장합니다.</p>
+    </header>
+
+    <main class="page-wrap pt-3">
+        <!-- 설정 바 -->
+        <section class="content-card mb-3">
+            <div class="toolbar">
+                <div class="field">
+                    <label class="form-label" for="inMin">최솟값</label>
+                    <input id="inMin" type="number" class="form-control form-control-sm" value="-5" step="1" />
+                </div>
+                <div class="field">
+                    <label class="form-label" for="inMax">최댓값</label>
+                    <input id="inMax" type="number" class="form-control form-control-sm" value="5" step="1" />
+                </div>
+                <div class="field">
+                    <label class="form-label" for="inStep">눈금 간격</label>
+                    <input id="inStep" type="number" class="form-control form-control-sm" value="1" step="0.5"
+                        min="0.01" />
+                </div>
+                <div class="field">
+                    <label class="form-label" for="inSnap">점 이동 단위</label>
+                    <select id="inSnap" class="form-select form-select-sm">
+                        <option value="0">자유</option>
+                        <option value="1" selected>1칸</option>
+                        <option value="0.5">1/2칸</option>
+                        <option value="0.3333333333">1/3칸</option>
+                        <option value="0.25">1/4칸</option>
+                        <option value="0.2">1/5칸</option>
+                        <option value="0.1">1/10칸</option>
+                    </select>
+                </div>
+
+                <div class="v-divider d-none d-md-block"></div>
+
+                <div class="field">
+                    <span class="form-label">칸 등분</span>
+                    <button id="btnDivMode" class="btn btn-outline-primary btn-sm" type="button">
+                        <i class="bi bi-distribute-horizontal me-1"></i>구간 등분하기
+                    </button>
+                </div>
+
+                <div class="v-divider d-none d-lg-block"></div>
+
+                <div class="d-flex flex-wrap gap-3 pb-1">
+                    <div class="form-check m-0">
+                        <input class="form-check-input" type="checkbox" id="chkNumbers" checked>
+                        <label class="form-check-label" for="chkNumbers">숫자 표시</label>
+                    </div>
+                    <div class="form-check m-0">
+                        <input class="form-check-input" type="checkbox" id="chkNames" checked>
+                        <label class="form-check-label" for="chkNames">점 이름 표시</label>
+                    </div>
+                    <div class="form-check m-0">
+                        <input class="form-check-input" type="checkbox" id="chkSort">
+                        <label class="form-check-label" for="chkSort">왼쪽부터 이름 정렬</label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="divList" class="mt-3"></div>
+        </section>
+
+        <!-- 미리보기 -->
+        <section class="content-card">
+            <div id="pickGuide" class="pick-guide mb-2 d-none">
+                <i class="bi bi-hand-index-thumb"></i><span id="pickGuideText"></span>
+            </div>
+
+            <div class="canvas-wrap">
+                <svg id="board" viewBox="0 0 960 200" xmlns="http://www.w3.org/2000/svg"></svg>
+                <input id="nameEditor" class="form-control form-control-sm" type="text" maxlength="12" />
+            </div>
+
+            <p class="hint mt-3 mb-2">
+                수직선을 클릭하면 점이 찍히고 A, B, C… 순서로 이름이 붙습니다.
+                점 이름을 클릭하면 이름을 바꾸고, 점을 끌면 위치가 옮겨집니다. 점 위에서 오른쪽 클릭하면 삭제됩니다.
+            </p>
+
+            <div id="pointList" class="point-grid"></div>
+
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-3 pt-3 border-top">
+                <button id="btnPng" class="btn btn-primary btn-sm">
+                    <i class="bi bi-download me-1"></i>PNG로 저장
+                </button>
+                <select id="pngScale" class="form-select form-select-sm" style="width: auto;">
+                    <option value="1">1배 (960×200)</option>
+                    <option value="2" selected>2배 (1920×400)</option>
+                    <option value="3">3배 (2880×600)</option>
+                </select>
+                <button id="btnSvg" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-filetype-svg me-1"></i>SVG로 저장
+                </button>
+                <button id="btnClearPoints" class="btn btn-outline-danger btn-sm ms-auto">
+                    <i class="bi bi-eraser me-1"></i>점 모두 지우기
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 등분 설정 모달 -->
+    <div class="modal fade" id="divModal" tabindex="-1" aria-labelledby="divModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius: 16px;">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-6 fw-bold" id="divModalLabel">구간 등분</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="hint mb-3" id="divRangeText"></p>
+
+                    <label class="form-label" for="inputDivN">등분 수</label>
+                    <input id="inputDivN" type="number" class="form-control form-control-sm" value="3" min="2" max="24"
+                        step="1" />
+
+                    <span class="form-label d-block mt-3">호 가운데 세로바</span>
+                    <div class="d-flex flex-wrap gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar0" value="0">
+                            <label class="form-check-label" for="bar0">없음</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar1" value="1" checked>
+                            <label class="form-check-label" for="bar1">1줄 <span class="bar-preview">|</span></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar2" value="2">
+                            <label class="form-check-label" for="bar2">2줄 <span class="bar-preview">||</span></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar3" value="3">
+                            <label class="form-check-label" for="bar3">3줄 <span class="bar-preview">|||</span></label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+                    <button type="button" id="btnDivConfirm" class="btn btn-primary btn-sm">등분 적용</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        (function () {
+            'use strict';
+
+            /* ---------- 상수 ---------- */
+            const NS = 'http://www.w3.org/2000/svg';
+            const W = 960, H = 200, PAD = 64, BASE = 120;
+            const FONT_SERIF = "'Times New Roman', Times, 'Nanum Myeongjo', serif";
+
+            /* ---------- 상태 ---------- */
+            const state = {
+                min: -5,
+                max: 5,
+                step: 1,
+                snap: 1,
+                showNumbers: true,
+                showNames: true,
+                autoSort: false,
+                divisions: [{ id: 1, start: 3, end: 4, n: 3, bars: 1 }],
+                points: [],
+                seqDiv: 2,
+                seqPoint: 0,
+                divMode: false,
+                divStart: null,
+                pendingDiv: null
+            };
+
+            /* ---------- DOM ---------- */
+            const svg = document.getElementById('board');
+            const wrap = svg.parentElement;
+            const editor = document.getElementById('nameEditor');
+            const pointListEl = document.getElementById('pointList');
+            const divListEl = document.getElementById('divList');
+            const btnDivMode = document.getElementById('btnDivMode');
+            const pickGuide = document.getElementById('pickGuide');
+            const pickGuideText = document.getElementById('pickGuideText');
+            const divModalEl = document.getElementById('divModal');
+            const divModal = new bootstrap.Modal(divModalEl);
+
+            /* ---------- 유틸 ---------- */
+            const round6 = v => Math.round(v * 1e6) / 1e6;
+            const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+            const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+            function el(tag, attrs, text) {
+                const node = document.createElementNS(NS, tag);
+                for (const k in attrs) node.setAttribute(k, attrs[k]);
+                if (text !== undefined) node.textContent = text;
+                return node;
+            }
+
+            function fontFamily() {
+                return FONT_SERIF;
+            }
+
+            function xOf(v) {
+                return PAD + (v - state.min) / (state.max - state.min) * (W - PAD * 2);
+            }
+
+            function valueOf(x) {
+                return state.min + (x - PAD) / (W - PAD * 2) * (state.max - state.min);
+            }
+
+            function letterAt(i) {
+                let s = '', n = i + 1;
+                while (n > 0) {
+                    const r = (n - 1) % 26;
+                    s = String.fromCharCode(65 + r) + s;
+                    n = Math.floor((n - 1) / 26);
+                }
+                return s;
+            }
+
+            function nextAutoName(exclude) {
+                const used = new Set(state.points.filter(p => p !== exclude).map(p => p.name));
+                let i = 0;
+                while (used.has(letterAt(i))) i++;
+                return letterAt(i);
+            }
+
+            function numberText(v) {
+                return String(round6(v)).replace('-', '\u2212');
+            }
+
+            /* ---------- 스냅 ---------- */
+            function snapValue(v) {
+                for (const d of state.divisions) {
+                    const lo = Math.min(d.start, d.end), hi = Math.max(d.start, d.end);
+                    if (v >= lo - 1e-9 && v <= hi + 1e-9) {
+                        const unit = (hi - lo) / d.n;
+                        return round6(lo + Math.round((v - lo) / unit) * unit);
+                    }
+                }
+                if (!state.snap) return round6(v);
+                return round6(Math.round(v / state.snap) * state.snap);
+            }
+
+            function snapToTick(v) {
+                const t = state.min + Math.round((v - state.min) / state.step) * state.step;
+                return round6(clamp(t, state.min, state.max));
+            }
+
+            /* ---------- 렌더링 ---------- */
+            function render() {
+                while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+                svg.appendChild(el('rect', { x: 0, y: 0, width: W, height: H, fill: '#ffffff' }));
+
+                drawAxis();
+                drawTicks();
+                drawDivisions();
+                drawPoints();
+                drawPendingMark();
+
+                renderDivList();
+                renderPointList();
+            }
+
+            function drawAxis() {
+                const x0 = xOf(state.min) - 30, x1 = xOf(state.max) + 30;
+                svg.appendChild(el('line', {
+                    x1: x0 + 10, y1: BASE, x2: x1 - 10, y2: BASE,
+                    stroke: '#111827', 'stroke-width': 2.4
+                }));
+                svg.appendChild(el('polygon', {
+                    points: `${x0},${BASE} ${x0 + 16},${BASE - 6.5} ${x0 + 16},${BASE + 6.5}`, fill: '#111827'
+                }));
+                svg.appendChild(el('polygon', {
+                    points: `${x1},${BASE} ${x1 - 16},${BASE - 6.5} ${x1 - 16},${BASE + 6.5}`, fill: '#111827'
+                }));
+            }
+
+            function drawTicks() {
+                const count = Math.round((state.max - state.min) / state.step);
+                if (!isFinite(count) || count < 1 || count > 400) return;
+
+                for (let i = 0; i <= count; i++) {
+                    const v = round6(state.min + i * state.step);
+                    const x = xOf(v);
+                    svg.appendChild(el('line', {
+                        x1: x, y1: BASE - 10, x2: x, y2: BASE + 10,
+                        stroke: '#111827', 'stroke-width': 2
+                    }));
+                    if (state.showNumbers) {
+                        svg.appendChild(el('text', {
+                            x: x, y: BASE + 44, 'text-anchor': 'middle',
+                            'font-family': fontFamily(), 'font-size': 25, fill: '#111827'
+                        }, numberText(v)));
+                    }
+                }
+            }
+
+            function drawDivisions() {
+                state.divisions.forEach(d => {
+                    const lo = Math.min(d.start, d.end), hi = Math.max(d.start, d.end);
+                    if (hi <= lo) return;
+                    const unit = (hi - lo) / d.n;
+
+                    for (let i = 1; i < d.n; i++) {
+                        const x = xOf(lo + unit * i);
+                        svg.appendChild(el('line', {
+                            x1: x, y1: BASE - 7, x2: x, y2: BASE + 7,
+                            stroke: '#111827', 'stroke-width': 1.6
+                        }));
+                    }
+
+                    for (let i = 0; i < d.n; i++) {
+                        const xa = xOf(lo + unit * i), xb = xOf(lo + unit * (i + 1));
+                        const rx = (xb - xa) / 2;
+                        const ry = Math.min(rx, 13);
+                        svg.appendChild(el('path', {
+                            d: `M ${xa} ${BASE - 8} A ${rx} ${ry} 0 0 1 ${xb} ${BASE - 8}`,
+                            fill: 'none', stroke: '#111827', 'stroke-width': 1.5
+                        }));
+                        drawEqualBars((xa + xb) / 2, BASE - 8 - ry, d.bars);
+                    }
+                });
+            }
+
+            function drawEqualBars(cx, cy, count) {
+                if (!count) return;
+                const gap = 4.4;
+                const offset = (count - 1) / 2;
+                for (let i = 0; i < count; i++) {
+                    const x = cx + (i - offset) * gap;
+                    svg.appendChild(el('line', {
+                        x1: x, y1: cy - 5.5, x2: x, y2: cy + 5.5,
+                        stroke: '#111827', 'stroke-width': 1.4, 'stroke-linecap': 'round'
+                    }));
+                }
+            }
+
+            function drawPendingMark() {
+                if (!state.divMode || state.divStart === null) return;
+                const x = xOf(state.divStart);
+                svg.appendChild(el('line', {
+                    x1: x, y1: BASE - 60, x2: x, y2: BASE + 30, class: 'no-export',
+                    stroke: '#2563eb', 'stroke-width': 1.6, 'stroke-dasharray': '5 4'
+                }));
+                svg.appendChild(el('polygon', {
+                    points: `${x},${BASE - 22} ${x - 6},${BASE - 34} ${x + 6},${BASE - 34}`,
+                    class: 'no-export', fill: '#2563eb'
+                }));
+            }
+
+            function drawPoints() {
+                state.points.forEach(p => {
+                    if (p.value < state.min - 1e-9 || p.value > state.max + 1e-9) return;
+                    const x = xOf(p.value);
+                    const g = el('g', { 'data-point': p.id });
+
+                    if (state.showNames) {
+                        const label = el('text', {
+                            x: x, y: BASE - 48, 'text-anchor': 'middle', class: 'pt-label',
+                            'font-family': fontFamily(), 'font-size': 26, fill: '#111827',
+                            'data-role': 'label'
+                        }, p.name);
+                        g.appendChild(label);
+                    }
+
+                    g.appendChild(el('circle', {
+                        cx: x, cy: BASE, r: 14, fill: 'transparent', class: 'pt-dot', 'data-role': 'dot'
+                    }));
+                    g.appendChild(el('circle', {
+                        cx: x, cy: BASE, r: 5, fill: 'var(--point)', class: 'pt-dot',
+                        'data-role': 'dot', style: 'fill:#e11d48'
+                    }));
+
+                    svg.appendChild(g);
+                });
+            }
+
+            /* ---------- 목록 ---------- */
+            function renderDivList() {
+                if (!state.divisions.length) {
+                    divListEl.innerHTML = '';
+                    return;
+                }
+                divListEl.innerHTML = state.divisions.map(d =>
+                    `<span class="chip">${numberText(d.start)} ~ ${numberText(d.end)} · ${d.n}등분 · 세로바 ${d.bars}` +
+                    `<button type="button" data-del-div="${d.id}" aria-label="삭제"><i class="bi bi-x-lg"></i></button></span>`
+                ).join('');
+            }
+
+            function renderPointList() {
+                if (!state.points.length) {
+                    pointListEl.innerHTML = '<div class="empty">수직선을 클릭하면 점의 좌표가 여기에 쌓입니다.</div>';
+                    return;
+                }
+                pointListEl.innerHTML = state.points.map(p => {
+                    const out = (p.value < state.min - 1e-9 || p.value > state.max + 1e-9)
+                        ? ' <span class="text-danger">범위 밖</span>' : '';
+                    return `<div class="list-row">
+            <input class="form-control form-control-sm name-input" data-name="${p.id}" value="${escapeHtml(p.name)}" maxlength="12" />
+            <span class="val">${numberText(p.value)}${out}</span>
+            <button class="btn btn-sm btn-outline-danger" data-del-point="${p.id}" aria-label="삭제"><i class="bi bi-trash"></i></button>
+          </div>`;
+                }).join('');
+            }
+
+            /* ---------- 점 조작 ---------- */
+            function addPoint(value) {
+                const v = clamp(snapValue(value), state.min, state.max);
+                const p = { id: ++state.seqPoint, value: v, name: '', auto: true };
+                p.name = nextAutoName(p);
+                state.points.push(p);
+                applyAutoSort();
+                render();
+            }
+
+            function findPoint(id) {
+                return state.points.find(p => p.id === Number(id));
+            }
+
+            function applyAutoSort() {
+                if (!state.autoSort) return;
+                const fixed = new Set(state.points.filter(p => !p.auto).map(p => p.name));
+                const autos = state.points.filter(p => p.auto).slice().sort((a, b) => a.value - b.value);
+                let i = 0;
+                autos.forEach(p => {
+                    while (fixed.has(letterAt(i))) i++;
+                    p.name = letterAt(i++);
+                });
+            }
+
+            /* ---------- 마우스 / 터치 ---------- */
+            let drag = null;
+
+            function pointerToValue(evt) {
+                const pt = svg.createSVGPoint();
+                pt.x = evt.clientX;
+                pt.y = evt.clientY;
+                const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+                return valueOf(loc.x);
+            }
+
+            svg.addEventListener('pointerdown', evt => {
+                if (state.divMode) return;
+                const group = evt.target.closest('[data-point]');
+                if (!group) return;
+                evt.preventDefault();
+                hideEditor();
+                drag = {
+                    id: Number(group.getAttribute('data-point')),
+                    role: evt.target.getAttribute('data-role'),
+                    moved: false,
+                    target: evt.target
+                };
+                svg.setPointerCapture(evt.pointerId);
+                wrap.classList.add('dragging');
+            });
+
+            svg.addEventListener('pointermove', evt => {
+                if (!drag) return;
+                const p = findPoint(drag.id);
+                if (!p) return;
+                const v = clamp(snapValue(pointerToValue(evt)), state.min, state.max);
+                if (v !== p.value) {
+                    p.value = v;
+                    drag.moved = true;
+                    applyAutoSort();
+                    render();
+                }
+            });
+
+            svg.addEventListener('pointerup', evt => {
+                if (!drag) return;
+                const info = drag;
+                drag = null;
+                wrap.classList.remove('dragging');
+                if (!info.moved && info.role === 'label') {
+                    const p = findPoint(info.id);
+                    if (p) openEditor(p);
+                }
+            });
+
+            svg.addEventListener('click', evt => {
+                if (state.divMode) {
+                    hideEditor();
+                    handleDivisionPick(pointerToValue(evt));
+                    return;
+                }
+                if (evt.target.closest('[data-point]')) return;
+                hideEditor();
+                addPoint(pointerToValue(evt));
+            });
+
+            svg.addEventListener('contextmenu', evt => {
+                if (state.divMode) {
+                    evt.preventDefault();
+                    exitDivMode();
+                    return;
+                }
+                const group = evt.target.closest('[data-point]');
+                if (!group) return;
+                evt.preventDefault();
+                const id = Number(group.getAttribute('data-point'));
+                state.points = state.points.filter(p => p.id !== id);
+                applyAutoSort();
+                render();
+            });
+
+            /* ---------- 이름 인라인 편집 ---------- */
+            let editingId = null;
+
+            function openEditor(p) {
+                const node = svg.querySelector(`[data-point="${p.id}"] [data-role="label"]`);
+                if (!node) return;
+                const box = node.getBoundingClientRect();
+                const base = wrap.getBoundingClientRect();
+                editingId = p.id;
+                editor.value = p.name;
+                editor.style.left = (box.left - base.left + box.width / 2) + 'px';
+                editor.style.top = (box.top - base.top + box.height / 2) + 'px';
+                editor.style.display = 'block';
+                editor.focus();
+                editor.select();
+            }
+
+            function hideEditor() {
+                editor.style.display = 'none';
+                editingId = null;
+            }
+
+            function commitEditor() {
+                if (editingId === null) return;
+                const p = findPoint(editingId);
+                const name = editor.value.trim();
+                if (p && name) {
+                    p.name = name;
+                    p.auto = false;
+                }
+                hideEditor();
+                render();
+            }
+
+            editor.addEventListener('keydown', evt => {
+                if (evt.key === 'Enter') { evt.preventDefault(); commitEditor(); }
+                if (evt.key === 'Escape') { evt.preventDefault(); hideEditor(); }
+            });
+            editor.addEventListener('blur', commitEditor);
+
+            /* ---------- 목록 이벤트 ---------- */
+            pointListEl.addEventListener('click', evt => {
+                const btn = evt.target.closest('[data-del-point]');
+                if (!btn) return;
+                const id = Number(btn.getAttribute('data-del-point'));
+                state.points = state.points.filter(p => p.id !== id);
+                applyAutoSort();
+                render();
+            });
+
+            pointListEl.addEventListener('change', evt => {
+                const input = evt.target.closest('[data-name]');
+                if (!input) return;
+                const p = findPoint(input.getAttribute('data-name'));
+                const name = input.value.trim();
+                if (p && name) {
+                    p.name = name;
+                    p.auto = false;
+                }
+                render();
+            });
+
+            divListEl.addEventListener('click', evt => {
+                const btn = evt.target.closest('[data-del-div]');
+                if (!btn) return;
+                const id = Number(btn.getAttribute('data-del-div'));
+                state.divisions = state.divisions.filter(d => d.id !== id);
+                render();
+            });
+
+            /* ---------- 설정 입력 ---------- */
+            const inMin = document.getElementById('inMin');
+            const inMax = document.getElementById('inMax');
+            const inStep = document.getElementById('inStep');
+
+            function readRange() {
+                const min = parseFloat(inMin.value);
+                const max = parseFloat(inMax.value);
+                const step = parseFloat(inStep.value);
+                if (!isFinite(min) || !isFinite(max) || !isFinite(step)) return;
+                if (max - min <= 0) { inMax.value = state.max; return; }
+                if (step <= 0 || (max - min) / step > 400) { inStep.value = state.step; return; }
+                state.min = min;
+                state.max = max;
+                state.step = step;
+                hideEditor();
+                render();
+            }
+
+            [inMin, inMax, inStep].forEach(node => node.addEventListener('change', readRange));
+
+            document.getElementById('inSnap').addEventListener('change', e => {
+                state.snap = parseFloat(e.target.value) || 0;
+            });
+
+            document.getElementById('chkNumbers').addEventListener('change', e => {
+                state.showNumbers = e.target.checked;
+                render();
+            });
+
+            document.getElementById('chkNames').addEventListener('change', e => {
+                state.showNames = e.target.checked;
+                render();
+            });
+
+            document.getElementById('chkSort').addEventListener('change', e => {
+                state.autoSort = e.target.checked;
+                applyAutoSort();
+                render();
+            });
+
+            /* ---------- 등분: 두 점 클릭 → 모달 ---------- */
+            function updateDivUi() {
+                btnDivMode.classList.toggle('active', state.divMode);
+                btnDivMode.innerHTML = state.divMode
+                    ? '<i class="bi bi-x-circle me-1"></i>선택 취소'
+                    : '<i class="bi bi-distribute-horizontal me-1"></i>구간 등분하기';
+                svg.classList.toggle('picking', state.divMode);
+                pickGuide.classList.toggle('d-none', !state.divMode);
+                pickGuideText.textContent = state.divStart === null
+                    ? '등분할 칸의 시작점을 클릭하세요. (눈금에 맞춰집니다)'
+                    : `시작점 ${numberText(state.divStart)} 선택됨 — 이제 끝점을 클릭하세요.`;
+            }
+
+            function enterDivMode() {
+                state.divMode = true;
+                state.divStart = null;
+                hideEditor();
+                updateDivUi();
+                render();
+            }
+
+            function exitDivMode() {
+                state.divMode = false;
+                state.divStart = null;
+                state.pendingDiv = null;
+                updateDivUi();
+                render();
+            }
+
+            function handleDivisionPick(rawValue) {
+                const v = snapToTick(rawValue);
+                if (state.divStart === null) {
+                    state.divStart = v;
+                    updateDivUi();
+                    render();
+                    return;
+                }
+                if (v === state.divStart) return;
+                state.pendingDiv = { start: Math.min(state.divStart, v), end: Math.max(state.divStart, v) };
+                state.divStart = null;
+                render();
+                document.getElementById('divRangeText').textContent =
+                    `선택한 구간: ${numberText(state.pendingDiv.start)} ~ ${numberText(state.pendingDiv.end)}`;
+                divModal.show();
+            }
+
+            btnDivMode.addEventListener('click', () => {
+                if (state.divMode) exitDivMode();
+                else enterDivMode();
+            });
+
+            document.getElementById('btnDivConfirm').addEventListener('click', () => {
+                const n = parseInt(document.getElementById('inputDivN').value, 10);
+                if (!(n >= 2 && n <= 24)) {
+                    document.getElementById('inputDivN').focus();
+                    return;
+                }
+                const bars = parseInt(document.querySelector('input[name="barCount"]:checked').value, 10);
+                const d = state.pendingDiv;
+                state.pendingDiv = null;
+                state.divisions.push({ id: ++state.seqDiv, start: d.start, end: d.end, n, bars });
+                divModal.hide();
+                exitDivMode();
+            });
+
+            divModalEl.addEventListener('hidden.bs.modal', () => {
+                state.pendingDiv = null;
+                exitDivMode();
+            });
+
+            divModalEl.addEventListener('shown.bs.modal', () => {
+                const input = document.getElementById('inputDivN');
+                input.focus();
+                input.select();
+            });
+
+            document.addEventListener('keydown', evt => {
+                if (evt.key === 'Escape' && state.divMode) exitDivMode();
+            });
+
+            /* ---------- 초기화 ---------- */
+            document.getElementById('btnClearPoints').addEventListener('click', () => {
+                state.points = [];
+                hideEditor();
+                render();
+            });
+
+            /* ---------- 내보내기 ---------- */
+            function serializeSvg(scale) {
+                const clone = svg.cloneNode(true);
+                clone.setAttribute('xmlns', NS);
+                clone.setAttribute('width', W * scale);
+                clone.setAttribute('height', H * scale);
+                clone.setAttribute('viewBox', `0 0 ${W} ${H}`);
+                clone.querySelectorAll('.no-export').forEach(node => node.remove());
+                return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
+            }
+
+            function downloadBlob(blob, filename) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+
+            function fileName(ext) {
+                const d = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                return `수직선_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`;
+            }
+
+            document.getElementById('btnPng').addEventListener('click', () => {
+                hideEditor();
+                const scale = parseInt(document.getElementById('pngScale').value, 10) || 2;
+                const source = serializeSvg(scale);
+                const url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = W * scale;
+                    canvas.height = H * scale;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    URL.revokeObjectURL(url);
+                    canvas.toBlob(blob => downloadBlob(blob, fileName('png')), 'image/png');
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    alert('PNG 변환에 실패했습니다. SVG로 저장한 뒤 사용해 주세요.');
+                };
+                img.src = url;
+            });
+
+            document.getElementById('btnSvg').addEventListener('click', () => {
+                hideEditor();
+                downloadBlob(new Blob([serializeSvg(1)], { type: 'image/svg+xml;charset=utf-8' }), fileName('svg'));
+            });
+
+            window.addEventListener('resize', hideEditor);
+
+            /* ---------- 시작 ---------- */
+            addPoint(-4);
+            addPoint(-1);
+            addPoint(round6(3 + 1 / 3));
+            updateDivUi();
+            render();
+        })();
+    </script>
+</body>
+
+</html>

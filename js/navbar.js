@@ -74,6 +74,13 @@
             "brand": "HOME",
             "menu": [
                 {
+                    "title": "수업관리",
+                    "items": [
+                        { "name": "수직선 만들기", "path": "pages/automation/class/numberline.html" }
+                    ]
+                },
+
+                {
                     "title": "업무자동화",
                     "items": [
                         { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" },
@@ -210,7 +217,7 @@
                 }
             }
         });
-        
+
         // Load teacher auth module dynamically if not already added
         if (!document.querySelector('script[data-auth="teacher-auth"]')) {
             const authScript = document.createElement('script');
