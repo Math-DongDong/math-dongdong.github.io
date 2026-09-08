@@ -375,6 +375,21 @@ export async function fetchTeacherNames(school) {
         .sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
+/** 학교와 이름이 모두 일치하는 승인 교사만 확인합니다. */
+export async function verifyTeacherName(school, name) {
+    const targetSchool = String(school || '').trim();
+    const targetName = String(name || '').trim();
+    if (!targetSchool || !targetName) return false;
+
+    const teacherQuery = query(
+        collection(db, "teacher_directory"),
+        where("school", "==", targetSchool),
+        where("name", "==", targetName)
+    );
+    const snap = await getDocs(teacherQuery);
+    return !snap.empty;
+}
+
 // =====================================================================
 // 0.58 게임(페이지)별 닉네임 기억
 // =====================================================================
@@ -893,8 +908,9 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
                                 <input type="text" class="form-control bg-light" id="authSchoolInput" placeholder="예: 동동중학교" autocomplete="off" maxlength="30">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary">담당 선생님 <span class="text-muted fw-normal">(여러 명 선택 가능)</span></label>
-                                <div id="authTeacherList" class="border rounded-3 p-2 bg-light" style="max-height:150px; overflow-y:auto;"></div>
+                                <label class="form-label small fw-bold text-secondary" for="authTeacherInput">담당 선생님</label>
+                                <input type="text" class="form-control bg-light" id="authTeacherInput"
+                                    placeholder="선생님 이름을 입력하세요" autocomplete="off" maxlength="20">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-secondary" for="inputAuthStudentId">학번 <span class="text-muted fw-normal">(숫자만)</span></label>
@@ -923,7 +939,7 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
         const schoolSelect = document.getElementById('authSchoolSelect');
         const customGroup = document.getElementById('authCustomSchoolGroup');
         const schoolInput = document.getElementById('authSchoolInput');
-        const teacherList = document.getElementById('authTeacherList');
+        const teacherInput = document.getElementById('authTeacherInput');
         const studentIdIn = document.getElementById('inputAuthStudentId');
         const pinIn = document.getElementById('inputAuthPin');
         const pinHelp = document.getElementById('authPinHelp');
@@ -948,28 +964,11 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
         };
         pinIn.value = '';
         errEl.style.display = 'none';
-        teacherList.innerHTML = '<div class="text-muted small">학교를 먼저 선택해주세요.</div>';
-
         const presetSchool = isGuest ? '' : initialSchool;
         const presetTeachers = isGuest ? [] : (Array.isArray(initialTeachers) ? initialTeachers : []);
+        teacherInput.value = presetTeachers[0] || '';
 
         const currentSchool = () => (schoolSelect.value === '__direct__' ? schoolInput.value : schoolSelect.value).trim();
-
-        const renderTeachers = async (preset = []) => {
-            const school = currentSchool();
-            if (!school) { teacherList.innerHTML = '<div class="text-muted small">학교를 먼저 선택해주세요.</div>'; return; }
-            teacherList.innerHTML = '<div class="text-muted small">불러오는 중...</div>';
-            const names = await fetchTeacherNames(school);
-            if (names.length === 0) {
-                teacherList.innerHTML = '<div class="text-muted small">이 학교에 등록된 선생님이 없습니다. 그대로 진행해도 됩니다.</div>';
-                return;
-            }
-            teacherList.innerHTML = names.map((n, i) => `
-                <div class="form-check">
-                    <input class="form-check-input auth-teacher-check" type="checkbox" value="${escapeHtml(n)}" id="authTeacher${i}" ${preset.includes(n) ? 'checked' : ''}>
-                    <label class="form-check-label fw-bold" for="authTeacher${i}">${escapeHtml(n)} 선생님</label>
-                </div>`).join('');
-        };
 
         const buildSchoolOptions = async () => {
             const schools = await fetchSchoolList();
@@ -988,7 +987,6 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
                 customGroup.classList.add('d-none');
                 schoolInput.value = '';
             }
-            renderTeachers(presetTeachers);
         };
 
         schoolSelect.onchange = () => {
@@ -999,13 +997,6 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
             } else {
                 customGroup.classList.add('d-none');
             }
-            renderTeachers([]);
-        };
-
-        let schoolTypeTimer = null;
-        schoolInput.oninput = () => {
-            clearTimeout(schoolTypeTimer);
-            schoolTypeTimer = setTimeout(() => renderTeachers([]), 400);
         };
 
         buildSchoolOptions();
@@ -1015,20 +1006,32 @@ export function promptStudentAuthModal({ isGuest = false, initialSchool = '', in
 
         const fail = (msg, el) => { errEl.textContent = msg; errEl.style.display = 'block'; if (el) el.focus(); };
 
-        const onConfirm = () => {
+        const onConfirm = async () => {
             const school = currentSchool();
             const studentId = studentIdIn.value.trim();
             const pin = pinIn.value.trim();
-            const boxes = [...teacherList.querySelectorAll('.auth-teacher-check')];
-            const teachers = boxes.filter(b => b.checked).map(b => b.value);
+            const teacherName = teacherInput.value.trim();
 
             if (!school) return fail("학교명을 선택하거나 입력해주세요.", schoolSelect);
             if (school.length > 30) return fail("학교명이 너무 깁니다.", schoolInput);
-            if (boxes.length > 0 && teachers.length === 0) return fail("담당 선생님을 1명 이상 선택해주세요.");
+            if (!teacherName) return fail("담당 선생님 이름을 입력해주세요.", teacherInput);
             if (!/^\d{2,10}$/.test(studentId)) return fail("학번은 숫자 2~10자리로 입력해주세요. (예: 20315)", studentIdIn);
             if (!/^\d{4}$/.test(pin)) return fail("PIN 번호는 4자리 숫자로 입력해주세요.", pinIn);
 
-            result = { school, studentId, pin, teachers };
+            confirmBtn.disabled = true;
+            try {
+                const isRegisteredTeacher = await verifyTeacherName(school, teacherName);
+                if (!isRegisteredTeacher) {
+                    return fail("등록된 선생님 이름과 일치하지 않습니다. 다시 입력해주세요.", teacherInput);
+                }
+            } catch (error) {
+                console.error('선생님 이름 확인 실패:', error);
+                return fail("선생님 이름을 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+            } finally {
+                confirmBtn.disabled = false;
+            }
+
+            result = { school, studentId, pin, teachers: [teacherName] };
             bsModal.hide();
         };
 
