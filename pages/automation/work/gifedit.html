@@ -237,6 +237,53 @@
             color: #0d6efd;
         }
 
+        .trim-range {
+            position: relative;
+            height: 24px;
+            margin: 8px 8px 0;
+        }
+
+        .trim-range::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 4px;
+            border-radius: 2px;
+            background: #dee2e6;
+            transform: translateY(-50%);
+        }
+
+        .trim-range input[type="range"] {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            margin: 0;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        .trim-range input[type="range"]::-webkit-slider-runnable-track {
+            background: transparent;
+        }
+
+        .trim-range input[type="range"]::-moz-range-track {
+            background: transparent;
+        }
+
+        .trim-range input[type="range"]::-webkit-slider-thumb {
+            pointer-events: auto;
+            position: relative;
+            z-index: 2;
+        }
+
+        .trim-range input[type="range"]::-moz-range-thumb {
+            pointer-events: auto;
+            position: relative;
+            z-index: 2;
+        }
+
         kbd {
             font-size: 0.75rem;
         }
@@ -401,15 +448,21 @@
                 <section class="tab-pane fade" id="pane-trim" role="tabpanel">
                     <div class="card-custom">
                         <div class="row g-4">
-                            <div class="col-md-6">
-                                <label for="trimStart" class="form-label fw-semibold">시작 프레임 <span class="range-value"
-                                        id="trimStartLabel">1</span></label>
-                                <input type="range" class="form-range" id="trimStart" min="0" max="0" value="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label for="trimEnd" class="form-label fw-semibold">끝 프레임 <span class="range-value"
-                                        id="trimEndLabel">1</span></label>
-                                <input type="range" class="form-range" id="trimEnd" min="0" max="0" value="0">
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label fw-semibold mb-0">남길 구간</label>
+                                    <span class="small text-muted">양쪽 손잡이를 움직여 시작과 끝을 정하세요</span>
+                                </div>
+                                <div class="trim-range" aria-label="GIF 자르기 구간">
+                                    <input type="range" class="form-range" id="trimStart" min="0" max="0" value="0"
+                                        aria-label="자르기 시작 프레임">
+                                    <input type="range" class="form-range" id="trimEnd" min="0" max="0" value="0"
+                                        aria-label="자르기 끝 프레임">
+                                </div>
+                                <div class="d-flex justify-content-between small">
+                                    <span>시작 <span class="range-value" id="trimStartLabel">1</span></span>
+                                    <span>끝 <span class="range-value" id="trimEndLabel">1</span></span>
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label for="speedRate" class="form-label fw-semibold">재생 속도</label>
@@ -557,6 +610,16 @@
                 <div class="preview-label"><i class="bi bi-eye"></i> 편집 미리보기 (실시간)</div>
                 <div class="preview-stage checker">
                     <canvas id="previewCanvas"></canvas>
+                </div>
+
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <label for="previewSeek" class="form-label fw-semibold mb-1">미리보기 프레임 이동</label>
+                        <span class="range-value" id="previewSeekLabel">1 / 1</span>
+                    </div>
+                    <input type="range" class="form-range" id="previewSeek" min="0" max="0" value="0"
+                        aria-label="미리보기 프레임 이동">
+                    <div class="small text-muted">일시정지한 뒤 슬라이더를 움직이면 해당 프레임을 확인할 수 있습니다.</div>
                 </div>
 
                 <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
@@ -1192,6 +1255,9 @@
                 this.index = 0;
                 this.canvas.width = width;
                 this.canvas.height = height;
+                const seek = document.getElementById('previewSeek');
+                seek.max = Math.max(0, frames.length - 1);
+                seek.value = 0;
                 this.draw();
                 if (this.playing) this.play();
             },
@@ -1200,6 +1266,10 @@
                 const ctx = this.canvas.getContext('2d');
                 ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 ctx.drawImage(this.frames[this.index].canvas, 0, 0);
+                const seek = document.getElementById('previewSeek');
+                seek.value = this.index;
+                document.getElementById('previewSeekLabel').textContent =
+                    `${this.index + 1} / ${this.frames.length}`;
             },
             play() {
                 this.stop();
@@ -1226,6 +1296,15 @@
                 player.stop();
                 this.innerHTML = '<i class="bi bi-play-fill"></i> 재생';
             }
+        });
+
+        document.getElementById('previewSeek').addEventListener('input', function () {
+            if (!player.frames.length) return;
+            player.playing = false;
+            player.stop();
+            player.index = Number(this.value);
+            player.draw();
+            document.getElementById('btnPlayToggle').innerHTML = '<i class="bi bi-play-fill"></i> 재생';
         });
 
         let processedResult = null;
@@ -1260,6 +1339,18 @@
             'blurStart', 'blurEnd', 'blurType', 'blurStrength', 'blurWholeFrame',
             'bgColor', 'bgFillToggle'].forEach(id => {
                 document.getElementById(id).addEventListener('input', () => {
+                    if (id === 'trimStart') {
+                        const trimEnd = document.getElementById('trimEnd');
+                        const startValue = Number(document.getElementById(id).value);
+                        if (startValue > Number(trimEnd.value)) {
+                            trimEnd.value = startValue;
+                        }
+                    } else if (id === 'trimEnd') {
+                        const trimStart = document.getElementById('trimStart');
+                        if (Number(trimStart.value) > Number(document.getElementById(id).value)) {
+                            trimStart.value = document.getElementById(id).value;
+                        }
+                    }
                     updateScaleLabel();
                     updateRangeLabels();
                     document.getElementById('blurStrengthLabel').textContent = document.getElementById('blurStrength').value;
