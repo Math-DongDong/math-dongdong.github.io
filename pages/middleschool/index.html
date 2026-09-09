@@ -307,7 +307,7 @@
             <h1>아하수학</h1>
             <p>
                 수학이 어려워도 괜찮아요. 화면을 위에서 아래로 천천히 내리기만 하면 돼요.
-                개념을 다 읽고 <b>기초 미션을 모두 한 번에 맞히면</b> 주제 표시가 <b>아하!</b> 로 바뀝니다.
+                마지막에 <b>아하!</b> 인지 <b>아직은....</b> 인지만 한 번 눌러 주면 됩니다.
             </p>
             <div class="legend">
                 <span class="aha"><i class="bi bi-lightbulb-fill"></i> 아하! 이해했어요</span>
@@ -380,52 +380,96 @@
         ];
 
         /* ---------- 저장된 학습 기록 읽기 ---------- */
-        function readSummary(topicId) {
+        function readRecord(topicId) {
             try {
                 const raw = window.localStorage.getItem('ahamath.' + topicId + '.v1');
                 if (!raw) { return null; }
-                const data = JSON.parse(raw);
-                return data.summary || null;
+                return JSON.parse(raw);
             } catch (e) { return null; }
         }
 
-        /* ---------- 상태 계산 ----------
-           아하! 표시는 기초 미션을 모두 '한 번에' 맞혔을 때만 켜집니다.       */
-        function stateOf(summary) {
-            if (!summary || !summary.updatedAt) {
+        /* 풀이 완료한 문항 수 카운트 */
+        function countSolved(best, prefix) {
+            if (!best) { return 0; }
+            let count = 0;
+            Object.keys(best).forEach(function (id) {
+                if (id.indexOf(prefix) === 0 && (best[id] === 'firstTry' || best[id] === 'solved')) {
+                    count++;
+                }
+            });
+            return count;
+        }
+
+        /* ---------- 상태 계산 ---------- */
+        function stateOf(record, topic) {
+            const summary = (record && record.summary) || {};
+            const best = (record && record.best) || {};
+            const hasStarted = !!(record && (record.updatedAt || summary.updatedAt || record.gate));
+
+            const defaultBasicTotal = topic.id === 'daepyogap' ? 5 : 4;
+            const defaultChallengeTotal = topic.id === 'frequency' ? 2 : 3;
+            const basicTotal = summary.basicTotal || defaultBasicTotal;
+            const challengeTotal = summary.challengeTotal || defaultChallengeTotal;
+
+            const basicSolved = Math.max(countSolved(best, 'q'), summary.basicFirstTry || 0);
+            const challengeSolved = Math.max(countSolved(best, 'x'), summary.challengeFirstTry || 0);
+
+            // 기초 미션 칩
+            let basicChip = '';
+            if (basicSolved === 0) {
+                basicChip = '<span class="chip soon"><i class="bi bi-dash-circle"></i> 기초 미션 0 / ' + basicTotal + ' (아직 안 풂)</span>';
+            } else if (basicSolved >= basicTotal) {
+                basicChip = '<span class="chip green"><i class="bi bi-check-circle-fill"></i> 기초 미션 ' + basicTotal + ' / ' + basicTotal + ' 완료</span>';
+            } else {
+                basicChip = '<span class="chip"><i class="bi bi-pencil-fill"></i> 기초 미션 ' + basicSolved + ' / ' + basicTotal + ' 풀음</span>';
+            }
+
+            // 도전 미션 칩
+            let challengeChip = '';
+            if (challengeSolved === 0) {
+                challengeChip = '<span class="chip soon"><i class="bi bi-dash-circle"></i> 도전 미션 0 / ' + challengeTotal + ' (아직 안 풂)</span>';
+            } else if (challengeSolved >= challengeTotal || summary.challengeMastered) {
+                challengeChip = '<span class="chip gold"><i class="bi bi-stars"></i> 도전 미션 ' + challengeTotal + ' / ' + challengeTotal + ' 완료</span>';
+            } else {
+                challengeChip = '<span class="chip gold"><i class="bi bi-pencil-fill"></i> 도전 미션 ' + challengeSolved + ' / ' + challengeTotal + ' 풀음</span>';
+            }
+
+            const chips = [basicChip, challengeChip];
+
+            if (!hasStarted) {
                 return {
                     key: 'new', cls: 'none', icon: 'bi-play-circle',
-                    text: '아직 시작하지 않았어요', color: 'var(--primary)', percent: 0, chips: []
+                    text: '아직 시작하지 않았어요', color: 'var(--primary)', percent: 0, chips: chips
                 };
             }
 
-            const basicFirst = summary.basicFirstTry || 0;
-            const basicTotal = summary.basicTotal || 5;
-            const chips = ['<span class="chip">기초 미션 ' + basicFirst + ' / ' + basicTotal + ' 한 번에 맞힘</span>'];
-            if (summary.challengeMastered) {
-                chips.push('<span class="chip gold"><i class="bi bi-stars"></i> 도전 완료</span>');
-            } else if (summary.challengeFirstTry) {
-                chips.push('<span class="chip gold">도전 ' + summary.challengeFirstTry + ' / ' + (summary.challengeTotal || 3) + '</span>');
-            }
+            // 아하! 이해했어요 조건: 기초문제를 풀지 않았더라도 'aha'를 클릭했거나, 마스터했거나, 기초문제를 모두 풀었을 때
+            const isAha = (record.gate === 'aha' || summary.gate === 'aha' || summary.mastered || (basicSolved >= basicTotal && basicTotal > 0));
 
-            if (summary.mastered) {
+            if (isAha) {
+                let percent = summary.percent;
+                if (!percent || percent < 20) {
+                    percent = Math.round((1 + basicSolved) / (1 + basicTotal) * 100);
+                }
                 return {
                     key: 'aha', cls: 'aha', icon: 'bi-lightbulb-fill',
                     text: '아하! 이해했어요', color: 'var(--aha)',
-                    percent: summary.percent || 100, chips: chips
+                    percent: Math.min(100, percent || 100), chips: chips
                 };
             }
+
+            // '아직은.... 다시 볼래요'를 클릭했거나 학습 진행 중인 경우
             return {
                 key: 'wait', cls: 'wait', icon: 'bi-bookmark-fill',
                 text: '아직은.... 다시 볼래요', color: 'var(--wait)',
-                percent: summary.percent || 0, chips: chips
+                percent: summary.percent || Math.round(basicSolved / basicTotal * 100) || 0, chips: chips
             };
         }
 
         /* ---------- 카드 그리기 ---------- */
         function cardHTML(topic) {
-            const summary = topic.status === 'ready' ? readSummary(topic.id) : null;
-            const state = stateOf(summary);
+            const record = topic.status === 'ready' ? readRecord(topic.id) : null;
+            const state = stateOf(record, topic);
             const goals = topic.goals.map(function (g) { return '<span class="goal-chip">' + g + '</span>'; }).join('');
 
             const head =
@@ -479,10 +523,11 @@
             let latest = null;
             TOPICS.forEach(function (t) {
                 if (t.status !== 'ready') { return; }
-                const summary = readSummary(t.id);
-                if (!summary || !summary.updatedAt) { return; }
-                if (!latest || summary.updatedAt > latest.updatedAt) {
-                    latest = { topic: t, updatedAt: summary.updatedAt };
+                const record = readRecord(t.id);
+                const updated = record && (record.updatedAt || (record.summary && record.summary.updatedAt));
+                if (!updated) { return; }
+                if (!latest || updated > latest.updatedAt) {
+                    latest = { topic: t, updatedAt: updated };
                 }
             });
             if (!latest) { return; }
