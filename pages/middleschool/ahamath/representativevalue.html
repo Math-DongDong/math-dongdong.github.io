@@ -641,6 +641,27 @@
             color: var(--primary);
         }
 
+        .badge-master {
+            display: block;
+            text-align: center;
+            font-weight: 800;
+            border-radius: 14px;
+            padding: 0.7rem 0.8rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .badge-master.on {
+            background: var(--aha-soft);
+            border: 2px solid #bbf7d0;
+            color: #14532d;
+        }
+
+        .badge-master.off {
+            background: var(--wait-soft);
+            border: 2px solid #fde68a;
+            color: #78350f;
+        }
+
         .to-top {
             position: fixed;
             right: 14px;
@@ -729,7 +750,7 @@
             <!-- 다시 볼 문제 (기록이 있을 때만) -->
             <section class="card-box" id="reviewCard" hidden>
                 <div class="box-title" style="color:var(--wait)"><i class="bi bi-bookmark"></i> 다시 볼 문제</div>
-                <p class="muted-text mb-1">한 번에 맞히지 못한 문제예요. 눌러서 다시 풀어 볼까요?</p>
+                <p class="muted-text mb-1">한 번에 맞히지 못한 문제예요. 누르면 <b>이 문제들만</b> 골라서 다시 풀 수 있어요.</p>
                 <ul class="review-list" id="reviewList"></ul>
             </section>
 
@@ -1053,10 +1074,6 @@
                 <button class="btn btn-primary nav-btn flex-grow-1" id="nextQ">다음 문제 <i
                         class="bi bi-chevron-right"></i></button>
             </div>
-
-            <button class="btn btn-outline-primary w-100 mt-3 fw-bold" id="backToConcept">
-                <i class="bi bi-book"></i> 개념 다시 보기
-            </button>
         </section>
 
         <!-- =================================================================
@@ -1067,11 +1084,13 @@
                 <h2 class="card-title" id="doneTitle">미션 완료!</h2>
                 <p class="lead-text" id="doneLead"></p>
 
+                <div class="badge-master" id="doneMaster"></div>
+
                 <div class="result-line">
-                    <span>한 번에 맞힌 문항</span><span class="num" id="doneFirstTry">0 / 0</span>
+                    <span>이번에 한 번에 맞힌 문항</span><span class="num" id="doneThisTime">0 / 0</span>
                 </div>
                 <div class="result-line">
-                    <span>끝까지 맞힌 문항</span><span class="num" id="doneCleared">0 / 0</span>
+                    <span>지금까지 한 번에 맞힌 문항</span><span class="num" id="doneBest">0 / 0</span>
                 </div>
 
                 <div class="mt-3" id="doneReviewBox" hidden>
@@ -1128,14 +1147,17 @@
             };
         })();
 
+        /*  저장되는 것은 "가장 좋았던 결과"만 남깁니다.
+            best[문항ID] = 'firstTry'(한 번에 맞힘) | 'solved'(여러 번 만에 맞힘) | 'missed'(못 맞힘)
+            지금 풀고 있는 상태는 저장하지 않고, 들어올 때마다 새로 시작합니다.          */
         function emptyRecord() {
             return {
-                version: 3,
+                version: 4,
                 topic: TOPIC_ID,
-                gate: null,           // 기초 자가진단 : 'aha' | 'notYet' | null
-                challengeGate: null,  // 심화 자가진단 : 'aha' | 'notYet' | null
-                quiz: {},             // { q1: { selectedId, isCorrect, tryCount } }
-                summary: {},          // 메인 페이지에서 읽는 요약
+                gate: null,            // 기초 자가진단 : 'aha' | 'notYet' | null
+                challengeGate: null,   // 심화 자가진단 : 'aha' | 'notYet' | null
+                best: {},
+                summary: {},
                 updatedAt: null
             };
         }
@@ -1143,8 +1165,17 @@
         function loadRecord() {
             const raw = Store.read(STORAGE_KEY);
             if (!raw) { return emptyRecord(); }
-            try { return Object.assign(emptyRecord(), JSON.parse(raw)); }
-            catch (e) { return emptyRecord(); }
+            let data;
+            try { data = JSON.parse(raw); } catch (e) { return emptyRecord(); }
+            const merged = Object.assign(emptyRecord(), data);
+            if (data.quiz && !data.best) {                 // 예전 버전 기록 옮기기
+                merged.best = {};
+                Object.keys(data.quiz).forEach(function (id) {
+                    const q = data.quiz[id];
+                    merged.best[id] = q.isCorrect ? (q.tryCount === 1 ? 'firstTry' : 'solved') : 'missed';
+                });
+            }
+            return merged;
         }
 
         let record = loadRecord();
@@ -1153,6 +1184,12 @@
             record.updatedAt = new Date().toISOString();
             record.summary = buildSummary();
             Store.write(STORAGE_KEY, JSON.stringify(record));
+        }
+
+        const RANK = { missed: 0, solved: 1, firstTry: 2 };
+        function keepBest(id, status) {
+            const now = record.best[id];
+            if (!now || RANK[status] > RANK[now]) { record.best[id] = status; }
         }
 
         /* =====================================================================
@@ -1253,36 +1290,33 @@
             basic: {
                 ids: Object.keys(QUESTIONS).filter(function (k) { return QUESTIONS[k].group === 'basic'; }),
                 label: '기초 확인 미션',
-                readView: 'view-read',
-                conceptAnchor: 'block-c7'
+                readView: 'view-read'
             },
             challenge: {
                 ids: Object.keys(QUESTIONS).filter(function (k) { return QUESTIONS[k].group === 'challenge'; }),
                 label: '도전 미션',
-                readView: 'view-cread',
-                conceptAnchor: 'block-a1'
+                readView: 'view-cread'
             }
         };
         const ALL_IDS = Object.keys(QUESTIONS);
 
-        function isCleared(id) { return !!(record.quiz[id] && record.quiz[id].isCorrect); }
-        function isFirstTry(id) { return !!(record.quiz[id] && record.quiz[id].isCorrect && record.quiz[id].tryCount === 1); }
-        function clearedCount(ids) { return ids.filter(isCleared).length; }
-        function firstTryCount(ids) { return ids.filter(isFirstTry).length; }
+        function bestOf(id) { return record.best[id] || null; }
+        function firstTryCount(ids) { return ids.filter(function (id) { return bestOf(id) === 'firstTry'; }).length; }
+        function isMastered(flow) { return firstTryCount(FLOW[flow].ids) === FLOW[flow].ids.length; }
 
         function buildSummary() {
-            const basicCleared = clearedCount(FLOW.basic.ids);
-            const done = (record.gate ? 1 : 0) + basicCleared;
+            const basicFirst = firstTryCount(FLOW.basic.ids);
+            const done = (record.gate ? 1 : 0) + basicFirst;
             return {
                 gate: record.gate,
                 challengeGate: record.challengeGate,
-                basicCleared: basicCleared,
+                basicFirstTry: basicFirst,
                 basicTotal: FLOW.basic.ids.length,
-                challengeCleared: clearedCount(FLOW.challenge.ids),
+                challengeFirstTry: firstTryCount(FLOW.challenge.ids),
                 challengeTotal: FLOW.challenge.ids.length,
-                firstTry: firstTryCount(ALL_IDS),
+                mastered: isMastered('basic'),
+                challengeMastered: isMastered('challenge'),
                 percent: Math.round(done / (1 + FLOW.basic.ids.length) * 100),
-                challengeDone: clearedCount(FLOW.challenge.ids) === FLOW.challenge.ids.length,
                 updatedAt: new Date().toISOString()
             };
         }
@@ -1291,8 +1325,8 @@
            3. 화면 전환
            ===================================================================== */
         let activeView = 'view-read';
-        let flowName = 'basic';
-        let qIndex = 0;
+        let session = null;     // { flow, mode, ids, index }
+        let attempts = {};      // 지금 풀고 있는 상태 (저장하지 않음)
 
         function showView(id) {
             document.querySelectorAll('.view').forEach(function (v) { v.hidden = (v.id !== id); });
@@ -1315,12 +1349,11 @@
             }
             backText.textContent = '개념으로';
 
-            if (activeView === 'view-mission') {
-                const ids = FLOW[flowName].ids;
-                const step = flowName === 'basic' ? 3 : 4;
-                label.textContent = step + '단계: ' + FLOW[flowName].label;
+            if (activeView === 'view-mission' && session) {
+                const step = session.flow === 'basic' ? 3 : 4;
+                label.textContent = step + '단계: ' + FLOW[session.flow].label;
                 total.textContent = step + ' / ' + TOTAL_STEPS + '단계';
-                bar.style.width = Math.round((qIndex + 1) / ids.length * 100) + '%';
+                bar.style.width = Math.round((session.index + 1) / session.ids.length * 100) + '%';
                 return;
             }
             label.textContent = '학습 마무리';
@@ -1347,156 +1380,156 @@
         }
 
         /* =====================================================================
-           4. 미션 (한 화면에 한 문제)
+           4. 미션 (한 화면에 한 문제 · 들어올 때마다 새로 시작)
            ===================================================================== */
-        function openMission(name, index) {
-            flowName = name;
-            const ids = FLOW[name].ids;
-            if (index === undefined || index === null) {
-                index = ids.findIndex(function (id) { return !isCleared(id); });
-                if (index < 0) { index = 0; }
-            }
-            qIndex = Math.max(0, Math.min(index, ids.length - 1));
+        function reviewIdsOf(flow) {
+            return FLOW[flow].ids.filter(function (id) {
+                const b = bestOf(id);
+                return b && b !== 'firstTry';
+            });
+        }
+
+        function startMission(flow, mode, startId) {
+            const ids = (mode === 'review') ? reviewIdsOf(flow) : FLOW[flow].ids.slice();
+            if (!ids.length) { return; }
+            let index = 0;
+            if (mode === 'review' && startId) { index = Math.max(0, ids.indexOf(startId)); }
+            session = { flow: flow, mode: mode, ids: ids, index: index };
+            attempts = {};                       // 이번 풀이는 항상 처음부터
             showView('view-mission');
             renderCurrentQuestion();
         }
 
         function renderCurrentQuestion() {
-            const ids = FLOW[flowName].ids;
-            const id = ids[qIndex];
+            const id = session.ids[session.index];
             const q = QUESTIONS[id];
+            const state = attempts[id] || { tryCount: 0, wrong: [], solvedWith: null, lastHint: '' };
             const card = document.getElementById('questionCard');
-            const saved = record.quiz[id];
 
-            document.getElementById('missionFlowLabel').textContent = FLOW[flowName].label;
-            document.getElementById('missionFlowLabel').className = 'q-badge' + (flowName === 'challenge' ? ' gold' : '');
-            document.getElementById('missionProgressText').textContent = '문제 ' + (qIndex + 1) + ' / ' + ids.length;
+            const flowLabel = document.getElementById('missionFlowLabel');
+            flowLabel.textContent = FLOW[session.flow].label + (session.mode === 'review' ? ' · 다시 풀기' : '');
+            flowLabel.className = 'q-badge' + (session.flow === 'challenge' ? ' gold' : '');
+            document.getElementById('missionProgressText').textContent =
+                '문제 ' + (session.index + 1) + ' / ' + session.ids.length;
 
             card.innerHTML =
                 '<h2 class="card-title">' + q.badge + '</h2>' +
                 '<p class="lead-text">' + q.stem + '</p>' +
                 '<div class="data-line">' + q.data + '</div>' +
                 q.choices.map(function (c) {
-                    return '<button class="choice" data-choice="' + c.id + '">' + c.text + '</button>';
+                    let cls = 'choice';
+                    let dis = '';
+                    if (state.solvedWith) { dis = ' disabled'; if (state.solvedWith === c.id) { cls += ' correct'; } }
+                    if (state.wrong.indexOf(c.id) > -1) { cls += ' wrong'; dis = ' disabled'; }
+                    return '<button class="' + cls + '" data-choice="' + c.id + '"' + dis + '>' + c.text + '</button>';
                 }).join('') +
-                '<div class="feedback" id="fb" hidden></div>' +
-                '<button class="btn btn-link w-100 text-decoration-none muted-text mt-2" id="retryQ" hidden>다시 풀기</button>';
+                '<div class="feedback" id="fb" hidden></div>';
 
             card.querySelectorAll('.choice').forEach(function (b) {
                 b.addEventListener('click', function () { answer(id, b.dataset.choice); });
             });
-            document.getElementById('retryQ').addEventListener('click', function () {
-                delete record.quiz[id];
-                saveRecord();
-                renderCurrentQuestion();
-                updateTopbar();
-            });
 
-            if (saved && saved.isCorrect) { paintCorrect(id, saved.selectedId); }
+            const fb = document.getElementById('fb');
+            if (state.solvedWith) {
+                fb.className = 'feedback ok';
+                fb.innerHTML = '<b>' + (state.tryCount === 1 ? '한 번에 맞혔어요!' : '맞았어요!') + '</b> ' + q.ok;
+                fb.hidden = false;
+            } else if (state.lastHint) {
+                fb.className = 'feedback no';
+                fb.innerHTML = '<b>거의 다 왔어요.</b> ' + state.lastHint + '<br>남은 것 중에서 다시 골라 볼까요?';
+                fb.hidden = false;
+            }
 
             updateMissionNav();
             updateTopbar();
-        }
-
-        function paintCorrect(id, choiceId) {
-            const q = QUESTIONS[id];
-            const card = document.getElementById('questionCard');
-            card.querySelectorAll('.choice').forEach(function (b) { b.disabled = true; });
-            const picked = card.querySelector('[data-choice="' + choiceId + '"]');
-            if (picked) { picked.classList.add('correct'); }
-            const fb = document.getElementById('fb');
-            const first = record.quiz[id] && record.quiz[id].tryCount === 1;
-            fb.className = 'feedback ok';
-            fb.innerHTML = '<b>' + (first ? '한 번에 맞혔어요!' : '맞았어요!') + '</b> ' + q.ok;
-            fb.hidden = false;
-            document.getElementById('retryQ').hidden = false;
         }
 
         function answer(id, choiceId) {
             const q = QUESTIONS[id];
             const picked = q.choices.filter(function (c) { return c.id === choiceId; })[0];
-            const before = record.quiz[id] || { tryCount: 0 };
-            record.quiz[id] = {
-                selectedId: choiceId,
-                isCorrect: !!picked.correct,
-                tryCount: before.tryCount + 1
-            };
+            const state = attempts[id] || { tryCount: 0, wrong: [], solvedWith: null, lastHint: '' };
+
+            state.tryCount++;
+            if (picked.correct) {
+                state.solvedWith = choiceId;
+                keepBest(id, state.tryCount === 1 ? 'firstTry' : 'solved');
+            } else {
+                state.wrong.push(choiceId);
+                state.lastHint = picked.hint;
+                keepBest(id, 'missed');
+            }
+            attempts[id] = state;
             saveRecord();
 
-            if (picked.correct) {
-                paintCorrect(id, choiceId);
-            } else {
-                const card = document.getElementById('questionCard');
-                const button = card.querySelector('[data-choice="' + choiceId + '"]');
-                button.classList.add('wrong');
-                button.disabled = true;
-                const fb = document.getElementById('fb');
-                fb.className = 'feedback no';
-                fb.innerHTML = '<b>거의 다 왔어요.</b> ' + picked.hint + '<br>남은 것 중에서 다시 골라 볼까요?';
-                fb.hidden = false;
-            }
-            updateMissionNav();
-            updateTopbar();
+            renderCurrentQuestion();
             renderReview();
         }
 
         function updateMissionNav() {
-            const ids = FLOW[flowName].ids;
-            const id = ids[qIndex];
-            const prev = document.getElementById('prevQ');
+            const id = session.ids[session.index];
+            const solved = !!(attempts[id] && attempts[id].solvedWith);
+            const last = (session.index === session.ids.length - 1);
+
+            document.getElementById('prevQ').disabled = (session.index === 0);
             const next = document.getElementById('nextQ');
-
-            prev.disabled = (qIndex === 0);
-            const last = (qIndex === ids.length - 1);
-            const cleared = isCleared(id);
-
-            next.disabled = !cleared;
+            next.disabled = !solved;
             next.innerHTML = last
                 ? '결과 보기 <i class="bi bi-flag"></i>'
                 : '다음 문제 <i class="bi bi-chevron-right"></i>';
         }
 
         document.getElementById('prevQ').addEventListener('click', function () {
-            if (qIndex > 0) { qIndex--; renderCurrentQuestion(); window.scrollTo({ top: 0, behavior: 'auto' }); }
-        });
-
-        document.getElementById('nextQ').addEventListener('click', function () {
-            const ids = FLOW[flowName].ids;
-            if (qIndex < ids.length - 1) {
-                qIndex++;
+            if (session.index > 0) {
+                session.index--;
                 renderCurrentQuestion();
                 window.scrollTo({ top: 0, behavior: 'auto' });
-            } else {
-                showResult(flowName);
             }
         });
 
-        document.getElementById('backToConcept').addEventListener('click', function () {
-            showView(FLOW[flowName].readView);
-            const anchor = document.getElementById(FLOW[flowName].conceptAnchor);
-            if (anchor) {
-                setTimeout(function () {
-                    anchor.scrollIntoView({ behavior: REDUCE_MOTION ? 'auto' : 'smooth', block: 'start' });
-                }, 60);
+        document.getElementById('nextQ').addEventListener('click', function () {
+            if (session.index < session.ids.length - 1) {
+                session.index++;
+                renderCurrentQuestion();
+                window.scrollTo({ top: 0, behavior: 'auto' });
+            } else {
+                showResult(session.flow);
             }
         });
 
         /* =====================================================================
            5. 결과 화면
            ===================================================================== */
-        function showResult(name) {
-            const ids = FLOW[name].ids;
-            const otherName = (name === 'basic') ? 'challenge' : 'basic';
-            const otherIds = FLOW[otherName].ids;
+        function showResult(flow) {
+            const ids = FLOW[flow].ids;
+            const other = (flow === 'basic') ? 'challenge' : 'basic';
+            const sessionIds = session ? session.ids : ids;
+
+            const thisTime = sessionIds.filter(function (id) {
+                return attempts[id] && attempts[id].solvedWith && attempts[id].tryCount === 1;
+            }).length;
 
             document.getElementById('doneTitle').textContent =
-                (name === 'basic' ? '기초 미션 완료!' : '도전 미션 완료!');
-            document.getElementById('doneLead').innerHTML =
-                (name === 'basic'
-                    ? '다섯 문제를 끝까지 풀었어요. 정말 잘했어요.'
+                (flow === 'basic' ? '기초 미션 완료!' : '도전 미션 완료!');
+            document.getElementById('doneLead').textContent =
+                (flow === 'basic'
+                    ? '끝까지 풀었어요. 정말 잘했어요.'
                     : '조건이 늘어난 문제까지 해냈어요. 대단해요.');
-            document.getElementById('doneFirstTry').textContent = firstTryCount(ids) + ' / ' + ids.length;
-            document.getElementById('doneCleared').textContent = clearedCount(ids) + ' / ' + ids.length;
+            document.getElementById('doneThisTime').textContent = thisTime + ' / ' + sessionIds.length;
+            document.getElementById('doneBest').textContent = firstTryCount(ids) + ' / ' + ids.length;
+
+            const master = document.getElementById('doneMaster');
+            if (flow === 'basic') {
+                if (isMastered('basic')) {
+                    master.className = 'badge-master on';
+                    master.innerHTML = '<i class="bi bi-lightbulb-fill"></i> 다섯 문제를 모두 한 번에 맞혔어요!<br>첫 화면 표시가 <b>아하! 이해했어요</b>로 바뀌었어요.';
+                } else {
+                    master.className = 'badge-master off';
+                    master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 아래 <b>다시 볼 문제</b>를 한 번에 맞히면<br>첫 화면 표시가 <b>아하! 이해했어요</b>로 바뀌어요.';
+                }
+                master.hidden = false;
+            } else {
+                master.hidden = true;
+            }
 
             const items = reviewItems(ids);
             document.getElementById('doneReviewBox').hidden = (items.length === 0);
@@ -1505,7 +1538,14 @@
             const actions = document.getElementById('doneActions');
             actions.innerHTML = '';
 
-            if (name === 'basic' && clearedCount(otherIds) < otherIds.length) {
+            if (items.length) {
+                actions.appendChild(makeButton(
+                    '<i class="bi bi-arrow-repeat"></i> 다시 볼 문제만 풀어 보기',
+                    'btn btn-outline-primary fw-bold w-100 py-2 mb-2',
+                    function () { startMission(flow, 'review', null); }
+                ));
+            }
+            if (flow === 'basic' && !isMastered('challenge')) {
                 actions.appendChild(makeButton(
                     '<i class="bi bi-stars"></i> 도전! 한 걸음 더 시작하기',
                     'btn fw-bold w-100 py-2 text-white mb-2',
@@ -1513,17 +1553,17 @@
                     'background:var(--wait);border-color:var(--wait)'
                 ));
             }
-            if (name === 'challenge' && clearedCount(otherIds) < otherIds.length) {
+            if (flow === 'challenge' && !isMastered('basic')) {
                 actions.appendChild(makeButton(
                     '<i class="bi bi-check2-circle"></i> 기초 미션도 남아 있어요 · 풀러 가기',
                     'btn btn-primary fw-bold w-100 py-2 mb-2',
-                    function () { openMission('basic', null); }
+                    function () { startMission('basic', 'full', null); }
                 ));
             }
             actions.appendChild(makeButton(
                 '<i class="bi bi-book"></i> 개념 다시 보기',
-                'btn btn-outline-primary fw-bold w-100 py-2 mb-2',
-                function () { showView(FLOW[name].readView); }
+                'btn btn-light fw-bold w-100 py-2 mb-2',
+                function () { showView(FLOW[flow].readView); }
             ));
             const link = document.createElement('a');
             link.className = 'btn btn-light fw-bold w-100 py-2';
@@ -1548,15 +1588,13 @@
            ===================================================================== */
         function reviewItems(ids) {
             return ids.filter(function (id) {
-                const q = record.quiz[id];
-                if (!q) { return false; }
-                return !q.isCorrect || q.tryCount > 1;
+                const b = bestOf(id);
+                return b && b !== 'firstTry';
             }).map(function (id) {
-                const q = record.quiz[id];
                 return {
                     id: id,
                     flow: QUESTIONS[id].group,
-                    label: QUESTIONS[id].title + ' · ' + (q.isCorrect ? '한 번에 맞히지 못했어요' : '아직 못 풀었어요')
+                    label: QUESTIONS[id].title + ' · ' + (bestOf(id) === 'solved' ? '한 번에 맞히지 못했어요' : '아직 못 맞혔어요')
                 };
             });
         }
@@ -1568,8 +1606,7 @@
             }).join('');
             list.querySelectorAll('[data-q]').forEach(function (button) {
                 button.addEventListener('click', function () {
-                    const name = button.dataset.flow;
-                    openMission(name, FLOW[name].ids.indexOf(button.dataset.q));
+                    startMission(button.dataset.flow, 'review', button.dataset.q);
                 });
             });
         }
@@ -1755,7 +1792,7 @@
             record.gate = 'aha';
             saveRecord();
             document.getElementById('gateWaitNote').hidden = true;
-            openMission('basic', null);
+            startMission('basic', 'full', null);
         });
 
         document.getElementById('gateWait').addEventListener('click', function () {
@@ -1765,13 +1802,13 @@
         });
 
         document.getElementById('gateJump').addEventListener('click', function () { showView('view-cread'); });
-        document.getElementById('gateOpenAnyway').addEventListener('click', function () { openMission('basic', null); });
+        document.getElementById('gateOpenAnyway').addEventListener('click', function () { startMission('basic', 'full', null); });
 
         document.getElementById('cgateAha').addEventListener('click', function () {
             record.challengeGate = 'aha';
             saveRecord();
             document.getElementById('cgateWaitNote').hidden = true;
-            openMission('challenge', null);
+            startMission('challenge', 'full', null);
         });
 
         document.getElementById('cgateWait').addEventListener('click', function () {
@@ -1780,13 +1817,13 @@
             document.getElementById('cgateWaitNote').hidden = false;
         });
 
-        document.getElementById('cgateOpenAnyway').addEventListener('click', function () { openMission('challenge', null); });
+        document.getElementById('cgateOpenAnyway').addEventListener('click', function () { startMission('challenge', 'full', null); });
 
         document.getElementById('backBtn').addEventListener('click', function () {
             if (activeView === 'view-read' || activeView === 'view-cread') {
                 window.location.href = '../index.html';
-            } else if (activeView === 'view-mission') {
-                showView(FLOW[flowName].readView);
+            } else if (activeView === 'view-mission' && session) {
+                showView(FLOW[session.flow].readView);
             } else {
                 showView('view-read');
             }
