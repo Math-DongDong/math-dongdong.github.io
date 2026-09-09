@@ -74,7 +74,7 @@
             "brand": "HOME",
             "menu": [
                 {
-                    "title": "수업관리",
+                    "title": "수업도구",
                     "items": [
                         { "name": "수직선 만들기", "path": "pages/automation/class/numberline.html" }
                     ]
@@ -85,8 +85,8 @@
                     "items": [
                         { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" },
                         { "name": "PDF 편집 도구", "path": "pages/automation/work/pdfedit.html" },
-                        { "name": "GIF 편집 도구", "path": "pages/automation/work/gifedit.html" },
-                        { "name": "엑셀 이미지 추출기", "path": "pages/automation/work/xlimagedownloader.html" }
+                        { "name": "엑셀 이미지 추출기", "path": "pages/automation/work/xlimagedownloader.html" },
+                        { "name": "GIF 편집 도구", "path": "pages/automation/work/gifedit.html" }
                     ]
                 },
                 {
