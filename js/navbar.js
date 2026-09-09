@@ -9,6 +9,10 @@
             "brand": "HOME",
             "menu": [
                 {
+                    "title": "아하수학",
+                    "path": "pages/middleschool/index.html"
+                },
+                {
                     "title": "중1 수학",
                     "items": [
                         { "name": "덧셈, 뺄셈", "path": "pages/middleschool/1/plus_minus.html" },
@@ -144,24 +148,37 @@
     // 4. HTML 동적 생성
     let menuHtml = '';
     navData.menu.forEach((group, index) => {
-        let itemsHtml = '';
-        group.items.forEach(item => {
-            const isHttp = item.path && item.path.startsWith('http');
-            const href = isHttp ? item.path : `${rootPath}${item.path}`;
-            const target = (item.external || isHttp) ? ' target="_blank" rel="noopener noreferrer"' : '';
-            itemsHtml += `<li><a class="dropdown-item" href="${href}"${target}>${item.name}</a></li>`;
-        });
+        if (group.items && Array.isArray(group.items) && group.items.length > 0) {
+            let itemsHtml = '';
+            group.items.forEach(item => {
+                const isHttp = item.path && item.path.startsWith('http');
+                const href = isHttp ? item.path : `${rootPath}${item.path}`;
+                const target = (item.external || isHttp) ? ' target="_blank" rel="noopener noreferrer"' : '';
+                itemsHtml += `<li><a class="dropdown-item" href="${href}"${target}>${item.name}</a></li>`;
+            });
 
-        menuHtml += `
-        <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown${navType}${index}" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                ${group.title}
-            </a>
-            <ul class="dropdown-menu" aria-labelledby="navbarDropdown${navType}${index}">
-                ${itemsHtml}
-            </ul>
-        </li>
-        `;
+            menuHtml += `
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown${navType}${index}" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    ${group.title}
+                </a>
+                <ul class="dropdown-menu" aria-labelledby="navbarDropdown${navType}${index}">
+                    ${itemsHtml}
+                </ul>
+            </li>
+            `;
+        } else {
+            const isHttp = group.path && group.path.startsWith('http');
+            const href = isHttp ? group.path : `${rootPath}${group.path}`;
+            const target = (group.external || isHttp) ? ' target="_blank" rel="noopener noreferrer"' : '';
+            menuHtml += `
+            <li class="nav-item">
+                <a class="nav-link" href="${href}"${target}>
+                    ${group.title}
+                </a>
+            </li>
+            `;
+        }
     });
 
     const navbarHtml = `
@@ -202,6 +219,19 @@
     // 6. 현재 페이지 활성화 표시 로직 및 교사 인증 모듈 로드
     function initNavbarFeatures() {
         const currentFile = normalizedPath.split('/').pop();
+
+        // 단일 링크 메뉴 활성화 체크
+        document.querySelectorAll('.navbar-nav > .nav-item > .nav-link:not(.dropdown-toggle)').forEach(link => {
+            const linkHref = decodeURIComponent(link.getAttribute('href')).replace(/\\/g, '/');
+            const cleanLinkHref = linkHref.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
+            if (cleanLinkHref && (
+                normalizedPath.endsWith(cleanLinkHref) ||
+                (cleanLinkHref.endsWith('index.html') && normalizedPath.endsWith(cleanLinkHref.replace('index.html', ''))) ||
+                (cleanLinkHref === 'pages/middleschool/index.html' && normalizedPath.includes('/pages/middleschool/ahamath/'))
+            )) {
+                link.classList.add('active');
+            }
+        });
 
         document.querySelectorAll('.dropdown-item').forEach(link => {
             const linkHref = decodeURIComponent(link.getAttribute('href')).replace(/\\/g, '/');
