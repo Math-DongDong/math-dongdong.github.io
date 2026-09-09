@@ -235,8 +235,11 @@
 
         document.querySelectorAll('.dropdown-item').forEach(link => {
             const linkHref = decodeURIComponent(link.getAttribute('href')).replace(/\\/g, '/');
-            const linkFile = linkHref.split('/').pop();
-            if (linkFile && linkFile === currentFile) {
+            const cleanLinkHref = linkHref.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
+            if (cleanLinkHref && (
+                normalizedPath.endsWith(cleanLinkHref) ||
+                (cleanLinkHref.endsWith('index.html') && normalizedPath.endsWith(cleanLinkHref.replace('index.html', '')))
+            )) {
                 link.classList.add('active');
                 const parentDropdown = link.closest('.dropdown');
                 if (parentDropdown) {
