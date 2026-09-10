@@ -9,7 +9,7 @@
             "brand": "HOME",
             "menu": [
                 {
-                    "title": "아하수학",
+                    "title": "아하! 수학",
                     "path": "pages/middleschool/index.html"
                 },
                 {
