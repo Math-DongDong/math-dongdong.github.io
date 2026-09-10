@@ -779,6 +779,7 @@
             padding: 0.55rem 0.8rem;
             font-weight: 700;
             font-size: 0.95rem;
+            line-height: 1.6;
         }
 
         .box-title {
@@ -942,7 +943,8 @@
 
             <section class="card-box" id="reviewCard" hidden>
                 <div class="box-title" style="color:var(--wait)"><i class="bi bi-bookmark"></i> 다시 볼 문제</div>
-                <p class="muted-text mb-1">한 번에 맞히지 못한 문제예요. 누르면 <b>이 문제들만</b> 골라서 다시 풀 수 있어요.</p>
+                <p class="muted-text mb-1">한 번에 맞히지 못한 문제예요. 누르면 <b>이 문제들만</b> 골라서 다시 풀 수 있어요.
+                    다시 풀어서 <b>한 번에 맞히면</b> 그때 기록에 쌓여요.</p>
                 <ul class="review-list" id="reviewList"></ul>
             </section>
 
@@ -1299,7 +1301,8 @@
                     <span>이번에 한 번에 맞힌 문항</span><span class="num" id="doneThisTime">0 / 0</span>
                 </div>
                 <div class="result-line">
-                    <span>지금까지 한 번에 맞힌 문항</span><span class="num" id="doneBest">0 / 0</span>
+                    <span>기록에 쌓인 문항<br><span class="muted-text">한 번에 맞힌 것만 세요</span></span><span class="num"
+                        id="doneBest">0 / 0</span>
                 </div>
 
                 <div class="mt-3" id="doneReviewBox" hidden>
@@ -1327,6 +1330,7 @@
            ===================================================================== */
         const TOPIC_ID = 'relative';                  // 메인 페이지 TOPICS 의 id 와 같아야 합니다
         const STORAGE_KEY = 'ahamath.' + TOPIC_ID + '.v1';
+        const RECORD_VERSION = 5;                     // 문항 구성이 바뀌면 올려서 문항별 기록만 초기화합니다
         const TOTAL_STEPS = 4;
         const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -1358,7 +1362,7 @@
 
         function emptyRecord() {
             return {
-                version: 4,
+                version: RECORD_VERSION,
                 topic: TOPIC_ID,
                 gate: null,
                 challengeGate: null,
@@ -1373,7 +1377,12 @@
             if (!raw) { return emptyRecord(); }
             let data;
             try { data = JSON.parse(raw); } catch (e) { return emptyRecord(); }
-            return Object.assign(emptyRecord(), data);
+            const merged = Object.assign(emptyRecord(), data);
+            if (merged.version !== RECORD_VERSION) {
+                merged.best = {};                     // 문항이 바뀌었으니 예전 문항별 기록은 버립니다
+                merged.version = RECORD_VERSION;
+            }
+            return merged;
         }
 
         let record = loadRecord();
@@ -1384,6 +1393,8 @@
             Store.write(STORAGE_KEY, JSON.stringify(record));
         }
 
+        /* 기록은 '한 번에 맞힘(firstTry)' 만 개수로 인정합니다.
+           한 번 올라간 등급은 내려가지 않고, 다시 풀어서 한 번에 맞히면 그때 올라갑니다. */
         const RANK = { missed: 0, solved: 1, firstTry: 2 };
         function keepBest(id, status) {
             const now = record.best[id];
@@ -1391,19 +1402,18 @@
         }
 
         /* =====================================================================
-           2. 문항
+           2. 문항  (보기는 2개 · 오답은 학생들이 실제로 자주 하는 실수로)
            ===================================================================== */
         const QUESTIONS = {
             q1: {
                 group: 'basic', badge: '미션 1', title: '미션 1<br>상대도수 구하기',
-                stem: '학생 24명을 조사했어요.<br>도수가 6명인 계급의 <b>상대도수</b>는 얼마일까요?',
-                data: '도수의 총합 24명<br>그 계급의 도수 6명',
+                stem: '학생 20명을 조사했어요.<br>도수가 5명인 계급의 <b>상대도수</b>는 얼마일까요?',
+                data: '도수의 총합 20명<br>그 계급의 도수 5명',
                 choices: [
                     { id: 'a', text: '0.25', correct: true },
-                    { id: 'b', text: '4', hint: '큰 수를 작은 수로 나누셨어요(24 ÷ 6). 상대도수는 그 계급의 도수를 총합으로 나눠요.' },
-                    { id: 'c', text: '6', hint: '도수를 그대로 답하셨어요. 전체 24명으로 한 번 나누어야 비율이 돼요.' }
+                    { id: 'b', text: '4', hint: '큰 수를 작은 수로 나누셨어요(20 ÷ 5). 상대도수는 그 계급의 도수를 총합으로 나눠요.' }
                 ],
-                ok: '6 ÷ 24 = 0.25예요. 백분율로는 25%가 되겠네요.'
+                ok: '5 ÷ 20 = 0.25예요. 백분율로는 25%가 되겠네요.'
             },
             q2: {
                 group: 'basic', badge: '미션 2', title: '미션 2<br>상대도수의 합',
@@ -1415,22 +1425,30 @@
                     '<tr><td>4번째</td><td>0.2</td></tr>' +
                     '<tr><th>합계</th><th>1</th></tr></table>',
                 choices: [
-                    { id: 'a', text: '0.55', hint: '보이는 상대도수를 더한 값 0.55 에서 멈추셨어요. 합계 1에서 빼야 해요.' },
-                    { id: 'b', text: '0.45', correct: true },
-                    { id: 'c', text: '1', hint: '합계가 1이라는 것까지는 맞아요. 그 1에서 나머지를 빼면 한 칸의 값이 나와요.' }
+                    { id: 'a', text: '0.55', hint: '보이는 상대도수를 더한 0.55에서 멈추셨어요. 합계 1에서 0.55를 빼야 지워진 칸의 값이 나와요.' },
+                    { id: 'b', text: '0.45', correct: true }
                 ],
                 ok: '0.1 + 0.25 + 0.2 = 0.55, 1 − 0.55 = 0.45예요.'
             },
-            q4: {
+            q3: {
                 group: 'basic', badge: '미션 3', title: '미션 3<br>두 반 비교하기',
                 stem: 'A반은 20명, B반은 30명이에요.<br>안경을 쓴 학생이 두 반 모두 6명일 때, <b>비율이 더 높은 반</b>은 어디일까요?',
                 data: 'A반 20명 중 6명<br>B반 30명 중 6명',
                 choices: [
-                    { id: 'a', text: '두 반이 같아요', hint: '사람 수가 6명으로 같다고 비율까지 같은 건 아니에요. 반 전체 인원이 20명과 30명으로 다르니까요.' },
-                    { id: 'b', text: 'A반', correct: true },
-                    { id: 'c', text: 'B반', hint: '반 인원이 많은 쪽을 고르셨어요. 전체가 많을수록 같은 6명이라도 비율은 오히려 낮아져요.' }
+                    { id: 'a', text: '두 반이 같아요', hint: '안경 쓴 학생이 6명으로 같다고 비율까지 같지는 않아요. 반 전체 인원이 20명과 30명으로 다르니까요.' },
+                    { id: 'b', text: 'A반', correct: true }
                 ],
                 ok: 'A반은 6 ÷ 20 = 0.3, B반은 6 ÷ 30 = 0.2예요. A반의 비율이 더 높아요.'
+            },
+            q4: {
+                group: 'basic', badge: '미션 4', title: '미션 4<br>옳은 설명 고르기',
+                stem: '상대도수에 대한 설명 중 <b>옳은 것</b>은 무엇일까요?',
+                data: '<span class="mini-stem">① 상대도수를 모두 더하면 1이다<br>② 도수가 크면 상대도수도 항상 크다</span>',
+                choices: [
+                    { id: 'a', text: '①', correct: true },
+                    { id: 'b', text: '②', hint: '도수가 커도 전체가 더 크면 상대도수는 작아질 수 있어요. 20명 중 8명과 30명 중 9명을 떠올려 보세요.' }
+                ],
+                ok: '띠 하나가 전체(=1)였죠. 상대도수를 모두 더하면 언제나 1이에요.'
             },
 
             x1: {
@@ -1438,22 +1456,20 @@
                 stem: 'A중학교 100명, B중학교 250명을 조사했어요.<br>어떤 계급의 상대도수가 둘 다 0.2일 때, 옳은 설명은 무엇일까요?',
                 data: 'A중학교 100명<br>상대도수 0.2<br>B중학교 250명<br>상대도수 0.2',
                 choices: [
-                    { id: 'a', text: '두 학교의 학생 수가 같다', hint: '같은 것은 비율이에요. 전체 인원이 다르면 사람 수는 달라져요.' },
-                    { id: 'b', text: 'B중학교가 더 많다', correct: true },
-                    { id: 'c', text: 'A중학교가 더 많다', hint: '상대도수가 같다면 전체가 더 많은 쪽의 사람 수가 더 많아요. 100명과 250명 중 어느 쪽이 클까요?' }
+                    { id: 'a', text: '두 학교의 학생 수가 같다', hint: '같은 것은 비율이에요. 전체 인원이 다르면 같은 0.2라도 사람 수는 달라져요.' },
+                    { id: 'b', text: 'B중학교가 더 많다', correct: true }
                 ],
                 ok: 'A는 100 × 0.2 = 20명, B는 250 × 0.2 = 50명이에요.'
             },
-            q3: {
-                group: 'challenge', badge: '도전 미션 2', title: '도전 2<br>옳은 설명 고르기',
-                stem: '상대도수에 대한 설명 중 <b>옳은 것</b>은 무엇일까요?',
-                data: '<span class="mini-stem">① 상대도수는 1보다 클 수 있다<br>② 상대도수를 모두 더하면 1이다<br>③ 도수가 크면 상대도수도 항상 크다</span>',
+            x2: {
+                group: 'challenge', badge: '도전 미션 2', title: '도전 2<br>상대도수로 도수 구하기',
+                stem: '전체 200명을 조사했어요.<br>상대도수가 0.15인 계급의 <b>학생 수</b>는 몇 명일까요?',
+                data: '도수의 총합 200명<br>상대도수 0.15',
                 choices: [
-                    { id: 'a', text: '①', hint: '상대도수는 전체에서 차지하는 몫이라 1을 넘을 수 없어요. 0과 1 사이의 수예요.' },
-                    { id: 'b', text: '②', correct: true },
-                    { id: 'c', text: '③', hint: '도수가 커도 전체가 더 크면 상대도수는 작아질 수 있어요. 20명 중 8명과 30명 중 9명을 떠올려 보세요.' }
+                    { id: 'a', text: '30명', correct: true },
+                    { id: 'b', text: '15명', hint: '0.15를 15%로 읽고 그 숫자를 그대로 답하셨어요. 200명의 15%를 구해야 해요.' }
                 ],
-                ok: '띠 하나가 전체(=1)였죠. 상대도수를 모두 더하면 언제나 1이에요.'
+                ok: '0.15 × 200 = 30명이에요.'
             }
         };
 
@@ -1483,15 +1499,28 @@
             return {
                 gate: record.gate,
                 challengeGate: record.challengeGate,
-                basicFirstTry: basicFirst,
+                basicFirstTry: basicFirst,                             // 메인 페이지가 읽는 기초 미션 개수
                 basicTotal: FLOW.basic.ids.length,
-                challengeFirstTry: firstTryCount(FLOW.challenge.ids),
+                challengeFirstTry: firstTryCount(FLOW.challenge.ids),   // 메인 페이지가 읽는 도전 미션 개수
                 challengeTotal: FLOW.challenge.ids.length,
                 mastered: isMastered('basic'),
                 challengeMastered: isMastered('challenge'),
                 percent: Math.round(done / (1 + FLOW.basic.ids.length) * 100),
                 updatedAt: new Date().toISOString()
             };
+        }
+
+        /* 지금 없는 문항의 기록을 정리하고, 메인 페이지가 읽을 요약을 최신으로 맞춥니다.
+           아직 기록이 없는 학생에게 빈 기록을 만들지 않도록, 저장된 기록이 있을 때만 손봅니다. */
+        function syncRecord() {
+            if (!Store.read(STORAGE_KEY)) { return; }
+            const stamp = (record.summary && record.summary.updatedAt) || record.updatedAt;
+            Object.keys(record.best).forEach(function (id) {
+                if (!QUESTIONS[id]) { delete record.best[id]; }
+            });
+            record.summary = buildSummary();
+            if (stamp) { record.summary.updatedAt = stamp; }   // 마지막 학습 시각은 그대로 둡니다
+            Store.write(STORAGE_KEY, JSON.stringify(record));
         }
 
         let activeView = 'view-read';
@@ -1562,7 +1591,7 @@
             let index = 0;
             if (mode === 'review' && startId) { index = Math.max(0, ids.indexOf(startId)); }
             session = { flow: flow, mode: mode, ids: ids, index: index };
-            attempts = {};
+            attempts = {};   // 다시 풀 때마다 '한 번에 맞힐' 기회가 새로 주어집니다
             showView('view-mission');
             renderCurrentQuestion();
         }
@@ -1599,7 +1628,9 @@
             const fb = document.getElementById('fb');
             if (state.solvedWith) {
                 fb.className = 'feedback ok';
-                fb.innerHTML = '<b>' + (state.tryCount === 1 ? '한 번에 맞혔어요!' : '맞았어요!') + '</b> ' + q.ok;
+                fb.innerHTML = state.tryCount === 1
+                    ? '<b>한 번에 맞혔어요!</b> ' + q.ok
+                    : '<b>맞았어요!</b> ' + q.ok + '<br><b>다시 볼 문제</b>에서 한 번에 맞히면 그때 기록에 쌓여요.';
                 fb.hidden = false;
             } else if (state.lastHint) {
                 fb.className = 'feedback no';
@@ -1619,6 +1650,7 @@
             state.tryCount++;
             if (picked.correct) {
                 state.solvedWith = choiceId;
+                // 이번에 처음 고른 답이 정답일 때만 개수로 인정됩니다
                 keepBest(id, state.tryCount === 1 ? 'firstTry' : 'solved');
             } else {
                 state.wrong.push(choiceId);
@@ -1681,18 +1713,15 @@
             document.getElementById('doneBest').textContent = firstTryCount(ids) + ' / ' + ids.length;
 
             const master = document.getElementById('doneMaster');
-            if (flow === 'basic') {
-                if (isMastered('basic')) {
-                    master.className = 'badge-master on';
-                    master.innerHTML = '<i class="bi bi-lightbulb-fill"></i> 기초 미션을 모두 한 번에 맞혔어요! 완벽해요!';
-                } else {
-                    master.className = 'badge-master off';
-                    master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 아래 <b>다시 볼 문제</b>를 한 번에 맞히면<br><b>기초 미션 완벽 달성!</b>';
-                }
-                master.hidden = false;
+            if (isMastered(flow)) {
+                master.className = 'badge-master on';
+                master.innerHTML = '<i class="bi bi-lightbulb-fill"></i> ' +
+                    (flow === 'basic' ? '기초 미션' : '도전 미션') + '을 모두 한 번에 맞혔어요! 완벽해요!';
             } else {
-                master.hidden = true;
+                master.className = 'badge-master off';
+                master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 아래 <b>다시 볼 문제</b>를 한 번에 맞히면<br><b>기록에 하나씩 쌓여요!</b>';
             }
+            master.hidden = false;
 
             const items = reviewItems(ids);
             document.getElementById('doneReviewBox').hidden = (items.length === 0);
@@ -1754,7 +1783,7 @@
                 return {
                     id: id,
                     flow: QUESTIONS[id].group,
-                    label: QUESTIONS[id].title + ' · ' + (bestOf(id) === 'solved' ? '한 번에 맞히지 못했어요' : '아직 못 맞혔어요')
+                    label: QUESTIONS[id].title + '<br>' + (bestOf(id) === 'solved' ? '한 번에 맞히지 못했어요' : '아직 못 맞혔어요')
                 };
             });
         }
@@ -2072,6 +2101,7 @@
         }, { passive: true });
 
         /* 시작 */
+        syncRecord();
         setupMotion();
         renderReview();
         showView('view-read');

@@ -270,7 +270,7 @@
             margin-top: 0.65rem;
         }
 
-        .chip-row > .chip:only-child {
+        .chip-row>.chip:only-child {
             grid-column: 1 / -1;
         }
 
@@ -342,6 +342,7 @@
         <p class="footer-note">
             학습 기록(자가진단 · 문제 풀이)은 지금 사용하는 <b>기기의 브라우저</b>에 저장돼요.
             다른 기기에서 열면 기록이 보이지 않아요.
+            미션 개수는 <b>한 번에 맞힌 문항</b>만 세요.
             <button class="btn btn-link p-0 align-baseline text-decoration-none" id="clearAll">기록 모두 지우기</button>
         </p>
 
@@ -363,6 +364,19 @@
            goals  : 작은 회색 칩으로 보이는 학습 내용 (개수 자유)
            href   : 학습 페이지 경로 (ahamath 폴더 안)
            status : 'ready'(학습 가능) 또는 'soon'(준비 중)
+
+           basicTotal / challengeTotal
+                  : 그 주제의 기초·도전 미션 문항 수.
+                    아직 한 번도 들어가 보지 않은 학생에게 '0 / 4' 처럼 보여 주기 위한 값이라
+                    학습 페이지의 문항 수와 같게 적어 주세요.
+                    한 번이라도 학습 페이지를 열면 실제 문항 수로 자동으로 맞춰집니다.
+                    도전 미션이 없는 주제는 challengeTotal 을 0 으로 두면 칩이 사라집니다.
+
+           [ 미션 개수를 세는 규칙 ]
+           '한 번에 맞힌 문항(firstTry)'만 개수로 인정합니다.
+           두 번째 시도에 맞힌 문항은 세지 않고, 학습 페이지의 '다시 볼 문제'나
+           '아하! 이해했어요 → 기초 미션 풀기'로 다시 풀어서 한 번에 맞히는 순간
+           학습 페이지가 기록을 올려 주고, 그 값이 이 카드에 그대로 반영됩니다.
            ===================================================================== */
         const TOPICS = [
             {
@@ -373,7 +387,9 @@
                 desc: '여러 개의 숫자를 하나의 숫자로 대신 말하는 방법을 배워요.',
                 goals: ['평균', '중앙값', '최빈값'],
                 href: './ahamath/representativevalue.html',
-                status: 'ready'
+                status: 'ready',
+                basicTotal: 5,
+                challengeTotal: 3
             },
             {
                 id: 'frequency',
@@ -383,7 +399,9 @@
                 desc: '자료를 구간으로 나누어 표와 그래프로 나타내요.',
                 goals: ['줄기와 잎 그림', '도수분포표', '히스토그램', '도수분포다각형'],
                 href: './ahamath/frequency.html',
-                status: 'ready'
+                status: 'ready',
+                basicTotal: 4,
+                challengeTotal: 2
             },
             {
                 id: 'relative',
@@ -393,7 +411,9 @@
                 desc: '수가 다른 두 집단을 공평하게 비교하는 방법을 배워요.',
                 goals: ['상대도수', '두 자료 비교하기'],
                 href: './ahamath/relative.html',
-                status: 'ready'
+                status: 'ready',
+                basicTotal: 4,
+                challengeTotal: 2
             }
         ];
 
@@ -406,16 +426,35 @@
             } catch (e) { return null; }
         }
 
-        /* 풀이 완료한 문항 수 카운트 */
-        function countSolved(best, prefix) {
+        /* 한 번에 맞힌 문항만 세기 (요약이 없는 예전 기록을 위한 보조 계산)
+           기초 미션은 q, 도전 미션은 x 로 시작하는 문항 ID 를 씁니다. */
+        function countFirstTry(best, prefix) {
             if (!best) { return 0; }
             let count = 0;
             Object.keys(best).forEach(function (id) {
-                if (id.indexOf(prefix) === 0 && (best[id] === 'firstTry' || best[id] === 'solved')) {
-                    count++;
-                }
+                if (id.indexOf(prefix) === 0 && best[id] === 'firstTry') { count++; }
             });
             return count;
+        }
+
+        /* 학습 페이지가 저장한 요약값을 우선 쓰고, 없을 때만 위 보조 계산을 씁니다 */
+        function solvedCount(summary, best, key, prefix, total) {
+            const fromSummary = summary[key];
+            const value = (typeof fromSummary === 'number') ? fromSummary : countFirstTry(best, prefix);
+            return Math.max(0, Math.min(value, total));
+        }
+
+        /* ---------- 미션 칩 ---------- */
+        function missionChip(label, solved, total, gold) {
+            const text = label + ' ' + solved + ' / ' + total;
+            if (solved === 0) {
+                return '<span class="chip soon"><i class="bi bi-dash-circle"></i> ' + text + '</span>';
+            }
+            if (solved >= total) {
+                return '<span class="chip ' + (gold ? 'gold' : 'green') + '">' +
+                    '<i class="bi ' + (gold ? 'bi-stars' : 'bi-check-circle-fill') + '"></i> ' + text + '</span>';
+            }
+            return '<span class="chip' + (gold ? ' gold' : '') + '"><i class="bi bi-pencil-fill"></i> ' + text + '</span>';
         }
 
         /* ---------- 상태 계산 ---------- */
@@ -424,35 +463,18 @@
             const best = (record && record.best) || {};
             const hasStarted = !!(record && (record.updatedAt || summary.updatedAt || record.gate));
 
-            const defaultBasicTotal = topic.id === 'daepyogap' ? 5 : 4;
-            const defaultChallengeTotal = topic.id === 'frequency' ? 2 : 3;
-            const basicTotal = summary.basicTotal || defaultBasicTotal;
-            const challengeTotal = summary.challengeTotal || defaultChallengeTotal;
+            const basicTotal = summary.basicTotal || topic.basicTotal || 4;
+            const challengeTotal = (typeof summary.challengeTotal === 'number')
+                ? summary.challengeTotal
+                : (topic.challengeTotal || 0);
 
-            const basicSolved = Math.max(countSolved(best, 'q'), summary.basicFirstTry || 0);
-            const challengeSolved = Math.max(countSolved(best, 'x'), summary.challengeFirstTry || 0);
+            const basicSolved = solvedCount(summary, best, 'basicFirstTry', 'q', basicTotal);
+            const challengeSolved = solvedCount(summary, best, 'challengeFirstTry', 'x', challengeTotal);
 
-            // 기초 미션 칩
-            let basicChip = '';
-            if (basicSolved === 0) {
-                basicChip = '<span class="chip soon"><i class="bi bi-dash-circle"></i> 기초 미션 0 / ' + basicTotal + '</span>';
-            } else if (basicSolved >= basicTotal) {
-                basicChip = '<span class="chip green"><i class="bi bi-check-circle-fill"></i> 기초 미션 ' + basicTotal + ' / ' + basicTotal + '</span>';
-            } else {
-                basicChip = '<span class="chip"><i class="bi bi-pencil-fill"></i> 기초 미션 ' + basicSolved + ' / ' + basicTotal + '</span>';
+            const chips = [missionChip('기초 미션', basicSolved, basicTotal, false)];
+            if (challengeTotal > 0) {
+                chips.push(missionChip('도전 미션', challengeSolved, challengeTotal, true));
             }
-
-            // 도전 미션 칩
-            let challengeChip = '';
-            if (challengeSolved === 0) {
-                challengeChip = '<span class="chip soon"><i class="bi bi-dash-circle"></i> 도전 미션 0 / ' + challengeTotal + '</span>';
-            } else if (challengeSolved >= challengeTotal || summary.challengeMastered) {
-                challengeChip = '<span class="chip gold"><i class="bi bi-stars"></i> 도전 미션 ' + challengeTotal + ' / ' + challengeTotal + '</span>';
-            } else {
-                challengeChip = '<span class="chip gold"><i class="bi bi-pencil-fill"></i> 도전 미션 ' + challengeSolved + ' / ' + challengeTotal + '</span>';
-            }
-
-            const chips = [basicChip, challengeChip];
 
             if (!hasStarted) {
                 return {
@@ -461,26 +483,24 @@
                 };
             }
 
-            // 아하! 이해했어요 조건: 기초문제를 풀지 않았더라도 'aha'를 클릭했거나, 마스터했거나, 기초문제를 모두 풀었을 때
-            const isAha = (record.gate === 'aha' || summary.gate === 'aha' || summary.mastered || (basicSolved >= basicTotal && basicTotal > 0));
+            /* 진행률은 학습 페이지와 같은 식으로 계산합니다 (자가진단 1칸 + 한 번에 맞힌 기초 미션) */
+            const gate = record.gate || summary.gate || null;
+            const percent = Math.min(100, Math.round(((gate ? 1 : 0) + basicSolved) / (1 + basicTotal) * 100));
+
+            // 아하! 이해했어요 : 'aha'를 눌렀거나, 기초 미션을 모두 한 번에 맞혔을 때
+            const isAha = (gate === 'aha' || summary.mastered || (basicTotal > 0 && basicSolved >= basicTotal));
 
             if (isAha) {
-                let percent = summary.percent;
-                if (!percent || percent < 20) {
-                    percent = Math.round((1 + basicSolved) / (1 + basicTotal) * 100);
-                }
                 return {
                     key: 'aha', cls: 'aha', icon: 'bi-lightbulb-fill',
-                    text: '아하! 이해했어요', color: 'var(--aha)',
-                    percent: Math.min(100, percent || 100), chips: chips
+                    text: '아하! 이해했어요', color: 'var(--aha)', percent: percent, chips: chips
                 };
             }
 
-            // '아직은.... 다시 볼래요'를 클릭했거나 학습 진행 중인 경우
+            // '아직은.... 다시 볼래요'를 눌렀거나 학습 진행 중인 경우
             return {
                 key: 'wait', cls: 'wait', icon: 'bi-bookmark-fill',
-                text: '아직은.... 다시 볼래요', color: 'var(--wait)',
-                percent: summary.percent || Math.round(basicSolved / basicTotal * 100) || 0, chips: chips
+                text: '아직은.... 다시 볼래요', color: 'var(--wait)', percent: percent, chips: chips
             };
         }
 
