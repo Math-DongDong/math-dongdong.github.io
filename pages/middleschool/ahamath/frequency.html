@@ -643,6 +643,7 @@
             padding: 0.55rem 0.8rem;
             font-weight: 700;
             font-size: 0.95rem;
+            line-height: 1.6;
         }
 
         .box-title {
@@ -799,7 +800,8 @@
 
             <section class="card-box" id="reviewCard" hidden>
                 <div class="box-title" style="color:var(--wait)"><i class="bi bi-bookmark"></i> 다시 볼 문제</div>
-                <p class="muted-text mb-1">한 번에 맞히지 못한 문제예요. 누르면 <b>이 문제들만</b> 골라서 다시 풀 수 있어요.</p>
+                <p class="muted-text mb-1">한 번에 맞히지 못한 문제예요. 누르면 <b>이 문제들만</b> 골라서 다시 풀 수 있어요.
+                    다시 풀어서 <b>한 번에 맞히면</b> 그때 기록에 쌓여요.</p>
                 <ul class="review-list" id="reviewList"></ul>
             </section>
 
@@ -1204,7 +1206,8 @@
                     <span>이번에 한 번에 맞힌 문항</span><span class="num" id="doneThisTime">0 / 0</span>
                 </div>
                 <div class="result-line">
-                    <span>지금까지 한 번에 맞힌 문항</span><span class="num" id="doneBest">0 / 0</span>
+                    <span>기록에 쌓인 문항<br><span class="muted-text">한 번에 맞힌 것만 세요</span></span><span class="num"
+                        id="doneBest">0 / 0</span>
                 </div>
 
                 <div class="mt-3" id="doneReviewBox" hidden>
@@ -1232,6 +1235,7 @@
            ===================================================================== */
         const TOPIC_ID = 'frequency';                 // 메인 페이지 TOPICS 의 id 와 같아야 합니다
         const STORAGE_KEY = 'ahamath.' + TOPIC_ID + '.v1';
+        const RECORD_VERSION = 4;                     // 문항 ID 의 뜻이 바뀌면 올려서 예전 기록을 초기화합니다
         const TOTAL_STEPS = 4;
         const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -1263,7 +1267,7 @@
 
         function emptyRecord() {
             return {
-                version: 4,
+                version: RECORD_VERSION,
                 topic: TOPIC_ID,
                 gate: null,
                 challengeGate: null,
@@ -1279,7 +1283,11 @@
             let data;
             try { data = JSON.parse(raw); } catch (e) { return emptyRecord(); }
             const merged = Object.assign(emptyRecord(), data);
-            if (data.quiz && !data.best) {
+            if (merged.version !== RECORD_VERSION) {       // 문항이 바뀐 버전이면 문항별 기록만 초기화
+                merged.best = {};
+                merged.version = RECORD_VERSION;
+            }
+            if (data.quiz && !data.best) {                 // 예전 버전 기록 옮기기
                 merged.best = {};
                 Object.keys(data.quiz).forEach(function (id) {
                     const q = data.quiz[id];
@@ -1297,6 +1305,8 @@
             Store.write(STORAGE_KEY, JSON.stringify(record));
         }
 
+        /* 기록은 '한 번에 맞힘(firstTry)' 만 개수로 인정합니다.
+           한 번 올라간 등급은 내려가지 않고, 다시 풀어서 한 번에 맞히면 그때 올라갑니다. */
         const RANK = { missed: 0, solved: 1, firstTry: 2 };
         function keepBest(id, status) {
             const now = record.best[id];
@@ -1304,26 +1314,25 @@
         }
 
         /* =====================================================================
-           2. 문항
+           2. 문항  (보기는 2개 · 오답은 학생들이 실제로 자주 하는 실수로)
            ===================================================================== */
         const QUESTIONS = {
             q1: {
-                group: 'basic', badge: '미션 1', title: '미션 1 · 계급의 크기',
-                stem: '오른쪽은 학생들이 읽은 책의 수를 나타낸 도수분포표예요.<br>이 표에서 <b>계급의 크기</b>는 얼마일까요?',
+                group: 'basic', badge: '미션 1', title: '미션 1<br>계급의 크기',
+                stem: '아래는 학생들이 읽은 책의 수를 나타낸 도수분포표예요.<br>이 표에서 <b>계급의 크기</b>는 얼마일까요?',
                 data: '<table class="mini"><tr><th>책의 수(권)</th><th>학생 수(명)</th></tr>' +
                     '<tr><td>0 이상 ~ 5 미만</td><td>4</td></tr>' +
                     '<tr><td>5 ~ 10</td><td>10</td></tr>' +
                     '<tr><td>10 ~ 15</td><td>5</td></tr>' +
                     '<tr><td>15 ~ 20</td><td>1</td></tr></table>',
                 choices: [
-                    { id: 'a', text: '5권', correct: true },
-                    { id: 'b', text: '4개', hint: '계급의 개수를 세셨어요. 계급의 크기는 구간 하나의 너비예요. 0에서 5까지는 얼마죠?' },
-                    { id: 'c', text: '20권', hint: '표에 나온 가장 큰 수를 고르셨어요. 그건 전체 범위이고, 계급의 크기는 한 칸의 너비예요.' }
+                    { id: 'a', text: '4개', hint: '계급의 개수를 세셨어요. 계급의 크기는 구간 하나의 너비예요. 0에서 5까지는 얼마죠?' },
+                    { id: 'b', text: '5권', correct: true }
                 ],
                 ok: '한 칸이 0에서 5까지, 5에서 10까지니까 계급의 크기는 5권이에요.'
             },
             q2: {
-                group: 'basic', badge: '미션 2', title: '미션 2 · 빠진 도수',
+                group: 'basic', badge: '미션 2', title: '미션 2<br>빠진 도수',
                 stem: '한 칸이 지워진 도수분포표예요.<br>물음표에 들어갈 <b>도수</b>는 얼마일까요?',
                 data: '<table class="mini"><tr><th>시간(분)</th><th>학생 수(명)</th></tr>' +
                     '<tr><td>0 이상 ~ 10 미만</td><td>3</td></tr>' +
@@ -1332,25 +1341,23 @@
                     '<tr><td>30 ~ 40</td><td>4</td></tr>' +
                     '<tr><th>합계</th><th>20</th></tr></table>',
                 choices: [
-                    { id: 'a', text: '12명', hint: '보이는 도수를 더한 값 3+5+4=12 에서 멈추셨어요. 여기서 한 걸음 더, 합계 20에서 빼야 해요.' },
-                    { id: 'b', text: '8명', correct: true },
-                    { id: 'c', text: '5명', hint: '옆 칸의 도수를 그대로 고르셨어요. 합계를 이용해 계산해 볼까요?' }
+                    { id: 'a', text: '8명', correct: true },
+                    { id: 'b', text: '12명', hint: '보이는 도수를 더한 3+5+4=12 에서 멈추셨어요. 합계 20에서 12를 빼야 지워진 칸이 나와요.' }
                 ],
                 ok: '3 + 5 + 4 = 12, 20 − 12 = 8명이에요.'
             },
             q3: {
-                group: 'basic', badge: '미션 3', title: '미션 3 · 히스토그램 그리기',
+                group: 'basic', badge: '미션 3', title: '미션 3<br>히스토그램 그리기',
                 stem: '히스토그램을 <b>바르게</b> 그린 것은 무엇일까요?',
                 data: '<span class="mini-stem">가로축 → 계급의 양 끝 값<br>세로축 → 도수</span>',
                 choices: [
-                    { id: 'a', text: '직사각형 사이를 조금씩 띄워서 그린다', hint: '그건 막대그래프예요. 히스토그램은 계급이 이어져 있어서 직사각형도 붙여 그려요.' },
-                    { id: 'b', text: '직사각형을 서로 붙여서 그린다', correct: true },
-                    { id: 'c', text: '가로축에 도수를 적는다', hint: '축이 바뀌었어요. 가로축에는 계급, 세로축에 도수를 적어요.' }
+                    { id: 'a', text: '직사각형 사이를 조금씩 띄워서 그린다', hint: '그건 막대그래프예요. 히스토그램은 계급이 빈틈없이 이어져 있어서 직사각형도 붙여 그려요.' },
+                    { id: 'b', text: '직사각형을 서로 붙여서 그린다', correct: true }
                 ],
                 ok: '계급이 빈틈없이 이어지니까 직사각형도 서로 붙여서 그려요.'
             },
             q4: {
-                group: 'basic', badge: '미션 4', title: '미션 4 · 도수가 가장 큰 계급',
+                group: 'basic', badge: '미션 4', title: '미션 4<br>도수가 가장 큰 계급',
                 stem: '아래 도수분포표에서 <b>도수가 가장 큰 계급</b>은 무엇일까요?',
                 data: '<table class="mini"><tr><th>책의 수(권)</th><th>학생 수(명)</th></tr>' +
                     '<tr><td>0 이상 ~ 5 미만</td><td>2</td></tr>' +
@@ -1358,32 +1365,29 @@
                     '<tr><td>10 ~ 15</td><td>6</td></tr>' +
                     '<tr><td>15 ~ 20</td><td>1</td></tr></table>',
                 choices: [
-                    { id: 'a', text: '9명', hint: '도수를 답하셨어요. 물어본 것은 "계급", 즉 어느 구간인지예요.' },
-                    { id: 'b', text: '15권 이상 20권 미만', hint: '가장 큰 계급을 고르셨어요. 도수가 가장 큰 계급은 학생이 가장 많은 구간이에요.' },
-                    { id: 'c', text: '5권 이상 10권 미만', correct: true }
+                    { id: 'a', text: '5권 이상 10권 미만', correct: true },
+                    { id: 'b', text: '15권 이상 20권 미만', hint: '숫자가 가장 큰 계급을 고르셨어요. 물어본 것은 학생 수(도수)가 가장 많은 구간이에요.' }
                 ],
                 ok: '학생 수가 9명으로 가장 많은 구간이 5권 이상 10권 미만이에요.'
             },
 
             x1: {
-                group: 'challenge', badge: '도전 미션 1', title: '도전 1 · 잘못 만든 도수분포표',
+                group: 'challenge', badge: '도전 미션 1', title: '도전 1<br>잘못 만든 도수분포표',
                 stem: '다음 중 도수분포표를 <b>잘못 만든 것</b>은 무엇일까요?',
-                data: '<span class="mini-stem">① 0~5, 5~10, 10~15<br>② 0~5, 5~15, 15~20<br>③ 10~20, 20~30, 30~40</span>',
+                data: '<span class="mini-stem">① 0~5, 5~15, 15~20<br>② 10~20, 20~30, 30~40</span>',
                 choices: [
-                    { id: 'a', text: '①', hint: '①은 계급의 크기가 모두 5로 같아요. 바르게 만든 표예요.' },
-                    { id: 'b', text: '②', correct: true },
-                    { id: 'c', text: '③', hint: '③은 계급의 크기가 모두 10으로 같아요. 크기만 같으면 숫자가 커도 괜찮아요.' }
+                    { id: 'a', text: '①', correct: true },
+                    { id: 'b', text: '②', hint: '②는 계급의 크기가 모두 10으로 같아요. 크기만 같으면 숫자가 커도 괜찮아요.' }
                 ],
-                ok: '②는 가운데 계급만 크기가 10이에요. 계급의 크기는 모두 같아야 해요.'
+                ok: '①은 가운데 계급만 크기가 10이에요. 계급의 크기는 모두 같아야 해요.'
             },
             x2: {
-                group: 'challenge', badge: '도전 미션 2', title: '도전 2 · 표에서 알 수 없는 것',
+                group: 'challenge', badge: '도전 미션 2', title: '도전 2<br>표에서 알 수 없는 것',
                 stem: '도수분포표만 보고는 <b>알 수 없는</b> 것은 무엇일까요?',
-                data: '<span class="mini-stem">① 도수가 가장 큰 계급<br>② 조사한 전체 학생 수<br>③ 가장 무거운 학생의 정확한 몸무게</span>',
+                data: '<span class="mini-stem">① 조사한 전체 학생 수<br>② 가장 무거운 학생의 정확한 몸무게</span>',
                 choices: [
-                    { id: 'a', text: '①', hint: '①은 표에서 도수가 가장 큰 줄을 찾으면 바로 알 수 있어요.' },
-                    { id: 'b', text: '②', hint: '②는 도수를 모두 더하면(합계) 알 수 있어요.' },
-                    { id: 'c', text: '③', correct: true }
+                    { id: 'a', text: '①', hint: '①은 도수를 모두 더하면(합계) 알 수 있어요.' },
+                    { id: 'b', text: '②', correct: true }
                 ],
                 ok: '계급으로 묶으면 하나하나의 값은 사라져요. "80 이상 90 미만"까지만 알 수 있어요.'
             }
@@ -1415,15 +1419,28 @@
             return {
                 gate: record.gate,
                 challengeGate: record.challengeGate,
-                basicFirstTry: basicFirst,
+                basicFirstTry: basicFirst,                             // 메인 페이지가 읽는 기초 미션 개수
                 basicTotal: FLOW.basic.ids.length,
-                challengeFirstTry: firstTryCount(FLOW.challenge.ids),
+                challengeFirstTry: firstTryCount(FLOW.challenge.ids),   // 메인 페이지가 읽는 도전 미션 개수
                 challengeTotal: FLOW.challenge.ids.length,
                 mastered: isMastered('basic'),
                 challengeMastered: isMastered('challenge'),
                 percent: Math.round(done / (1 + FLOW.basic.ids.length) * 100),
                 updatedAt: new Date().toISOString()
             };
+        }
+
+        /* 지금 없는 문항의 기록을 정리하고, 메인 페이지가 읽을 요약을 최신으로 맞춥니다.
+           아직 기록이 없는 학생에게 빈 기록을 만들지 않도록, 저장된 기록이 있을 때만 손봅니다. */
+        function syncRecord() {
+            if (!Store.read(STORAGE_KEY)) { return; }
+            const stamp = (record.summary && record.summary.updatedAt) || record.updatedAt;
+            Object.keys(record.best).forEach(function (id) {
+                if (!QUESTIONS[id]) { delete record.best[id]; }
+            });
+            record.summary = buildSummary();
+            if (stamp) { record.summary.updatedAt = stamp; }   // 마지막 학습 시각은 그대로 둡니다
+            Store.write(STORAGE_KEY, JSON.stringify(record));
         }
 
         let activeView = 'view-read';
@@ -1494,7 +1511,7 @@
             let index = 0;
             if (mode === 'review' && startId) { index = Math.max(0, ids.indexOf(startId)); }
             session = { flow: flow, mode: mode, ids: ids, index: index };
-            attempts = {};
+            attempts = {};   // 다시 풀 때마다 '한 번에 맞힐' 기회가 새로 주어집니다
             showView('view-mission');
             renderCurrentQuestion();
         }
@@ -1531,7 +1548,9 @@
             const fb = document.getElementById('fb');
             if (state.solvedWith) {
                 fb.className = 'feedback ok';
-                fb.innerHTML = '<b>' + (state.tryCount === 1 ? '한 번에 맞혔어요!' : '맞았어요!') + '</b> ' + q.ok;
+                fb.innerHTML = state.tryCount === 1
+                    ? '<b>한 번에 맞혔어요!</b> ' + q.ok
+                    : '<b>맞았어요!</b> ' + q.ok + '<br><b>다시 볼 문제</b>에서 한 번에 맞히면 그때 기록에 쌓여요.';
                 fb.hidden = false;
             } else if (state.lastHint) {
                 fb.className = 'feedback no';
@@ -1551,6 +1570,7 @@
             state.tryCount++;
             if (picked.correct) {
                 state.solvedWith = choiceId;
+                // 이번에 처음 고른 답이 정답일 때만 개수로 인정됩니다
                 keepBest(id, state.tryCount === 1 ? 'firstTry' : 'solved');
             } else {
                 state.wrong.push(choiceId);
@@ -1595,6 +1615,19 @@
             }
         });
 
+        /* 결과 문구는 '이번에 한 번에 맞힌 개수'에 따라 달라집니다 */
+        function doneLeadText(flow, thisTime, total) {
+            if (!total) { return '끝까지 풀었어요.'; }
+            if (thisTime === total) {
+                return (flow === 'basic')
+                    ? '한 문제도 헤매지 않았어요. 정말 잘했어요.'
+                    : '조건이 늘어난 문제까지 한 번에 해냈어요. 대단해요.';
+            }
+            if (thisTime * 2 >= total) { return '끝까지 풀었어요. 아래 다시 볼 문제만 한 번 더 풀어 볼까요?'; }
+            if (thisTime > 0) { return '끝까지 포기하지 않았어요. 헷갈린 문제는 아래에 담아 두었어요.'; }
+            return '끝까지 풀어냈어요. 아직 한 번에 맞힌 문제가 없으니 개념을 한 번 더 보고 올까요?';
+        }
+
         function showResult(flow) {
             const ids = FLOW[flow].ids;
             const sessionIds = session ? session.ids : ids;
@@ -1606,25 +1639,20 @@
             document.getElementById('doneTitle').textContent =
                 (flow === 'basic' ? '기초 미션 완료!' : '도전 미션 완료!');
             document.getElementById('doneLead').textContent =
-                (flow === 'basic'
-                    ? '끝까지 풀었어요. 정말 잘했어요.'
-                    : '조건이 늘어난 문제까지 해냈어요. 대단해요.');
+                doneLeadText(flow, thisTime, sessionIds.length);
             document.getElementById('doneThisTime').textContent = thisTime + ' / ' + sessionIds.length;
             document.getElementById('doneBest').textContent = firstTryCount(ids) + ' / ' + ids.length;
 
             const master = document.getElementById('doneMaster');
-            if (flow === 'basic') {
-                if (isMastered('basic')) {
-                    master.className = 'badge-master on';
-                    master.innerHTML = '<i class="bi bi-lightbulb-fill"></i> 기초 미션을 모두 한 번에 맞혔어요! 완벽해요!';
-                } else {
-                    master.className = 'badge-master off';
-                    master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 아래 <b>다시 볼 문제</b>를 한 번에 맞히면<br><b>기초 미션 완벽 달성!</b>';
-                }
-                master.hidden = false;
+            if (isMastered(flow)) {
+                master.className = 'badge-master on';
+                master.innerHTML = '<i class="bi bi-lightbulb-fill"></i> ' +
+                    (flow === 'basic' ? '기초 미션' : '도전 미션') + '을 모두 한 번에 맞혔어요! 완벽해요!';
             } else {
-                master.hidden = true;
+                master.className = 'badge-master off';
+                master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 아래 <b>다시 볼 문제</b>를 한 번에 맞히면<br><b>기록에 하나씩 쌓여요!</b>';
             }
+            master.hidden = false;
 
             const items = reviewItems(ids);
             document.getElementById('doneReviewBox').hidden = (items.length === 0);
@@ -1686,7 +1714,7 @@
                 return {
                     id: id,
                     flow: QUESTIONS[id].group,
-                    label: QUESTIONS[id].title + ' · ' + (bestOf(id) === 'solved' ? '한 번에 맞히지 못했어요' : '아직 못 맞혔어요')
+                    label: QUESTIONS[id].title + '<br>' + (bestOf(id) === 'solved' ? '한 번에 맞히지 못했어요' : '아직 못 맞혔어요')
                 };
             });
         }
@@ -1955,6 +1983,7 @@
         }, { passive: true });
 
         /* 시작 */
+        syncRecord();
         setupMotion();
         renderReview();
         showView('view-read');
