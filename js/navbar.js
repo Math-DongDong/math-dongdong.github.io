@@ -89,8 +89,8 @@
                     "items": [
                         { "name": "여비정산 신청서", "path": "pages/automation/work/travel_expense_report.html" },
                         { "name": "PDF 편집 도구", "path": "pages/automation/work/pdfedit.html" },
-                        { "name": "엑셀 이미지 추출기", "path": "pages/automation/work/xlimagedownloader.html" },
-                        { "name": "GIF 편집 도구", "path": "pages/automation/work/gifedit.html" }
+                        { "name": "GIF 편집 도구", "path": "pages/automation/work/gifedit.html" },
+                        { "name": "엑셀 이미지 추출기", "path": "pages/automation/work/xlimagedownloader.html" }
                     ]
                 },
                 {
