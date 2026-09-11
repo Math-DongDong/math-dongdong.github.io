@@ -12,7 +12,7 @@
  */
 import { auth, googleProvider, db } from './firebase-config.js';
 import { signInWithPopup, signOut, onAuthStateChanged, deleteUser } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
 // 화면 표시용입니다. 실제 권한은 firestore.rules의 isAdmin() uid 비교가 결정합니다.
 const ADMIN_EMAIL = 'jjes0107@gmail.com';
@@ -125,6 +125,7 @@ function ensureTeacherInfoModalDOM() {
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="editTeacherSchoolInput">학교명</label>
                         <input type="text" class="form-control" id="editTeacherSchoolInput" placeholder="예: 동동중학교" maxlength="30">
+                        <small class="text-muted">담당 학생이 있으면 학교를 바꿀 수 없습니다. (학생의 학교가 선생님을 따릅니다)</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="editTeacherNameInput">이름</label>
@@ -218,6 +219,18 @@ async function showRegistrationModal(user) {
     });
 }
 
+/**
+ * 이 선생님에게 딸린 학생 수 — student_auth 중 같은 학교이면서 teachers에 이름이 있는 학생.
+ * 학생 관리와 같은 쿼리입니다 (승인된 교사만 읽을 수 있습니다).
+ */
+async function countMyStudents(school, name) {
+    if (!school || !name) return 0;
+    // 보안 규칙(v4.1)이 '내 학교 + 담당 선생님에 내 이름'인 목록만 허락하므로 같은 조건으로 셉니다.
+    const snap = await getDocs(query(collection(db, "student_auth"),
+        where("school", "==", school), where("teachers", "array-contains", name)));
+    return snap.size;
+}
+
 async function showTeacherInfoModal(user, docData) {
     ensureTeacherInfoModalDOM();
     const modalEl = document.getElementById('teacherInfoModal');
@@ -252,10 +265,24 @@ async function showTeacherInfoModal(user, docData) {
         if (!SCHOOL_RE.test(school) && school !== '관리자') return fail("학교명은 한글·영문·숫자 2~30자로 입력해주세요.");
         if (isAdminUser && !NAME_RE.test(name)) return fail("이름은 한글·영문 2~20자로 입력해주세요.");
 
+        // v4: 학생의 학교는 방을 만든 선생님을 따릅니다. 담당 학생이 남은 채 학교를 바꾸면
+        //     그 학생들이 학생 관리에서 사라지므로, 담당 학생이 없을 때만 바꿀 수 있습니다.
+        const prevSchool = String(docData.school || '').trim();
+        if (school !== prevSchool && (docData.status === 'approved' || isAdminUser)) {
+            try {
+                const mine = await countMyStudents(prevSchool, String(docData.name || '').trim());
+                if (mine > 0) return fail(`담당 학생 ${mine}명이 있어 학교를 바꿀 수 없습니다. 학생 관리에서 학생을 삭제하거나 담당 선생님에서 빼 주세요.`);
+            } catch (e) {
+                console.error(e);
+                return fail("담당 학생을 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+            }
+        }
+
         try {
             const payload = isAdminUser ? { school, name } : { school };
             await setDoc(doc(db, "teachers", user.uid), payload, { merge: true });
             window.currentTeacherSchool = school;
+            docData.school = school;          // 같은 창에서 다시 저장할 때 비교 기준
             if (isAdminUser) window.currentTeacherName = name;
 
             // 승인 상태라면 공개 목록도 함께 갱신 (학생 화면의 학교·교사 드롭다운)
