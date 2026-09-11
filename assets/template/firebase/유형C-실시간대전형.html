@@ -5,7 +5,8 @@
 
   이런 활동에 씁니다
     학생끼리 짝을 지어 겨루고, 승패가 쌓이는 활동.
-    예) 가위바위보 / 블로토(동시 제출형)
+    예) 가위바위보
+    (블로토처럼 학생 정보 없이 겨루는 활동은 유형 D입니다)
 
   특징
     · 진행은 Realtime Database (지연이 짧아야 함)
@@ -13,8 +14,13 @@
     · 하트비트 · onDisconnect · 매칭 잠금 · 리더 선출이 미리 들어 있습니다
 
   유형 D(익명 대전형)와의 차이
-    겨루는 방식은 완전히 같습니다. D는 학교·학번·PIN·게스트 승인만 빠집니다.
+    겨루는 방식은 완전히 같습니다. D는 학생 인증(학번·PIN)과 게스트 승인만 빠집니다.
     "누가 무엇을 했는지 남길 필요가 없다"면 유형 D 템플릿을 쓰세요.
+
+  v4.1 입장
+    학생은 학번(4~5자리)과 PIN만 입력하고, 학교는 방을 만든 선생님을 따릅니다.
+    그래서 방을 만들 때 Firestore 방 문서에 creatorSchool 을 넣습니다 (아래 방 만들기).
+    보안 규칙도 creatorSchool 이 선생님 학교와 다르면 인증 방 생성을 거부합니다.
 
   ⚠ 이 템플릿이 가장 어렵습니다. 아래 네 가지는 지우지 마세요.
     ① 하트비트 트랜잭션   — 강퇴된 학생이 유령으로 되살아나는 것을 막습니다
@@ -149,7 +155,7 @@
             <div class="admin-card mb-4">
                 <!-- ★ 여기: data-title -->
                 <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js" data-title="새 대전 게임 대시보드" data-export="false"
+                <script src="../../../js/dashboard-header.js?v=4.1" data-title="새 대전 게임 대시보드" data-export="false"
                     data-select-id="admin-room-select"></script>
 
                 <div id="pendingGuestsContainer" class="mb-3"></div>
@@ -193,11 +199,11 @@
         import {
             renderRoomEntrance, customAlert, customConfirm, promptRoomMode, showPinResetModal,
             isValidRtdbKey, rememberEntrance, getDeviceId, rerollRoomNickname
-        } from "../../../js/room-auth.js?v=3.0";
+        } from "../../../js/room-auth.js?v=4.1";
         import {
             rtdbRoom, renderGuestApproval, bindDeleteRoomButton, bindStudentIdToggle,
             statusBadge, buildSidMap, escapeHtml, safeNumber
-        } from "../../../js/game-kit.js?v=3.0";
+        } from "../../../js/game-kit.js?v=4.1";
         import {
             ref, set, get, update, remove, onValue, serverTimestamp, increment,
             runTransaction, onDisconnect
@@ -608,6 +614,14 @@
             const mode = await promptRoomMode();
             if (!mode) return;
 
+            // v4.1: 인증 방 학생의 학교는 방을 만든 선생님을 따릅니다 → 학교명이 꼭 있어야 합니다.
+            const teacherSchool = String(window.currentTeacherSchool || '').trim();
+            if (mode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
+                return customAlert("학교명이 필요해요",
+                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
+                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
+            }
+
             const code = await room.newCode('status');
             if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다.');
 
@@ -618,12 +632,14 @@
                 roomCode: code, roomMode: mode, settings: { mode },
                 createdAt: fsTimestamp(),
                 createdBy: window.currentTeacherUid || '',
-                creatorName: window.currentTeacherName || ''
+                creatorName: window.currentTeacherName || '',
+                creatorSchool: teacherSchool
             });
 
             await customAlert('방 생성',
                 `방 코드: [ <b class="text-primary fs-3">${escapeHtml(code)}</b> ]<br>` +
-                `설정 모드: <strong>${mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
+                `설정 모드: <strong>${mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>` +
+                (mode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''));
             await loadRooms();
             $('admin-room-select').value = code;
             $('admin-room-select').dispatchEvent(new Event('change'));

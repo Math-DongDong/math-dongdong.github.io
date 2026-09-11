@@ -1,4 +1,4 @@
-# 게임 페이지 안내
+# 게임 페이지 안내 (v4.1)
 
 `pages/games/` 안의 파일을 그대로 덮어쓰시면 됩니다. 부분 수정할 곳은 없습니다.
 
@@ -9,10 +9,14 @@
 | `plus_minus.html` | 정수와 유리수 마스터 | A 개인 기록형 | FS `plus_minus_records` |
 | `multiply_divide.html` | 곱셈과 나눗셈 마스터 | A 개인 기록형 | FS `multiply_divide_records` |
 | `zombiehunter.html` | 좀비헌터 | A 개인 기록형 | FS `zombiehunter_records` |
-| `sentiment.html` | 텍스트 감성 분석 | B 공동 수집형 | RTDB `sentimentanalysis` |
-| `blotto.html` | 블로토 | D 익명 대전형 | RTDB `blottogame` + FS `blotto_records`(이름표만) |
-| `gridgomoku.html` | 좌표평면 오목 | D 익명 대전형 | RTDB `gridgomoku` + FS `gomoku_records`(이름표만) |
+| `sentimentanalysis.html` | 텍스트 감성 분석 | B 공동 수집형 | RTDB `sentimentanalysis` |
 | `relativefrequency.html` | 가위바위보 | C 실시간 대전형 | RTDB `relativefrequency` + FS `rps_records` |
+| `gridgomoku.html` | 좌표평면 오목 | D 익명 대전형 | RTDB `gridgomoku` + FS `gomoku_records`(이름표만) |
+| `blottogame.html` | 블로토 | D 익명 대전형 | RTDB `blottogame` + FS `blotto_records`(이름표만) |
+
+**블로토는 유형 D입니다.** 매칭 대신 전원이 같은 라운드에 동시 제출하는 방식이지만,
+학생 정보를 쓰지 않고 이름표만 Firestore에 두는 점이 오목과 같습니다.
+(예전 유형 C 템플릿 머리말에 블로토가 예시로 적혀 있던 것을 바로잡고, 유형 D 템플릿 예시로 옮겼습니다)
 
 ## 활동별로 켜고 끈 것
 
@@ -24,13 +28,21 @@
 | 블로토 | 없음 | 없음 | 없음 | 없음 (병사 수·라운드만 입력) |
 | 텍스트 감성 분석 | 없음 | 없음 | 없음 | 없음 (제목만 입력) |
 
+## v4.1 공통 사항
+
+- **입장** — 인증 모드가 있는 4개(수학 게임 3종·가위바위보)는 학번(4~5자리)과 PIN만 받고,
+  학교는 방을 만든 선생님을 따릅니다. 방을 만들 때 `creatorSchool` 을 저장하고, 학교명이 없으면 인증 방을 만들지 않습니다.
+- **대시보드 상단** — 인증 모드가 있는 4개에만 [PIN 초기화] 버튼이 있습니다(내 학교·내 방 학생만 초기화).
+  학생 관리 바로가기는 두지 않습니다(상단 메뉴에 있음).
+- **game-kit** — 7개 모두 `game-kit.js` 로 방 목록·생성·삭제를 처리합니다. 게임별로 쓰는 부품은 가이드북 6장에 있습니다.
+- **모듈 주소** — `room-auth.js?v=4.1`, `game-kit.js?v=4.1`, `dashboard-header.js?v=4.1` 로 통일되어 있습니다.
+  한 페이지에서 버전이 다른 주소로 부르면 모듈이 두 개로 갈라지니, 파일을 **한꺼번에** 올리세요.
+
 ## 파일 이름이 다르다면
 
 원래 쓰시던 파일명이 다르면 **이름만 바꿔서** 덮어쓰세요. 내용은 그대로 두셔야 합니다.
 파일 안의 상대 경로(`../../../js/...`)는 `pages/게임분류/게임이름/파일.html` 구조를 가정합니다.
 폴더 깊이가 다르면 `../` 개수를 맞춰주세요.
-
-감성 분석은 원래 파일명이 다를 가능성이 높습니다. `sentiment.html` 을 그 이름으로 바꿔 올리세요.
 
 ## 가위바위보 — 의견에 학번 표시
 
@@ -42,5 +54,5 @@
 
 ## 새 게임을 만들 때
 
-`templates/` 의 뼈대 4개 중 하나를 복사하세요.
+`templates/` 의 뼈대 4개(v4.1) 중 하나를 복사하세요.
 어느 것을 고를지는 `가이드북.md` 4장에 판단 기준이 있습니다.
