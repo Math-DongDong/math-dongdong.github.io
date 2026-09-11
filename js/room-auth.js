@@ -1271,8 +1271,15 @@ export function hideGuestExitButton() {
  *   pinHash를 비웁니다 — 학생은 다음 접속 때 새 PIN을 설정하게 됩니다.
  */
 export async function showPinResetModal() {
-    let teacherSchool = window.currentTeacherSchool || '';
-    const schools = await fetchSchoolList();
+    // ★ 관리자만 학교를 고를 수 있습니다. 선생님은 내 학교에서 내 방에 들어온 학생만 초기화합니다.
+    const isAdminUser = !!window.isAdmin;
+    const teacherSchool = String(window.currentTeacherSchool || '').trim();
+    const teacherName = String(window.currentTeacherName || '').trim();
+    if (!isAdminUser && (!teacherSchool || teacherSchool === '관리자')) {
+        await customAlert("학교명이 필요해요", "상단 메뉴 → <b>정보수정</b>에서 학교명을 먼저 등록해주세요.");
+        return false;
+    }
+    const schools = isAdminUser ? await fetchSchoolList() : [];
 
     return new Promise((resolve) => {
         let modalEl = document.getElementById('pinResetModal');
@@ -1286,7 +1293,7 @@ export async function showPinResetModal() {
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
                         </div>
                         <div class="modal-body py-3">
-                            <p class="text-muted small mb-3">학교와 학번을 입력하면 해당 학생의 PIN이 초기화됩니다. 학생은 다음 접속 시 새 4자리 PIN을 설정합니다.</p>
+                            <p class="text-muted small mb-3">학번을 입력하면 해당 학생의 PIN이 초기화됩니다. 학생은 다음 접속 시 새 4자리 PIN을 설정합니다.<br>선생님은 <b>내 학교에서 내 방에 들어온 학생</b>만 초기화할 수 있습니다.</p>
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-secondary" for="pinResetSchoolSelect">학교명 선택</label>
                                 <select class="form-select bg-light fw-bold" id="pinResetSchoolSelect"></select>
@@ -1327,10 +1334,12 @@ export async function showPinResetModal() {
             studentIdInput.value = studentIdInput.value.replace(/[^0-9]/g, '').slice(0, STUDENT_ID_MAX_LEN);
         };
 
-        const merged = [...new Set([teacherSchool, ...schools].filter(Boolean))];
+        const merged = isAdminUser ? [...new Set([teacherSchool, ...schools].filter(Boolean))] : [teacherSchool];
         schoolSelect.innerHTML =
             merged.map(s => `<option value="${escapeHtml(s)}" ${s === teacherSchool ? 'selected' : ''}>🏫 ${escapeHtml(s)}${s === teacherSchool ? ' (내 학교)' : ''}</option>`).join('')
-            + `<option value="__direct__">✏️ 직접 학교명 입력</option>`;
+            + (isAdminUser ? `<option value="__direct__">✏️ 직접 학교명 입력</option>` : '');
+        schoolSelect.disabled = !isAdminUser;          // 선생님은 다른 학교를 고를 수 없습니다
+        customGroup.classList.add('d-none');
 
         schoolSelect.onchange = () => {
             const direct = schoolSelect.value === '__direct__';
@@ -1355,6 +1364,12 @@ export async function showPinResetModal() {
                 const snap = await getDoc(doc(db, "student_auth", sKey));
                 if (!snap.exists()) {
                     errEl.textContent = "해당 학생을 찾지 못했습니다. 학교명과 학번을 다시 확인해주세요.";
+                    errEl.style.display = 'block';
+                    return;
+                }
+                const owners = Array.isArray(snap.data()?.teachers) ? snap.data().teachers : [];
+                if (!isAdminUser && !owners.includes(teacherName)) {
+                    errEl.textContent = "내 방에 들어온 학생만 초기화할 수 있습니다. 학번을 다시 확인해주세요.";
                     errEl.style.display = 'block';
                     return;
                 }

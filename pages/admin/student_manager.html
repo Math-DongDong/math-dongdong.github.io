@@ -121,8 +121,9 @@
                         <select id="schoolSelect" class="form-select fw-bold bg-white"></select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label small fw-bold text-secondary">담당 선생님 (다중 선택)</label>
-                        <div id="teacherFilterList" class="checkbox-scroll"></div>
+                        <label class="form-label small fw-bold text-secondary" for="teacherSelect">담당 선생님</label>
+                        <select id="teacherSelect" class="form-select fw-bold bg-white"></select>
+                        <div class="form-text small" id="teacherSelectHelp"></div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label small fw-bold text-secondary" for="searchInput">학번 검색</label>
@@ -229,13 +230,12 @@
         const gateSection = document.getElementById('gate-section');
         const managerSection = document.getElementById('manager-section');
         const schoolSelect = document.getElementById('schoolSelect');
-        const teacherFilterList = document.getElementById('teacherFilterList');
+        const teacherSelect = document.getElementById('teacherSelect');
         const searchInput = document.getElementById('searchInput');
         const tbody = document.getElementById('studentTbody');
         const countBadge = document.getElementById('countBadge');
         const selectedBadge = document.getElementById('selectedBadge');
 
-        const NO_TEACHER = '__none__';
         document.getElementById('maxDeviceText').textContent = MAX_DEVICES;
 
         let allStudents = [];
@@ -261,6 +261,7 @@
                 schoolSelect.innerHTML = '<option value="">-- 학교 선택 --</option>'
                     + schools.map(s => `<option value="${escapeHtml(s)}">🏫 ${escapeHtml(s)}</option>`).join('');
             } else {
+                schoolSelect.disabled = true;          // 선생님은 자기 학교만 봅니다
                 schoolSelect.innerHTML = mySchool
                     ? `<option value="${escapeHtml(mySchool)}">🏫 ${escapeHtml(mySchool)}</option>`
                     : '<option value="">소속 학교가 없습니다 (정보수정에서 등록해주세요)</option>';
@@ -268,32 +269,27 @@
             if (schoolSelect.value) loadStudents();
         }
 
-        // ── 담당 선생님 체크박스(필터) ──────────────────────────────
-        async function renderTeacherFilter(school) {
+        // ── 담당 선생님 (한 명씩) ──────────────────────────────────
+        //  관리자: 학교 안의 선생님을 한 명씩 골라 봅니다 ('전체 선생님'은 관리자만).
+        //  선생님: 자기 이름으로 고정 — 내 학교에서 내가 연 방에 들어온 학생만 보입니다.
+        async function renderTeacherSelect(school) {
+            const help = document.getElementById('teacherSelectHelp');
+            if (!window.isAdmin) {
+                const myName = window.currentTeacherName || '';
+                teacherSelect.innerHTML = `<option value="${escapeHtml(myName)}">${escapeHtml(myName || '-')} 선생님</option>`;
+                teacherSelect.disabled = true;
+                help.textContent = '내 방에 들어온 학생만 보입니다.';
+                return;
+            }
+            const keep = teacherSelect.value;
             const approved = (await fetchApprovedTeachers()).filter(t => t.school === school).map(t => t.name);
             const fromStudents = allStudents.flatMap(s => Array.isArray(s.teachers) ? s.teachers : []);
-            const names = [...new Set([...approved, ...fromStudents])].sort((a, b) => a.localeCompare(b, 'ko'));
-            const myName = window.currentTeacherName || '';
-
-            // ★ '담당 미지정'을 반드시 넣습니다. 학교에 등록된 선생님이 없을 때 만들어진
-            //   학생은 teachers가 빈 배열이라, 이 항목이 없으면 화면에서 사라집니다.
-            let html = `
-                <div class="form-check border-bottom pb-1 mb-1">
-                    <input class="form-check-input teacher-filter" type="checkbox" value="${NO_TEACHER}" id="tfNone">
-                    <label class="form-check-label small fw-bold text-secondary" for="tfNone">담당 미지정</label>
-                </div>`;
-
-            html += names.length
-                ? names.map((n, i) => `
-                    <div class="form-check">
-                        <input class="form-check-input teacher-filter" type="checkbox" value="${escapeHtml(n)}" id="tf${i}"
-                            ${(!window.isAdmin && n === myName) ? 'checked' : ''}>
-                        <label class="form-check-label small fw-bold" for="tf${i}">${escapeHtml(n)} 선생님</label>
-                    </div>`).join('')
-                : '<div class="text-muted small">등록된 선생님이 없습니다.</div>';
-
-            teacherFilterList.innerHTML = html;
-            teacherFilterList.querySelectorAll('.teacher-filter').forEach(cb => cb.onchange = renderTable);
+            const names = [...new Set([...approved, ...fromStudents])].filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
+            teacherSelect.disabled = false;
+            teacherSelect.innerHTML = '<option value="">전체 선생님</option>'
+                + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)} 선생님</option>`).join('');
+            if (keep && names.includes(keep)) teacherSelect.value = keep;
+            help.textContent = '관리자는 선생님을 한 명씩 골라 볼 수 있습니다.';
         }
 
         // ── 학생 조회 ─────────────────────────────────────────────
@@ -319,25 +315,20 @@
                 tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-danger text-center">학생 정보를 불러오지 못했습니다. (교사 승인 상태와 Firestore 권한을 확인해주세요)</td></tr>';
                 return;
             }
-            await renderTeacherFilter(school);
+            await renderTeacherSelect(school);
             renderTable();
         }
 
         // ── 표 렌더링 ─────────────────────────────────────────────
-        function selectedTeacherFilters() {
-            return [...teacherFilterList.querySelectorAll('.teacher-filter:checked')].map(cb => cb.value);
-        }
 
         function visibleStudents() {
-            const filters = selectedTeacherFilters();
             const keyword = searchInput.value.trim().toLowerCase();
+            // 선생님은 자기 이름으로 고정 (이름이 없으면 아무도 보이지 않음), 관리자는 고른 선생님 또는 전체
+            const teacher = window.isAdmin ? teacherSelect.value : (window.currentTeacherName || '');
             return allStudents.filter(s => {
-                const myTeachers = Array.isArray(s.teachers) ? s.teachers : [];
-                if (filters.length > 0) {
-                    const wantNone = filters.includes(NO_TEACHER) && myTeachers.length === 0;
-                    const matchName = myTeachers.some(t => filters.includes(t));
-                    if (!wantNone && !matchName) return false;
-                }
+                const owners = Array.isArray(s.teachers) ? s.teachers : [];
+                if (!window.isAdmin && (!teacher || !owners.includes(teacher))) return false;
+                if (window.isAdmin && teacher && !owners.includes(teacher)) return false;
                 if (!keyword) return true;
                 return String(s.studentId || s.id).toLowerCase().includes(keyword);
             });
@@ -559,6 +550,7 @@
         // ── 이벤트 연결 ───────────────────────────────────────────
         schoolSelect.onchange = loadStudents;
         searchInput.oninput = renderTable;
+        teacherSelect.onchange = renderTable;
         document.getElementById('btnReload').onclick = loadStudents;
         document.getElementById('checkAll').onchange = (e) => {
             tbody.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
