@@ -153,6 +153,15 @@ export function firestoreRoom(collectionName) {
             const mode = askMode ? await promptRoomMode() : 'quick';
             if (!mode) return null;
 
+            // v4: 인증 방 학생의 학교는 방을 만든 선생님을 따릅니다 → 학교명이 꼭 있어야 합니다.
+            const teacherSchool = String(window.currentTeacherSchool || '').trim();
+            if (mode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
+                await customAlert("학교명이 필요해요",
+                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
+                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
+                return null;
+            }
+
             let code = null;
             for (let i = 0; i < 20; i++) {
                 const candidate = generateRoomCode();
@@ -167,6 +176,7 @@ export function firestoreRoom(collectionName) {
                 createdAt: fsTimestamp(),
                 createdBy: window.currentTeacherUid || '',
                 creatorName: window.currentTeacherName || '',
+                creatorSchool: teacherSchool,
                 ...extra
             });
 

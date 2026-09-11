@@ -1,14 +1,19 @@
 /**
- * dashboard-header.js  (v3)
+ * dashboard-header.js  (v4)
  * 대시보드 상단 헤더 공통 렌더링 모듈
  *
  * 사용법:
  *   <script src="../../../js/dashboard-header.js"
  *           data-title="대시보드 타이틀"
  *           data-export="false"          엑셀 버튼 숨김
- *           data-pin-reset="false"       PIN 초기화 버튼 숨김 (인증 모드가 없는 게임)
+ *           data-student-link="false"    [학생 관리] 바로가기 숨김 (인증 모드가 없는 게임)
  *           data-select-id="admin-room-select"
  *           data-qr="false"></script>
+ *
+ * v4에서 달라진 것
+ *  · PIN이 없어져 [PIN 초기화] 자리에 [학생 관리] 바로가기(새 탭)를 둡니다.
+ *    예전 속성 data-pin-reset="false" 도 그대로 '숨김'으로 읽습니다.
+ *    id="btn-reset-pin" 버튼은 더 이상 만들지 않습니다 (페이지에서는 ?. 로 접근).
  *
  * v3에서 달라진 것
  *  · data-pin-reset 추가. v2는 모든 대시보드에 PIN 초기화 버튼을 그렸는데,
@@ -22,7 +27,7 @@
 
     const title = attr('data-title', '대시보드');
     const hasExport = attr('data-export', '') !== 'false';
-    const hasPinReset = attr('data-pin-reset', '') !== 'false';
+    const hasStudentLink = attr('data-student-link', attr('data-pin-reset', '')) !== 'false';
     const hasQr = attr('data-qr', '') !== 'false';
     const selectId = attr('data-select-id', 'roomSelect') || 'roomSelect';
 
@@ -37,8 +42,11 @@
         ? `<button id="btn-export-excel" class="btn btn-outline-success fw-bold dash-export"><i class="bi bi-file-earmark-excel"></i> 엑셀 다운로드</button>`
         : '';
 
-    const pinBtnHtml = hasPinReset
-        ? `<button id="btn-reset-pin" class="btn btn-outline-danger fw-bold dash-reset-pin" style="white-space: nowrap;"><i class="bi bi-key-fill"></i> PIN 초기화</button>`
+    // js/ 폴더 기준으로 학생 관리 주소 계산 (페이지 깊이와 무관). 레이아웃은 예전 PIN 버튼 자리(.dash-reset-pin)를 씁니다.
+    let studentHref = '#';
+    try { studentHref = new URL('../pages/admin/student_manager.html', scriptTag.src).href; } catch (e) { }
+    const studentBtnHtml = hasStudentLink
+        ? `<a id="btn-student-manager" href="${esc(studentHref)}" target="_blank" rel="noopener" class="btn btn-outline-secondary fw-bold dash-reset-pin" style="white-space: nowrap;"><i class="bi bi-people-fill"></i> 학생 관리</a>`
         : '';
 
     const headerClass = hasExport ? 'dash-header mb-4' : 'dash-header dash-header-no-export mb-4';
@@ -59,7 +67,7 @@
                 </select>
                 <button id="btn-create-room" class="btn btn-primary fw-bold dash-create">새로운 방 만들기</button>
                 ${exportBtnHtml}
-                ${pinBtnHtml}
+                ${studentBtnHtml}
             </div>
         </div>
     `;

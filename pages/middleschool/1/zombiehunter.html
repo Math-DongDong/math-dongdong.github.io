@@ -537,7 +537,7 @@
     <section id="admin-section" class="section-container container pt-4">
         <div class="admin-card mb-4">
             <div id="dash-header-placeholder"></div>
-            <script src="../../../js/dashboard-header.js" data-title="좀비헌터 대시보드"></script>
+            <script src="../../../js/dashboard-header.js?v=4.0" data-title="좀비헌터 대시보드"></script>
 
             <div id="pendingGuestsContainer" class="mb-3"></div>
 
@@ -601,8 +601,8 @@
         import { db } from '../../../js/firebase-config.js';
         import {
             renderRoomEntrance, customAlert, customConfirm,
-            promptRoomMode, showPinResetModal, escapeHtml, safeNumber
-        } from '../../../js/room-auth.js?v=3.0';
+            promptRoomMode, escapeHtml, safeNumber
+        } from '../../../js/room-auth.js?v=4.0';
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot,
             query, where, serverTimestamp, deleteDoc
@@ -1257,6 +1257,14 @@
             const selectedMode = await promptRoomMode();
             if (!selectedMode) return;
 
+            // v4: 인증 방에 들어온 학생은 이 선생님의 학교로 등록됩니다 → 학교명이 꼭 있어야 합니다.
+            const teacherSchool = String(window.currentTeacherSchool || '').trim();
+            if (selectedMode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
+                return customAlert("학교명이 필요해요",
+                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
+                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
+            }
+
             let code;
             while (true) {
                 code = generateRoomCode();
@@ -1269,16 +1277,15 @@
                 settings: { mode: selectedMode },
                 createdAt: serverTimestamp(),
                 createdBy: window.currentTeacherUid || '',
-                creatorName: window.currentTeacherName || ''
+                creatorName: window.currentTeacherName || '',
+                creatorSchool: teacherSchool
             });
             await customAlert("방 생성 완료",
-                `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.<br>설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
+                `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.<br>설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>${selectedMode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''}`);
             document.getElementById('roomSelect').value = code;
             currentAdminRoom = code;
             document.getElementById('roomSelect').dispatchEvent(new Event('change'));
         });
-
-        document.getElementById('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
 
         document.getElementById('btn-delete-room').addEventListener('click', async () => {
             if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
