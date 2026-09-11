@@ -167,7 +167,7 @@
                        PIN 초기화 버튼을 만들지 않습니다(data-pin-reset="false").
                        엑셀 내보내기도 쓰지 않습니다(data-export="false"). -->
                 <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js" data-title="텍스트 감성 분석 대시보드" data-export="false"
+                <script src="../../../js/dashboard-header.js?v=4.1" data-title="텍스트 감성 분석 대시보드" data-export="false"
                     data-pin-reset="false" data-select-id="admin-room-select"></script>
 
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -227,7 +227,8 @@
         import { rtdbSentiment as db } from "../../../js/firebase-config.js";
         import {
             renderRoomEntrance, customAlert, customPrompt, customConfirm, escapeHtml, safeNumber
-        } from "../../../js/room-auth.js?v=3.0";
+        } from "../../../js/room-auth.js?v=4.1";
+        import { rtdbRoom, bindDeleteRoomButton } from "../../../js/game-kit.js?v=4.1";
         import {
             ref, set, get, push, onValue, update, remove, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
@@ -270,6 +271,7 @@
 
         function roomRef(code) { return ref(db, `rooms/${code}`); }
         function wordsRef(code) { return ref(db, `rooms/${code}/words`); }
+        const roomKit = rtdbRoom(db);   // rooms / room_index
 
         /** 텍스트를 신경망이 처리할 수 있는 글자 빈도수 객체로 변환 */
         function encodeText(text) {
@@ -582,81 +584,15 @@
         // 4. 교사 대시보드
         // =====================================================================
 
-        /** 헷갈리는 문자(0/O, 1/I)를 제외한 방 코드 생성 + 중복 확인 */
-        async function generateUniqueRoomCode() {
-            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            for (let attempt = 0; attempt < 20; attempt++) {
-                let code = '';
-                for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-                if (!(await get(ref(db, `rooms/${code}/topic`))).exists()) return code;
-            }
-            return null;
-        }
-
         /**
          * 방 목록 불러오기.
          * ★ rooms 전체를 읽으면 모든 방의 단어까지 통째로 내려받습니다.
          *   목록 전용 인덱스(room_index)만 읽고, 없으면 한 번만 만들어 둡니다.
          */
         async function loadAdminRooms() {
-            const select = $('admin-room-select');
-            if (!select) return;
-            if (!window.isApprovedTeacher && !window.isAdmin) return;
-
             try {
-                let snapshot = await get(ref(db, 'room_index'));
-
-                // 인덱스가 없던 시절에 만든 방을 위한 1회 마이그레이션
-                if (!snapshot.exists()) {
-                    const full = await get(ref(db, 'rooms'));
-                    if (full.exists()) {
-                        const migrate = {};
-                        const all = full.val();
-                        Object.keys(all).forEach(code => {
-                            const r = all[code] || {};
-                            migrate[code] = {
-                                topic: r.topic || '',
-                                createdAt: r.createdAt || 0,
-                                createdBy: r.createdBy || '',
-                                creatorName: r.creatorName || ''
-                            };
-                        });
-                        if (Object.keys(migrate).length) {
-                            await update(ref(db, 'room_index'), migrate).catch(() => { });
-                            snapshot = await get(ref(db, 'room_index'));
-                        }
-                    }
-                }
-
-                const keep = select.value;
-                select.innerHTML = '<option value="">방을 선택하세요</option>';
-
-                if (!snapshot.exists()) return;
-                const rooms = snapshot.val();
-                let count = 0;
-
-                Object.keys(rooms)
-                    .filter(code => {
-                        if (window.isAdmin) return true;
-                        const r = rooms[code];
-                        return (r && r.createdBy === window.currentTeacherUid);
-                    })
-                    .sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0))
-                    .forEach(code => {
-                        count++;
-                        const option = document.createElement('option');
-                        option.value = code;
-                        // textContent라 방 주제에 무엇이 들어 있어도 코드로 해석되지 않습니다.
-                        option.textContent = rooms[code].topic
-                            ? `[${code}] ${rooms[code].topic}`
-                            : `[${code}]`;
-                        select.appendChild(option);
-                    });
-
-                if (count === 0 && !window.isAdmin) {
-                    select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-                }
-                if (keep && [...select.options].some(o => o.value === keep)) select.value = keep;
+                await roomKit.loadRooms($('admin-room-select'),
+                    (code, r) => (r && r.topic) ? `[${code}] ${r.topic}` : `[${code}]`, ['topic']);
             } catch (e) {
                 console.error("방 목록 로드 오류:", e);
                 await customAlert("오류", "방 목록을 불러오지 못했습니다.<br>교사 승인 상태와 네트워크를 확인해주세요.");
@@ -674,20 +610,12 @@
             const btn = $('btn-create-room');
             btn.disabled = true;
             try {
-                const roomCode = await generateUniqueRoomCode();
+                const roomCode = await roomKit.newCode('topic');
                 if (!roomCode) {
                     return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
                 }
 
-                const meta = {
-                    topic,
-                    createdAt: serverTimestamp(),
-                    createdBy: window.currentTeacherUid || '',
-                    creatorName: window.currentTeacherName || ''
-                };
-
-                await set(roomRef(roomCode), { ...meta, mlEnabled: false });
-                await set(ref(db, `room_index/${roomCode}`), meta);
+                await roomKit.createRoom(roomCode, { topic, mlEnabled: false }, { topic });   // 방 + 목록 인덱스
 
                 await customAlert("방 생성 완료",
                     `방 코드: [ <b class="text-primary fs-3">${escapeHtml(roomCode)}</b> ]<br>` +
@@ -709,39 +637,18 @@
         });
 
         // ── 방 삭제 ───────────────────────────────────────────────────
-        $('btn-delete-room')?.addEventListener('click', async () => {
-            const select = $('admin-room-select');
-            const roomCode = select ? select.value : null;
-            if (!roomCode) return await customAlert("알림", "삭제할 방을 선택해 주세요.");
-
-            const rSnap = await get(ref(db, `room_index/${roomCode}`));
-            const rData = rSnap.exists() ? rSnap.val() : {};
-            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
-                return await customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
-            }
-
-            const confirmed = await customConfirm("방 삭제 확인",
-                `[ <b class="text-danger">${escapeHtml(roomCode)}</b> ] 방을 정말로 삭제하시겠습니까?<br>` +
-                `<span class="text-muted small">모아 둔 단어가 모두 사라지며 되돌릴 수 없습니다.</span>`);
-            if (!confirmed) return;
-
-            const btn = $('btn-delete-room');
-            btn.disabled = true;
-            try {
+        bindDeleteRoomButton($('btn-delete-room'), {
+            getCode: () => $('admin-room-select')?.value,
+            canDelete: roomKit.canDelete,
+            doDelete: async (code) => {
                 stopAdminSubs();
-                // RTDB는 부모 경로를 지우면 하위 경로도 함께 지워집니다.
-                await remove(roomRef(roomCode));
-                await remove(ref(db, `room_index/${roomCode}`));
-
+                await roomKit.deleteRoom(code);        // 모아 둔 단어도 함께 지워집니다
+            },
+            onDone: async () => {
                 resetAdminPanel();
+                const select = $('admin-room-select');
                 if (select) select.value = '';
                 await loadAdminRooms();
-                await customAlert("삭제 완료", "방이 성공적으로 삭제되었습니다.");
-            } catch (e) {
-                console.error(e);
-                await customAlert("오류", "방 삭제 처리 중 오류가 발생했습니다.");
-            } finally {
-                btn.disabled = false;
             }
         });
 

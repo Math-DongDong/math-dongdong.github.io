@@ -16,8 +16,8 @@
  *  (실제로 좀비헌터만 XSS 수정이 빠져 있었습니다)
  *  새 게임을 만들 때는 이 파일을 가져다 쓰세요.
  *
- *  ※ 기존 게임 7개는 이 파일 없이도 그대로 동작합니다.
- *    당장 바꾸실 필요는 없고, 손볼 일이 생겼을 때 옮기시면 됩니다.
+ *  ※ v4: 게임 7개가 모두 이 파일을 씁니다.
+ *    페이지와 이 파일 모두 room-auth.js?v=4.1 으로 불러야 합니다 (주소가 다르면 모듈이 둘로 갈라집니다).
  * ─────────────────────────────────────────────────────────────────────
  */
 import { db as fsdb } from "./firebase-config.js";
@@ -30,7 +30,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 import {
     escapeHtml, safeNumber, customAlert, customConfirm, promptRoomMode
-} from "./room-auth.js?v=3.0";
+} from "./room-auth.js?v=4.1";
 
 // =====================================================================
 // 1. 작은 도구들
@@ -182,7 +182,8 @@ export function firestoreRoom(collectionName) {
 
             await customAlert("방 생성 완료",
                 `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.<br>` +
-                `설정 모드: <strong>${mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
+                `설정 모드: <strong>${mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>` +
+                (mode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''));
             return code;
         },
 

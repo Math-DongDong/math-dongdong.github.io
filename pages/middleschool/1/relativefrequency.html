@@ -70,11 +70,25 @@
             padding-bottom: 4px;
         }
 
-        .post-it-1 { background-color: #ffeb3b; }
-        .post-it-2 { background-color: #ffc107; }
-        .post-it-3 { background-color: #baffc9; }
-        .post-it-4 { background-color: #bae1ff; }
-        .post-it-5 { background-color: #ffb3ba; }
+        .post-it-1 {
+            background-color: #ffeb3b;
+        }
+
+        .post-it-2 {
+            background-color: #ffc107;
+        }
+
+        .post-it-3 {
+            background-color: #baffc9;
+        }
+
+        .post-it-4 {
+            background-color: #bae1ff;
+        }
+
+        .post-it-5 {
+            background-color: #ffb3ba;
+        }
 
         /* 접속 상태 표시 점 */
         .status-dot {
@@ -86,9 +100,17 @@
             vertical-align: middle;
         }
 
-        .status-online { background-color: #198754; }
-        .status-away { background-color: #ffc107; }
-        .status-offline { background-color: #dc3545; }
+        .status-online {
+            background-color: #198754;
+        }
+
+        .status-away {
+            background-color: #ffc107;
+        }
+
+        .status-offline {
+            background-color: #dc3545;
+        }
 
         /* 학번 열: 기본 숨김, 토글 시 표시 (교실 TV 투사 대비)
            ★ 표를 다시 그려도 유지되도록 JS가 아니라 CSS 클래스로 제어합니다. */
@@ -246,7 +268,7 @@
                 <!-- 대시보드 상단 헤더 (공통 모듈)
                      ★ v3부터 이 게임도 학생 인증 모드를 지원하므로 PIN 초기화 버튼을 켭니다. -->
                 <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js" data-title="가위바위보 대시보드" data-export="false"
+                <script src="../../../js/dashboard-header.js?v=4.1" data-title="가위바위보 대시보드" data-export="false"
                     data-select-id="admin-room-select"></script>
 
                 <!-- 게스트 대기자 알림 배너 영역 -->
@@ -349,9 +371,11 @@
             renderRoomEntrance, customAlert, customPrompt, customConfirm, escapeHtml, safeNumber,
             isValidRtdbKey, rememberEntrance, getDeviceId, rerollRoomNickname,
             promptRoomMode, showPinResetModal
-        } from "../../../js/room-auth.js?v=3.0";
+        } from "../../../js/room-auth.js?v=4.1";
+        import { rtdbRoom, statusBadge as kitStatusBadge, buildSidMap, renderGuestApproval } from "../../../js/game-kit.js?v=4.1";
 
         const db = rtdbRelativeFrequency;
+        const roomKit = rtdbRoom(db);   // rooms / room_index
 
         // =====================================================================
         // 설정값
@@ -1401,20 +1425,6 @@
         // 관리자 화면
         // =====================================================================
 
-        /** 헷갈리는 문자(0/O, 1/I)를 제외한 방 코드 생성 + 중복 확인 */
-        async function generateUniqueRoomCode() {
-            const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            for (let attempt = 0; attempt < 20; attempt++) {
-                let code = '';
-                for (let i = 0; i < 4; i++) {
-                    code += characters.charAt(Math.floor(Math.random() * characters.length));
-                }
-                const snap = await get(ref(db, `rooms/${code}/status`));
-                if (!snap.exists()) return code;
-            }
-            return null;
-        }
-
         let adminRoomUnsub = null;
         let adminStudentsUnsub = null;
         let allPlayersData = [];
@@ -1422,62 +1432,9 @@
         let lastDrawSignature = null;
 
         async function loadAdminRooms() {
-            const select = $('admin-room-select');
-            if (!select) return;
-            if (!window.isApprovedTeacher && !window.isAdmin) return;
-            try {
-                // 방 목록 전용 인덱스만 읽습니다. `rooms` 전체를 읽으면 모든 방의
-                // 플레이어·경기·의견까지 통째로 내려받게 됩니다.
-                let snapshot = await get(ref(db, 'room_index'));
-
-                // 인덱스가 없던 시절에 만든 방을 위한 1회 마이그레이션
-                if (!snapshot.exists()) {
-                    const full = await get(ref(db, 'rooms'));
-                    if (full.exists()) {
-                        const migrate = {};
-                        const all = full.val();
-                        Object.keys(all).forEach(code => {
-                            const r = all[code] || {};
-                            migrate[code] = {
-                                createdAt: r.createdAt || 0,
-                                createdBy: r.createdBy || '',
-                                creatorName: r.creatorName || ''
-                            };
-                        });
-                        if (Object.keys(migrate).length) {
-                            await update(ref(db, 'room_index'), migrate).catch(() => { });
-                            snapshot = await get(ref(db, 'room_index'));
-                        }
-                    }
-                }
-                const currentValue = select.value;
-                select.innerHTML = '<option value="">방을 선택하세요</option>';
-
-                if (snapshot.exists()) {
-                    const rooms = snapshot.val();
-                    let count = 0;
-                    const sortedCodes = Object.keys(rooms)
-                        .filter(code => {
-                            if (window.isAdmin) return true;
-                            const r = rooms[code];
-                            return (r && r.createdBy === window.currentTeacherUid);
-                        })
-                        .sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0));
-                    sortedCodes.forEach((code) => {
-                        count++;
-                        const option = document.createElement('option');
-                        option.value = code;
-                        option.textContent = code;   // textContent라 코드 삽입 위험 없음
-                        select.appendChild(option);
-                    });
-                    if (count === 0 && !window.isAdmin) {
-                        select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-                    }
-                    if (currentValue && rooms[currentValue]) select.value = currentValue;
-                }
-            } catch (e) {
-                console.error("방 목록 로드 오류:", e);
-            }
+            // 목록 전용 인덱스만 읽습니다 (rooms 전체를 읽으면 경기·의견까지 통째로 내려받습니다)
+            try { await roomKit.loadRooms($('admin-room-select')); }
+            catch (e) { console.error("방 목록 로드 오류:", e); }
         }
         window.addEventListener('teacherAuthChanged', () => { if (isTeacher) loadAdminRooms(); });
 
@@ -1500,19 +1457,20 @@
             const selectedMode = await promptRoomMode();
             if (!selectedMode) return;
 
-            const code = await generateUniqueRoomCode();
+            // v4: 인증 방에 들어온 학생은 이 선생님의 학교로 등록됩니다 → 학교명이 꼭 있어야 합니다.
+            const teacherSchool = String(window.currentTeacherSchool || '').trim();
+            if (selectedMode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
+                return customAlert("학교명이 필요해요",
+                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
+                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
+            }
+
+            const code = await roomKit.newCode('status');
             if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
 
-            const meta = {
-                createdAt: Date.now(),
-                createdBy: window.currentTeacherUid || '',
-                creatorName: window.currentTeacherName || ''
-            };
-
             try {
-                // ① RTDB — 대전용. status는 학생도 읽습니다(방 존재 확인).
-                await set(ref(db, `rooms/${code}`), { status: 'playing', ...meta });
-                await set(ref(db, `room_index/${code}`), meta);
+                // ① RTDB — 대전용. status는 학생도 읽습니다(방 존재 확인). 방·인덱스는 game-kit이 함께 씁니다.
+                await roomKit.createRoom(code, { status: 'playing' });
 
                 // ② Firestore — 인증·닉네임·게스트 승인용. 모드가 여기 들어갑니다.
                 await setDoc(fsRoomDocRef(code), {
@@ -1521,7 +1479,8 @@
                     settings: { mode: selectedMode },
                     createdAt: fsServerTimestamp(),
                     createdBy: window.currentTeacherUid || '',
-                    creatorName: window.currentTeacherName || ''
+                    creatorName: window.currentTeacherName || '',
+                    creatorSchool: teacherSchool
                 });
             } catch (e) {
                 console.error(e);
@@ -1530,7 +1489,7 @@
 
             await customAlert('방 생성',
                 `새로운 방(<b class="text-primary fs-4">${escapeHtml(code)}</b>)이 생성되었습니다.<br>` +
-                `설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>`);
+                `설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>${selectedMode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''}`);
             await loadAdminRooms();
             const select = $('admin-room-select');
             if (select) {
@@ -1540,7 +1499,7 @@
         });
 
         // 교사 도구: 학생 PIN 초기화 (dashboard-header가 버튼을 만들어 줍니다)
-        $('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
+        document.getElementById('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
 
         $('btn-delete-room')?.addEventListener('click', async () => {
             if (!currentRoom) return await customAlert("알림", "삭제할 방을 선택하세요.");
@@ -1629,95 +1588,16 @@
 
         // 오목 대시보드와 문구·색을 맞춤: 접속중(녹색)/다른화면(노랑)/접속 끊김(빨강)
         function statusBadge(player) {
-            const hb = typeof player.lastHeartbeat === 'number' ? player.lastHeartbeat : 0;
-            const fresh = (serverNow() - hb) < ONLINE_THRESHOLD_MS;
-            if (!fresh || player.status === 'offline') {
-                return '<span class="status-dot status-offline"></span><span class="text-danger small fw-bold">접속 끊김</span>';
-            }
-            if (player.status === 'away') {
-                return '<span class="status-dot status-away"></span><span class="text-warning small fw-bold">다른화면</span>';
-            }
-            return '<span class="status-dot status-online"></span><span class="text-success small fw-bold">접속중</span>';
+            return kitStatusBadge(player, { now: serverNow(), offlineMs: ONLINE_THRESHOLD_MS });
         }
 
         // =====================================================================
         // 게스트(공용 기기) 입장 승인 배너 — 학생 인증 모드에서만 나타납니다
         // =====================================================================
         function renderPendingGuests() {
-            const container = $('pendingGuestsContainer');
-            if (!container) return;
-            if (!currentRoom) { container.innerHTML = ''; return; }
-
-            const pendingList = adminStudents.filter(s => s.isGuest && s.status === 'pending');
-            if (pendingList.length === 0) { container.innerHTML = ''; return; }
-
-            container.innerHTML = `
-                <div class="card border-warning bg-warning-subtle shadow-sm rounded-4 p-3 mb-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
-                            <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
-                            <span>⏳ 게스트 입장 대기자 (${pendingList.length}명)</span>
-                        </h6>
-                        <span class="badge bg-warning text-dark fw-bold">선생님 승인 필요</span>
-                    </div>
-                    <div class="d-flex flex-column gap-2">
-                        ${pendingList.map(g => `
-                            <div class="bg-white p-2 px-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-sm border">
-                                <div>
-                                    <strong class="text-primary fs-6">${escapeHtml(g.nickname)}</strong>
-                                    <span class="text-secondary small ms-2">(${escapeHtml(g.school || '')} / ${escapeHtml(g.studentId || '')})</span>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <button class="btn btn-sm btn-success fw-bold px-3 btn-approve-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
-                                        <i class="bi bi-check-lg"></i> 승인 허용
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger fw-bold px-3 btn-reject-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
-                                        <i class="bi bi-x-lg"></i> 거절
-                                    </button>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-
-            container.querySelectorAll('.btn-approve-guest').forEach(btn => {
-                btn.onclick = async () => {
-                    const nick = btn.getAttribute('data-nick');
-                    const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true; btn.textContent = "처리 중...";
-                    try {
-                        await updateDoc(doc(studentsCollectionRef(currentRoom), nick), { status: 'online' });
-                        await setDoc(doc(guestStatusCollRef(currentRoom), nick),
-                            { status: 'online' }, { merge: true });
-                        if (sKey) {
-                            await updateDoc(doc(fsdb, "student_auth", sKey),
-                                { presence: 'online', lastActive: fsServerTimestamp() });
-                        }
-                    } catch (err) {
-                        console.error("승인 처리 오류:", err);
-                        btn.disabled = false; btn.textContent = "승인 허용";
-                    }
-                };
-            });
-
-            container.querySelectorAll('.btn-reject-guest').forEach(btn => {
-                btn.onclick = async () => {
-                    const nick = btn.getAttribute('data-nick');
-                    const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true; btn.textContent = "처리 중...";
-                    try {
-                        await updateDoc(doc(studentsCollectionRef(currentRoom), nick), { status: 'rejected' });
-                        await setDoc(doc(guestStatusCollRef(currentRoom), nick),
-                            { status: 'rejected' }, { merge: true });
-                        if (sKey) {
-                            await updateDoc(doc(fsdb, "student_auth", sKey), { presence: 'offline' });
-                        }
-                    } catch (err) {
-                        console.error("거절 처리 오류:", err);
-                        btn.disabled = false; btn.textContent = "거절";
-                    }
-                };
+            renderGuestApproval($('pendingGuestsContainer'), adminStudents, {
+                studentsRef: currentRoom ? studentsCollectionRef(currentRoom) : null,
+                guestsRef: currentRoom ? guestStatusCollRef(currentRoom) : null
             });
         }
 
@@ -1760,28 +1640,12 @@
         // 방 스냅샷을 기억해 두었다가, Firestore 학번이 늦게 도착해도 표를 다시 그립니다.
         let adminRoomLastData = null;
 
-        /**
-         * 닉네임 → 학번 대응표.
-         *
-         * RTDB에는 학번을 넣지 않습니다(그 노드는 학생도 읽습니다).
-         * 학번은 Firestore students 문서에만 있고 교사만 읽을 수 있어서,
-         * 화면에서 이어 붙이는 방식으로만 합쳐집니다.
-         * 빠른 입장 모드에서는 students 문서 자체가 없어 표가 비어 있습니다.
-         */
-        function buildSidMap() {
-            const map = {};
-            adminStudents.forEach(st => {
-                if (st.nickname && st.studentId) map[st.nickname] = String(st.studentId);
-            });
-            return map;
-        }
-
         function renderPlayersTable(data) {
             const tbody = $('admin-players-tbody');
             tbody.innerHTML = '';
             allPlayersData = [];
 
-            const sidByNick = buildSidMap();
+            const sidByNick = buildSidMap(adminStudents);
 
             if (data.players && Object.keys(data.players).length > 0) {
                 // 알파벳순 대신 입장한 순서대로 표시.
@@ -1863,7 +1727,7 @@
                     $('admin-feedbacks-area').style.display = 'block';
                     if (data.feedbacks) {
                         const colors = ['post-it-1', 'post-it-2', 'post-it-3', 'post-it-4', 'post-it-5'];
-                        const sidByNick = buildSidMap();
+                        const sidByNick = buildSidMap(adminStudents);
                         // 최초 제출 순서(createdAt)대로 쌓이게 정렬. 수정해도 위치가 유지됩니다.
                         Object.keys(data.feedbacks)
                             .sort((a, b) => {

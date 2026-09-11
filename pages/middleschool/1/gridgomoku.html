@@ -138,9 +138,17 @@
             display: inline-block;
         }
 
-        .status-dot.online { background: #28a745; }
-        .status-dot.away { background: #ffc107; }
-        .status-dot.offline { background: #dc3545; }
+        .status-dot.online {
+            background: #28a745;
+        }
+
+        .status-dot.away {
+            background: #ffc107;
+        }
+
+        .status-dot.offline {
+            background: #dc3545;
+        }
 
         .waiting-spinner {
             width: 60px;
@@ -153,11 +161,15 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .waiting-spinner { animation: none; }
+            .waiting-spinner {
+                animation: none;
+            }
         }
 
         .win-rate-bar {
@@ -173,7 +185,6 @@
             border-radius: 3px;
             transition: width 0.5s ease;
         }
-
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </head>
@@ -220,7 +231,7 @@
                      ★ 이 게임은 학생 정보를 쓰지 않습니다. 빠른 입장 전용이라
                        PIN 초기화 버튼을 만들지 않습니다(data-pin-reset="false"). -->
                 <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js" data-title="좌표평면 오목 대시보드" data-export="false"
+                <script src="../../../js/dashboard-header.js?v=4.1" data-title="좌표평면 오목 대시보드" data-export="false"
                     data-pin-reset="false" data-select-id="admin-room-select"></script>
 
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -336,7 +347,8 @@
         import {
             renderRoomEntrance, customAlert, customConfirm, escapeHtml, safeNumber, rememberEntrance,
             getDeviceId, rerollRoomNickname
-        } from "../../../js/room-auth.js?v=3.0";
+        } from "../../../js/room-auth.js?v=4.1";
+        import { rtdbRoom, bindDeleteRoomButton } from "../../../js/game-kit.js?v=4.1";
         import {
             ref, set, get, update, remove, onValue, serverTimestamp,
             query, orderByChild, runTransaction, increment, onDisconnect
@@ -442,6 +454,7 @@
         function waitingCollRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}/waiting`); }
         function matchLockRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}/matchLock`); }
         function roomIndexRef() { return ref(db, 'gomoku_room_index'); }
+        const roomKit = rtdbRoom(db, { roomsPath: 'gomoku_rooms', indexPath: 'gomoku_room_index' });
 
         // =====================================================================
         // 공용: 경기 종료 / 전적 정산
@@ -764,89 +777,20 @@
         // 관리자 대시보드
         // =====================================================================
         async function loadAdminRooms() {
-            const select = document.getElementById('admin-room-select');
-            if (!select) return;
-            if (!window.isApprovedTeacher && !window.isAdmin) return;
-
-            let rooms = {};
-            try {
-                const idxSnap = await get(roomIndexRef());
-                if (idxSnap.exists()) {
-                    rooms = idxSnap.val();
-                } else {
-                    // 인덱스가 없던 기존 데이터용 1회 마이그레이션
-                    const full = await get(ref(db, 'gomoku_rooms'));
-                    if (full.exists()) {
-                        const val = full.val();
-                        const migrate = {};
-                        Object.keys(val).forEach(id => {
-                            rooms[id] = { createdAt: val[id].createdAt || 0, createdBy: val[id].createdBy || '' };
-                            migrate[id] = rooms[id];
-                        });
-                        try { await update(roomIndexRef(), migrate); } catch (e) { }
-                    }
-                }
-            } catch (e) {
-                console.error('방 목록 로드 오류:', e);
-                return;
-            }
-
-            select.innerHTML = '<option value="">방을 선택하세요</option>';
-            let count = 0;
-            Object.keys(rooms)
-                .filter(roomId => {
-                    if (window.isAdmin) return true;
-                    const r = rooms[roomId];
-                    return (r && r.createdBy === window.currentTeacherUid);
-                })
-                .sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0))
-                .forEach(roomId => {
-                    count++;
-                    const option = document.createElement('option');
-                    option.value = roomId;
-                    option.textContent = roomId;   // textContent라 코드 삽입 위험 없음
-                    select.appendChild(option);
-                });
-            if (count === 0 && !window.isAdmin) {
-                select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-            }
+            // 목록 전용 인덱스만 읽고, 인덱스가 없던 시절 방은 한 번만 인덱스를 만들어 줍니다 (game-kit)
+            try { await roomKit.loadRooms(document.getElementById('admin-room-select')); }
+            catch (e) { console.error('방 목록 로드 오류:', e); }
         }
         window.addEventListener('teacherAuthChanged', () => loadAdminRooms());
-
-        // 헷갈리는 문자(0/O, 1/I)를 제외해 저학년 입력 실수를 줄입니다.
-        function generateRoomCode() {
-            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            let code = '';
-            for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-            return code;
-        }
 
         document.getElementById('btn-create-room')?.addEventListener('click', async () => {
             const btn = document.getElementById('btn-create-room');
             btn.disabled = true;
             try {
-                let roomCode = null;
-                for (let attempt = 0; attempt < 20; attempt++) {
-                    const candidate = generateRoomCode();
-                    const exists = (await get(ref(db, `gomoku_rooms/${candidate}/status`))).exists();
-                    if (!exists) { roomCode = candidate; break; }
-                }
+                const roomCode = await roomKit.newCode('status');
                 if (!roomCode) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
-
-                const owner = {
-                    createdBy: window.currentTeacherUid || '',
-                    creatorName: window.currentTeacherName || ''
-                };
-
-                // status는 학생도 읽습니다(방 존재 확인용 한 칸).
-                await set(roomRef(roomCode), {
-                    status: 'playing',
-                    createdAt: serverTimestamp(),
-                    ...owner
-                });
-                await set(ref(db, `gomoku_room_index/${roomCode}`), {
-                    createdAt: serverTimestamp(), ...owner
-                });
+                // status는 학생도 읽습니다(방 존재 확인용 한 칸). 방·인덱스는 game-kit이 함께 씁니다.
+                await roomKit.createRoom(roomCode, { status: 'playing' });
 
                 await loadAdminRooms();
                 const sel = document.getElementById('admin-room-select');
@@ -872,42 +816,20 @@
             startAdminMonitoring(code);
         });
 
-        document.getElementById('btn-delete-room')?.addEventListener('click', async () => {
-            const code = document.getElementById('admin-room-select')?.value;
-            if (!code) return await customAlert("알림", "삭제할 방을 선택하세요.");
-
-            const rSnap = await get(ref(db, `gomoku_room_index/${code}`));
-            const rData = rSnap.exists() ? rSnap.val() : {};
-            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
-                return await customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
-            }
-
-            const confirmed = await customConfirm("방 삭제",
-                `방 <b>${escapeHtml(code)}</b> 의 학생 기록과 대국이 <b>모두 삭제</b>됩니다.<br>되돌릴 수 없습니다. 계속할까요?`);
-            if (!confirmed) return;
-
-            const delBtn = document.getElementById('btn-delete-room');
-            if (delBtn) delBtn.disabled = true;
-            try {
-                // ① RTDB
-                await remove(roomRef(code));
-                await remove(ref(db, `gomoku_room_index/${code}`));
-
-                // ② Firestore에 남은 닉네임 이름표도 비웁니다.
-                //    (남겨 두면 같은 방 코드가 다시 나왔을 때 이름이 모자랍니다)
+        bindDeleteRoomButton(document.getElementById('btn-delete-room'), {
+            getCode: () => document.getElementById('admin-room-select')?.value,
+            canDelete: roomKit.canDelete,
+            doDelete: async (code) => {
+                await roomKit.deleteRoom(code);                        // ① RTDB 방 + 인덱스
+                // ② Firestore 닉네임 이름표도 비웁니다 (남기면 같은 코드가 다시 나왔을 때 이름이 모자랍니다)
                 const nickSnap = await getDocs(nicknameCollRef(code));
                 await Promise.all(nickSnap.docs.map(d => deleteDoc(d.ref)));
-
+            },
+            onDone: async () => {
                 cleanupAdmin();
                 document.getElementById('admin-record-tbody').innerHTML = '<tr><td colspan="7" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
                 document.getElementById('admin-player-count').textContent = '0명 접속';
                 await loadAdminRooms();
-                await customAlert("완료", "방이 삭제되었습니다.");
-            } catch (e) {
-                console.error(e);
-                await customAlert("오류", "방을 삭제하지 못했습니다.");
-            } finally {
-                if (delBtn) delBtn.disabled = false;
             }
         });
 

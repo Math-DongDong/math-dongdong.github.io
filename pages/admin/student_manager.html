@@ -42,6 +42,36 @@
         #studentTable th {
             vertical-align: middle;
         }
+
+        /* 접속 상태 점 — 좌표평면 오목 대시보드와 같은 색 */
+        .status-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .status-dot.online {
+            background: #28a745;
+        }
+
+        .status-dot.away {
+            background: #ffc107;
+        }
+
+        .status-dot.offline {
+            background: #dc3545;
+        }
+
+        .status-dot.pending {
+            background: #0d6efd;
+        }
+
+        .status-dot.idle {
+            background: #ced4da;
+        }
     </style>
 </head>
 
@@ -72,7 +102,7 @@
             <div class="fs-3">🧑‍🎓</div>
             <div>
                 <h2 class="fw-bold mb-0 text-dark">학생 관리</h2>
-                <div class="text-muted small">내 방(학생 인증 모드)에 들어온 학생이 자동으로 쌓입니다. 등록 기기와 접속 상태를 관리합니다.</div>
+                <div class="text-muted small">내 방(학생 인증 모드)에 들어온 학생이 자동으로 쌓입니다. PIN·등록 기기·접속 상태를 관리합니다.</div>
             </div>
         </header>
 
@@ -101,6 +131,8 @@
                         <button id="btnReload" class="btn btn-outline-secondary btn-sm w-100 mt-2 fw-bold">
                             <i class="bi bi-arrow-clockwise"></i> 새로고침
                         </button>
+                        <div id="fetchedAtText" class="text-muted small text-center mt-1">접속 상태는 [새로고침]을 누를 때만 갱신됩니다.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -109,8 +141,11 @@
                 <div>
                     <span class="badge bg-primary fs-6" id="countBadge">0명</span>
                     <span class="badge bg-light text-dark fs-6 ms-1" id="selectedBadge">선택 0명</span>
+                    <span class="small ms-2" id="statusSummary"></span>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
+                    <button id="btnBulkPin" class="btn btn-outline-danger btn-sm fw-bold"><i class="bi bi-key-fill"></i>
+                        선택 PIN 초기화</button>
                     <button id="btnBulkDevice" class="btn btn-outline-warning btn-sm fw-bold"><i
                             class="bi bi-phone"></i> 선택 기기 초기화</button>
                     <button id="btnBulkPresence" class="btn btn-outline-secondary btn-sm fw-bold"><i
@@ -129,6 +164,7 @@
                                         aria-label="전체 선택"></th>
                                 <th class="text-start">학번</th>
                                 <th>담당 선생님</th>
+                                <th>PIN</th>
                                 <th>등록 기기</th>
                                 <th>접속</th>
                                 <th>최근 기록</th>
@@ -137,7 +173,7 @@
                         </thead>
                         <tbody id="studentTbody">
                             <tr>
-                                <td colspan="7" class="py-4 text-muted text-center">학교를 선택해주세요.</td>
+                                <td colspan="8" class="py-4 text-muted text-center">학교를 선택해주세요.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -147,8 +183,11 @@
             <p class="text-muted small mt-3 mb-0">
                 기기는 학생 1명당 최대 <b id="maxDeviceText">3</b>대까지 등록됩니다. 학생이 휴대폰을 바꿔 한도를 넘겼다면
                 <b>기기 초기화</b>를 눌러주세요. 다른 기기에서 접속한 기록이 남아 로그인이 막힐 때는 <b>접속 해제</b>를 사용하면 됩니다.<br>
-                학생은 <b>학생 인증 모드 방</b>에 학번을 입력하는 순간 이 목록에 쌓입니다 (학교는 방을 만든 선생님의 학교, 게스트 포함). 잘못 입력된 학번은 <b>삭제</b>, 모르는 기기가
-                보이면 <b>기기 초기화</b>를 눌러주세요.<br>
+                학생은 <b>학생 인증 모드 방</b>에 학번을 입력하는 순간 이 목록에 쌓입니다 (학교는 방을 만든 선생님의 학교, 게스트 포함). PIN을 잊은 학생은 <b>PIN 초기화</b> 후
+                다음 접속 때 새 PIN을 정합니다. 잘못 입력된 학번은 <b>삭제</b>(PIN 해시까지 함께 지움), 모르는 기기가 보이면 <b>PIN 초기화</b>와 <b>기기 초기화</b>를 함께
+                눌러주세요.<br>
+                접속 상태는 실시간이 아니라 <b>[새로고침]을 누른 시각</b> 기준입니다. <b>다른화면</b>은 게임 탭을 떠나 다른 앱·탭을 보는 중, <b>접속 끊김</b>은 30분 안에 신호가
+                끊긴 경우입니다.<br>
                 <span class="text-secondary">게임 닉네임은 학번과 연결해 저장하지 않습니다. 순위표의 익명성을 지키기 위한 설계이며, 이 화면에서도 조회할 수
                     없습니다.</span>
             </p>
@@ -182,10 +221,10 @@
             collection, query, where, getDocs, doc, updateDoc, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import {
-            escapeHtml, safeNumber, customAlert, customConfirm, isAccountOnline,
+            escapeHtml, safeNumber, customAlert, customConfirm, ONLINE_FRESH_MS,
             fetchApprovedTeachers, fetchSchoolList, MAX_DEVICES,
-            purgeStudent
-        } from '../../js/room-auth.js?v=4.0';
+            resetStudentPin, purgeStudent
+        } from '../../js/room-auth.js?v=4.1';
 
         const gateSection = document.getElementById('gate-section');
         const managerSection = document.getElementById('manager-section');
@@ -200,6 +239,8 @@
         document.getElementById('maxDeviceText').textContent = MAX_DEVICES;
 
         let allStudents = [];
+        let fetchedAt = 0;                        // 마지막으로 서버에서 읽은 시각 — 상태는 이 시각 기준
+        const RECENT_DROP_MS = 30 * 60 * 1000;    // 이 안에 신호가 끊겼으면 '접속 끊김', 더 오래면 '미접속'
         let initialized = false;
 
         // ── 권한 확인 ─────────────────────────────────────────────
@@ -260,19 +301,22 @@
             const school = schoolSelect.value;
             if (!school) {
                 allStudents = [];
-                tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-muted text-center">학교를 선택해주세요.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-muted text-center">학교를 선택해주세요.</td></tr>';
                 return;
             }
-            tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-muted text-center">불러오는 중...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-muted text-center">불러오는 중...</td></tr>';
             try {
                 const snap = await getDocs(query(collection(db, "student_auth"), where("school", "==", school)));
                 allStudents = [];
                 snap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
+                fetchedAt = Date.now();
+                document.getElementById('fetchedAtText').textContent =
+                    `${new Date(fetchedAt).toLocaleTimeString('ko-KR')} 기준 · [새로고침]을 누르면 다시 가져옵니다`;
                 allStudents.sort((a, b) =>
                     String(a.studentId || '').localeCompare(String(b.studentId || ''), 'ko', { numeric: true }));
             } catch (e) {
                 console.error(e);
-                tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-danger text-center">학생 정보를 불러오지 못했습니다. (교사 승인 상태와 Firestore 권한을 확인해주세요)</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-danger text-center">학생 정보를 불러오지 못했습니다. (교사 승인 상태와 Firestore 권한을 확인해주세요)</td></tr>';
                 return;
             }
             await renderTeacherFilter(school);
@@ -307,13 +351,42 @@
             return '-';
         }
 
+        function toMillis(ts) { return ts?.toMillis ? ts.toMillis() : (typeof ts === 'number' ? ts : 0); }
+
+        // 상태 판정 — 좌표평면 오목과 같은 색: 접속중(녹색) / 다른화면(노랑) / 접속 끊김(빨강)
+        // 학생 관리에만 있는 것: 승인 대기(파랑, 게스트) / 미접속(회색, 정상 퇴장 또는 오래됨)
+        // ★ 실시간이 아닙니다. [새로고침]으로 불러온 시각(fetchedAt) 기준입니다.
+        function statusInfo(s) {
+            const last = toMillis(s.lastActive);
+            const age = fetchedAt - last;
+            const live = last > 0 && ['online', 'away', 'pending'].includes(s.presence);
+            if (live && age < ONLINE_FRESH_MS) {
+                if (s.presence === 'away') return { l: '다른화면', c: 'away', t: 'text-warning', order: 1 };
+                if (s.presence === 'pending') return { l: '승인 대기', c: 'pending', t: 'text-primary', order: 2 };
+                return { l: '접속중', c: 'online', t: 'text-success', order: 0 };
+            }
+            if (live && age < RECENT_DROP_MS) return { l: '접속 끊김', c: 'offline', t: 'text-danger', order: 3 };
+            return { l: '미접속', c: 'idle', t: 'text-muted', order: 4 };
+        }
+
+        function renderStatusSummary(list) {
+            const n = [0, 0, 0, 0, 0];
+            list.forEach(s => n[statusInfo(s).order]++);
+            document.getElementById('statusSummary').innerHTML = [
+                ['online', '접속중', n[0]], ['away', '다른화면', n[1]], ['offline', '접속 끊김', n[3]], ['pending', '승인 대기', n[2]]
+            ].filter(([c, , k]) => c !== 'pending' || k > 0)
+                .map(([c, l, k]) => `<span class="me-2 text-nowrap"><span class="status-dot ${c}"></span>${l} ${k}</span>`).join('');
+        }
+
         function renderTable() {
-            const list = visibleStudents();
+            // 접속 상태 순(접속중 → 다른화면 → 승인 대기 → 끊김 → 미접속), 같은 상태 안에서는 학번 순
+            const list = visibleStudents().sort((a, b) => statusInfo(a).order - statusInfo(b).order);
+            renderStatusSummary(list);
             countBadge.textContent = `${list.length}명`;
             document.getElementById('checkAll').checked = false;
 
             if (list.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-muted text-center">조건에 맞는 학생이 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-muted text-center">조건에 맞는 학생이 없습니다.</td></tr>';
                 updateSelectedBadge();
                 return;
             }
@@ -322,22 +395,30 @@
                 const devices = Array.isArray(s.devices) ? s.devices : [];
                 const teachers = Array.isArray(s.teachers) ? s.teachers : [];
 
+                // PIN 해시는 하위 문서(private/auth)에 있고 아무도 읽을 수 없습니다.
+                // 학생이 PIN을 설정할 때 찍히는 pinSetAt 플래그로 상태만 표시합니다.
+                const pinBadge = s.pinSetAt
+                    ? '<span class="badge bg-success">설정됨</span>'
+                    : '<span class="badge bg-warning text-dark">재설정 대기</span>';
+
                 const devBadge = devices.length >= MAX_DEVICES ? 'bg-danger' : 'bg-secondary';
-                const online = isAccountOnline(s);
+                const st = statusInfo(s);
 
                 return `
                 <tr>
                     <td class="text-center"><input type="checkbox" class="form-check-input row-check" data-id="${escapeHtml(s.id)}" aria-label="선택"></td>
                     <td class="fw-bold">${escapeHtml(s.studentId || s.id)}</td>
                     <td class="text-center small">${teachers.length ? escapeHtml(teachers.join(', ')) : '<span class="text-muted">미지정</span>'}</td>
+                    <td class="text-center">${pinBadge}</td>
                     <td class="text-center">
                         <span class="badge ${devBadge}">${safeNumber(devices.length)}/${MAX_DEVICES}</span>
                         <div>${devices.map(d => `<span class="device-chip">${escapeHtml(d.label || '기기')}</span>`).join('')}</div>
                     </td>
-                    <td class="text-center">${online ? '<span class="badge bg-success">접속 중</span>' : '<span class="badge bg-light text-muted">대기</span>'}</td>
+                    <td class="text-center text-nowrap"><span class="status-dot ${st.c}"></span><small class="${st.t} fw-bold">${st.l}</small></td>
                     <td class="text-center small text-muted">${escapeHtml(formatTime(s.lastActive || s.updatedAt))}</td>
                     <td class="text-center">
                         <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-danger btn-act" data-act="pin" data-id="${escapeHtml(s.id)}" title="PIN 초기화"><i class="bi bi-key-fill"></i></button>
                             <button class="btn btn-outline-warning btn-act" data-act="device" data-id="${escapeHtml(s.id)}" title="기기 초기화"><i class="bi bi-phone"></i></button>
                             <button class="btn btn-outline-secondary btn-act" data-act="presence" data-id="${escapeHtml(s.id)}" title="접속 해제"><i class="bi bi-power"></i></button>
                             <button class="btn btn-outline-primary btn-act" data-act="teacher" data-id="${escapeHtml(s.id)}" title="담당 선생님 수정"><i class="bi bi-person-gear"></i></button>
@@ -360,8 +441,20 @@
         }
 
         // ── 실제 작업 (개별·일괄 공용) ─────────────────────────────
+        /** 작업 결과를 화면 데이터에만 반영합니다 (서버에서 다시 읽는 것은 [새로고침]뿐) */
+        function applyLocal(kind, id) {
+            if (kind === 'delete') { allStudents = allStudents.filter(x => x.id !== id); return; }
+            const s = allStudents.find(x => x.id === id);
+            if (!s) return;
+            if (kind === 'pin') { s.pinSetAt = null; s.presence = 'offline'; }
+            if (kind === 'device') s.devices = [];
+            if (kind === 'presence') s.presence = 'offline';
+        }
+
         async function runOne(kind, id) {
-            if (kind === 'device') {
+            if (kind === 'pin') {
+                await resetStudentPin(id);                       // private/auth 의 pinHash 를 비웁니다
+            } else if (kind === 'device') {
                 await updateDoc(doc(db, "student_auth", id), { devices: [], updatedAt: serverTimestamp() });
             } else if (kind === 'presence') {
                 await updateDoc(doc(db, "student_auth", id), { presence: 'offline', updatedAt: serverTimestamp() });
@@ -378,9 +471,10 @@
             if (act === 'teacher') return openTeacherEditor(student);
 
             const prompts = {
+                pin: [`PIN 초기화`, `<b>${label}</b> 학생의 PIN을 초기화할까요?<br>다음 접속 때 새 PIN을 설정하게 됩니다.`],
                 device: [`기기 초기화`, `<b>${label}</b> 학생의 등록 기기(${safeNumber((student.devices || []).length)}대)를 모두 삭제할까요?<br>새 기기에서 다시 등록할 수 있게 됩니다.`],
                 presence: [`접속 해제`, `<b>${label}</b> 학생의 접속 상태를 해제할까요?<br>다른 기기에서 다시 로그인할 수 있게 됩니다.`],
-                delete: [`학생 삭제`, `<b>${label}</b> 학생 정보를 삭제할까요?<br>등록 기기·담당 선생님 기록이 지워집니다. (다시 입장하면 새로 쌓입니다)`]
+                delete: [`학생 삭제`, `<b>${label}</b> 학생 정보를 삭제할까요?<br>PIN·등록 기기·담당 선생님 기록이 모두 지워집니다. (다시 입장하면 새로 등록됩니다)`]
             };
             const p = prompts[act];
             if (!p) return;
@@ -388,7 +482,8 @@
 
             try {
                 await runOne(act, id);
-                await loadStudents();
+                applyLocal(act, id);
+                renderTable();
             } catch (e) {
                 // ★ v2에는 이 catch가 없었습니다. 권한 오류가 나도 화면에는
                 //   아무 변화가 없어 '되었는데 표시만 안 되나' 싶게 만들었습니다.
@@ -403,18 +498,19 @@
         async function bulkRun(kind) {
             const ids = checkedIds();
             if (ids.length === 0) return customAlert("알림", "학생을 먼저 선택해주세요.");
-            const msg = kind === 'device' ? '등록 기기를 초기화'
-                : kind === 'presence' ? '접속 상태를 해제'
-                    : '정보를 삭제';
+            const msg = kind === 'pin' ? 'PIN을 초기화'
+                : kind === 'device' ? '등록 기기를 초기화'
+                    : kind === 'presence' ? '접속 상태를 해제'
+                        : '정보를 삭제';
             if (!await customConfirm("일괄 작업", `선택한 <b>${ids.length}명</b>의 ${msg}할까요?`)) return;
 
             let done = 0;
             const failed = [];
             for (const id of ids) {
-                try { await runOne(kind, id); done++; }
+                try { await runOne(kind, id); applyLocal(kind, id); done++; }
                 catch (e) { console.error(id, e); failed.push(id); }
             }
-            await loadStudents();
+            renderTable();
             await customAlert("완료",
                 `${done}명 처리되었습니다.` +
                 (failed.length ? `<br><span class="text-danger">실패 ${failed.length}명</span><br><span class="text-muted small">교사 승인 상태와 네트워크를 확인해주세요.</span>` : ''));
@@ -451,7 +547,9 @@
             try {
                 await updateDoc(doc(db, "student_auth", editingId), { teachers, updatedAt: serverTimestamp() });
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('editTeacherModal')).hide();
-                await loadStudents();
+                const edited = allStudents.find(x => x.id === editingId);
+                if (edited) edited.teachers = teachers;
+                renderTable();
             } catch (e) {
                 console.error(e);
                 await customAlert("오류", "담당 선생님 정보를 저장하지 못했습니다.");
@@ -466,6 +564,7 @@
             tbody.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
             updateSelectedBadge();
         };
+        document.getElementById('btnBulkPin').onclick = () => bulkRun('pin');
         document.getElementById('btnBulkDevice').onclick = () => bulkRun('device');
         document.getElementById('btnBulkPresence').onclick = () => bulkRun('presence');
         document.getElementById('btnBulkDelete').onclick = () => bulkRun('delete');

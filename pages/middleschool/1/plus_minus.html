@@ -413,7 +413,7 @@
         <div class="container py-4">
             <div class="admin-card mb-4">
                 <div id="dash-header-placeholder"></div>
-                <script src="../../../js/dashboard-header.js?v=4.0" data-title="정수와 유리수 마스터 대시보드"></script>
+                <script src="../../../js/dashboard-header.js?v=4.1" data-title="정수와 유리수 마스터 대시보드"></script>
 
                 <div id="pendingGuestsContainer" class="mb-3"></div>
 
@@ -480,8 +480,9 @@
         import { db } from "../../../js/firebase-config.js";
         import {
             renderRoomEntrance, customAlert, customConfirm,
-            escapeHtml, safeNumber, promptRoomMode
-        } from "../../../js/room-auth.js?v=4.0";
+            escapeHtml, safeNumber, promptRoomMode, showPinResetModal
+        } from "../../../js/room-auth.js?v=4.1";
+        import { firestoreRoom, renderGuestApproval, bindDeleteRoomButton, buildSidMap } from "../../../js/game-kit.js?v=4.1";
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot,
             query, where, serverTimestamp, deleteDoc
@@ -547,11 +548,13 @@
         const hintMsg = document.getElementById('hint-msg');
 
         // Firestore 참조 헬퍼
-        function roomDocRef(roomCode) { return doc(db, "plus_minus_records", roomCode); }
-        function studentsCollectionRef(roomCode) { return collection(db, "plus_minus_records", roomCode, "students"); }
-        function guestStatusCollRef(roomCode) { return collection(db, "plus_minus_records", roomCode, "guests"); }
-        function nicknameCollRef(roomCode) { return collection(db, "plus_minus_records", roomCode, "nicknames"); }
-        function recordsCollectionRef(roomCode) { return collection(db, "plus_minus_records", roomCode, "records"); }
+        // 방 경로와 방 관리(목록·생성·삭제)는 game-kit이 맡습니다.
+        const roomKit = firestoreRoom("plus_minus_records");
+        const roomDocRef = roomKit.roomDoc;
+        const studentsCollectionRef = roomKit.students;
+        const guestStatusCollRef = roomKit.guests;
+        const nicknameCollRef = roomKit.nicknames;
+        const recordsCollectionRef = roomKit.records;
 
         function showSection(id) {
             document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section'));
@@ -1016,45 +1019,10 @@
         let currentExcelData = [];
         let currentStats = {};
 
-        // 헷갈리는 문자(0/O, 1/I) 제외 — 저학년 입력 실수를 줄입니다.
-        function generateRoomCode() {
-            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            let code = '';
-            for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-            return code;
-        }
-
-        // ★ 교사가 아닐 때는 리스너를 걸지 않습니다.
-        //   학생 화면에서도 이 스크립트가 돌기 때문에, 가드가 없으면
-        //   콘솔에 permission-denied가 계속 쌓입니다.
-        // ★ 관리자가 아니면 내가 만든 방만 쿼리합니다 — 읽기 비용과
-        //   다른 선생님 방 노출이 함께 줄어듭니다.
+        // 교사가 아니면 구독하지 않고, 관리자가 아니면 내 방만 보여 줍니다 (game-kit)
         function loadRooms() {
-            if (!window.isApprovedTeacher && !window.isAdmin) return;
             if (unsubRooms) unsubRooms();
-
-            const base = collection(db, "plus_minus_records");
-            const q = window.isAdmin
-                ? base
-                : query(base, where("createdBy", "==", window.currentTeacherUid || "__none__"));
-
-            unsubRooms = onSnapshot(q, snap => {
-                const select = document.getElementById('roomSelect');
-                if (!select) return;
-                const curr = select.value;
-
-                let html = '<option value="">방을 선택하세요</option>';
-                let count = 0;
-                snap.forEach(docSnap => {
-                    count++;
-                    html += `<option value="${escapeHtml(docSnap.id)}">${escapeHtml(docSnap.id)}</option>`;
-                });
-                if (count === 0 && !window.isAdmin) {
-                    html = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-                }
-                select.innerHTML = html;
-                if (curr && [...select.options].some(o => o.value === curr)) select.value = curr;
-            }, err => console.error('방 목록을 불러오지 못했습니다:', err));
+            unsubRooms = roomKit.watchRooms(document.getElementById('roomSelect'));
         }
         // 교사 로그인 결과는 비동기로 나중에 도착합니다. 이 줄이 없으면 목록이 비어 보입니다.
         window.addEventListener('teacherAuthChanged', () => loadRooms());
@@ -1073,69 +1041,28 @@
             });
         });
 
+        // 모드 선택 · 학교명 확인 · creatorSchool 저장까지 game-kit이 처리합니다.
         document.getElementById('btn-create-room').addEventListener('click', async () => {
-            const selectedMode = await promptRoomMode();
-            if (!selectedMode) return;
-
-            // v4: 인증 방에 들어온 학생은 이 선생님의 학교로 등록됩니다 → 학교명이 꼭 있어야 합니다.
-            const teacherSchool = String(window.currentTeacherSchool || '').trim();
-            if (selectedMode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
-                return customAlert("학교명이 필요해요",
-                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
-                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
-            }
-
-            let code;
-            while (true) {
-                code = generateRoomCode();
-                const d = await getDoc(roomDocRef(code));
-                if (!d.exists()) break;
-            }
-            await setDoc(roomDocRef(code), {
-                roomCode: code,
-                roomMode: selectedMode,
-                settings: { mode: selectedMode },
-                createdAt: serverTimestamp(),
-                createdBy: window.currentTeacherUid || '',
-                creatorName: window.currentTeacherName || '',
-                creatorSchool: teacherSchool
-            });
-            await customAlert("방 생성 완료",
-                `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.<br>설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>${selectedMode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''}`);
-            document.getElementById('roomSelect').value = code;
+            const code = await roomKit.createRoom();
+            if (!code) return;
+            const select = document.getElementById('roomSelect');
+            select.value = code;
             currentAdminRoom = code;
-            document.getElementById('roomSelect').dispatchEvent(new Event('change'));
+            select.dispatchEvent(new Event('change'));
         });
 
-        document.getElementById('btn-delete-room').addEventListener('click', async () => {
-            if (!currentAdminRoom) return customAlert("알림", "삭제할 방을 선택하세요.");
-            const rSnapCheck = await getDoc(roomDocRef(currentAdminRoom));
-            const rData = rSnapCheck.data() || {};
-            // `rData.createdBy &&` 조건이 있어야 소유권 필드가 없던 옛 방도 지울 수 있습니다.
-            if (!window.isAdmin && rData.createdBy && rData.createdBy !== window.currentTeacherUid) {
-                return customAlert("권한 없음", "직접 생성한 방만 삭제할 수 있습니다.");
-            }
-            const confirmed = await customConfirm("방 삭제",
-                `방 [<b class="text-danger">${escapeHtml(currentAdminRoom)}</b>] 데이터를 모두 삭제하시겠습니까?<br>되돌릴 수 없습니다.`);
-            if (!confirmed) return;
+        // 교사 도구: 학생 PIN 초기화 (dashboard-header가 버튼을 만들어 줍니다)
+        document.getElementById('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
 
-            // ★ await 없이 흘려보내면 중간에 끊겼을 때 고아 문서가 남습니다.
-            const delBtn = document.getElementById('btn-delete-room');
-            delBtn.disabled = true;
-            try {
-                for (const collRef of [studentsCollectionRef, recordsCollectionRef, nicknameCollRef, guestStatusCollRef]) {
-                    const snap = await getDocs(collRef(currentAdminRoom));
-                    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
-                }
-                await deleteDoc(roomDocRef(currentAdminRoom));
-                await customAlert("완료", "방이 삭제되었습니다.");
-                document.getElementById('roomSelect').value = '';
-                document.getElementById('roomSelect').dispatchEvent(new Event('change'));
-            } catch (e) {
-                console.error(e);
-                await customAlert("오류", "방을 삭제하지 못했습니다.<br>네트워크를 확인하고 다시 시도해주세요.");
-            } finally {
-                delBtn.disabled = false;
+        // 소유권 확인 → 확인 창 → 하위 컬렉션까지 삭제 (game-kit)
+        bindDeleteRoomButton(document.getElementById('btn-delete-room'), {
+            getCode: () => currentAdminRoom,
+            canDelete: roomKit.canDelete,
+            doDelete: roomKit.deleteRoom,
+            onDone: () => {
+                const select = document.getElementById('roomSelect');
+                select.value = '';
+                select.dispatchEvent(new Event('change'));
             }
         });
 
@@ -1143,80 +1070,9 @@
         // 게스트(공용 기기) 입장 승인 배너
         // =====================================================================
         function renderPendingGuests() {
-            const container = document.getElementById('pendingGuestsContainer');
-            if (!container) return;
-            if (!currentAdminRoom) { container.innerHTML = ''; return; }
-
-            const pendingList = roomStudents.filter(s => s.isGuest && s.status === 'pending');
-            if (pendingList.length === 0) { container.innerHTML = ''; return; }
-
-            container.innerHTML = `
-                <div class="card border-warning bg-warning-subtle shadow-sm rounded-4 p-3 mb-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
-                            <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
-                            <span>⏳ 게스트 입장 대기자 (${pendingList.length}명)</span>
-                        </h6>
-                        <span class="badge bg-warning text-dark fw-bold">선생님 승인 필요</span>
-                    </div>
-                    <div class="d-flex flex-column gap-2">
-                        ${pendingList.map(g => `
-                            <div class="bg-white p-2 px-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-sm border">
-                                <div>
-                                    <strong class="text-primary fs-6">${escapeHtml(g.nickname)}</strong>
-                                    <span class="text-secondary small ms-2">(${escapeHtml(g.school || '')} / ${escapeHtml(g.studentId || '')})</span>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <button class="btn btn-sm btn-success fw-bold px-3 btn-approve-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
-                                        <i class="bi bi-check-lg"></i> 승인 허용
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger fw-bold px-3 btn-reject-guest" data-nick="${escapeHtml(g.nickname)}" data-key="${escapeHtml(g.studentKey || '')}">
-                                        <i class="bi bi-x-lg"></i> 거절
-                                    </button>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-
-            container.querySelectorAll('.btn-approve-guest').forEach(btn => {
-                btn.onclick = async () => {
-                    const nick = btn.getAttribute('data-nick');
-                    const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true; btn.textContent = "처리 중...";
-                    try {
-                        await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'online' });
-                        await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
-                            { status: 'online' }, { merge: true });
-                        if (sKey) {
-                            await updateDoc(doc(db, "student_auth", sKey),
-                                { presence: 'online', lastActive: serverTimestamp() });
-                        }
-                    } catch (err) {
-                        console.error("승인 처리 오류:", err);
-                        btn.disabled = false; btn.textContent = "승인 허용";
-                    }
-                };
-            });
-
-            container.querySelectorAll('.btn-reject-guest').forEach(btn => {
-                btn.onclick = async () => {
-                    const nick = btn.getAttribute('data-nick');
-                    const sKey = btn.getAttribute('data-key');
-                    btn.disabled = true; btn.textContent = "처리 중...";
-                    try {
-                        await updateDoc(doc(studentsCollectionRef(currentAdminRoom), nick), { status: 'rejected' });
-                        await setDoc(doc(guestStatusCollRef(currentAdminRoom), nick),
-                            { status: 'rejected' }, { merge: true });
-                        if (sKey) {
-                            await updateDoc(doc(db, "student_auth", sKey), { presence: 'offline' });
-                        }
-                    } catch (err) {
-                        console.error("거절 처리 오류:", err);
-                        btn.disabled = false; btn.textContent = "거절";
-                    }
-                };
+            renderGuestApproval(document.getElementById('pendingGuestsContainer'), roomStudents, {
+                studentsRef: currentAdminRoom ? studentsCollectionRef(currentAdminRoom) : null,
+                guestsRef: currentAdminRoom ? guestStatusCollRef(currentAdminRoom) : null
             });
         }
 
@@ -1233,10 +1089,7 @@
             }
 
             // 닉네임 → 학번 (records에는 학번이 없으므로 students 문서에서 이어 붙입니다)
-            const sidByNick = {};
-            roomStudents.forEach(st => {
-                if (st.nickname && st.studentId) sidByNick[st.nickname] = String(st.studentId);
-            });
+            const sidByNick = buildSidMap(roomStudents);
 
             // ★ records는 로그인 없이 만들 수 있으므로, 숫자로 쓸 값은 전부 safeNumber를 거칩니다.
             //   문자열이 섞여 들어와도 화면에 코드로 해석되지 않습니다.
