@@ -2,24 +2,32 @@
 
 새 학습 주제를 만들 때 이 문서 하나만 보면 됩니다.
 
-- 템플릿 : `_template.html`
-- 완성 예시 : `representativevalue.html`(대푯값), `frequency.html`(도수분포표와 히스토그램), `relative.html`(상대도수)
+- 템플릿 : `assets/template/ahamath/_template.html`
+- 완성 예시 : `pages/middleschool/ahamath/1/` 안의 6개 학습 페이지
 
 ---
 
 ## 1. 폴더 구조
 
 ```
+assets/
+└── template/
+     └── ahamath/
+          ├── _template.html            ← 복사해서 쓰는 템플릿 (원본은 수정하지 말기)
+          └── GUIDE.md                  ← 이 문서
+
 pages/
 └── middleschool/
-    ├── index.html                    ← 메인(주제 목록). 여기에 주제를 등록합니다
-    └── ahamath/
-        ├── _template.html            ← 복사해서 쓰는 템플릿 (원본은 수정하지 말기)
-        ├── GUIDE.md                  ← 이 문서
-        ├── representativevalue.html  ← 대푯값
-        ├── frequency.html            ← 도수분포표와 히스토그램
-        ├── relative.html             ← 상대도수와 그 그래프
-        └── ...                       ← 앞으로 만들 파일들
+     ├── index.html                    ← 메인(주제 목록). 여기에 주제를 등록합니다
+     └── ahamath/
+          └── 1/
+               ├── coordinate.html       ← 순서쌍과 좌표
+               ├── graph.html            ← 그래프
+               ├── proportion.html       ← 정비례와 반비례
+               ├── representativevalue.html ← 대푯값
+               ├── frequency.html        ← 도수분포표와 히스토그램
+               ├── relative.html         ← 상대도수와 그 그래프
+               └── ...                   ← 앞으로 만들 파일들
 ```
 
 파일 이름은 **영문 소문자**로 짓습니다. 한글 파일명은 서버·모바일에서 깨질 수 있습니다.
@@ -28,9 +36,12 @@ pages/
 
 | id | 파일 | 주제 | 기초 / 도전 문항 |
 |---|---|---|---|
-| `daepyogap` | representativevalue.html | 대푯값 | 5 / 3 |
-| `frequency` | frequency.html | 도수분포표와 히스토그램 | 4 / 2 |
-| `relative` | relative.html | 상대도수와 그 그래프 | 4 / 2 |
+| `coordinate` | `1/coordinate.html` | 순서쌍과 좌표 | 4 / 3 |
+| `graph` | `1/graph.html` | 그래프 | 4 / 3 |
+| `proportion` | `1/proportion.html` | 정비례와 반비례 | 4 / 3 |
+| `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
+| `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
+| `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |
 
 > 줄기와 잎 그림은 따로 만들지 않고 `frequency.html` 의 도입부(개념 카드 1~4)에서 다룹니다.
 
@@ -40,7 +51,7 @@ pages/
 
 ### ① 템플릿 복사
 
-`_template.html` 을 복사해 `ahamath/` 안에 새 이름으로 저장합니다. 예: `linear-equation.html`
+`assets/template/ahamath/_template.html` 을 복사해 `pages/middleschool/ahamath/1/` 안에 새 이름으로 저장합니다. 예: `linear-equation.html`
 
 ### ② 내용 채우기
 
@@ -58,7 +69,7 @@ pages/
     title: '주제 이름',
     desc: '한 줄 소개',
     goals: ['핵심어1', '핵심어2'],        // 회색 칩. 2~4개
-    href: './ahamath/topicid.html',
+     href: './ahamath/1/topicid.html',
     status: 'ready',                     // 완성 전이면 'soon'
     basicTotal: 4,                       // 기초 미션 문항 수
     challengeTotal: 2                    // 도전 미션 문항 수 (없으면 0 → 칩이 사라짐)
@@ -69,6 +80,9 @@ pages/
 학생이 학습 페이지를 한 번이라도 열면 실제 문항 수로 자동으로 맞춰지니, 나중에 문항을 늘려도 카드가 깨지지 않습니다.
 
 `unit` 문자열이 한 글자라도 다르면 **단원이 따로 분리되어** 표시됩니다. 복사해서 붙여넣으세요.
+
+학습을 시작하지 않은 주제 카드는 제목과 설명만 표시합니다. `아직 시작하지 않았어요` 문구,
+진행률 바, 기초·도전 미션 개수는 표시하지 않습니다. 학습 기록이 생긴 뒤에만 상태와 진행률이 나타납니다.
 
 ---
 
@@ -86,6 +100,7 @@ pages/
 - 결과 화면에서 기초를 끝냈으면 **[도전! 한 걸음 더]**, 도전만 끝냈으면 **[기초 미션도 남아 있어요]** 버튼이 뜹니다.
 - 미션 화면에는 [이전] [다음 문제]만 있습니다. 개념으로 돌아가는 길은 **상단 ← 개념으로** 입니다.
 - 상단 진행률바는 읽기 화면에서는 스크롤 위치, 미션 화면에서는 문항 진행을 보여 줍니다.
+- 개념과 예제 화면에는 중간 안내 문구나 조작 단계가 없으며, 마지막 게이트에서만 다음 과정을 선택합니다.
 
 ---
 
@@ -420,7 +435,7 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 
 ## 11. 완성 후 점검
 
-- [ ] 스크롤만 내려서 끝까지 읽히는가 (중간에 눌러야 하는 것이 없는가)
+- [ ] 스크롤만 내려서 끝까지 읽히는가 (마지막 게이트 전에는 눌러야 하는 것이 없는가)
 - [ ] 시각 자료가 화면 절반쯤에서 재생되는가
 - [ ] 도입 자료가 **새 개념 없이는 답이 틀리는** 자료인가
 - [ ] 게이트 세 버튼이 각각 제 위치로 가는가
@@ -444,7 +459,7 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 첨부한 _template.html 과 GUIDE.md 를 그대로 따라서
 [주제 이름] 학습 페이지를 만들어 주세요.
 
-- 파일명: ahamath/[영문파일명].html
+- 파일명: pages/middleschool/ahamath/1/[영문파일명].html
 - TOPIC_ID: [영문id]
 - 성취기준: [교육과정 성취기준 문장]
 - 학습 순서: 첨부한 활동지의 질문 흐름을 100% 우선으로 따르고,
@@ -471,3 +486,6 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 "선생님, 교과서에는 [개념명]이 있으나 활동지에는 빠져 있습니다.
 추가할까요?" 형식으로 질문해 주세요.
 ```
+
+새 페이지를 만든 뒤에는 `index.html`의 `href`가 `./ahamath/1/[파일명].html`인지,
+학습 페이지의 목록 복귀 경로가 `../../index.html`인지 확인하세요.
