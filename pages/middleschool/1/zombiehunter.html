@@ -1500,12 +1500,70 @@
             document.getElementById('adminTableWrap').classList.toggle('show-sid', e.target.checked);
         });
 
+        // =====================================================================
+        // 학습로그 — 기록 한 판을 한 줄로 펼칩니다.
+        // 대시보드 표는 학생별 '요약'이라 판마다의 변화가 보이지 않습니다.
+        // 모달로 한 명씩 보던 이력을 반 전체로 모아 두 번째 시트에 넣습니다.
+        // ★ 중간 저장(isCheckpoint) 기록도 그대로 넣고 [구분] 열로 가릅니다.
+        //   대시보드의 '플레이 횟수'는 중간 저장을 세지 않으므로 회차와 다를 수 있습니다.
+        // =====================================================================
+        function buildLogData() {
+            const STAGE_NAMES = ["Lv.1 양수 정비례", "Lv.2 음수 정비례", "Lv.3 양수 반비례", "Lv.4 음수 반비례"];
+            const sidByNick = buildSidMap(roomStudents);
+            const pad = n => String(n).padStart(2, '0');
+            const fmtTime = ts => {
+                const ms = ts?.toMillis?.() || 0;
+                if (!ms) return '';
+                const d = new Date(ms);
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            };
+            // 학번이 있는 학생을 먼저(명렬표 순), 빠른 입장 학생은 닉네임 순으로 뒤에 붙입니다.
+            const sortKey = nick => sidByNick[nick] ? `0${sidByNick[nick]}` : `1${nick}`;
+
+            const seq = {};
+            return roomRecords
+                .filter(r => String(r.nickname || '') !== '')
+                .sort((a, b) => {
+                    const ka = sortKey(String(a.nickname)), kb = sortKey(String(b.nickname));
+                    if (ka !== kb) return ka.localeCompare(kb);
+                    return (a.playedAt?.toMillis?.() || 0) - (b.playedAt?.toMillis?.() || 0);
+                })
+                .map(r => {
+                    const nick = String(r.nickname);
+                    seq[nick] = (seq[nick] || 0) + 1;
+                    const shots = safeNumber(r.totalShots);
+                    const row = {
+                        "학번": sidByNick[nick] || '',
+                        "닉네임": nick,
+                        "회차": seq[nick],
+                        "일시": fmtTime(r.playedAt),
+                        "구분": r.isCheckpoint ? '중간 저장' : (r.isCompleted ? '완주' : '종료'),
+                        "점수": safeNumber(r.score),
+                        "도달 Stage": safeNumber(r.maxStage),
+                        "도달 Prob": safeNumber(r.maxProblem, 1),
+                        "명중률(%)": shots > 0 ? Math.round((safeNumber(r.hitShots) / shots) * 100) : 0,
+                        "명중 수": safeNumber(r.hitShots),
+                        "발사 수": shots,
+                        "플레이 시간(초)": safeNumber(r.playTimeSec)
+                    };
+                    for (let i = 1; i <= 4; i++) {
+                        row[`${STAGE_NAMES[i - 1]} 맞음`] = safeNumber(r.stageHits?.[i]);
+                        row[`${STAGE_NAMES[i - 1]} 틀림`] = safeNumber(r.stageFails?.[i]);
+                    }
+                    return row;
+                });
+        }
+
+        // 엑셀 다운로드 — [평가진단] 학생별 요약 + [학습로그] 판별 원본 기록
         document.getElementById('btn-export-excel').addEventListener('click', () => {
             if (!currentAdminRoom) return customAlert("알림", "방을 선택해주세요.");
             if (currentExcelData.length === 0) return customAlert("알림", "데이터가 없습니다.");
-            const ws = XLSX.utils.json_to_sheet(currentExcelData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "평가진단");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(currentExcelData), "평가진단");
+            const logData = buildLogData();
+            if (logData.length > 0) {
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(logData), "학습로그");
+            }
             XLSX.writeFile(wb, `좀비헌터_평가진단_${currentAdminRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
         });
     </script>
