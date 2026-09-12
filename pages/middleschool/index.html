@@ -110,12 +110,121 @@
             border-color: var(--wait-line);
         }
 
-        .unit-title {
-            font-size: 1.15rem;
+        /* ---------- 단원 바로가기 칩 ---------- */
+        .jump-row {
+            display: flex;
+            gap: 0.4rem;
+            overflow-x: auto;
+            padding: 1.2rem 0 0.3rem;
+            scrollbar-width: none;
+        }
+
+        .jump-row::-webkit-scrollbar {
+            display: none;
+        }
+
+        .jump-chip {
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #475569;
+            background: #f1f5f9;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.35rem 0.85rem;
+            white-space: nowrap;
+        }
+
+        .jump-chip .jc-n {
+            font-size: 0.8rem;
             font-weight: 800;
-            margin: 2.2rem 0 0.9rem;
-            padding-left: 0.7rem;
+            color: var(--muted);
+        }
+
+        .jump-chip.done {
+            background: var(--aha-soft);
+            border-color: var(--aha-line);
+            color: var(--aha);
+        }
+
+        .jump-chip.done .jc-n {
+            color: var(--aha);
+        }
+
+        /* ---------- 단원 접기 ---------- */
+        .unit-block {
+            margin-top: 0.9rem;
+            scroll-margin-top: 70px;
+        }
+
+        .unit-head {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+            width: 100%;
+            text-align: left;
+            background: var(--card);
+            border: 1px solid var(--border);
             border-left: 5px solid var(--primary);
+            border-radius: 14px;
+            padding: 0.75rem 0.9rem;
+        }
+
+        .unit-block.done .unit-head {
+            border-left-color: var(--aha);
+        }
+
+        .uh-arrow {
+            flex: 0 0 auto;
+            color: var(--muted);
+            transition: transform .2s ease;
+        }
+
+        .unit-block.open .uh-arrow {
+            transform: rotate(90deg);
+        }
+
+        .uh-name {
+            flex: 1 1 130px;
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+        }
+
+        .uh-meta {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .uh-count {
+            font-size: 0.86rem;
+            font-weight: 800;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .uh-bar {
+            width: 72px;
+            height: 8px;
+            border-radius: 99px;
+            background: #f1f5f9;
+            overflow: hidden;
+        }
+
+        .uh-bar>div {
+            height: 100%;
+            border-radius: 99px;
+            transition: width .4s ease;
+        }
+
+        .unit-body {
+            padding-top: 0.75rem;
         }
 
         .topic-card {
@@ -336,6 +445,9 @@
             </div>
         </section>
 
+        <!-- 단원 바로가기 (자동으로 그려집니다) -->
+        <div class="jump-row" id="jumpRow"></div>
+
         <!-- 주제 목록이 이 안에 자동으로 그려집니다 -->
         <div id="topicArea"></div>
 
@@ -371,6 +483,12 @@
                     학습 페이지의 문항 수와 같게 적어 주세요.
                     한 번이라도 학습 페이지를 열면 실제 문항 수로 자동으로 맞춰집니다.
                     도전 미션이 없는 주제는 challengeTotal 을 0 으로 두면 칩이 사라집니다.
+
+           [ 단원 접기 ]
+           같은 unit 끼리 묶여 접었다 펼 수 있습니다. 주제가 늘어나도 화면이 길어지지 않아요.
+           - 처음 들어오면 가장 최근에 공부하던 단원만 펼쳐집니다
+           - 펼쳐 둔 단원은 기기에 기억됩니다 (저장 키 'ahamath.ui.units')
+           - 맨 위 칩을 누르면 그 단원으로 바로 이동합니다
 
            [ 미션 개수를 세는 규칙 ]
            '한 번에 맞힌 문항(firstTry)'만 개수로 인정합니다.
@@ -609,37 +727,144 @@
             return '<a class="topic-card state-' + state.key + '" href="' + topic.href + '">' + head + body + '</a>';
         }
 
-        function renderTopics() {
-            const area = document.getElementById('topicArea');
+        /* ---------- 단원 묶기 · 단원별 진행 상황 ---------- */
+        const UI_KEY = 'ahamath.ui.units';
+
+        function groupTopics() {
             const groups = [];
             TOPICS.forEach(function (t) {
                 let group = groups.filter(function (g) { return g.unit === t.unit; })[0];
                 if (!group) { group = { unit: t.unit, items: [] }; groups.push(group); }
                 group.items.push(t);
             });
-
-            area.innerHTML = groups.map(function (group) {
-                return '<h2 class="unit-title">' + group.unit + '</h2>' +
-                    '<div class="row g-3">' +
-                    group.items.map(function (t) {
-                        return '<div class="col-12 col-md-6">' + cardHTML(t) + '</div>';
-                    }).join('') +
-                    '</div>';
-            }).join('');
+            return groups;
         }
 
-        /* ---------- 이어서 학습하기 ---------- */
-        function renderResume() {
+        function unitStat(group) {
+            let ready = 0, aha = 0, sum = 0;
+            group.items.forEach(function (t) {
+                if (t.status !== 'ready') { return; }
+                ready++;
+                const state = stateOf(readRecord(t.id), t);
+                if (state.key === 'aha') { aha++; }
+                sum += state.percent || 0;
+            });
+            return { ready: ready, aha: aha, percent: ready ? Math.round(sum / ready) : 0 };
+        }
+
+        /* 가장 최근에 공부한 주제 (이어서 학습하기 · 처음 펼칠 단원에 씁니다) */
+        function latestTopic() {
             let latest = null;
             TOPICS.forEach(function (t) {
                 if (t.status !== 'ready') { return; }
                 const record = readRecord(t.id);
                 const updated = record && (record.updatedAt || (record.summary && record.summary.updatedAt));
                 if (!updated) { return; }
-                if (!latest || updated > latest.updatedAt) {
-                    latest = { topic: t, updatedAt: updated };
-                }
+                if (!latest || updated > latest.updatedAt) { latest = { topic: t, updatedAt: updated }; }
             });
+            return latest;
+        }
+
+        function readOpenUnits() {
+            try {
+                const raw = window.localStorage.getItem(UI_KEY);
+                if (!raw) { return null; }
+                const list = JSON.parse(raw);
+                return Array.isArray(list) ? list : null;
+            } catch (e) { return null; }
+        }
+
+        function saveOpenUnits() {
+            try { window.localStorage.setItem(UI_KEY, JSON.stringify(openUnits)); } catch (e) { /* 저장소를 쓸 수 없는 환경 */ }
+        }
+
+        let openUnits = null;
+
+        function initOpenUnits(groups) {
+            if (openUnits) { return; }
+            openUnits = readOpenUnits();
+            if (openUnits) { return; }
+            const latest = latestTopic();                 // 처음 들어오면 최근 단원만 펼쳐 둡니다
+            openUnits = [latest ? latest.topic.unit : (groups[0] ? groups[0].unit : '')];
+        }
+
+        function applyUnit(index, open) {
+            const block = document.getElementById('unit-' + index);
+            if (!block) { return; }
+            block.classList.toggle('open', open);
+            block.querySelector('.unit-head').setAttribute('aria-expanded', open ? 'true' : 'false');
+            block.querySelector('.unit-body').hidden = !open;
+        }
+
+        function setUnitOpen(index, unit, open) {
+            const at = openUnits.indexOf(unit);
+            if (open && at < 0) { openUnits.push(unit); }
+            if (!open && at > -1) { openUnits.splice(at, 1); }
+            saveOpenUnits();
+            applyUnit(index, open);
+        }
+
+        /* ---------- 화면 그리기 ---------- */
+        function renderTopics() {
+            const groups = groupTopics();
+            initOpenUnits(groups);
+
+            /* 맨 위 단원 바로가기 칩 */
+            document.getElementById('jumpRow').innerHTML = groups.map(function (group, i) {
+                const stat = unitStat(group);
+                const done = stat.ready > 0 && stat.aha >= stat.ready;
+                const short = group.unit.replace(/^[^.]*\.\s*/, '');     // '중1. ' 은 떼고 짧게
+                return '<button type="button" class="jump-chip' + (done ? ' done' : '') + '" data-unit="' + i + '">' +
+                    short + '<span class="jc-n">' + stat.aha + '/' + stat.ready + '</span></button>';
+            }).join('');
+
+            /* 단원별 카드 목록 */
+            document.getElementById('topicArea').innerHTML = groups.map(function (group, i) {
+                const stat = unitStat(group);
+                const done = stat.ready > 0 && stat.aha >= stat.ready;
+                const open = openUnits.indexOf(group.unit) > -1;
+                const color = done ? 'var(--aha)' : 'var(--primary)';
+                return '<section class="unit-block' + (open ? ' open' : '') + (done ? ' done' : '') +
+                    '" id="unit-' + i + '">' +
+                    '<button type="button" class="unit-head" data-unit="' + i + '" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+                    '<i class="bi bi-chevron-right uh-arrow"></i>' +
+                    '<span class="uh-name">' + group.unit + '</span>' +
+                    '<span class="uh-meta">' +
+                    '<span class="uh-count">아하! ' + stat.aha + ' / ' + stat.ready + '</span>' +
+                    '<span class="uh-bar"><div style="width:' + stat.percent + '%;background:' + color + '"></div></span>' +
+                    '</span>' +
+                    '</button>' +
+                    '<div class="unit-body"' + (open ? '' : ' hidden') + '>' +
+                    '<div class="row g-3">' +
+                    group.items.map(function (t) {
+                        return '<div class="col-12 col-md-6">' + cardHTML(t) + '</div>';
+                    }).join('') +
+                    '</div></div></section>';
+            }).join('');
+
+            /* 머리줄을 누르면 접었다 폈다 */
+            Array.prototype.slice.call(document.querySelectorAll('.unit-head')).forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    const i = Number(btn.dataset.unit);
+                    const unit = groups[i].unit;
+                    setUnitOpen(i, unit, openUnits.indexOf(unit) < 0);
+                });
+            });
+
+            /* 칩을 누르면 그 단원을 펼치고 그리로 이동 */
+            Array.prototype.slice.call(document.querySelectorAll('.jump-chip')).forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    const i = Number(btn.dataset.unit);
+                    setUnitOpen(i, groups[i].unit, true);
+                    const block = document.getElementById('unit-' + i);
+                    if (block) { block.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+                });
+            });
+        }
+
+        /* ---------- 이어서 학습하기 ---------- */
+        function renderResume() {
+            const latest = latestTopic();
             if (!latest) { return; }
             const box = document.getElementById('resumeBox');
             const link = document.getElementById('resumeLink');
