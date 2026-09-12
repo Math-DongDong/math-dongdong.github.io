@@ -349,12 +349,18 @@
                 function () { startMission(flow, 'review', null); }
             ));
         }
-        if (flow === 'basic' && !isMastered('challenge')) {
+        if (flow === 'basic' && FLOW.challenge.ids.length) {
+            /* 도전 미션을 이미 다 맞혔어도 심화 개념으로 돌아갈 길은 남겨 둡니다 */
+            const cleared = isMastered('challenge');
             actions.appendChild(makeButton(
-                '<i class="bi bi-stars"></i> 도전! 한 걸음 더 시작하기',
-                'btn fw-bold w-100 py-2 text-white mb-2',
+                cleared
+                    ? '<i class="bi bi-stars"></i> 도전 코스 다시 보기'
+                    : '<i class="bi bi-stars"></i> 도전! 한 걸음 더 시작하기',
+                'btn fw-bold w-100 py-2 mb-2' + (cleared ? '' : ' text-white'),
                 function () { showView('view-cread'); },
-                'background:var(--wait);border-color:var(--wait)'
+                cleared
+                    ? 'background:var(--wait-soft);border-color:var(--wait-line);color:var(--wait)'
+                    : 'background:var(--wait);border-color:var(--wait)'
             ));
         }
         if (flow === 'challenge' && !isMastered('basic')) {
