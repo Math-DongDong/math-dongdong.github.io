@@ -100,6 +100,18 @@
             opacity: 1;
         }
 
+        .gate {
+            fill: #f8fafc;
+            stroke: #cbd5e1;
+            stroke-width: 2;
+            stroke-linejoin: round;
+        }
+
+        .gate.on {
+            fill: var(--primary-soft);
+            stroke: var(--primary);
+        }
+
         .pt {
             fill: var(--primary);
         }
@@ -232,8 +244,10 @@
                 <h2 class="card-title">한 줄로 서 있으면 수 하나면 돼요</h2>
                 <p class="lead-text">게이트가 한 줄로 나란히 있어요. 게이트마다 수를 하나씩 붙여 볼게요.</p>
                 <div class="vis">
-                    <div class="numline" data-vis="numline" data-range="4" data-points="-2:A;0:B;3:C"></div>
-                    <button class="replay"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
+                    <div class="numline" data-vis="numline" data-range="4" data-points="-2:A;0:B;3:C" data-gates="1">
+                    </div>
+                </div>
+                <button class="replay"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
                 </div>
                 <div class="fact-box">
                     수직선 위의 한 점에 대응하는 수를 그 점의 <b>좌표</b>라고 해요.<br>
@@ -246,8 +260,8 @@
                 <h2 class="card-title">그런데 이 자리는 어떻게 말하죠?</h2>
                 <p class="lead-text">우편취급국은 게이트 줄에서 <b>위쪽으로 벗어나</b> 있어요. 수직선 위에 없는 자리예요.</p>
                 <div class="vis">
-                    <div class="numline" data-vis="numline" data-range="4" data-points="-2:A;0:B;3:C" data-float="2">
-                    </div>
+                    <div class="numline" data-vis="numline" data-range="4" data-points="-2:A;0:B;3:C" data-gates="1"
+                        data-float="2" data-floatname="우편취급국"></div>
                     <button class="replay"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
                 </div>
                 <div class="fact-box">
@@ -617,13 +631,30 @@
 
                 if (type === 'numline') {
                     const r = Number(el.dataset.range || 4);
-                    const step = 40, pad = 26, y0 = 56;
+                    const gates = el.dataset.gates === '1';          // 공항 게이트 그림을 함께 그릴지
+                    const step = 40, pad = 26;
+                    const gateH = 30;                                // 게이트 높이
+                    const y0 = gates ? 96 : 56;                      // 수직선의 세로 위치
+                    const nameUp = gates ? gateH + 12 : 14;          // 점 이름을 올려 둘 높이
+                    const floatUp = gates ? gateH + 34 : 34;         // 줄에서 벗어난 점의 높이
                     const w = r * 2 * step + pad * 2;
                     const h = y0 + 32;
                     const c = pad + r * step;
                     const X = function (v) { return c + v * step; };
+                    const marked = parsePoints(el.dataset.points).map(function (p) { return p.x; });
 
                     let s = '';
+                    if (gates) {
+                        for (let i = -r; i <= r; i++) {
+                            const gx = X(i), gw = 11;
+                            const on = marked.indexOf(i) > -1;
+                            s += '<path class="gate' + (on ? ' on' : '') + '" d="' +
+                                'M' + (gx - gw) + ',' + y0 +
+                                ' L' + (gx - gw) + ',' + (y0 - gateH + 12) +
+                                ' Q' + gx + ',' + (y0 - gateH - 8) + ' ' + (gx + gw) + ',' + (y0 - gateH + 12) +
+                                ' L' + (gx + gw) + ',' + y0 + '"></path>';
+                        }
+                    }
                     s += '<line class="axis-line" x1="' + (pad - 16) + '" y1="' + y0 + '" x2="' + (w - pad + 16) + '" y2="' + y0 + '"></line>';
                     s += '<polygon class="axis-head" points="' + (w - pad + 16) + ',' + y0 + ' ' + (w - pad + 6) + ',' + (y0 - 5) + ' ' + (w - pad + 6) + ',' + (y0 + 5) + '"></polygon>';
                     s += '<polygon class="axis-head" points="' + (pad - 16) + ',' + y0 + ' ' + (pad - 6) + ',' + (y0 - 5) + ' ' + (pad - 6) + ',' + (y0 + 5) + '"></polygon>';
@@ -634,15 +665,15 @@
                     parsePoints(el.dataset.points).forEach(function (p) {
                         s += '<g class="rv">' +
                             '<circle class="pt" cx="' + X(p.x) + '" cy="' + y0 + '" r="6"></circle>' +
-                            '<text class="pt-label" x="' + X(p.x) + '" y="' + (y0 - 14) + '">' + p.name + '(' + fmtNum(p.x) + ')</text>' +
+                            '<text class="pt-label" x="' + X(p.x) + '" y="' + (y0 - nameUp) + '">' + p.name + '(' + fmtNum(p.x) + ')</text>' +
                             '</g>';
                     });
                     if (el.dataset.float) {
                         const f = Number(el.dataset.float);
                         s += '<g class="rv">' +
-                            '<line class="drop" x1="' + X(f) + '" y1="' + (y0 - 34) + '" x2="' + X(f) + '" y2="' + y0 + '"></line>' +
-                            '<circle class="pt warm" cx="' + X(f) + '" cy="' + (y0 - 34) + '" r="6"></circle>' +
-                            '<text class="pt-label warm" x="' + X(f) + '" y="' + (y0 - 46) + '">' + (el.dataset.floatname || '여기는?') + '</text>' +
+                            '<line class="drop" x1="' + X(f) + '" y1="' + (y0 - floatUp) + '" x2="' + X(f) + '" y2="' + y0 + '"></line>' +
+                            '<circle class="pt warm" cx="' + X(f) + '" cy="' + (y0 - floatUp) + '" r="6"></circle>' +
+                            '<text class="pt-label warm" x="' + X(f) + '" y="' + (y0 - floatUp - 12) + '">' + (el.dataset.floatname || '여기는?') + '</text>' +
                             '</g>';
                     }
                     el.innerHTML = '<svg viewBox="0 0 ' + w + ' ' + h + '">' + s + '</svg>';
