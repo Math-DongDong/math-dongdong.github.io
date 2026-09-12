@@ -64,18 +64,36 @@
             stroke-linecap: round;
         }
 
-        /* 계속 쪼개기 : 곱셈식이 한 줄씩 길어지는 모습 */
+        /* 계속 쪼개기 : 한 줄을 지우고 그 자리에 다시 쓰는 모습 */
         .expand {
+            display: grid;
             font-weight: 800;
+            min-height: 44px;
         }
 
         .exp-row {
+            grid-area: 1 / 1;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-wrap: wrap;
             gap: 3px;
-            margin-bottom: 7px;
+        }
+
+        .exp-row.on .exp-n.new {
+            animation: expPop .45s ease;
+        }
+
+        @keyframes expPop {
+            from {
+                transform: scale(.5);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         .exp-eq {
@@ -174,6 +192,10 @@
             .rv,
             .draw {
                 transition: none !important;
+            }
+
+            .exp-row.on .exp-n.new {
+                animation: none !important;
             }
         }
     </style>
@@ -319,7 +341,6 @@
                     </tr>
                 </table>
                 <div class="fact-box">소인수분해는 보통 <b>작은 소인수부터 차례대로</b> 써요.</div>
-                <p class="muted-text mb-0">같은 소인수가 여러 번 나올 때 더 짧게 쓰는 방법은 도전 코스에서 배워요.</p>
             </section>
 
             <div class="stage-head" data-step="2" data-stepname="대표 예제">
@@ -432,11 +453,7 @@
                 <h2 class="card-title">소인수분해를 거듭제곱으로</h2>
                 <p class="lead-text">앞에서 360을 끝까지 쪼개 <b>2 × 2 × 2 × 3 × 3 × 5</b> 를 얻었어요.
                     같은 소인수끼리 모아 세어 볼게요.</p>
-                <div class="vis">
-                    <div class="stack-wrap" data-vis="stack" data-values="2,2,2,3,3,5" data-nomode="1"></div>
-                    <p class="text-center muted-text mt-2 mb-0">기둥의 높이가 곧 <b>지수</b>예요</p>
-                    <button class="replay"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
-                </div>
+                <div class="data-line">2 × 2 × 2 × 3 × 3 × 5</div>
                 <p class="mb-2">2는 세 번, 3은 두 번, 5는 한 번 곱해졌어요. 곱해진 횟수가 그대로 지수가 돼요.
                     한 번만 곱해진 5는 지수 1을 쓰지 않고 그냥 5라고 적어요.</p>
                 <div class="formula">360 = 2 × 2 × 2 × 3 × 3 × 5 = 2<sup>3</sup> × 3<sup>2</sup> × 5</div>
@@ -572,13 +589,16 @@
                         cur = cur.slice(0, at).concat(st.kids, cur.slice(at + 1));
                         const nextV = (i + 1 < steps.length) ? steps[i + 1].v : null;
                         let marked = false;
-                        const cells = cur.map(function (v) {
+                        const cells = cur.map(function (v, at2) {
                             let cls = kidsOf[v] ? '' : ' prime';
                             if (!marked && v === nextV) { cls = ' next'; marked = true; }
+                            /* 이번에 새로 생긴 자리에는 톡 튀어나오는 표시를 달아요 */
+                            if (at2 >= at && at2 < at + st.kids.length) { cls += ' new'; }
                             return '<span class="exp-n' + cls + '">' + v + '</span>';
                         }).join('<span class="exp-op">×</span>');
-                        out += '<div class="exp-row rv"><span class="exp-eq">' +
-                            (i === 0 ? steps[0].v + ' =' : '=') + '</span>' + cells + '</div>';
+                        /* 한 줄만 보이므로 줄마다 왼쪽에 원래 수를 다시 적어 줍니다 */
+                        out += '<div class="exp-row rv"><span class="exp-eq">' + steps[0].v +
+                            ' =</span>' + cells + '</div>';
                     });
                     el.innerHTML = out;
                     return;
@@ -689,6 +709,18 @@
                 if (mine.indexOf(el.dataset.vis) < 0) { return; }
                 const wait = function (ms) { return REDUCE_MOTION ? 0 : ms; };
                 const gap = Number(el.dataset.gap || 900);
+
+                if (el.dataset.vis === 'expand') {      // 한 줄만 남기고 그 자리에서 바뀝니다
+                    const rows = Array.prototype.slice.call(el.querySelectorAll('.exp-row'));
+                    rows.forEach(function (r, i) {
+                        setTimeout(function () {
+                            rows.forEach(function (x, k) {
+                                if (k === i) { x.classList.add('on'); } else { x.classList.remove('on'); }
+                            });
+                        }, wait(gap * i));
+                    });
+                    return;
+                }
                 Array.prototype.slice.call(el.querySelectorAll('.rv')).forEach(function (g, i) {
                     setTimeout(function () {
                         g.classList.add('on');
