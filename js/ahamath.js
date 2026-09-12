@@ -224,7 +224,8 @@
         card.innerHTML =
             '<h2 class="card-title">' + q.badge + '</h2>' +
             '<p class="lead-text">' + q.stem + '</p>' +
-            (q.data ? '<div class="data-line">' + q.data + '</div>' : '') +
+            /* 조건 상자가 비어 있으면 아예 만들지 않습니다 */
+            (String(q.data || '').trim() ? '<div class="data-line">' + q.data + '</div>' : '') +
             q.choices.map(function (c) {
                 let cls = 'choice';
                 let dis = '';
