@@ -3,13 +3,21 @@
 새 학습 주제를 만들 때 이 문서 하나만 보면 됩니다.
 
 - 템플릿 : `assets/template/ahamath/_template.html`
-- 완성 예시 : `pages/middleschool/ahamath/1/` 안의 6개 학습 페이지
+- 완성 예시 : `pages/middleschool/ahamath/1/` 안의 9개 학습 페이지
+- 공통 스타일 : `css/ahamath.css`
+- 공통 동작 : `js/ahamath.js`
 
 ---
 
 ## 1. 폴더 구조
 
 ```
+css/
+└── ahamath.css                        ← 학습 페이지 공통 스타일 (9개 페이지가 함께 씀)
+
+js/
+└── ahamath.js                         ← 학습 페이지 공통 동작 (화면 전환·기록·채점·시각 자료)
+
 assets/
 └── template/
      └── ahamath/
@@ -27,7 +35,20 @@ pages/
                ├── representativevalue.html ← 대푯값
                ├── frequency.html        ← 도수분포표와 히스토그램
                ├── relative.html         ← 상대도수와 그 그래프
+               ├── prime.html            ← 소수와 합성수
+               ├── factorization.html    ← 소인수분해
+               ├── gcdlcm.html           ← 최대공약수와 최소공배수
                └── ...                   ← 앞으로 만들 파일들
+```
+
+학습 페이지는 `pages/middleschool/ahamath/1/` 안에 있으므로 최상위 폴더까지는 **네 단계**입니다.
+공통 파일을 부르는 경로가 `../../../` (세 단계)이면 파일을 찾지 못하니 꼭 확인하세요.
+
+```html
+<link rel="stylesheet" href="../../../../css/navbar.css" />
+<link rel="stylesheet" href="../../../../css/ahamath.css" />
+<script src="../../../../js/navbar.js" data-type="middleschool"></script>
+<script src="../../../../js/ahamath.js"></script>
 ```
 
 파일 이름은 **영문 소문자**로 짓습니다. 한글 파일명은 서버·모바일에서 깨질 수 있습니다.
@@ -42,6 +63,9 @@ pages/
 | `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
 | `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
 | `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |
+| `prime` | `1/prime.html` | 소수와 합성수 | 5 / 3 |
+| `factorization` | `1/factorization.html` | 소인수분해 | 5 / 3 |
+| `gcdlcm` | `1/gcdlcm.html` | 최대공약수와 최소공배수 | 5 / 3 |
 
 > 줄기와 잎 그림은 따로 만들지 않고 `frequency.html` 의 도입부(개념 카드 1~4)에서 다룹니다.
 
@@ -57,13 +81,16 @@ pages/
 
 `★` 표시가 붙은 12곳만 고칩니다. (4번 표 참고)
 
+카드와 문항을 뺀 나머지(카드 모양, 화면 전환, 채점, 기록, 시각 자료)는 모두
+`css/ahamath.css` 와 `js/ahamath.js` 에 들어 있습니다. 페이지에는 **본문과 문항만** 남깁니다.
+
 ### ③ 메인에 등록
 
 `pages/middleschool/index.html` 의 `TOPICS` 배열에 항목을 추가합니다.
 
 ```js
 {
-    id: 'topicid',                       // 학습 페이지의 TOPIC_ID 와 반드시 같게
+    id: 'topicid',                       // 학습 페이지의 topicId 와 반드시 같게
     unit: '중1. 자료의 정리와 해석',       // 띄어쓰기·마침표까지 기존 것과 똑같이
     no: 5,                               // 카드 왼쪽 번호
     title: '주제 이름',
@@ -118,15 +145,35 @@ pages/
 | 8 | 심화 표지 | 심화 코스 소개 |
 | 9 | 심화 개념 `block-a1 …` | 심화 개념 1~3개 |
 | 10 | 심화 예제 `block-a2` | 심화 예제 |
-| 11 | `TOPIC_ID` | 메인의 `id` 와 똑같이 |
-| 12 | `QUESTIONS` | 문항 (기초 `q1…` 4~5 + 도전 `x1…` 2~3, 보기는 각 2개) |
+| 11 | `AhaMath.start` 의 `topicId` | 메인의 `id` 와 똑같이 |
+| 12 | `AhaMath.start` 의 `questions` | 문항 (기초 `q1…` 4~5 + 도전 `x1…` 2~3, 보기는 각 2개) |
 
-`TOPIC_ID` 바로 아래의 `RECORD_VERSION` 은 새로 만들 때는 `1` 그대로 두면 됩니다.
+페이지 아래쪽은 이 모양입니다. 여기 말고는 손댈 곳이 없습니다.
+
+```html
+<script src="../../../../js/ahamath.js"></script>
+<script>
+    AhaMath.start({
+        topicId: 'topicid',      // ★ 11
+        recordVersion: 1,
+        questions: { … }         // ★ 12
+    });
+</script>
+```
+
+필요할 때만 쓰는 자리도 두 곳 있습니다. 안 쓰면 지우세요.
+
+| 언제 | 어디에 |
+|---|---|
+| 이 주제에서만 쓰는 색·크기가 필요할 때 | `<head>` 안 `<style>` (공통 파일보다 뒤에 와서 덮어씁니다) |
+| 10종에 없는 그림이 필요할 때 | `AhaMath.start` 앞의 `AhaMath.registerVis({ build, play })` |
+
+`topicId` 아래의 `recordVersion` 은 새로 만들 때는 `1` 그대로 두면 됩니다.
 나중에 **문항을 옮기거나 지워서 ID 의 뜻이 바뀔 때만** 숫자를 올리세요.
 
 **심화 코스가 없는 주제**라면
 1. `<section class="view" id="view-cread">` 전체 삭제
-2. `QUESTIONS` 에서 `x1, x2 …` 삭제 → 게이트의 [도전] 버튼이 **자동으로 숨습니다**
+2. `questions` 에서 `x1, x2 …` 삭제 → 게이트의 [도전] 버튼이 **자동으로 숨습니다**
 
 카드 개수·문항 개수는 자유입니다. 진행 표시(`문제 3 / 5`)와 진행률은 자동 계산됩니다.
 
@@ -240,6 +287,33 @@ pages/
 <td class="hl">8</td>                                  <!-- 표 안에서 주황색 강조 -->
 ```
 
+### 10종에 없는 그림이 필요하면
+
+`js/ahamath.js` 는 고치지 말고, 그 페이지에서만 등록해서 씁니다.
+`data-vis` 이름이 10종과 겹치지 않게만 지으면 됩니다.
+
+```html
+<div class="myvis" data-vis="myvis" data-values="3,5"></div>
+```
+
+```js
+AhaMath.registerVis({
+    build: function (el) {                     // 화면에 그리기
+        const type = el.dataset.vis;
+        if (type === 'myvis') { el.innerHTML = '<svg …></svg>'; }
+    },
+    play: function (el) {                      // 절반선을 넘을 때 움직이기
+        const type = el.dataset.vis;
+        const wait = AhaMath.wait;             // 모션 줄이기 설정을 따릅니다
+        if (type === 'myvis') { setTimeout(function () { … }, wait(300)); }
+    }
+});
+```
+
+`registerVis` 는 `AhaMath.start` 보다 **먼저** 불러야 합니다.
+`coordinate.html`(수직선·좌표평면), `graph.html`(꺾은선), `proportion.html`(정비례 그래프)이
+이 방법을 쓰고 있으니 그대로 보고 따라 하면 됩니다.
+
 문항 안에서도 표를 쓸 수 있습니다. `data` 는 HTML이 들어갑니다.
 ```js
 data: '<table class="mini"><tr><th>계급</th><th>도수</th></tr><tr><td>0 ~ 5</td><td>4</td></tr></table>'
@@ -304,7 +378,7 @@ q1: {
 
 **기초 문항은 `q1, q2 …`, 도전 문항은 `x1, x2 …`** 로 짓습니다.
 메인 페이지가 요약값을 못 읽을 때 이 접두사로 개수를 세기 때문에, 기초 문항에 `x`를 쓰면 개수가 도전 쪽으로 잡힙니다.
-문항을 옮기거나 지워서 **번호가 밀리면 ID 도 다시 매기고**, 학습 페이지 위쪽의 `RECORD_VERSION` 숫자를 1 올리세요.
+문항을 옮기거나 지워서 **번호가 밀리면 ID 도 다시 매기고**, `AhaMath.start` 의 `recordVersion` 숫자를 1 올리세요.
 그래야 예전 기록이 엉뚱한 문항에 붙지 않습니다. (그 주제의 문항별 기록은 한 번 초기화됩니다)
 
 ### 선택지는 2개
@@ -371,12 +445,12 @@ data: '도수의 총합 200명　·　상대도수 0.15'          // 피하기
 주제마다 브라우저에 이 키로 저장됩니다.
 
 ```
-ahamath.{TOPIC_ID}.v1
+ahamath.{topicId}.v1
 ```
 
 ```json
 {
-  "version": 1,             // RECORD_VERSION. 숫자가 다르면 best 를 비우고 다시 시작합니다
+  "version": 1,             // recordVersion. 숫자가 다르면 best 를 비우고 다시 시작합니다
   "gate": "aha",            // 기초 자가진단: aha | notYet | null
   "challengeGate": null,    // 심화 자가진단
   "best": {                 // 문항별 최고 기록 (내려가지 않음)
@@ -402,16 +476,18 @@ ahamath.{TOPIC_ID}.v1
 한쪽만 고치면 학습 페이지와 메인 카드의 숫자가 어긋납니다.
 
 ```js
-// 학습 페이지
+// js/ahamath.js
 function firstTryCount(ids) { return ids.filter(function (id) { return bestOf(id) === 'firstTry'; }).length; }
 
-// index.html
+// pages/middleschool/index.html
 function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 ```
 
+`js/ahamath.js` 는 9개 페이지가 함께 쓰므로, 여기를 고치면 모든 주제의 셈법이 한꺼번에 바뀝니다.
+
 ### 페이지를 열 때 하는 정리 (`syncRecord`)
 
-학습 페이지를 열면 **없어진 문항의 기록을 지우고 요약을 다시 계산**해 저장합니다.
+`AhaMath.start` 가 학습 페이지를 열 때 **없어진 문항의 기록을 지우고 요약을 다시 계산**해 저장합니다.
 문항을 늘리거나 줄여도 메인 카드의 `/ 4` 같은 숫자가 자동으로 맞춰집니다.
 아직 기록이 없는 학생에게는 빈 기록을 만들지 않고, 마지막 학습 시각도 건드리지 않습니다.
 
@@ -419,10 +495,10 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 
 ## 10. 자주 하는 실수
 
-- `TOPIC_ID`(학습 페이지)와 `id`(메인 TOPICS)가 다름 → 메인 카드에 진행률이 안 뜹니다
+- `topicId`(학습 페이지)와 `id`(메인 TOPICS)가 다름 → 메인 카드에 진행률이 안 뜹니다
 - 메인 TOPICS 의 `basicTotal`·`challengeTotal` 을 안 고침 → 처음 들어온 학생에게 `0 / 3` 처럼 엉뚱한 수가 보입니다
 - 기초 문항 ID 를 `x`로 시작함 → 요약이 없을 때 도전 미션 개수로 잡힙니다. 기초는 `q`, 도전은 `x`
-- 문항을 옮기고 `RECORD_VERSION` 을 안 올림 → 예전 기록이 다른 문항에 붙어 개수가 부풀려집니다
+- 문항을 옮기고 `recordVersion` 을 안 올림 → 예전 기록이 다른 문항에 붙어 개수가 부풀려집니다
 - `unit` 문자열이 미묘하게 다름 → 같은 단원이 두 덩어리로 쪼개집니다
 - 게이트의 `href="#block-c4"` 를 안 고침 → "정리 카드 다시 보기"가 엉뚱한 곳으로
 - `data-labels` 개수를 `data-counts` 와 같게 씀 → 계급의 양 끝 값이라 **하나 더** 많아야 합니다
@@ -431,6 +507,10 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 - `correct: true` 가 없거나 두 개 → 다음 문제로 넘어가지 못합니다
 - 두 보기의 생김새가 다름(구간 vs 사람 수) → 문제를 안 읽어도 형식만 보고 맞힙니다
 - 표의 숫자와 그래프의 `data-counts` 가 서로 다름 → 학생이 가장 먼저 발견합니다
+- 공통 파일 경로를 `../../../` 로 씀 → 네 단계(`../../../../`)라야 합니다. 글씨만 나오고 카드가 안 보이면 이걸 먼저 확인하세요
+- `AhaMath.start(…)` 를 안 부름 → 첫 화면이 뜨지 않습니다
+- `AhaMath.registerVis` 를 `start` 뒤에 둠 → 그 그림만 안 그려집니다
+- 한 주제만 고치려고 `css/ahamath.css` 나 `js/ahamath.js` 를 건드림 → 9개 페이지가 함께 바뀝니다
 
 ---
 
@@ -460,18 +540,23 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 ```
 첨부한 _template.html 과 GUIDE.md 를 그대로 따라서
 [주제 이름] 학습 페이지를 만들어 주세요.
+스타일과 동작은 css/ahamath.css, js/ahamath.js 에 이미 있으니
+페이지에는 본문과 문항만 넣으면 됩니다.
 
 - 파일명: pages/middleschool/ahamath/1/[영문파일명].html
-- TOPIC_ID: [영문id]
+- topicId: [영문id]
 - 성취기준: [교육과정 성취기준 문장]
 - 학습 순서: 첨부한 활동지의 질문 흐름을 100% 우선으로 따르고,
   교과서는 보조 자료로만 참고하세요.
 
 지켜 주세요.
 1. _template.html 의 ★ 표시 자리만 채우고 나머지 코드는 건드리지 말 것
+   (공통 파일 css/ahamath.css, js/ahamath.js 는 절대 고치지 말 것.
+    이 주제에서만 필요한 스타일은 페이지의 <style> 에 적을 것)
 2. 개념 카드는 한 카드에 한 생각만, 4~8장
 3. 시각 자료는 GUIDE.md 5번의 10종 안에서만 고를 것
-   (필요한 것이 없으면 새로 만들지 말고 먼저 물어볼 것)
+   (필요한 것이 없으면 새로 만들지 말고 먼저 물어볼 것.
+    새로 만들기로 했다면 AhaMath.registerVis 로 그 페이지에만 등록할 것)
 4. 도입 자료는 GUIDE.md 6번을 지켜, 새 개념 없이는 결론이 달라지는
    자료로 만들 것. 계산은 딱 떨어지게, 합계는 검산되게
 5. 예제는 1~2개, ①조건 확인 ②식 세우기 ③계산 구조
@@ -490,4 +575,33 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 ```
 
 새 페이지를 만든 뒤에는 `index.html`의 `href`가 `./ahamath/1/[파일명].html`인지,
-학습 페이지의 목록 복귀 경로가 `../../index.html`인지 확인하세요.
+공통 파일 경로가 `../../../../css/ahamath.css` · `../../../../js/ahamath.js`인지 확인하세요.
+목록으로 돌아가는 경로(`../../index.html`)는 `js/ahamath.js` 가 알아서 처리합니다.
+
+---
+
+## 13. 공통 파일을 고쳐야 할 때
+
+`css/ahamath.css` 와 `js/ahamath.js` 는 **9개 페이지가 함께 씁니다.** 한 곳을 고치면 전부 바뀝니다.
+
+| 하고 싶은 일 | 어디를 고칠까 |
+|---|---|
+| 한 주제의 카드 색·글자 크기만 바꾸기 | 그 페이지의 `<style>` |
+| 한 주제에만 필요한 그림 추가 | 그 페이지의 `AhaMath.registerVis` |
+| 모든 주제의 카드 모양·간격 바꾸기 | `css/ahamath.css` |
+| 채점 규칙·결과 문구·진행률 바꾸기 | `js/ahamath.js` |
+| 시각 자료 10종의 동작 고치기 | `js/ahamath.js` (9개 페이지에서 잘 나오는지 모두 확인) |
+
+공통 파일을 고친 뒤에는 **주제 한 개가 아니라 세 개 이상**을 열어 확인하세요.
+특히 `level`·`outlier`(대푯값), `histogram`(도수분포표·상대도수), `stemleaf`(도수분포표)는
+서로 다른 페이지에서 같은 코드를 쓰고 있습니다.
+
+`js/ahamath.js` 가 밖으로 내주는 것은 다음 다섯 가지입니다.
+
+```js
+AhaMath.start({ topicId, recordVersion, questions })   // 페이지 시작
+AhaMath.registerVis({ build, play })                   // 그 페이지 전용 시각 자료
+AhaMath.wait(ms)                                       // 모션 줄이기 설정을 따르는 지연
+AhaMath.REDUCE_MOTION                                  // 모션 줄이기 켜짐 여부
+AhaMath.pointsOf(...) / AhaMath.svgShapes(...)         // 꺾은선 그릴 때 쓰는 도우미
+```
