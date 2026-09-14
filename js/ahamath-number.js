@@ -8,12 +8,14 @@
      <script src="../../../../js/ahamath-number.js"></script>
      <script> AhaMath.start({ ... }); </script>
 
-   담고 있는 시각 자료 4종
+   담고 있는 시각 자료 5종
      numline  수직선 (수 찍기 · 양수음수 영역 · 절댓값 거리 · 이동 화살표 · 범위 · 대소)
+     bisect   두 수 사이의 가운데를 계속 찍어 나가기
      numsets  자연수 ⊂ 정수 ⊂ 유리수 포함 그림
      chips    셈돌 (+ · −) · 쌍이 만나면 사라지기
      steps    규칙성 표 (한 줄씩 나타나기 · 일부 줄은 ? 로 두었다가 보여주기)
 
+   분수는 <span class="frac"><i>3</i><i>4</i></span> 로 적으면 진짜 분수 모양으로 보입니다.
    스타일도 이 파일이 함께 심으므로 CSS 파일을 따로 두지 않습니다.
    ============================================================================= */
 (function (global) {
@@ -33,6 +35,15 @@
         '.nv-rv.on{opacity:1}',
         '.nv-note{text-align:center;font-size:.85rem;color:#64748b;margin-top:.5rem}',
 
+        /* ---------- 분수 표기 (카드 본문·문항에서도 씁니다) ---------- */
+        /*  쓰는 법 : <span class="frac"><i>5</i><i>2</i></span>            */
+        /*  부호는 밖에 : −<span class="frac"><i>3</i><i>2</i></span>       */
+        '.frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:-0.42em;',
+        '    line-height:1.04;margin:0 .14em;font-size:.92em}',
+        '.frac>i{font-style:normal;display:block;padding:0 .22em;text-align:center}',
+        '.frac>i:first-child{border-bottom:1.6px solid currentColor;padding-bottom:.06em}',
+        '.frac>i:last-child{padding-top:.06em}',
+
         /* ---------- 수직선 ---------- */
         '.nl-axis{stroke:var(--nv-axis);stroke-width:2}',
         '.nl-head{fill:var(--nv-axis)}',
@@ -43,6 +54,8 @@
         '.nl-tlabel.zero{fill:var(--nv-zero);font-size:14px;font-weight:800}',
         '.nl-mlabel{font-size:14.5px;font-weight:800;text-anchor:middle}',
         '.nl-mlabel.pos{fill:var(--nv-pos)}.nl-mlabel.neg{fill:var(--nv-neg)}.nl-mlabel.zero{fill:var(--nv-zero)}',
+        '.nl-fline{stroke-width:1.5}',
+        '.nl-fline.pos{stroke:var(--nv-pos)}.nl-fline.neg{stroke:var(--nv-neg)}.nl-fline.zero{stroke:var(--nv-zero)}',
         '.nl-dot.pos{fill:var(--nv-pos);stroke:#fff;stroke-width:2}',
         '.nl-dot.neg{fill:var(--nv-neg);stroke:#fff;stroke-width:2}',
         '.nl-dot.zero{fill:var(--nv-zero);stroke:#fff;stroke-width:2}',
@@ -146,6 +159,29 @@
         if (dir === 'left') { return (cx) + ',' + cy + ' ' + (cx + s * 1.7) + ',' + (cy - s) + ' ' + (cx + s * 1.7) + ',' + (cy + s); }
         if (dir === 'down') { return (cx) + ',' + cy + ' ' + (cx - s) + ',' + (cy - s * 1.7) + ' ' + (cx + s) + ',' + (cy - s * 1.7); }
         return (cx) + ',' + cy + ' ' + (cx - s) + ',' + (cy + s * 1.7) + ' ' + (cx + s) + ',' + (cy + s * 1.7);
+    }
+
+    /* 수직선 위의 이름표. '3/4' 처럼 적으면 진짜 분수 모양으로 그려요 */
+    function nvLabel(x, axisY, text, tone) {
+        const m = /^([+\u2212-]?)\s*(\d+)\s*\/\s*(\d+)$/.exec(String(text).trim());
+        if (!m) {
+            return '<text class="nl-mlabel ' + tone + '" x="' + x + '" y="' + (axisY - 14) + '">' + text + '</text>';
+        }
+        const sign = m[1] ? (m[1] === '-' ? '\u2212' : m[1]) : '';
+        const num = m[2];
+        const den = m[3];
+        const w = Math.max(num.length, den.length) * 8 + 5;
+        const baseY = axisY - 13;                 // 분모 글자의 기준선
+        const cx = sign ? x + 5 : x;              // 부호가 있으면 분수를 살짝 오른쪽으로
+        let s = '<g class="nl-mlabel ' + tone + '">';
+        if (sign) {
+            s += '<text x="' + (cx - w / 2 - 3) + '" y="' + (baseY - 5) + '" text-anchor="end">' + sign + '</text>';
+        }
+        s += '<text x="' + cx + '" y="' + (baseY - 14) + '" font-size="12.5">' + num + '</text>';
+        s += '<line class="nl-fline ' + tone + '" x1="' + (cx - w / 2) + '" y1="' + (baseY - 10.5) +
+            '" x2="' + (cx + w / 2) + '" y2="' + (baseY - 10.5) + '"/>';
+        s += '<text x="' + cx + '" y="' + baseY + '" font-size="12.5">' + den + '</text>';
+        return s + '</g>';
     }
 
     /* ---------- 수직선 그리기 ---------- */
@@ -256,7 +292,7 @@
             const label = markLabels[i] ? markLabels[i] : (plain ? nvPlain(v) : nvSigned(v));
             out.push('<g class="nv-rv">' +
                 '<circle class="nl-dot ' + cls + '" cx="' + x + '" cy="' + axisY + '" r="6.5"/>' +
-                '<text class="nl-mlabel ' + cls + '" x="' + x + '" y="' + (axisY - 14) + '">' + label + '</text></g>');
+                nvLabel(x, axisY, label, cls) + '</g>');
         });
 
         /* 원점에서의 거리 (절댓값) */
@@ -299,6 +335,49 @@
                 nvSigned(d) + '</text></g>');
             cur = to;
         });
+
+        el.innerHTML =
+            '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" ' +
+            'xmlns="http://www.w3.org/2000/svg" role="img">' + out.join('') + '</svg>' +
+            (el.dataset.note ? '<div class="nv-note">' + el.dataset.note + '</div>' : '');
+    }
+
+    /* ---------- 가운데를 계속 찍어 나가기 (두 수 사이) ---------- */
+    function bsBuild(el) {
+        const from = nvNum(el.dataset.from, 0);
+        const to = nvNum(el.dataset.to, 1);
+        const levels = Math.max(1, Math.min(4, nvNum(el.dataset.levels, 3)));
+        const W = 640;
+        const PAD = 60;
+        const axisY = 74;
+        const H = nvNum(el.dataset.h, axisY + 58);
+        const X = function (t) { return PAD + t * (W - PAD * 2); };
+
+        const out = [];
+        out.push('<line class="nl-axis" x1="' + (X(0) - 26) + '" y1="' + axisY +
+            '" x2="' + (X(1) + 26) + '" y2="' + axisY + '"/>');
+        [[0, from], [1, to]].forEach(function (p) {
+            out.push('<line class="nl-tick zero" x1="' + X(p[0]) + '" y1="' + (axisY - 9) +
+                '" x2="' + X(p[0]) + '" y2="' + (axisY + 9) + '"/>');
+            out.push('<circle class="nl-dot zero" cx="' + X(p[0]) + '" cy="' + axisY + '" r="6"/>');
+            out.push('<text class="nl-tlabel zero" x="' + X(p[0]) + '" y="' + (axisY + 27) + '">' +
+                nvFmt(p[1]) + '</text>');
+        });
+
+        /* 가운데 → 그 가운데 → 또 그 가운데 순서로 한 무리씩 나타납니다 */
+        for (let k = 1; k <= levels; k++) {
+            const den = Math.pow(2, k);
+            let g = '<g class="nv-rv">';
+            for (let i = 1; i < den; i += 2) {
+                const x = X(i / den);
+                const r = (k === 1) ? 7 : (k === 2 ? 6 : 4.5);
+                g += '<circle class="nl-dot pos" cx="' + x + '" cy="' + axisY + '" r="' + r + '"/>';
+                if (k <= 2) { g += nvLabel(x, axisY, i + '/' + den, 'pos'); }
+            }
+            out.push(g + '</g>');
+        }
+        out.push('<g class="nv-rv"><text class="nl-cmplabel" x="' + (W / 2) + '" y="' + (axisY + 50) + '">' +
+            (el.dataset.caption || '가운데를 찍고, 또 그 가운데를 찍고 …') + '</text></g>');
 
         el.innerHTML =
             '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" ' +
@@ -367,6 +446,7 @@
         build: function (el, type) {
             const t = type || el.dataset.vis;
             if (t === 'numline') { nlBuild(el); return; }
+            if (t === 'bisect') { bsBuild(el); return; }
             if (t === 'numsets') { nsBuild(el); return; }
             if (t === 'chips') { chBuild(el); return; }
             if (t === 'steps') { stBuild(el); }
@@ -377,10 +457,12 @@
             const wait = AhaMath.wait;
 
             /* 순서대로 하나씩 나타나는 것들 */
-            if (t === 'numline' || t === 'numsets') {
+            if (t === 'numline' || t === 'numsets' || t === 'bisect') {
+                /* bisect 는 '가운데를 찍고 또 찍는' 것이 보이도록 조금 천천히 */
+                const gap = (t === 'bisect') ? 620 : 280;
                 const items = Array.prototype.slice.call(el.querySelectorAll('.nv-rv'));
                 items.forEach(function (g, i) {
-                    setTimeout(function () { g.classList.add('on'); }, wait(280 * i + 220));
+                    setTimeout(function () { g.classList.add('on'); }, wait(gap * i + 220));
                 });
                 return;
             }
