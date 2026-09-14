@@ -15,7 +15,8 @@
      chips    셈돌 (+ · −) · 쌍이 만나면 사라지기
      steps    규칙성 표 (한 줄씩 나타나기 · 일부 줄은 ? 로 두었다가 보여주기)
 
-   분수는 <span class="frac"><i>3</i><i>4</i></span> 로 적으면 진짜 분수 모양으로 보입니다.
+   분수는 <span class="frac"><i>3</i><i>4</i></span>, 부호가 있으면
+   <span class="frac"><b>−</b><i>3</i><i>4</i></span> 처럼 부호를 분수 안에 넣습니다.
    스타일도 이 파일이 함께 심으므로 CSS 파일을 따로 두지 않습니다.
    ============================================================================= */
 (function (global) {
@@ -36,13 +37,16 @@
         '.nv-note{text-align:center;font-size:.85rem;color:#64748b;margin-top:.5rem}',
 
         /* ---------- 분수 표기 (카드 본문·문항에서도 씁니다) ---------- */
-        /*  쓰는 법 : <span class="frac"><i>5</i><i>2</i></span>            */
-        /*  부호는 밖에 : −<span class="frac"><i>3</i><i>2</i></span>       */
-        '.frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:-0.42em;',
-        '    line-height:1.04;margin:0 .14em;font-size:.92em}',
-        '.frac>i{font-style:normal;display:block;padding:0 .22em;text-align:center}',
-        '.frac>i:first-child{border-bottom:1.6px solid currentColor;padding-bottom:.06em}',
-        '.frac>i:last-child{padding-top:.06em}',
+        /*  쓰는 법   : <span class="frac"><i>5</i><i>2</i></span>              */
+        /*  부호가 있으면 <b> 로 분수 안에 : 부호가 분수선 높이에 맞춰집니다      */
+        /*             <span class="frac"><b>−</b><i>3</i><i>2</i></span>       */
+        '.frac{display:inline-grid;grid-template-areas:"s n" "s d";',
+        '    grid-template-columns:auto auto;align-items:center;',
+        '    vertical-align:middle;margin:0 .14em;font-size:.9em;line-height:1.1}',
+        '.frac>b{grid-area:s;font-weight:inherit;padding-right:.1em;justify-self:center}',
+        '.frac>i{font-style:normal;text-align:center}',
+        '.frac>i:first-of-type{grid-area:n;border-bottom:1.5px solid currentColor;padding:0 .2em .05em}',
+        '.frac>i:last-of-type{grid-area:d;padding:.05em .2em 0}',
 
         /* ---------- 수직선 ---------- */
         '.nl-axis{stroke:var(--nv-axis);stroke-width:2}',
@@ -172,14 +176,17 @@
         const den = m[3];
         const w = Math.max(num.length, den.length) * 8 + 5;
         const baseY = axisY - 13;                 // 분모 글자의 기준선
+        const barY = baseY - 10.5;                // 분수선 높이
         const cx = sign ? x + 5 : x;              // 부호가 있으면 분수를 살짝 오른쪽으로
         let s = '<g class="nl-mlabel ' + tone + '">';
         if (sign) {
-            s += '<text x="' + (cx - w / 2 - 3) + '" y="' + (baseY - 5) + '" text-anchor="end">' + sign + '</text>';
+            /* 부호 글자의 가운데가 분수선에 오도록 기준선을 내려 잡습니다 */
+            s += '<text x="' + (cx - w / 2 - 3) + '" y="' + (barY + 3.6) +
+                '" font-size="13" text-anchor="end">' + sign + '</text>';
         }
         s += '<text x="' + cx + '" y="' + (baseY - 14) + '" font-size="12.5">' + num + '</text>';
-        s += '<line class="nl-fline ' + tone + '" x1="' + (cx - w / 2) + '" y1="' + (baseY - 10.5) +
-            '" x2="' + (cx + w / 2) + '" y2="' + (baseY - 10.5) + '"/>';
+        s += '<line class="nl-fline ' + tone + '" x1="' + (cx - w / 2) + '" y1="' + barY +
+            '" x2="' + (cx + w / 2) + '" y2="' + barY + '"/>';
         s += '<text x="' + cx + '" y="' + baseY + '" font-size="12.5">' + den + '</text>';
         return s + '</g>';
     }
