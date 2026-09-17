@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>구글 시트 연동 설문 빌더</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #FFFFFF;
+        }
+
+        .app-header {
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .field-card {
+            border: 1px solid #e9ecef;
+            border-radius: .5rem;
+        }
+
+        .field-card:focus-within {
+            border-color: #50C878;
+            box-shadow: 0 0 0 .15rem rgba(80, 200, 120, .15);
+        }
+
+        .code-box {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: .5rem;
+            padding: 1rem;
+            max-height: 420px;
+            overflow: auto;
+            font-size: .8rem;
+            white-space: pre;
+        }
+
+        .preview-wrap {
+            max-width: 640px;
+        }
+
+        .req-star {
+            color: #dc3545;
+        }
+
+        .step-num {
+            width: 1.75rem;
+            height: 1.75rem;
+            border-radius: 50%;
+            background: #50C878;
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .9rem;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="app-header bg-white sticky-top">
+        <nav class="navbar container">
+            <span class="navbar-brand fw-bold mb-0">구글 시트 설문 빌더</span>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary" id="exportJsonButton" type="button">설정 내보내기</button>
+                <button class="btn btn-sm btn-outline-secondary" id="importJsonButton" type="button">설정 불러오기</button>
+                <button class="btn btn-sm btn-outline-danger" id="resetButton" type="button">초기화</button>
+                <input type="file" id="importJsonInput" accept="application/json" class="d-none">
+            </div>
+        </nav>
+    </header>
+
+    <main class="container py-4">
+        <ul class="nav nav-tabs mb-4">
+            <li class="nav-item"><button class="nav-link active" data-tab="build" type="button">설문 만들기</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="preview" type="button">미리보기</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="deploy" type="button">시트 연결 &amp; 배포</button></li>
+        </ul>
+
+        <!-- 만들기 -->
+        <section id="buildTab">
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <h2 class="h5 mb-3">질문 구성</h2>
+                    <div id="fieldList" class="vstack gap-3"></div>
+                    <div class="d-flex flex-wrap gap-2 mt-3" id="addFieldButtons"></div>
+                </div>
+
+                <aside class="col-lg-5">
+                    <h2 class="h5 mb-3">기본 정보</h2>
+                    <div class="mb-3">
+                        <label class="form-label" for="formTitle">설문 제목</label>
+                        <input type="text" class="form-control" id="formTitle" placeholder="예: 2026 봄꽃 가요제 신청서">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="formDescription">안내 문구</label>
+                        <textarea class="form-control" id="formDescription" rows="2"
+                            placeholder="응답자에게 보여줄 설명"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="sheetName">기록할 시트 이름</label>
+                        <input type="text" class="form-control" id="sheetName" placeholder="응답">
+                        <div class="form-text">해당 이름의 시트가 없으면 자동으로 만들어집니다.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="webAppUrl">Apps Script 웹앱 URL</label>
+                        <input type="url" class="form-control" id="webAppUrl"
+                            placeholder="https://script.google.com/macros/s/.../exec">
+                        <div class="form-text">배포 탭에서 발급받은 뒤 붙여넣으세요.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="token">전송 확인 토큰</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="token">
+                            <button class="btn btn-outline-secondary" id="tokenButton" type="button">새로 만들기</button>
+                        </div>
+                        <div class="form-text">같은 값이 양쪽에 들어가며, 값이 다른 요청은 기록되지 않습니다.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="deadline">접수 마감 일시 (선택)</label>
+                        <input type="datetime-local" class="form-control" id="deadline">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="successMessage">제출 완료 문구</label>
+                        <input type="text" class="form-control" id="successMessage">
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <!-- 미리보기 -->
+        <section id="previewTab" class="d-none">
+            <div class="alert alert-secondary">미리보기에서는 실제로 제출되지 않습니다.</div>
+            <div class="preview-wrap mx-auto border rounded-3 p-4" id="previewBody"></div>
+        </section>
+
+        <!-- 배포 -->
+        <section id="deployTab" class="d-none">
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <h2 class="h5 mb-3">Apps Script 코드</h2>
+                    <div class="d-flex gap-2 mb-2">
+                        <button class="btn btn-success btn-sm" id="copyScriptButton" type="button">코드 복사</button>
+                        <button class="btn btn-outline-secondary btn-sm" id="downloadScriptButton" type="button">.gs 파일로
+                            저장</button>
+                    </div>
+                    <pre class="code-box" id="scriptBox"></pre>
+                    <p class="small text-muted mt-2">질문을 바꾸면 코드도 함께 바뀝니다. 수정 후에는 코드를 다시 붙여넣고 재배포하세요.</p>
+                </div>
+
+                <div class="col-lg-5">
+                    <h2 class="h5 mb-3">설치 순서</h2>
+                    <ol class="list-unstyled vstack gap-3">
+                        <li class="d-flex gap-3"><span class="step-num flex-shrink-0">1</span>
+                            <div>구글 시트를 새로 만들고 <strong>확장 프로그램 → Apps Script</strong>를 엽니다.</div>
+                        </li>
+                        <li class="d-flex gap-3"><span class="step-num flex-shrink-0">2</span>
+                            <div>기존 내용을 지우고 왼쪽 코드를 전부 붙여넣은 뒤 저장합니다.</div>
+                        </li>
+                        <li class="d-flex gap-3"><span class="step-num flex-shrink-0">3</span>
+                            <div><strong>배포 → 새 배포 → 웹 앱</strong>을 선택하고, 실행 사용자는 <strong>나</strong>, 액세스 권한은 <strong>모든
+                                    사용자</strong>로 지정합니다.</div>
+                        </li>
+                        <li class="d-flex gap-3"><span class="step-num flex-shrink-0">4</span>
+                            <div><code>/exec</code>로 끝나는 URL을 복사해 <strong>기본 정보 → 웹앱 URL</strong> 칸에 붙여넣습니다.</div>
+                        </li>
+                        <li class="d-flex gap-3"><span class="step-num flex-shrink-0">5</span>
+                            <div>아래에서 응답자용 파일을 내려받아 학교 홈페이지, 구글 사이트 도구, 깃허브 페이지 등에 올리고 주소를 공유합니다.</div>
+                        </li>
+                    </ol>
+
+                    <hr class="my-4">
+                    <h2 class="h6 mb-2">응답자용 파일</h2>
+                    <button class="btn btn-primary w-100" id="downloadFormButton" type="button">응답자용 HTML 내려받기</button>
+                    <div class="form-text mt-2">파일 하나로 동작하며, 제출한 내용은 구글 시트에만 쌓입니다.</div>
+
+                    <div class="alert alert-light border mt-4 small mb-0">
+                        응답 확인은 구글 시트에서만 가능합니다. 생성되는 코드에는 시트 내용을 불러오거나 외부로 내보내는 기능이 들어 있지 않습니다.
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="container py-4 text-center text-muted small">구글 시트 설문 빌더 · 제출 전용(POST) 연동</footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        /* ========================= 공통 유틸 ========================= */
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+        const escapeJsString = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+        const createId = (prefix) => prefix + Math.random().toString(36).slice(2, 8);
+        const createToken = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+
+        const FIELD_TYPES = {
+            short: { label: '단답형', hasOptions: false },
+            long: { label: '장문형', hasOptions: false },
+            select: { label: '드롭다운', hasOptions: true },
+            radio: { label: '객관식', hasOptions: true },
+            checkbox: { label: '체크박스', hasOptions: true }
+        };
+
+        const STORAGE_KEY = 'sheetFormBuilder';
+
+        /* ========================= 상태 ========================= */
+        function defaultState() {
+            return {
+                title: '',
+                description: '',
+                sheetName: '응답',
+                webAppUrl: '',
+                token: createToken(),
+                deadline: '',
+                successMessage: '제출이 완료되었습니다. 감사합니다.',
+                fields: [
+                    { id: createId('q_'), type: 'short', label: '이름', placeholder: '', required: true },
+                    { id: createId('q_'), type: 'short', label: '학번 또는 소속', placeholder: '', required: true }
+                ]
+            };
+        }
+
+        let state = defaultState();
+
+        function saveState() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function loadState() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+                if (saved && Array.isArray(saved.fields)) state = Object.assign(defaultState(), saved);
+            } catch (ignore) { /* 저장된 설정이 없으면 기본값 사용 */ }
+        }
+
+        function applyStateToInputs() {
+            $('#formTitle').value = state.title;
+            $('#formDescription').value = state.description;
+            $('#sheetName').value = state.sheetName;
+            $('#webAppUrl').value = state.webAppUrl;
+            $('#token').value = state.token;
+            $('#deadline').value = state.deadline;
+            $('#successMessage').value = state.successMessage;
+        }
+
+        function refreshAll() {
+            renderFieldList();
+            renderPreview();
+            renderScript();
+            saveState();
+        }
+
+        /* ========================= 질문 편집기 ========================= */
+        function renderAddButtons() {
+            $('#addFieldButtons').innerHTML = Object.keys(FIELD_TYPES).map((type) =>
+                `<button class="btn btn-outline-success btn-sm" data-type="${type}" type="button">+ ${FIELD_TYPES[type].label}</button>`).join('');
+        }
+
+        function renderFieldList() {
+            const choiceFields = state.fields.filter((field) => field.type === 'select' || field.type === 'radio');
+
+            $('#fieldList').innerHTML = state.fields.map((field, index) => {
+                const meta = FIELD_TYPES[field.type];
+                const options = field.options || [];
+
+                const optionBlock = meta.hasOptions ? `
+        <div class="mt-2">
+          ${options.map((option, optionIndex) => `
+            <div class="input-group input-group-sm mb-1">
+              <input type="text" class="form-control" value="${escapeHtml(option)}" data-action="option-text" data-index="${index}" data-option="${optionIndex}">
+              <button class="btn btn-outline-secondary" data-action="option-remove" data-index="${index}" data-option="${optionIndex}" type="button">삭제</button>
+            </div>`).join('')}
+          <button class="btn btn-sm btn-link px-0" data-action="option-add" data-index="${index}" type="button">+ 선택지 추가</button>
+        </div>` : `
+        <input type="text" class="form-control form-control-sm mt-2" placeholder="입력 예시 안내문 (선택)"
+               value="${escapeHtml(field.placeholder || '')}" data-action="placeholder" data-index="${index}">`;
+
+                const condition = field.condition || null;
+                const conditionSources = choiceFields.filter((source) => source.id !== field.id);
+                const conditionValues = condition ? (state.fields.find((f) => f.id === condition.fieldId)?.options || []) : [];
+
+                const conditionBlock = `
+        <div class="mt-2 border-top pt-2">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="cond_${field.id}" ${condition ? 'checked' : ''} data-action="condition-toggle" data-index="${index}">
+            <label class="form-check-label small" for="cond_${field.id}">특정 답변을 고른 경우에만 표시</label>
+          </div>
+          ${condition ? `
+          <div class="row g-2 mt-1">
+            <div class="col-sm-6">
+              <select class="form-select form-select-sm" data-action="condition-field" data-index="${index}">
+                ${conditionSources.map((source) => `<option value="${source.id}" ${source.id === condition.fieldId ? 'selected' : ''}>${escapeHtml(source.label || '제목 없는 질문')}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <select class="form-select form-select-sm" data-action="condition-value" data-index="${index}">
+                ${conditionValues.map((option) => `<option value="${escapeHtml(option)}" ${option === condition.value ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}
+              </select>
+            </div>
+          </div>` : ''}
+        </div>`;
+
+                return `
+        <article class="field-card p-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge text-bg-light border">${meta.label}</span>
+            <span class="text-muted small">${index + 1}번 질문</span>
+            <div class="ms-auto btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary" data-action="move-up" data-index="${index}" type="button" ${index === 0 ? 'disabled' : ''}>↑</button>
+              <button class="btn btn-outline-secondary" data-action="move-down" data-index="${index}" type="button" ${index === state.fields.length - 1 ? 'disabled' : ''}>↓</button>
+              <button class="btn btn-outline-danger" data-action="remove-field" data-index="${index}" type="button">삭제</button>
+            </div>
+          </div>
+          <input type="text" class="form-control" placeholder="질문 내용" value="${escapeHtml(field.label || '')}" data-action="label" data-index="${index}">
+          ${optionBlock}
+          <div class="form-check form-switch mt-2">
+            <input class="form-check-input" type="checkbox" id="req_${field.id}" ${field.required ? 'checked' : ''} data-action="required" data-index="${index}">
+            <label class="form-check-label small" for="req_${field.id}">필수 입력</label>
+          </div>
+          ${conditionSources.length ? conditionBlock : ''}
+        </article>`;
+            }).join('') || '<p class="text-muted">아래 버튼으로 질문을 추가하세요.</p>';
+        }
+
+        /* ========================= 미리보기 ========================= */
+        function isFieldVisible(field, answers) {
+            if (!field.condition) return true;
+            return answers[field.condition.fieldId] === field.condition.value;
+        }
+
+        function fieldControlHtml(field) {
+            const placeholder = escapeHtml(field.placeholder || '');
+            if (field.type === 'short') return `<input type="text" class="form-control" data-field-id="${field.id}" placeholder="${placeholder}">`;
+            if (field.type === 'long') return `<textarea class="form-control" rows="3" data-field-id="${field.id}" placeholder="${placeholder}"></textarea>`;
+            if (field.type === 'select') return `<select class="form-select" data-field-id="${field.id}"><option value="">선택하세요</option>${(field.options || []).map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select>`;
+            const inputType = field.type === 'radio' ? 'radio' : 'checkbox';
+            return (field.options || []).map((option, i) => `
+      <div class="form-check">
+        <input class="form-check-input" type="${inputType}" name="${field.id}" id="${field.id}_${i}" value="${escapeHtml(option)}" data-field-id="${field.id}">
+        <label class="form-check-label" for="${field.id}_${i}">${escapeHtml(option)}</label>
+      </div>`).join('');
+        }
+
+        function formBodyHtml() {
+            return state.fields.map((field) => `
+      <div class="mb-4" data-field-wrap="${field.id}">
+        <label class="form-label fw-semibold">${escapeHtml(field.label || '제목 없는 질문')} ${field.required ? '<span class="req-star">*</span>' : ''}</label>
+        ${fieldControlHtml(field)}
+      </div>`).join('');
+        }
+
+        function renderPreview() {
+            $('#previewBody').innerHTML = `
+      <h1 class="h4 mb-2">${escapeHtml(state.title || '제목을 입력하세요')}</h1>
+      <p class="text-muted">${escapeHtml(state.description || '')}</p>
+      <hr>
+      <form novalidate>${formBodyHtml()}
+        <button type="button" class="btn btn-success w-100 btn-lg" disabled>제출하기</button>
+      </form>`;
+        }
+
+        /* ========================= Apps Script 코드 생성 ========================= */
+        function buildAppsScript() {
+            const fieldLines = state.fields.map((field) =>
+                `  { id: '${field.id}', label: '${escapeJsString(field.label || '제목 없는 질문')}' }`).join(',\n');
+
+            return `/**
+ * @OnlyCurrentDoc
+ * 설문 응답 수신 스크립트 (제출 전용)
+ * 자동 생성: ${new Date().toLocaleString('ko-KR')}
+ *
+ * 이 스크립트는 전달받은 응답을 시트에 추가하기만 합니다.
+ * 시트 내용을 읽어 외부로 돌려주는 기능은 들어 있지 않습니다.
+ */
+
+const SHEET_NAME = '${escapeJsString(state.sheetName || '응답')}';
+const FORM_TOKEN = '${escapeJsString(state.token)}';
+const DEADLINE = '${escapeJsString(state.deadline)}'; // 비우면 마감 없음
+
+const FIELDS = [
+${fieldLines}
+];
+
+/** 응답자 화면에서 전송한 데이터를 시트에 추가합니다. */
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const data = readPayload_(e);
+
+    if (FORM_TOKEN && data.token !== FORM_TOKEN) {
+      return jsonOutput_({ ok: false, message: '허용되지 않은 요청입니다.' });
+    }
+    if (DEADLINE && new Date() > new Date(DEADLINE)) {
+      return jsonOutput_({ ok: false, message: '접수가 마감되었습니다.' });
+    }
+
+    const answers = data.answers || {};
+    const row = [new Date()];
+    for (let i = 0; i < FIELDS.length; i++) {
+      row.push(toCellValue_(answers[FIELDS[i].id]));
+    }
+    getSheet_().appendRow(row);
+
+    return jsonOutput_({ ok: true, message: '제출되었습니다.' });
+  } catch (error) {
+    console.error(error);
+    return jsonOutput_({ ok: false, message: '제출 처리 중 문제가 발생했습니다.' });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 시트를 가져오고, 없으면 만들면서 머리글을 씁니다. */
+function getSheet_() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(SHEET_NAME);
+  if (!sheet) sheet = spreadsheet.insertSheet(SHEET_NAME);
+  if (sheet.getLastRow() === 0) writeHeader_(sheet);
+  return sheet;
+}
+
+/** 질문을 수정한 뒤 이 함수를 한 번 실행하면 머리글이 새 질문으로 바뀝니다. */
+function updateHeader() {
+  writeHeader_(getSheet_());
+}
+
+function writeHeader_(sheet) {
+  const header = ['제출 시각'];
+  for (let i = 0; i < FIELDS.length; i++) header.push(FIELDS[i].label);
+  sheet.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+}
+
+function readPayload_(e) {
+  if (e && e.postData && e.postData.contents) {
+    try { return JSON.parse(e.postData.contents); } catch (ignore) {}
+  }
+  if (e && e.parameter && e.parameter.payload) {
+    return JSON.parse(e.parameter.payload);
+  }
+  throw new Error('전달된 데이터가 없습니다.');
+}
+
+function toCellValue_(value) {
+  if (value === null || value === undefined) return '';
+  if (Object.prototype.toString.call(value) === '[object Array]') return value.join(', ');
+  return String(value);
+}
+
+function jsonOutput_(result) {
+  return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+}
+
+/*
+ * 브라우저로 웹앱 주소를 열었을 때 안내 문구가 필요하면 아래 주석을 해제하세요.
+ * 고정된 문장만 돌려주며 시트에는 접근하지 않습니다.
+ *
+ * function doGet() {
+ *   return ContentService.createTextOutput('제출 전용 주소입니다.');
+ * }
+ */
+`;
+        }
+
+        function renderScript() {
+            $('#scriptBox').textContent = buildAppsScript();
+        }
+
+        /* ========================= 응답자용 HTML 생성 ========================= */
+        function buildStudentHtml() {
+            const config = {
+                title: state.title || '설문',
+                description: state.description,
+                webAppUrl: state.webAppUrl,
+                token: state.token,
+                deadline: state.deadline,
+                successMessage: state.successMessage,
+                fields: state.fields
+            };
+            const configJson = JSON.stringify(config, null, 2).replace(/<\//g, '<\\/');
+
+            return [
+                '<!DOCTYPE html>',
+                '<html lang="ko">',
+                '<head>',
+                '  <meta charset="UTF-8">',
+                '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+                '  <title>' + escapeHtml(config.title) + '</title>',
+                '  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">',
+                '  <style>',
+                '    body { background-color:#FFFFFF; }',
+                '    .form-wrap { max-width:640px; }',
+                '    .req-star { color:#dc3545; }',
+                '  </style>',
+                '</head>',
+                '<body>',
+                '  <main class="container py-5">',
+                '    <section class="form-wrap mx-auto">',
+                '      <header class="mb-4">',
+                '        <h1 class="h4 mb-2" id="pageTitle"></h1>',
+                '        <p class="text-muted" id="pageDescription"></p>',
+                '      </header>',
+                '      <form id="surveyForm" novalidate></form>',
+                '      <div id="messageArea" class="alert mt-3 d-none"></div>',
+                '    </section>',
+                '  </main>',
+                '  <iframe name="postTarget" id="postTarget" class="d-none"></iframe>',
+                '  <script>',
+                '  const FORM_CONFIG = ' + configJson + ';',
+                '',
+                '  const $ = (selector, root = document) => root.querySelector(selector);',
+                '  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));',
+                '  const escapeHtml = (value) => String(value == null ? "" : value).replace(/[&<>"\']/g, (c) => ({',
+                '    "&": "&amp;", "<": "&lt;", ">": "&gt;", \'"\': "&quot;", "\'": "&#39;"',
+                '  }[c]));',
+                '  const answers = {};',
+                '',
+                '  function isVisible(field) {',
+                '    if (!field.condition) return true;',
+                '    return answers[field.condition.fieldId] === field.condition.value;',
+                '  }',
+                '',
+                '  function controlHtml(field) {',
+                '    const placeholder = escapeHtml(field.placeholder || "");',
+                '    if (field.type === "short") return \'<input type="text" class="form-control" data-field-id="\' + field.id + \'" placeholder="\' + placeholder + \'">\';',
+                '    if (field.type === "long") return \'<textarea class="form-control" rows="3" data-field-id="\' + field.id + \'" placeholder="\' + placeholder + \'"></textarea>\';',
+                '    if (field.type === "select") {',
+                '      return \'<select class="form-select" data-field-id="\' + field.id + \'"><option value="">선택하세요</option>\' +',
+                '        (field.options || []).map((o) => \'<option value="\' + escapeHtml(o) + \'">\' + escapeHtml(o) + \'</option>\').join("") + "</select>";',
+                '    }',
+                '    const inputType = field.type === "radio" ? "radio" : "checkbox";',
+                '    return (field.options || []).map((option, i) =>',
+                '      \'<div class="form-check"><input class="form-check-input" type="\' + inputType + \'" name="\' + field.id + \'" id="\' + field.id + "_" + i +',
+                '      \'" value="\' + escapeHtml(option) + \'" data-field-id="\' + field.id + \'"><label class="form-check-label" for="\' + field.id + "_" + i + \'">\' +',
+                '      escapeHtml(option) + "</label></div>").join("");',
+                '  }',
+                '',
+                '  function renderForm() {',
+                '    document.title = FORM_CONFIG.title;',
+                '    $("#pageTitle").textContent = FORM_CONFIG.title;',
+                '    $("#pageDescription").textContent = FORM_CONFIG.description || "";',
+                '    $("#surveyForm").innerHTML = FORM_CONFIG.fields.map((field) =>',
+                '      \'<div class="mb-4" data-field-wrap="\' + field.id + \'"><label class="form-label fw-semibold">\' +',
+                '      escapeHtml(field.label) + (field.required ? \' <span class="req-star">*</span>\' : "") + "</label>" +',
+                '      controlHtml(field) + "</div>").join("") +',
+                '      \'<button type="button" class="btn btn-success btn-lg w-100" id="submitButton" disabled>제출하기</button>\';',
+                '  }',
+                '',
+                '  function collectAnswer(field) {',
+                '    if (field.type === "checkbox") return $$(\'[data-field-id="\' + field.id + \'"]:checked\').map((input) => input.value);',
+                '    if (field.type === "radio") {',
+                '      const checked = $(\'[data-field-id="\' + field.id + \'"]:checked\');',
+                '      return checked ? checked.value : "";',
+                '    }',
+                '    const input = $(\'[data-field-id="\' + field.id + \'"]\');',
+                '    return input ? input.value.trim() : "";',
+                '  }',
+                '',
+                '  function refreshForm() {',
+                '    let valid = true;',
+                '    FORM_CONFIG.fields.forEach((field) => { answers[field.id] = collectAnswer(field); });',
+                '    FORM_CONFIG.fields.forEach((field) => {',
+                '      const wrap = $(\'[data-field-wrap="\' + field.id + \'"]\');',
+                '      const visible = isVisible(field);',
+                '      if (wrap) wrap.classList.toggle("d-none", !visible);',
+                '      if (!visible || !field.required) return;',
+                '      const answer = answers[field.id];',
+                '      if (Array.isArray(answer) ? answer.length === 0 : !answer) valid = false;',
+                '    });',
+                '    const button = $("#submitButton");',
+                '    if (button) button.disabled = !valid;',
+                '  }',
+                '',
+                '  function showMessage(text, type) {',
+                '    const area = $("#messageArea");',
+                '    area.className = "alert mt-3 alert-" + type;',
+                '    area.textContent = text;',
+                '  }',
+                '',
+                '  function lockForm() {',
+                '    $$("#surveyForm input, #surveyForm textarea, #surveyForm select, #submitButton").forEach((el) => { el.disabled = true; });',
+                '  }',
+                '',
+                '  function buildPayload() {',
+                '    const payload = { token: FORM_CONFIG.token, answers: {} };',
+                '    FORM_CONFIG.fields.forEach((field) => {',
+                '      payload.answers[field.id] = isVisible(field) ? answers[field.id] : "";',
+                '    });',
+                '    return payload;',
+                '  }',
+                '',
+                '  function submitByIframe(payload) {',
+                '    const form = document.createElement("form");',
+                '    form.method = "POST";',
+                '    form.action = FORM_CONFIG.webAppUrl;',
+                '    form.target = "postTarget";',
+                '    const input = document.createElement("input");',
+                '    input.type = "hidden";',
+                '    input.name = "payload";',
+                '    input.value = JSON.stringify(payload);',
+                '    form.appendChild(input);',
+                '    document.body.appendChild(form);',
+                '    $("#postTarget").onload = () => { showMessage(FORM_CONFIG.successMessage, "success"); lockForm(); };',
+                '    form.submit();',
+                '  }',
+                '',
+                '  function submitForm() {',
+                '    if (!FORM_CONFIG.webAppUrl) { showMessage("웹앱 주소가 설정되지 않았습니다. 담당자에게 알려주세요.", "danger"); return; }',
+                '    if (FORM_CONFIG.deadline && new Date() > new Date(FORM_CONFIG.deadline)) { showMessage("접수가 마감되었습니다.", "danger"); return; }',
+                '',
+                '    const button = $("#submitButton");',
+                '    button.disabled = true;',
+                '    showMessage("제출하는 중…", "secondary");',
+                '    const payload = buildPayload();',
+                '',
+                '    fetch(FORM_CONFIG.webAppUrl, {',
+                '      method: "POST",',
+                '      headers: { "Content-Type": "text/plain;charset=utf-8" },',
+                '      body: JSON.stringify(payload)',
+                '    })',
+                '      .then((response) => response.json())',
+                '      .then((result) => {',
+                '        if (result.ok) { showMessage(FORM_CONFIG.successMessage, "success"); lockForm(); }',
+                '        else { showMessage(result.message || "제출하지 못했습니다.", "danger"); button.disabled = false; }',
+                '      })',
+                '      .catch(() => { submitByIframe(payload); });',
+                '  }',
+                '',
+                '  renderForm();',
+                '  refreshForm();',
+                '  $("#surveyForm").addEventListener("input", refreshForm);',
+                '  $("#surveyForm").addEventListener("change", refreshForm);',
+                '  $("#surveyForm").addEventListener("click", (e) => { if (e.target.id === "submitButton") submitForm(); });',
+                '',
+                '  if (FORM_CONFIG.deadline && new Date() > new Date(FORM_CONFIG.deadline)) {',
+                '    $("#surveyForm").innerHTML = \'<div class="alert alert-danger">접수가 마감되었습니다.</div>\';',
+                '  }',
+                '  <\/script>',
+                '</body>',
+                '</html>'
+            ].join('\n');
+        }
+
+        /* ========================= 파일 저장 ========================= */
+        function downloadFile(filename, content, mimeType) {
+            const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        const safeFileName = () => (state.title || 'survey').replace(/[\\/:*?"<>|]/g, '').trim() || 'survey';
+
+        /* ========================= 이벤트 ========================= */
+        $$('.nav-link[data-tab]').forEach((button) => button.addEventListener('click', () => {
+            $$('.nav-link[data-tab]').forEach((other) => other.classList.toggle('active', other === button));
+            ['build', 'preview', 'deploy'].forEach((name) => {
+                $('#' + name + 'Tab').classList.toggle('d-none', name !== button.dataset.tab);
+            });
+        }));
+
+        const settingInputs = {
+            formTitle: 'title', formDescription: 'description', sheetName: 'sheetName',
+            webAppUrl: 'webAppUrl', token: 'token', deadline: 'deadline', successMessage: 'successMessage'
+        };
+        Object.keys(settingInputs).forEach((inputId) => {
+            $('#' + inputId).addEventListener('input', (e) => {
+                state[settingInputs[inputId]] = e.target.value;
+                renderPreview(); renderScript(); saveState();
+            });
+        });
+
+        $('#tokenButton').addEventListener('click', () => {
+            state.token = createToken();
+            $('#token').value = state.token;
+            renderScript(); saveState();
+        });
+
+        $('#addFieldButtons').addEventListener('click', (e) => {
+            const button = e.target.closest('button[data-type]');
+            if (!button) return;
+            const type = button.dataset.type;
+            const field = { id: createId('q_'), type, label: '', required: false };
+            if (FIELD_TYPES[type].hasOptions) field.options = ['선택지 1', '선택지 2'];
+            else field.placeholder = '';
+            state.fields.push(field);
+            refreshAll();
+        });
+
+        $('#fieldList').addEventListener('input', (e) => {
+            const { action, index, option } = e.target.dataset;
+            if (!action) return;
+            const field = state.fields[Number(index)];
+            if (action === 'label') field.label = e.target.value;
+            else if (action === 'placeholder') field.placeholder = e.target.value;
+            else if (action === 'option-text') field.options[Number(option)] = e.target.value;
+            renderPreview(); renderScript(); saveState();
+        });
+
+        $('#fieldList').addEventListener('change', (e) => {
+            const { action, index } = e.target.dataset;
+            if (!action) return;
+            const field = state.fields[Number(index)];
+
+            if (action === 'required') { field.required = e.target.checked; refreshAll(); return; }
+            if (action === 'condition-toggle') {
+                if (e.target.checked) {
+                    const source = state.fields.find((f) => (f.type === 'select' || f.type === 'radio') && f.id !== field.id);
+                    if (source) field.condition = { fieldId: source.id, value: (source.options || [])[0] || '' };
+                } else {
+                    delete field.condition;
+                }
+                refreshAll(); return;
+            }
+            if (action === 'condition-field') {
+                const source = state.fields.find((f) => f.id === e.target.value);
+                field.condition = { fieldId: e.target.value, value: (source?.options || [])[0] || '' };
+                refreshAll(); return;
+            }
+            if (action === 'condition-value') { field.condition.value = e.target.value; refreshAll(); }
+        });
+
+        $('#fieldList').addEventListener('click', (e) => {
+            const button = e.target.closest('button[data-action]');
+            if (!button) return;
+            const { action, index, option } = button.dataset;
+            const position = Number(index);
+            const field = state.fields[position];
+
+            if (action === 'move-up') { state.fields[position] = state.fields[position - 1]; state.fields[position - 1] = field; }
+            else if (action === 'move-down') { state.fields[position] = state.fields[position + 1]; state.fields[position + 1] = field; }
+            else if (action === 'remove-field') { if (!confirm('이 질문을 삭제할까요?')) return; state.fields.splice(position, 1); }
+            else if (action === 'option-add') { field.options.push('새 선택지'); }
+            else if (action === 'option-remove') { field.options.splice(Number(option), 1); }
+            else return;
+
+            refreshAll();
+        });
+
+        $('#copyScriptButton').addEventListener('click', () => {
+            navigator.clipboard.writeText(buildAppsScript())
+                .then(() => { $('#copyScriptButton').textContent = '복사했습니다'; setTimeout(() => { $('#copyScriptButton').textContent = '코드 복사'; }, 1500); });
+        });
+
+        $('#downloadScriptButton').addEventListener('click', () => downloadFile('코드.gs', buildAppsScript(), 'text/javascript'));
+        $('#downloadFormButton').addEventListener('click', () => downloadFile(safeFileName() + '.html', buildStudentHtml(), 'text/html'));
+
+        $('#exportJsonButton').addEventListener('click', () => downloadFile(safeFileName() + '-설정.json', JSON.stringify(state, null, 2), 'application/json'));
+        $('#importJsonButton').addEventListener('click', () => $('#importJsonInput').click());
+        $('#importJsonInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const loaded = JSON.parse(reader.result);
+                    if (!Array.isArray(loaded.fields)) throw new Error('형식이 맞지 않습니다.');
+                    state = Object.assign(defaultState(), loaded);
+                    applyStateToInputs();
+                    refreshAll();
+                } catch (error) {
+                    alert('설정 파일을 읽지 못했습니다: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+
+        $('#resetButton').addEventListener('click', () => {
+            if (!confirm('모든 설정을 지우고 새로 시작할까요?')) return;
+            state = defaultState();
+            applyStateToInputs();
+            refreshAll();
+        });
+
+        /* ========================= 시작 ========================= */
+        loadState();
+        applyStateToInputs();
+        renderAddButtons();
+        refreshAll();
+    </script>
+</body>
+
+</html>
