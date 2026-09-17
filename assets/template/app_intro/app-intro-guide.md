@@ -3,7 +3,7 @@
 `pages/automation/**` 아래에 있는 앱 소개 페이지(학생관리 앱, 자리배치 앱, 소감문 관리 앱 등)를 새로 만들거나 고칠 때 따르는 규칙입니다.
 AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 함께 알려 주세요. 사이트 전체 HTML 규칙은 `html-guide.md`를 함께 따릅니다.
 
-- 템플릿: `.agents/templates/app-intro-template.html`
+- 템플릿: `assets/template/app_intro/app-intro-template.html`
 - 완성 예시: `pages/automation/student/seatingarrangement.html`, `pages/automation/student/reviewmanagement.html`
 
 ---
@@ -14,7 +14,8 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 | --- | --- | --- |
 | 소개 페이지 | `pages/automation/{분류}/{앱이름}.html` | `pages/automation/student/reviewmanagement.html` |
 | 기능 이미지 | `assets/images/{플랫폼}/{앱이름}/` | `assets/images/appscript/reviewmanagement/` |
-| 템플릿 | `.agents/templates/app-intro-template.html` | |
+| 템플릿 | `assets/template/app_intro/app-intro-template.html` | |
+| 가이드(이 문서) | `assets/template/app_intro/app-intro-guide.md` | |
 
 - **분류**: `pages/automation` 안의 폴더 이름을 씁니다. (`class`, `student`, `work`)
 - **플랫폼**: 구글 시트 + Apps Script 앱은 `appscript`, AppSheet 앱은 `appsheet`
@@ -127,7 +128,7 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 
 ## 9. 완성 전 점검표
 
-- [ ] `{{`로 검색했을 때 템플릿 자리표시가 남아 있지 않다.
+- [ ] 템플릿 자리표시(중괄호 두 개로 감싼 부분)가 남아 있지 않다. 편집기에서 여는 중괄호 두 개를 붙여 검색해 확인합니다.
 - [ ] 이미지 경로가 실제 파일 이름과 같다. (띄어쓰기, 확장자 대소문자 포함)
 - [ ] 캐러셀 indicator 수 = 슬라이드 수, active는 첫 번째에만 있다.
 - [ ] CTA 버튼 주소가 실제 템플릿 주소로 바뀌었다.
@@ -135,11 +136,12 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 - [ ] 스마트폰 폭(360px)에서 가로 스크롤이 생기지 않는다.
 - [ ] 페이지에 적은 버튼·메뉴 이름이 실제 앱 화면과 같다.
 - [ ] 사이트의 목록 페이지나 네비게이션에 새 페이지 링크를 추가했다. (필요한 경우)
+- [ ] 사이트 폴더 안의 md 파일에 여는 중괄호 두 개, 또는 중괄호와 퍼센트 기호를 붙인 글자가 없다. (11번 참고)
 
 ## 10. AI 에이전트에게 맡길 때 요청 예시
 
 ```text
-.agents/rules/app-intro-guide.md 규칙을 따르고 .agents/templates/app-intro-template.html 을 복사해서
+assets/template/app_intro/app-intro-guide.md 규칙을 따르고 assets/template/app_intro/app-intro-template.html 을 복사해서
 pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 
 - 앱 이름: {예) 학생 소감문 관리 앱}
@@ -154,6 +156,16 @@ pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 
 완성하면 9번 완성 전 점검표를 하나씩 확인하고 결과를 알려 줘.
 ```
+
+## 11. GitHub Pages(Jekyll)에서 배포가 멈추지 않게
+
+이 사이트는 GitHub Pages가 Jekyll로 만듭니다. Jekyll은 md 파일과 맨 위에 `---` 앞머리가 있는 파일을 Liquid 문법으로 먼저 읽습니다. 그래서 아래 글자가 들어가면 배포가 `Liquid syntax error`로 멈춥니다.
+
+- md 파일에는 **여는 중괄호 두 개를 붙여 쓰지 않습니다.** 중괄호와 퍼센트 기호를 붙여 쓰는 것도 마찬가지입니다. 코드 블록이나 백틱 안에 써도 똑같이 오류가 납니다.
+- md에서 자리표시가 필요하면 중괄호 하나만 씁니다. (예: `{앱이름}`)
+- 템플릿 HTML처럼 중괄호 두 개 자리표시를 쓰는 HTML 파일에는 맨 위에 `---` 앞머리를 넣지 않습니다. 앞머리가 없는 HTML은 Jekyll이 손대지 않고 그대로 복사하므로 괜찮습니다.
+- 점(.)이나 밑줄(_)로 시작하는 폴더는 Jekyll이 배포에서 뺍니다. 사이트에 올릴 필요가 없는 개발용 문서는 이런 폴더(예: `.agents`)에 두어도 됩니다.
+- 푸시하기 전에 md 파일에서 여는 중괄호 두 개, 중괄호와 퍼센트 기호를 붙인 글자를 검색해 봅니다.
 
 ---
 
@@ -177,7 +189,7 @@ pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 | `4. 소감문 내역 조회.gif` | 교사: 활동별 제출 현황, 학번별 조회 |
 | `5. AI 피드백 생성.jpg` | 교사: 선택한 글에 AI 피드백 일괄 생성 |
 | `6. 교사시점 변환.jpg` | 교사: 교사 시점 일괄 변환 |
-| `7. 교사시점 글 모아보기.jpg` | 교사: 학생별 교사 시점 글 표, 엑셀 다운로드 |
+| `7. 교사시점 글 모아보기.jpg` | 교사: 학생별 교사 시점 글 표 (활동 날짜 범위·학번으로 좁히기), 엑셀 다운로드 |
 | `8. 학생 비밀번호 초기화.gif` | 교사: 학생 비밀번호 초기화 |
 | `9. 스크립트 속성.jpg` | 보안: 환경설정(스크립트 속성) 등록 창 |
 
