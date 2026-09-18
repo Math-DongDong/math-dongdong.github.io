@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>설문 응답</title>
+
+    <!-- 파비콘 -->
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg" type="image/jpeg" />
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        :root {
+            --bg: #ffffff;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --primary: #2563eb;
+            --primary-soft: #eff6ff;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Pretendard Variable', sans-serif;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        .page-wrap {
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 1.5rem 1rem 0;
+        }
+
+        .form-head h1 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 0 0 .5rem;
+            line-height: 1.4;
+        }
+
+        .form-head p {
+            color: var(--muted);
+            font-size: .95rem;
+            line-height: 1.7;
+            margin-bottom: 1.25rem;
+        }
+
+        .q-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1rem;
+            margin-bottom: .85rem;
+        }
+
+        .q-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: .7rem;
+            line-height: 1.5;
+        }
+
+        .form-control,
+        .form-select {
+            font-size: 16px;
+            border-radius: 10px;
+            padding: .7rem .85rem;
+            border-color: var(--border);
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 .15rem rgba(37, 99, 235, .12);
+        }
+
+        textarea.form-control {
+            min-height: 96px;
+        }
+
+        .form-check {
+            padding: .4rem 0 .4rem 1.9em;
+            margin: 0;
+        }
+
+        .form-check-input {
+            width: 1.25em;
+            height: 1.25em;
+            margin-left: -1.9em;
+            margin-top: .1em;
+        }
+
+        .form-check-input:checked {
+            background-color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .form-check-label {
+            font-size: 1rem;
+        }
+
+        /* 알약 선택 */
+        .pill-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+        }
+
+        .pill {
+            border: 1px solid var(--border);
+            background: #fff;
+            color: var(--text);
+            border-radius: 999px;
+            padding: .6rem 1.05rem;
+            font-size: .95rem;
+            font-weight: 600;
+            line-height: 1.2;
+            transition: background .15s ease, color .15s ease, border-color .15s ease;
+        }
+
+        .pill:active {
+            transform: scale(.97);
+        }
+
+        .pill.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .reason-wrap {
+            margin-top: .85rem;
+            padding-top: .85rem;
+            border-top: 1px dashed var(--border);
+        }
+
+        .reason-label {
+            display: block;
+            font-size: .85rem;
+            color: var(--muted);
+            margin-bottom: .4rem;
+        }
+
+        .req-star {
+            color: #dc3545;
+        }
+
+        .submit-bar {
+            position: sticky;
+            bottom: 0;
+            background: var(--bg);
+            border-top: 1px solid var(--border);
+            padding: .85rem 0 calc(1rem + env(safe-area-inset-bottom));
+            margin-top: .5rem;
+        }
+
+        .btn-submit {
+            width: 100%;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: .9rem;
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        .btn-submit:disabled {
+            background: #cbd5e1;
+        }
+
+        .state-box {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page-wrap">
+        <header class="form-head" id="formHead"></header>
+        <form id="surveyForm" novalidate></form>
+        <div id="messageArea" class="alert d-none" role="status"></div>
+        <div class="submit-bar d-none" id="submitBar">
+            <button type="button" class="btn-submit" id="submitButton" disabled>제출하기</button>
+        </div>
+    </main>
+
+    <iframe name="postTarget" id="postTarget" style="display:none"></iframe>
+
+    <script>
+        /* ========================= 유틸 ========================= */
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+        const escapeHtml = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+
+        const TYPE_MAP = { s: 'short', t: 'long', d: 'select', r: 'radio', c: 'checkbox', p: 'pills' };
+
+        let config = null;
+        const answers = {};
+        const reasons = {};
+
+        /* ========================= 설정 읽기 ========================= */
+        function decodeConfig(encoded) {
+            const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+            const binary = atob(base64);
+            const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+            return JSON.parse(new TextDecoder().decode(bytes));
+        }
+
+        function expandConfig(compact) {
+            return {
+                title: compact.t || '설문',
+                description: compact.d || '',
+                webAppUrl: compact.u || '',
+                token: compact.k || '',
+                deadline: compact.l || '',
+                successMessage: compact.m || '제출이 완료되었습니다. 감사합니다.',
+                fields: (compact.f || []).map((field) => ({
+                    id: field.i,
+                    type: TYPE_MAP[field.y] || 'short',
+                    label: field.b || '',
+                    required: !!field.r,
+                    placeholder: field.p || '',
+                    multi: !!field.x,
+                    options: (field.o || []).map((option) => Array.isArray(option)
+                        ? { text: option[0], reason: option[1] === 2 ? 'required' : 'optional' }
+                        : { text: option, reason: 'none' }),
+                    condition: field.c ? { fieldId: field.c[0], value: field.c[1] } : null
+                }))
+            };
+        }
+
+        function readConfig() {
+            const raw = (location.hash || '').replace(/^#/, '');
+            if (!raw) return null;
+            const encoded = new URLSearchParams(raw).get('c');
+            if (!encoded) return null;
+            try {
+                return expandConfig(decodeConfig(encoded));
+            } catch (error) {
+                return null;
+            }
+        }
+
+        /* ========================= 상태 계산 ========================= */
+        function isVisible(field) {
+            if (!field.condition) return true;
+            const source = answers[field.condition.fieldId];
+            return Array.isArray(source)
+                ? source.indexOf(field.condition.value) !== -1
+                : source === field.condition.value;
+        }
+
+        function selectedValues(field) {
+            const value = answers[field.id];
+            if (Array.isArray(value)) return value;
+            return value ? [value] : [];
+        }
+
+        function hasReasonOption(field) {
+            return field.type === 'pills' && field.options.some((option) => option.reason !== 'none');
+        }
+
+        function reasonMode(field) {
+            if (field.type !== 'pills') return 'none';
+            const modes = selectedValues(field).map((value) => {
+                const option = field.options.find((item) => item.text === value);
+                return option ? option.reason : 'none';
+            });
+            if (modes.indexOf('required') !== -1) return 'required';
+            if (modes.indexOf('optional') !== -1) return 'optional';
+            return 'none';
+        }
+
+        /* ========================= 렌더링 ========================= */
+        function controlHtml(field) {
+            const placeholder = escapeHtml(field.placeholder || '');
+
+            if (field.type === 'short') {
+                return '<input type="text" class="form-control" data-field-id="' + field.id + '" placeholder="' + placeholder + '">';
+            }
+            if (field.type === 'long') {
+                return '<textarea class="form-control" data-field-id="' + field.id + '" placeholder="' + placeholder + '"></textarea>';
+            }
+            if (field.type === 'select') {
+                return '<select class="form-select" data-field-id="' + field.id + '"><option value="">선택하세요</option>' +
+                    field.options.map((option) => '<option value="' + escapeHtml(option.text) + '">' + escapeHtml(option.text) + '</option>').join('') +
+                    '</select>';
+            }
+            if (field.type === 'pills') {
+                return '<div class="pill-group" data-pill-group="' + field.id + '">' +
+                    field.options.map((option) =>
+                        '<button type="button" class="pill" data-pill="' + field.id + '" data-value="' + escapeHtml(option.text) + '">' +
+                        escapeHtml(option.text) + '</button>').join('') +
+                    '</div>' +
+                    (hasReasonOption(field)
+                        ? '<div class="reason-wrap d-none" data-reason-wrap="' + field.id + '">' +
+                        '<span class="reason-label" data-reason-label="' + field.id + '"></span>' +
+                        '<textarea class="form-control" rows="2" data-reason-for="' + field.id + '" placeholder="이유를 적어 주세요"></textarea></div>'
+                        : '');
+            }
+
+            const inputType = field.type === 'radio' ? 'radio' : 'checkbox';
+            return field.options.map((option, index) =>
+                '<div class="form-check">' +
+                '<input class="form-check-input" type="' + inputType + '" name="' + field.id + '" id="' + field.id + '_' + index +
+                '" value="' + escapeHtml(option.text) + '" data-field-id="' + field.id + '">' +
+                '<label class="form-check-label" for="' + field.id + '_' + index + '">' + escapeHtml(option.text) + '</label>' +
+                '</div>').join('');
+        }
+
+        function renderForm() {
+            document.title = config.title;
+            $('#formHead').innerHTML = '<h1>' + escapeHtml(config.title) + '</h1>' +
+                (config.description ? '<p>' + escapeHtml(config.description) + '</p>' : '');
+
+            $('#surveyForm').innerHTML = config.fields.map((field) =>
+                '<section class="q-card" data-field-wrap="' + field.id + '">' +
+                '<label class="q-label">' + escapeHtml(field.label || '질문') +
+                (field.required ? ' <span class="req-star">*</span>' : '') + '</label>' +
+                controlHtml(field) +
+                '</section>').join('');
+
+            $('#submitBar').classList.remove('d-none');
+        }
+
+        function showState(text, type) {
+            $('#surveyForm').innerHTML = '<div class="state-box">' + escapeHtml(text) + '</div>';
+            $('#submitBar').classList.add('d-none');
+            if (type) showMessage(text, type);
+        }
+
+        function showMessage(text, type) {
+            const area = $('#messageArea');
+            area.className = 'alert alert-' + type;
+            area.textContent = text;
+        }
+
+        /* ========================= 입력 처리 ========================= */
+        function collectAnswer(field) {
+            if (field.type === 'pills') return answers[field.id] || (field.multi ? [] : '');
+            if (field.type === 'checkbox') return $$('[data-field-id="' + field.id + '"]:checked').map((input) => input.value);
+            if (field.type === 'radio') {
+                const checked = $('[data-field-id="' + field.id + '"]:checked');
+                return checked ? checked.value : '';
+            }
+            const input = $('[data-field-id="' + field.id + '"]');
+            return input ? input.value.trim() : '';
+        }
+
+        function refreshForm() {
+            config.fields.forEach((field) => { answers[field.id] = collectAnswer(field); });
+
+            let valid = true;
+            config.fields.forEach((field) => {
+                const wrap = $('[data-field-wrap="' + field.id + '"]');
+                const visible = isVisible(field);
+                if (wrap) wrap.classList.toggle('d-none', !visible);
+
+                if (field.type === 'pills') {
+                    const values = selectedValues(field);
+                    $$('[data-pill="' + field.id + '"]').forEach((button) => {
+                        button.classList.toggle('active', values.indexOf(button.dataset.value) !== -1);
+                    });
+
+                    const mode = reasonMode(field);
+                    const reasonWrap = $('[data-reason-wrap="' + field.id + '"]');
+                    if (reasonWrap) {
+                        reasonWrap.classList.toggle('d-none', mode === 'none');
+                        const label = $('[data-reason-label="' + field.id + '"]');
+                        if (label) label.textContent = mode === 'required' ? '이유 (필수)' : '이유 (선택)';
+                        if (visible && mode === 'required' && !(reasons[field.id] || '').trim()) valid = false;
+                    }
+                }
+
+                if (!visible || !field.required) return;
+                const answer = answers[field.id];
+                if (Array.isArray(answer) ? answer.length === 0 : !answer) valid = false;
+            });
+
+            $('#submitButton').disabled = !valid;
+        }
+
+        function handlePillClick(button) {
+            const field = config.fields.find((item) => item.id === button.dataset.pill);
+            const value = button.dataset.value;
+
+            if (field.multi) {
+                const current = Array.isArray(answers[field.id]) ? answers[field.id].slice() : [];
+                const index = current.indexOf(value);
+                if (index === -1) current.push(value); else current.splice(index, 1);
+                answers[field.id] = current;
+            } else {
+                answers[field.id] = answers[field.id] === value ? '' : value;
+            }
+            refreshForm();
+        }
+
+        /* ========================= 제출 ========================= */
+        function buildPayload() {
+            const payload = { token: config.token, answers: {} };
+            config.fields.forEach((field) => {
+                const visible = isVisible(field);
+                payload.answers[field.id] = visible ? answers[field.id] : '';
+                if (hasReasonOption(field)) {
+                    payload.answers[field.id + '__r'] = visible && reasonMode(field) !== 'none' ? (reasons[field.id] || '') : '';
+                }
+            });
+            return payload;
+        }
+
+        function lockForm() {
+            $$('#surveyForm input, #surveyForm textarea, #surveyForm select, #surveyForm button').forEach((el) => { el.disabled = true; });
+            $('#submitButton').disabled = true;
+        }
+
+        function submitByIframe(payload) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = config.webAppUrl;
+            form.target = 'postTarget';
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'payload';
+            input.value = JSON.stringify(payload);
+            form.appendChild(input);
+            document.body.appendChild(form);
+            $('#postTarget').onload = () => {
+                showMessage(config.successMessage, 'success');
+                lockForm();
+            };
+            form.submit();
+        }
+
+        function submitForm() {
+            if (!config.webAppUrl) {
+                showMessage('제출 주소가 설정되지 않았습니다. 담당 선생님께 알려 주세요.', 'danger');
+                return;
+            }
+            if (config.deadline && new Date() > new Date(config.deadline)) {
+                showMessage('접수가 마감되었습니다.', 'danger');
+                return;
+            }
+
+            const button = $('#submitButton');
+            button.disabled = true;
+            showMessage('제출하는 중…', 'secondary');
+            const payload = buildPayload();
+
+            fetch(config.webAppUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+                .then((response) => response.json())
+                .then((result) => {
+                    if (result.ok) {
+                        showMessage(config.successMessage, 'success');
+                        lockForm();
+                    } else {
+                        showMessage(result.message || '제출하지 못했습니다.', 'danger');
+                        button.disabled = false;
+                    }
+                })
+                .catch(() => submitByIframe(payload));
+        }
+
+        /* ========================= 시작 ========================= */
+        config = readConfig();
+
+        if (!config || !config.fields.length) {
+            $('#formHead').innerHTML = '<h1>설문 정보를 찾을 수 없습니다</h1>';
+            showState('QR 코드나 공유받은 링크를 통해 다시 들어와 주세요.');
+        } else if (config.deadline && new Date() > new Date(config.deadline)) {
+            $('#formHead').innerHTML = '<h1>' + escapeHtml(config.title) + '</h1>';
+            showState('접수가 마감되었습니다.');
+        } else {
+            renderForm();
+            refreshForm();
+
+            $('#surveyForm').addEventListener('input', (e) => {
+                if (e.target.dataset.reasonFor) reasons[e.target.dataset.reasonFor] = e.target.value;
+                refreshForm();
+            });
+            $('#surveyForm').addEventListener('change', refreshForm);
+            $('#surveyForm').addEventListener('click', (e) => {
+                const pill = e.target.closest('[data-pill]');
+                if (pill) handlePillClick(pill);
+            });
+            $('#submitButton').addEventListener('click', submitForm);
+        }
+    </script>
+</body>
+
+</html>
