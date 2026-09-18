@@ -186,13 +186,35 @@
         </section>
 
         <ul class="nav nav-tabs mb-4">
-            <li class="nav-item"><button class="nav-link active" data-tab="build" type="button">설문 만들기</button></li>
+            <li class="nav-item"><button class="nav-link active" data-tab="list" type="button">설문 목록</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="build" type="button">설문 만들기</button></li>
             <li class="nav-item"><button class="nav-link" data-tab="preview" type="button">미리보기</button></li>
             <li class="nav-item"><button class="nav-link" data-tab="deploy" type="button">시트 연결 &amp; 배포</button></li>
         </ul>
 
+        <!-- 설문 목록 -->
+        <section id="listTab" class="content-card">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <h2 class="h5 mb-0">진행 중인 설문</h2>
+                <button class="btn btn-primary btn-sm ms-auto" id="newSurveyButton" type="button"><i
+                        class="bi bi-plus-lg me-1"></i>새 설문 만들기</button>
+            </div>
+
+            <div class="row g-3" id="surveyList"></div>
+
+            <div class="mt-4 pt-3 border-top" style="max-width:640px">
+                <label class="form-label small mb-1" for="formUrlList">응답 페이지(form.html) 주소</label>
+                <div class="input-group input-group-sm">
+                    <input type="url" class="form-control" id="formUrlList"
+                        placeholder="https://.../pages/automation/work/form.html">
+                    <button class="btn btn-outline-secondary" id="detectUrlButtonList" type="button">현재 위치</button>
+                </div>
+                <div class="form-text" id="formUrlWarning"></div>
+            </div>
+        </section>
+
         <!-- 만들기 -->
-        <section id="buildTab" class="content-card">
+        <section id="buildTab" class="content-card d-none">
             <div class="row g-4">
                 <div class="col-lg-7">
                     <h2 class="h5 mb-3">질문 구성</h2>
@@ -357,35 +379,68 @@
         }
 
         /* ========================= 상태 ========================= */
-        function defaultState() {
-            return {
-                title: '',
+        function newSurvey(source) {
+            const base = {
+                id: createId('sv_'),
+                title: '새 설문',
                 description: '',
                 sheetName: '응답',
                 webAppUrl: '',
                 token: createToken(),
                 deadline: '',
                 successMessage: '제출이 완료되었습니다. 감사합니다.',
-                formUrl: defaultFormUrl(),
+                createdAt: Date.now(),
                 fields: [
                     { id: createId('q_'), type: 'short', label: '이름', placeholder: '', required: true },
                     { id: createId('q_'), type: 'short', label: '학번 또는 소속', placeholder: '', required: true }
                 ]
             };
+            if (!source) return base;
+
+            const copy = JSON.parse(JSON.stringify(source));
+            copy.id = base.id;
+            copy.createdAt = base.createdAt;
+            copy.token = createToken();
+            copy.title = (source.title || '설문') + ' (복사본)';
+            return copy;
         }
 
-        let state = defaultState();
+        let app = { formUrl: defaultFormUrl(), activeId: null, surveys: {} };
+        let state = null;
         const previewAnswers = {};
-        const previewReasons = {};
 
-        function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+        function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(app)); }
 
         function loadState() {
-            try {
-                const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-                if (saved && Array.isArray(saved.fields)) state = Object.assign(defaultState(), saved);
-            } catch (ignore) { /* 저장된 설정이 없으면 기본값 */ }
-            if (!state.formUrl) state.formUrl = defaultFormUrl();
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (ignore) { /* 저장본 없음 */ }
+
+            if (saved && saved.surveys) {
+                app = Object.assign(app, saved);
+            } else if (saved && Array.isArray(saved.fields)) {
+                // 이전 버전(설문 하나짜리) 저장본 이어받기
+                const survey = Object.assign(newSurvey(), saved, { id: createId('sv_'), createdAt: Date.now() });
+                if (saved.formUrl) app.formUrl = saved.formUrl;
+                delete survey.formUrl;
+                app.surveys[survey.id] = survey;
+                app.activeId = survey.id;
+            }
+
+            if (!app.formUrl) app.formUrl = defaultFormUrl();
+            if (!Object.keys(app.surveys).length) {
+                const survey = newSurvey();
+                app.surveys[survey.id] = survey;
+                app.activeId = survey.id;
+            }
+            if (!app.surveys[app.activeId]) app.activeId = Object.keys(app.surveys)[0];
+            state = app.surveys[app.activeId];
+        }
+
+        function openSurvey(id) {
+            app.activeId = id;
+            state = app.surveys[id];
+            applyStateToInputs();
+            refreshAll();
         }
 
         function applyStateToInputs() {
@@ -396,15 +451,73 @@
             $('#token').value = state.token;
             $('#deadline').value = state.deadline;
             $('#successMessage').value = state.successMessage;
-            $('#formUrl').value = state.formUrl;
+            $('#formUrl').value = app.formUrl;
+            $('#formUrlList').value = app.formUrl;
         }
 
         function refreshAll() {
             renderFieldList();
             renderPreview();
             renderScript();
+            renderSurveyList();
             queueQr();
             saveState();
+        }
+
+        /* ========================= 설문 목록 ========================= */
+        function surveyStatus(survey) {
+            if (!survey.webAppUrl) return { label: '설정 미완료', cls: 'text-bg-secondary' };
+            if (survey.deadline && new Date() > new Date(survey.deadline)) return { label: '마감', cls: 'text-bg-danger' };
+            return { label: '진행 중', cls: 'text-bg-primary' };
+        }
+
+        function renderSurveyList() {
+            const ids = Object.keys(app.surveys).sort((a, b) => (app.surveys[b].createdAt || 0) - (app.surveys[a].createdAt || 0));
+
+            $('#surveyList').innerHTML = ids.map((id) => {
+                const survey = app.surveys[id];
+                const status = surveyStatus(survey);
+                const schedule = survey.deadline ? '마감 ' + escapeHtml(survey.deadline.replace('T', ' ')) : '마감 없음';
+
+                return `
+        <div class="col-xl-6">
+          <article class="field-card p-3 h-100 ${id === app.activeId ? 'border-primary' : ''}">
+            <div class="d-flex gap-3">
+              <canvas class="flex-shrink-0" data-mini-qr="${id}" width="96" height="96"></canvas>
+              <div class="flex-grow-1 overflow-hidden">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <span class="badge ${status.cls}">${status.label}</span>
+                  <span class="small text-muted">질문 ${(survey.fields || []).length}개</span>
+                </div>
+                <h3 class="h6 text-truncate mb-1">${escapeHtml(survey.title || '제목 없음')}</h3>
+                <p class="small text-muted mb-2">${schedule} · 시트 ${escapeHtml(survey.sheetName || '응답')}</p>
+                <div class="d-flex flex-wrap gap-1">
+                  <button class="btn btn-sm btn-primary" data-survey-action="edit" data-survey-id="${id}">편집</button>
+                  <button class="btn btn-sm btn-outline-secondary" data-survey-action="qr" data-survey-id="${id}">QR·코드</button>
+                  <button class="btn btn-sm btn-outline-secondary" data-survey-action="copy" data-survey-id="${id}">링크 복사</button>
+                  <button class="btn btn-sm btn-outline-secondary" data-survey-action="duplicate" data-survey-id="${id}">복제</button>
+                  <button class="btn btn-sm btn-outline-danger" data-survey-action="delete" data-survey-id="${id}">삭제</button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>`;
+            }).join('');
+
+            const absolute = /^https?:\/\//.test(app.formUrl || '');
+            const warning = $('#formUrlWarning');
+            warning.textContent = absolute
+                ? '이 주소 뒤에 설문 설정이 붙어 QR로 만들어집니다.'
+                : '휴대폰에서 QR로 열리려면 http(s)로 시작하는 실제 주소여야 합니다.';
+            warning.classList.toggle('text-danger', !absolute);
+        }
+
+        function renderMiniQrs() {
+            if (!window.QRCode) return;
+            $$('[data-mini-qr]').forEach((canvas) => {
+                const survey = app.surveys[canvas.dataset.miniQr];
+                if (survey) QRCode.toCanvas(canvas, responseLink(survey), { width: 96, margin: 0, errorCorrectionLevel: 'L' }, () => { });
+            });
         }
 
         /* ========================= 질문 편집기 ========================= */
@@ -669,13 +782,14 @@ function jsonOutput_(result) {
         function renderScript() { $('#scriptBox').textContent = buildAppsScript(); }
 
         /* ========================= 응답 링크 · QR ========================= */
-        function compactConfig() {
-            const compact = { t: state.title || '설문', u: state.webAppUrl, k: state.token };
-            if (state.description) compact.d = state.description;
-            if (state.deadline) compact.l = state.deadline;
-            if (state.successMessage) compact.m = state.successMessage;
+        function compactConfig(survey) {
+            const source = survey || state;
+            const compact = { t: source.title || '설문', u: source.webAppUrl, k: source.token };
+            if (source.description) compact.d = source.description;
+            if (source.deadline) compact.l = source.deadline;
+            if (source.successMessage) compact.m = source.successMessage;
 
-            compact.f = state.fields.map((field) => {
+            compact.f = source.fields.map((field) => {
                 const item = { i: field.id, y: FIELD_TYPES[field.type].code, b: field.label || '질문' };
                 if (field.required) item.r = 1;
                 if (field.placeholder) item.p = field.placeholder;
@@ -693,22 +807,22 @@ function jsonOutput_(result) {
             return compact;
         }
 
-        function encodeConfig() {
-            const bytes = new TextEncoder().encode(JSON.stringify(compactConfig()));
+        function encodeConfig(survey) {
+            const bytes = new TextEncoder().encode(JSON.stringify(compactConfig(survey)));
             let binary = '';
             bytes.forEach((b) => { binary += String.fromCharCode(b); });
             return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         }
 
-        function responseLink() {
-            const base = (state.formUrl || 'form.html').split('#')[0];
-            return base + '#c=' + encodeConfig();
+        function responseLink(survey) {
+            const base = (app.formUrl || 'form.html').split('#')[0];
+            return base + '#c=' + encodeConfig(survey);
         }
 
         let qrTimer = null;
         function queueQr() {
             clearTimeout(qrTimer);
-            qrTimer = setTimeout(renderQr, 300);
+            qrTimer = setTimeout(() => { renderQr(); renderMiniQrs(); }, 300);
         }
 
         function renderQr() {
@@ -742,24 +856,85 @@ function jsonOutput_(result) {
         const safeFileName = () => (state.title || 'survey').replace(/[\\/:*?"<>|]/g, '').trim() || 'survey';
 
         /* ========================= 이벤트 ========================= */
-        $$('.nav-link[data-tab]').forEach((button) => button.addEventListener('click', () => {
-            $$('.nav-link[data-tab]').forEach((other) => other.classList.toggle('active', other === button));
-            ['build', 'preview', 'deploy'].forEach((name) => {
-                $('#' + name + 'Tab').classList.toggle('d-none', name !== button.dataset.tab);
+        function switchTab(name) {
+            $$('.nav-link[data-tab]').forEach((button) => button.classList.toggle('active', button.dataset.tab === name));
+            ['list', 'build', 'preview', 'deploy'].forEach((tab) => {
+                $('#' + tab + 'Tab').classList.toggle('d-none', tab !== name);
             });
-            if (button.dataset.tab === 'deploy') renderQr();
-        }));
+            if (name === 'deploy') renderQr();
+            if (name === 'list') { renderSurveyList(); renderMiniQrs(); }
+        }
+
+        $$('.nav-link[data-tab]').forEach((button) => button.addEventListener('click', () => switchTab(button.dataset.tab)));
+
+        $('#newSurveyButton').addEventListener('click', () => {
+            const survey = newSurvey();
+            app.surveys[survey.id] = survey;
+            openSurvey(survey.id);
+            switchTab('build');
+        });
+
+        $('#surveyList').addEventListener('click', (e) => {
+            const button = e.target.closest('button[data-survey-action]');
+            if (!button) return;
+            const id = button.dataset.surveyId;
+            const action = button.dataset.surveyAction;
+
+            if (action === 'edit') { openSurvey(id); switchTab('build'); return; }
+            if (action === 'qr') { openSurvey(id); switchTab('deploy'); return; }
+            if (action === 'copy') {
+                navigator.clipboard.writeText(responseLink(app.surveys[id])).then(() => {
+                    button.textContent = '복사됨';
+                    setTimeout(() => { button.textContent = '링크 복사'; }, 1500);
+                });
+                return;
+            }
+            if (action === 'duplicate') {
+                const copy = newSurvey(app.surveys[id]);
+                app.surveys[copy.id] = copy;
+                openSurvey(copy.id);
+                return;
+            }
+            if (action === 'delete') {
+                if (!confirm('이 설문을 목록에서 지울까요? 이미 제출된 응답은 시트에 그대로 남습니다.')) return;
+                delete app.surveys[id];
+                if (!Object.keys(app.surveys).length) {
+                    const survey = newSurvey();
+                    app.surveys[survey.id] = survey;
+                }
+                openSurvey(app.surveys[app.activeId] ? app.activeId : Object.keys(app.surveys)[0]);
+            }
+        });
+
+        $('#formUrlList').addEventListener('input', (e) => {
+            app.formUrl = e.target.value;
+            $('#formUrl').value = e.target.value;
+            queueQr(); saveState();
+        });
+
+        $('#detectUrlButtonList').addEventListener('click', () => {
+            app.formUrl = defaultFormUrl();
+            $('#formUrl').value = app.formUrl;
+            $('#formUrlList').value = app.formUrl;
+            queueQr(); saveState();
+        });
 
         const settingInputs = {
             formTitle: 'title', formDescription: 'description', sheetName: 'sheetName',
             webAppUrl: 'webAppUrl', token: 'token', deadline: 'deadline',
-            successMessage: 'successMessage', formUrl: 'formUrl'
+            successMessage: 'successMessage'
         };
         Object.keys(settingInputs).forEach((inputId) => {
             $('#' + inputId).addEventListener('input', (e) => {
                 state[settingInputs[inputId]] = e.target.value;
                 renderPreview(); renderScript(); queueQr(); saveState();
             });
+        });
+
+        $('#formUrl').addEventListener('input', (e) => {
+            app.formUrl = e.target.value;
+            $('#formUrlList').value = e.target.value;
+            queueQr(); saveState();
         });
 
         $('#tokenButton').addEventListener('click', () => {
@@ -769,8 +944,9 @@ function jsonOutput_(result) {
         });
 
         $('#detectUrlButton').addEventListener('click', () => {
-            state.formUrl = defaultFormUrl();
-            $('#formUrl').value = state.formUrl;
+            app.formUrl = defaultFormUrl();
+            $('#formUrl').value = app.formUrl;
+            $('#formUrlList').value = app.formUrl;
             queueQr(); saveState();
         });
 
@@ -896,7 +1072,7 @@ function jsonOutput_(result) {
 
         $('#openFormButton').addEventListener('click', () => window.open(responseLink(), '_blank'));
 
-        $('#exportJsonButton').addEventListener('click', () => downloadFile(safeFileName() + '-설정.json', JSON.stringify(state, null, 2), 'application/json'));
+        $('#exportJsonButton').addEventListener('click', () => downloadFile('설문빌더-백업.json', JSON.stringify(app, null, 2), 'application/json'));
         $('#importJsonButton').addEventListener('click', () => $('#importJsonInput').click());
         $('#importJsonInput').addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -905,10 +1081,20 @@ function jsonOutput_(result) {
             reader.onload = () => {
                 try {
                     const loaded = JSON.parse(reader.result);
-                    if (!Array.isArray(loaded.fields)) throw new Error('형식이 맞지 않습니다.');
-                    state = Object.assign(defaultState(), loaded);
-                    applyStateToInputs();
-                    refreshAll();
+
+                    if (loaded && loaded.surveys) {
+                        app = Object.assign({ formUrl: defaultFormUrl(), activeId: null, surveys: {} }, loaded);
+                    } else if (loaded && Array.isArray(loaded.fields)) {
+                        const survey = Object.assign(newSurvey(), loaded, { id: createId('sv_'), createdAt: Date.now() });
+                        delete survey.formUrl;
+                        app.surveys[survey.id] = survey;
+                        app.activeId = survey.id;
+                    } else {
+                        throw new Error('형식이 맞지 않습니다.');
+                    }
+
+                    if (!app.surveys[app.activeId]) app.activeId = Object.keys(app.surveys)[0];
+                    openSurvey(app.activeId);
                 } catch (error) {
                     alert('설정 파일을 읽지 못했습니다: ' + error.message);
                 }
@@ -918,10 +1104,11 @@ function jsonOutput_(result) {
         });
 
         $('#resetButton').addEventListener('click', () => {
-            if (!confirm('모든 설정을 지우고 새로 시작할까요?')) return;
-            state = defaultState();
-            applyStateToInputs();
-            refreshAll();
+            if (!confirm('모든 설문 설정을 지우고 새로 시작할까요?')) return;
+            const survey = newSurvey();
+            app = { formUrl: defaultFormUrl(), activeId: survey.id, surveys: {} };
+            app.surveys[survey.id] = survey;
+            openSurvey(survey.id);
         });
 
         /* ========================= 시작 ========================= */
