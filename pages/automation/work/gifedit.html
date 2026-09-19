@@ -437,9 +437,9 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="alert alert-info py-2 small mt-3 mb-0">
-                            <i class="bi bi-lightbulb"></i> 용량 감소 효과는 <strong>배율 축소 &gt; 프레임 솎아내기 &gt; 색상 품질</strong>
-                            순으로 큽니다.
+                        <div class="alert alert-light border py-2 px-3 small mt-3 mb-0 text-muted">
+                            <i class="bi bi-info-circle text-primary"></i> <strong>용량 최적화 안내</strong><br>
+                            원본 GIF는 전문 압축(차분 최적화)이 적용되어 있어, 배율이나 프레임을 전혀 조절하지 않고 그대로 재저장하면 오히려 용량이 늘어날 수 있습니다. <strong>배율 축소(80~90%)</strong> 또는 <strong>프레임 솎아내기(2장 중 1장 유지)</strong>를 적용하시면 화질 손상 없이 용량을 대폭 줄일 수 있습니다. (감소 효과: 배율 축소 &gt; 프레임 솎아내기 &gt; 색상 품질)
                         </div>
                     </div>
                 </section>
@@ -487,6 +487,10 @@
                         <div class="d-flex gap-2 mt-3">
                             <button class="btn btn-outline-secondary btn-sm" id="btnTrimReset"><i
                                     class="bi bi-arrow-counterclockwise"></i> 전체 구간으로 되돌리기</button>
+                        </div>
+                        <div class="alert alert-light border py-2 px-3 small mt-3 mb-0 text-muted">
+                            <i class="bi bi-info-circle text-primary"></i> <strong>구간 자르기 시 용량 안내</strong><br>
+                            원본 GIF는 달라진 영역만 저장하는 특수 압축(차분 최적화)이 되어 있는 경우가 많습니다. 웹에서 편집 시 모든 프레임이 전체 화면으로 새로 인코딩되므로, 구간을 소폭만 자르거나 배속만 빠르게 한 경우 오히려 용량이 늘어날 수 있습니다. 용량을 확실히 줄이려면 <strong>[용량 줄이기]</strong> 탭의 배율 축소나 프레임 솎아내기를 함께 활용하세요.
                         </div>
                     </div>
                 </section>
@@ -553,6 +557,10 @@
                                 </button>
                             </div>
                         </div>
+                        <div class="alert alert-light border py-2 px-3 small mt-3 mb-0 text-muted">
+                            <i class="bi bi-info-circle text-primary"></i> <strong>화면 크기 자르기 시 용량 안내</strong><br>
+                            불필요한 테두리를 잘라내면 전체 픽셀 수가 줄어들어 용량이 크게 감소합니다. 단, 전체 화면에 가깝게 극히 일부분만 자르는 경우 원본의 이전 최적화 압축이 풀려 용량이 늘어날 수 있으니 충분한 영역을 잘라내거나 <strong>[용량 줄이기]</strong> 탭을 활용하세요.
+                        </div>
                     </div>
                 </section>
 
@@ -601,6 +609,10 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="alert alert-light border py-2 px-3 small mt-3 mb-0 text-muted">
+                            <i class="bi bi-info-circle text-primary"></i> <strong>흐림/모자이크 처리 시 용량 안내</strong><br>
+                            블러나 모자이크 효과를 주면 픽셀 색상 변화가 다양해지거나 원본의 차분 최적화가 풀려 용량이 늘어날 수 있습니다. 용량이 너무 커질 경우 <strong>[용량 줄이기]</strong> 탭에서 배율이나 품질을 조절해 보세요.
+                        </div>
                     </div>
                 </section>
             </div>
@@ -639,6 +651,15 @@
                     <div class="col-4">
                         <div class="info-chip"><span class="label">예상 용량 변화</span><span class="value" id="liveDiff">-</span></div>
                     </div>
+                </div>
+                <div id="reencodeWarning" class="alert alert-warning py-2 px-3 small mt-3 mb-0 d-none">
+                    <div class="fw-bold mb-1 text-dark">
+                        <i class="bi bi-exclamation-triangle-fill text-warning"></i> 원본보다 용량이 늘어나는 이유
+                    </div>
+                    <ul class="mb-0 ps-3 text-secondary">
+                        <li><strong>원본 압축 해제</strong>: 원본 GIF는 이전 프레임과 달라진 부분만 저장하는 차분 최적화가 되어 있지만, 브라우저에서 다시 생성할 때는 모든 프레임이 전체 화면으로 풀려 인코딩되기 때문입니다.</li>
+                        <li><strong>해결 방법</strong>: <strong>[용량 줄이기]</strong> 탭에서 <strong>화면 배율(예: 80%)</strong>을 소폭 줄이거나 <strong>프레임 솎아내기(2장 중 1장 유지)</strong>를 적용하시면 용량을 대폭 줄일 수 있습니다.</li>
+                    </ul>
                 </div>
 
                 <hr class="my-4">
@@ -804,6 +825,7 @@
             sourceFrames = buildFrameCanvases(rawFrames, sourceWidth, sourceHeight);
             sourceName = name;
             sourceSize = size;
+            measuredBpp = null;
 
             updateSourceInfo();
             initControlsForSource();
@@ -1309,6 +1331,34 @@
 
         let processedResult = null;
 
+        // 실측 기반 픽셀당 바이트(bpp) 보정 계수 (기본값 약 0.38 bytes/pixel)
+        let measuredBpp = null;
+
+        function estimateGifSize(frameCount, width, height) {
+            const qualityEl = document.getElementById('qualityLevel');
+            const ditherEl = document.getElementById('ditherToggle');
+            const quality = qualityEl ? Number(qualityEl.value) : 10;
+            const dither = ditherEl ? ditherEl.checked : false;
+
+            // 기본 픽셀당 바이트 추정치
+            let bpp = measuredBpp || 0.36;
+            
+            // 품질(quality)에 따른 가중치 (quality 낮을수록 고품질/큰용량)
+            if (!measuredBpp) {
+                if (quality <= 5) bpp += 0.08;
+                else if (quality >= 20) bpp -= 0.07;
+                else if (quality >= 30) bpp -= 0.12;
+
+                if (dither) bpp += 0.12;
+            }
+
+            // 프레임당 헤더/팔레트 오버헤드 (~800B) + 픽셀 데이터
+            const frameBytes = (width * height * Math.max(0.12, bpp)) + 800;
+            const totalEstimated = (frameCount * frameBytes) + 1024; // 전역 헤더 1KB
+
+            return Math.round(totalEstimated);
+        }
+
         function refreshPreview() {
             processedResult = processFrames();
             if (!processedResult) return;
@@ -1316,19 +1366,34 @@
             document.getElementById('previewStats').textContent =
                 `${processedResult.width} × ${processedResult.height} · ${processedResult.frames.length}프레임 · ${formatSeconds(totalDuration(processedResult.frames))}`;
             
-            // 실시간 예상 용량 계산 및 UI 업데이트
+            // gif.js 실제 인코딩 특성을 반영한 정밀 예상 용량 산출
             if (typeof sourceSize !== 'undefined' && sourceSize) {
-                const sizeRatio = (processedResult.width * processedResult.height) / (sourceWidth * sourceHeight) || 1;
-                const frameRatio = processedResult.frames.length / sourceFrames.length || 1;
-                const estimatedSize = sourceSize * sizeRatio * frameRatio;
-                const diff = (1 - estimatedSize / sourceSize) * 100;
+                const estimatedSize = estimateGifSize(
+                    processedResult.frames.length,
+                    processedResult.width,
+                    processedResult.height
+                );
+                const diff = ((estimatedSize - sourceSize) / sourceSize) * 100;
 
                 document.getElementById('liveOriginSize').textContent = formatBytes(sourceSize);
                 document.getElementById('liveEstimatedSize').textContent = formatBytes(estimatedSize);
                 
                 const diffElement = document.getElementById('liveDiff');
-                diffElement.textContent = (diff >= 0 ? '-' : '+') + Math.abs(diff).toFixed(1) + '%';
-                diffElement.className = 'value ' + (diff >= 0 ? 'text-success' : 'text-danger');
+                if (Math.abs(diff) < 1) {
+                    diffElement.textContent = '거의 동일';
+                    diffElement.className = 'value text-muted';
+                } else if (diff > 0) {
+                    diffElement.textContent = '+' + diff.toFixed(1) + '% (증가)';
+                    diffElement.className = 'value text-danger';
+                } else {
+                    diffElement.textContent = diff.toFixed(1) + '% (감소)';
+                    diffElement.className = 'value text-success';
+                }
+
+                const warningEl = document.getElementById('reencodeWarning');
+                if (warningEl) {
+                    warningEl.classList.toggle('d-none', diff <= 0);
+                }
             }
         }
 
@@ -1460,6 +1525,24 @@
                     gif.on('abort', () => reject(new Error('중단됨')));
                     gif.render();
                 });
+
+                // 실측 데이터 기반 bpp 보정 (다음 프리뷰 예상치 정확도 대폭 향상)
+                if (blob && blob.size && data.frames.length) {
+                    const totalPixels = data.frames.length * data.width * data.height;
+                    if (totalPixels > 0) {
+                        measuredBpp = Math.max(0.1, (blob.size - (data.frames.length * 800) - 1024) / totalPixels);
+                        document.getElementById('liveEstimatedSize').textContent = formatBytes(blob.size);
+                        const actualDiff = ((blob.size - sourceSize) / sourceSize) * 100;
+                        const diffElement = document.getElementById('liveDiff');
+                        if (actualDiff > 0) {
+                            diffElement.textContent = '+' + actualDiff.toFixed(1) + '% (실제생성)';
+                            diffElement.className = 'value text-danger';
+                        } else {
+                            diffElement.textContent = actualDiff.toFixed(1) + '% (실제생성)';
+                            diffElement.className = 'value text-success';
+                        }
+                    }
+                }
 
                 // 바로 다운로드 처리
                 const baseName = sourceName.replace(/\.gif$/i, '');
