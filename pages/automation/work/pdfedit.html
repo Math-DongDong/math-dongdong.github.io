@@ -160,6 +160,37 @@
             justify-content: center;
             z-index: 10;
         }
+
+        /* 모바일/태블릿 전용 미리보기 액션 카드 */
+        .preview-mobile-card {
+            width: 100%;
+            border: 2px dashed #b6d4fe;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%);
+            padding: 2rem 1.5rem;
+            text-align: center;
+            color: #495057;
+        }
+
+        .preview-mobile-card i.icon-big {
+            font-size: 2.5rem;
+            color: #0d6efd;
+            margin-bottom: 0.75rem;
+            display: block;
+        }
+
+        .preview-mobile-card .card-info {
+            font-size: 0.92rem;
+            color: #6c757d;
+            margin-bottom: 1rem;
+        }
+
+        .preview-mobile-card .btn-preview-newtab {
+            font-size: 1rem;
+            font-weight: 600;
+            padding: 0.6rem 1.8rem;
+            border-radius: 8px;
+        }
     </style>
 </head>
 
@@ -242,10 +273,21 @@
                         <div class="preview-label"><i class="bi bi-eye"></i> 미리보기</div>
                         <div id="mergePreviewPlaceholder" class="preview-placeholder">
                             <i class="bi bi-file-earmark-plus"></i>
-                            <span>PDF 파일을 선택하면 미리보기가 표시됩니다. <br>(단, 모바일 화면에서는 미리보기가 지원되지 않습니다.)</span>
+                            <span>PDF 파일을 선택하면 미리보기가 표시됩니다.</span>
                         </div>
+                        <!-- 데스크탑: iframe 인라인 뷰어 -->
                         <div id="mergePreviewWrapper" class="d-none position-relative">
                             <iframe id="mergePreviewFrame" class="preview-frame"></iframe>
+                        </div>
+                        <!-- 모바일/태블릿: 새 탭 미리보기 카드 -->
+                        <div id="mergePreviewMobile" class="d-none">
+                            <div class="preview-mobile-card">
+                                <i class="bi bi-file-earmark-check icon-big"></i>
+                                <div class="card-info" id="mergePreviewMobileInfo">병합된 PDF가 준비되었습니다.</div>
+                                <button class="btn btn-primary btn-preview-newtab" id="btnMergePreviewOpen">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i> 새 탭에서 미리보기
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -276,10 +318,21 @@
                         <div class="preview-label"><i class="bi bi-eye"></i> 미리보기</div>
                         <div id="splitPreviewPlaceholder" class="preview-placeholder">
                             <i class="bi bi-file-earmark-plus"></i>
-                            <span>PDF 파일을 선택하면 미리보기가 표시됩니다. <br>(단, 모바일 화면에서는 미리보기가 지원되지 않습니다.)</span>
+                            <span>PDF 파일을 선택하면 미리보기가 표시됩니다.</span>
                         </div>
+                        <!-- 데스크탑: iframe 인라인 뷰어 -->
                         <div id="splitPreviewWrapper" class="d-none position-relative">
                             <iframe id="splitPreviewFrame" class="preview-frame"></iframe>
+                        </div>
+                        <!-- 모바일/태블릿: 새 탭 미리보기 카드 -->
+                        <div id="splitPreviewMobile" class="d-none">
+                            <div class="preview-mobile-card">
+                                <i class="bi bi-file-earmark-check icon-big"></i>
+                                <div class="card-info" id="splitPreviewMobileInfo">추출된 PDF가 준비되었습니다.</div>
+                                <button class="btn btn-primary btn-preview-newtab" id="btnSplitPreviewOpen">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i> 새 탭에서 미리보기
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -357,7 +410,18 @@
             };
         }
 
-        // iframe에 PDF bytes를 표시
+        // 인라인 PDF 뷰어 지원 여부 판별 (모바일·태블릿 대응)
+        // 1) navigator.pdfViewerEnabled (표준 API)
+        // 2) 폴백: 터치스크린 기기(iPadOS 데스크탑 모드 포함) 감지
+        const canInlinePreview = (() => {
+            if (typeof navigator.pdfViewerEnabled === 'boolean') return navigator.pdfViewerEnabled;
+            // iPadOS는 UA를 Mac으로 위장하므로 maxTouchPoints로 잡음
+            const isTouchDevice = navigator.maxTouchPoints > 1;
+            const isMobileUA = /Android|iPhone|iPod/i.test(navigator.userAgent);
+            return !(isTouchDevice || isMobileUA);
+        })();
+
+        // PDF bytes → Blob URL 생성 및 미리보기 표시
         let mergeObjectUrl = null;
         let splitObjectUrl = null;
 
@@ -376,9 +440,33 @@
             if (iframeId === 'mergePreviewFrame') mergeObjectUrl = url;
             if (iframeId === 'splitPreviewFrame') splitObjectUrl = url;
 
-            iframe.src = url;
-            wrapper.classList.remove('d-none');
             placeholder.classList.add('d-none');
+
+            if (canInlinePreview) {
+                // 데스크탑: iframe 인라인 뷰어
+                iframe.src = url;
+                wrapper.classList.remove('d-none');
+            } else {
+                // 모바일/태블릿: 새 탭 미리보기 카드
+                const isMerge = iframeId === 'mergePreviewFrame';
+                const mobileCard = document.getElementById(isMerge ? 'mergePreviewMobile' : 'splitPreviewMobile');
+                const infoEl = document.getElementById(isMerge ? 'mergePreviewMobileInfo' : 'splitPreviewMobileInfo');
+                const btnId = isMerge ? 'btnMergePreviewOpen' : 'btnSplitPreviewOpen';
+
+                // PDF 페이지 수 안내
+                PDFLib.PDFDocument.load(pdfBytes).then(doc => {
+                    infoEl.textContent = `${doc.getPageCount()}쪽의 PDF가 준비되었습니다.`;
+                }).catch(() => { });
+
+                mobileCard.classList.remove('d-none');
+                wrapper.classList.add('d-none');
+
+                // 버튼 클릭 시 새 탭 열기 (팝업 차단 방지를 위해 사용자 제스처로 실행)
+                const btn = document.getElementById(btnId);
+                const newHandler = () => window.open(url, '_blank');
+                btn.replaceWith(btn.cloneNode(true)); // 이전 핸들러 제거
+                document.getElementById(btnId).addEventListener('click', newHandler);
+            }
         }
 
         // =====================================================
