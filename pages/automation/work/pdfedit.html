@@ -213,13 +213,14 @@
             border-radius: 4px;
         }
 
-        .canvas-viewer .cv-limit-note {
-            font-size: 0.8rem;
+        .cv-limit-note {
+            font-size: 0.82rem;
             color: #6c757d;
             text-align: center;
-            padding: 0.4rem;
+            padding: 0.45rem 0.75rem;
             background: #fff8e1;
-            border-top: 1px solid #e9ecef;
+            border: 1px solid #ffeeba;
+            border-radius: 6px;
         }
     </style>
 </head>
@@ -300,7 +301,13 @@
 
                     <!-- 미리보기 -->
                     <div class="preview-section">
-                        <div class="preview-label"><i class="bi bi-eye"></i> 미리보기</div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="preview-label mb-0"><i class="bi bi-eye"></i> 미리보기</div>
+                            <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
+                                <input class="form-check-input mt-0 preview-toggle" type="checkbox" role="switch" id="mergePreviewAllToggle" data-target="merge" style="cursor: pointer;">
+                                <label class="form-check-label small text-muted user-select-none" for="mergePreviewAllToggle" style="cursor: pointer;">전체 쪽 보기</label>
+                            </div>
+                        </div>
                         <div id="mergePreviewPlaceholder" class="preview-placeholder">
                             <i class="bi bi-file-earmark-plus"></i>
                             <span>PDF 파일을 선택하면 미리보기가 표시됩니다.</span>
@@ -318,9 +325,9 @@
                                     <button class="btn btn-sm btn-outline-secondary" data-cv-action="next" data-cv-target="merge"><i class="bi bi-chevron-right"></i></button>
                                 </div>
                                 <div class="cv-body"><canvas id="mergeCanvas"></canvas></div>
-                                <div class="cv-limit-note d-none" id="mergeLimitNote"></div>
                             </div>
                         </div>
+                        <div class="cv-limit-note d-none mt-2" id="mergeLimitNote"></div>
                     </div>
                 </div>
             </div>
@@ -347,7 +354,13 @@
 
                     <!-- 미리보기 -->
                     <div class="preview-section">
-                        <div class="preview-label"><i class="bi bi-eye"></i> 미리보기</div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="preview-label mb-0"><i class="bi bi-eye"></i> 미리보기</div>
+                            <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
+                                <input class="form-check-input mt-0 preview-toggle" type="checkbox" role="switch" id="splitPreviewAllToggle" data-target="split" style="cursor: pointer;">
+                                <label class="form-check-label small text-muted user-select-none" for="splitPreviewAllToggle" style="cursor: pointer;">전체 쪽 보기</label>
+                            </div>
+                        </div>
                         <div id="splitPreviewPlaceholder" class="preview-placeholder">
                             <i class="bi bi-file-earmark-plus"></i>
                             <span>PDF 파일을 선택하면 미리보기가 표시됩니다.</span>
@@ -365,9 +378,9 @@
                                     <button class="btn btn-sm btn-outline-secondary" data-cv-action="next" data-cv-target="split"><i class="bi bi-chevron-right"></i></button>
                                 </div>
                                 <div class="cv-body"><canvas id="splitCanvas"></canvas></div>
-                                <div class="cv-limit-note d-none" id="splitLimitNote"></div>
                             </div>
                         </div>
+                        <div class="cv-limit-note d-none mt-2" id="splitLimitNote"></div>
                     </div>
                 </div>
             </div>
@@ -455,11 +468,13 @@
         })();
 
         // =====================================================
-        // PDF.js Canvas 뷰어 (모바일/태블릿 전용)
-        // 대용량 PDF는 최대 MAX_PREVIEW_PAGES 페이지만 미리보기
+        // 미리보기 및 PDF.js Canvas 뷰어
+        // 기본값: 처음 MAX_PREVIEW_PAGES 페이지만 미리보기
+        // 토글 활성화 시 전체 페이지 미리보기 제공
         // =====================================================
         const MAX_PREVIEW_PAGES = 5;
         const canvasViewerState = { merge: null, split: null };
+        const lastPdfData = { merge: null, split: null };
 
         // PDF.js 라이브러리 로드 (ES Module CDN 대응)
         let pdfjsLib = null;
@@ -494,31 +509,62 @@
 
             // 페이지 정보 갱신
             const infoEl = document.getElementById(key + 'CanvasInfo');
-            infoEl.textContent = `${state.currentPage} / ${state.previewTotal} 쪽`;
+            if (infoEl) infoEl.textContent = `${state.currentPage} / ${state.previewTotal} 쪽`;
 
             // 버튼 활성/비활성
-            document.querySelector(`[data-cv-action="prev"][data-cv-target="${key}"]`).disabled = state.currentPage <= 1;
-            document.querySelector(`[data-cv-action="next"][data-cv-target="${key}"]`).disabled = state.currentPage >= state.previewTotal;
+            const prevBtn = document.querySelector(`[data-cv-action="prev"][data-cv-target="${key}"]`);
+            const nextBtn = document.querySelector(`[data-cv-action="next"][data-cv-target="${key}"]`);
+            if (prevBtn) prevBtn.disabled = state.currentPage <= 1;
+            if (nextBtn) nextBtn.disabled = state.currentPage >= state.previewTotal;
         }
 
-        async function initCanvasViewer(key, pdfBytes) {
+        async function initCanvasViewer(key, pdfBytes, showAll, totalPages) {
             const lib = await loadPdfJs();
             const pdfDoc = await lib.getDocument({ data: pdfBytes }).promise;
-            const totalPages = pdfDoc.numPages;
-            const previewTotal = Math.min(totalPages, MAX_PREVIEW_PAGES);
+            const docTotalPages = totalPages || pdfDoc.numPages;
+            const previewTotal = showAll ? docTotalPages : Math.min(docTotalPages, MAX_PREVIEW_PAGES);
 
-            canvasViewerState[key] = { pdfDoc, totalPages, previewTotal, currentPage: 1 };
-
-            // 제한 안내 표시
-            const limitNote = document.getElementById(key + 'LimitNote');
-            if (totalPages > MAX_PREVIEW_PAGES) {
-                limitNote.textContent = `전체 ${totalPages}쪽 중 처음 ${MAX_PREVIEW_PAGES}쪽만 미리보기합니다.`;
-                limitNote.classList.remove('d-none');
-            } else {
-                limitNote.classList.add('d-none');
-            }
+            canvasViewerState[key] = {
+                pdfDoc,
+                totalPages: docTotalPages,
+                previewTotal,
+                currentPage: 1
+            };
 
             await renderCanvasPage(key);
+        }
+
+        // 전체 쪽 보기 토글 변경 핸들러
+        function handlePreviewAllToggle(key) {
+            const data = lastPdfData[key];
+            if (!data) return;
+
+            if (canInlinePreview) {
+                updatePreview(key);
+            } else {
+                const state = canvasViewerState[key];
+                const toggle = document.getElementById(key + 'PreviewAllToggle');
+                const showAll = toggle ? toggle.checked : false;
+
+                if (state && state.pdfDoc) {
+                    state.previewTotal = showAll ? state.totalPages : Math.min(state.totalPages, MAX_PREVIEW_PAGES);
+                    if (state.currentPage > state.previewTotal) {
+                        state.currentPage = state.previewTotal;
+                    }
+                    const limitNote = document.getElementById(key + 'LimitNote');
+                    if (limitNote) {
+                        if (!showAll && state.totalPages > MAX_PREVIEW_PAGES) {
+                            limitNote.innerHTML = `<i class="bi bi-info-circle me-1"></i>전체 <strong>${state.totalPages}쪽</strong> 중 처음 <strong>${MAX_PREVIEW_PAGES}쪽</strong>만 미리보기합니다. (상단 토글로 전체 보기 가능)`;
+                            limitNote.classList.remove('d-none');
+                        } else {
+                            limitNote.classList.add('d-none');
+                        }
+                    }
+                    renderCanvasPage(key);
+                } else {
+                    updatePreview(key);
+                }
+            }
         }
 
         // 페이지 네비게이션 이벤트 위임
@@ -538,40 +584,95 @@
             }
         });
 
+        // 토글 스위치 이벤트 리스너 등록
+        document.querySelectorAll('.preview-toggle').forEach(toggle => {
+            toggle.addEventListener('change', (e) => {
+                const key = e.target.dataset.target;
+                handlePreviewAllToggle(key);
+            });
+        });
+
         // =====================================================
         // PDF bytes → 미리보기 표시 (데스크탑: iframe / 모바일: Canvas)
         // =====================================================
         let mergeObjectUrl = null;
         let splitObjectUrl = null;
 
-        function showPreview(iframeId, wrapperId, placeholderId, pdfBytes) {
-            const wrapper = document.getElementById(wrapperId);
-            const placeholder = document.getElementById(placeholderId);
-            const iframe = document.getElementById(iframeId);
-            const isMerge = iframeId === 'mergePreviewFrame';
-            const mobileCard = document.getElementById(isMerge ? 'mergePreviewMobile' : 'splitPreviewMobile');
+        async function updatePreview(key) {
+            const data = lastPdfData[key];
+            if (!data || !data.bytes) return;
 
-            // 이전 Object URL 해제
-            if (isMerge && mergeObjectUrl) URL.revokeObjectURL(mergeObjectUrl);
-            if (!isMerge && splitObjectUrl) URL.revokeObjectURL(splitObjectUrl);
+            const toggle = document.getElementById(key + 'PreviewAllToggle');
+            const showAll = toggle ? toggle.checked : false;
+            const totalPages = data.totalPages;
 
-            placeholder.classList.add('d-none');
+            const placeholder = document.getElementById(key + 'PreviewPlaceholder');
+            const wrapper = document.getElementById(key + 'PreviewWrapper');
+            const mobileViewer = document.getElementById(key + 'PreviewMobile');
+            const iframe = document.getElementById(key + 'PreviewFrame');
+            const limitNote = document.getElementById(key + 'LimitNote');
+
+            if (placeholder) placeholder.classList.add('d-none');
+
+            // 제한 안내 문구 표시 여부
+            if (limitNote) {
+                if (!showAll && totalPages > MAX_PREVIEW_PAGES) {
+                    limitNote.innerHTML = `<i class="bi bi-info-circle me-1"></i>전체 <strong>${totalPages}쪽</strong> 중 처음 <strong>${MAX_PREVIEW_PAGES}쪽</strong>만 미리보기합니다. (상단 토글로 전체 보기 가능)`;
+                    limitNote.classList.remove('d-none');
+                } else {
+                    limitNote.classList.add('d-none');
+                }
+            }
 
             if (canInlinePreview) {
                 // 데스크탑: iframe 인라인 뷰어
-                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                const url = URL.createObjectURL(blob);
-                if (isMerge) mergeObjectUrl = url; else splitObjectUrl = url;
+                if (mobileViewer) mobileViewer.classList.add('d-none');
+                if (wrapper) wrapper.classList.remove('d-none');
 
-                iframe.src = url;
-                wrapper.classList.remove('d-none');
-                mobileCard.classList.add('d-none');
+                let bytesToDisplay = data.bytes;
+                if (!showAll && totalPages > MAX_PREVIEW_PAGES) {
+                    try {
+                        const srcDoc = await PDFDocument.load(data.bytes);
+                        const sliceDoc = await PDFDocument.create();
+                        const copied = await sliceDoc.copyPages(srcDoc, Array.from({ length: MAX_PREVIEW_PAGES }, (_, i) => i));
+                        copied.forEach(p => sliceDoc.addPage(p));
+                        bytesToDisplay = await sliceDoc.save();
+                    } catch (err) {
+                        console.warn('미리보기 슬라이스 생성 실패, 원본 표시:', err);
+                        bytesToDisplay = data.bytes;
+                    }
+                }
+
+                if (key === 'merge') {
+                    if (mergeObjectUrl) URL.revokeObjectURL(mergeObjectUrl);
+                    mergeObjectUrl = URL.createObjectURL(new Blob([bytesToDisplay], { type: 'application/pdf' }));
+                    iframe.src = mergeObjectUrl;
+                } else {
+                    if (splitObjectUrl) URL.revokeObjectURL(splitObjectUrl);
+                    splitObjectUrl = URL.createObjectURL(new Blob([bytesToDisplay], { type: 'application/pdf' }));
+                    iframe.src = splitObjectUrl;
+                }
             } else {
                 // 모바일/태블릿: PDF.js Canvas 렌더링
-                wrapper.classList.add('d-none');
-                mobileCard.classList.remove('d-none');
-                initCanvasViewer(isMerge ? 'merge' : 'split', pdfBytes);
+                if (wrapper) wrapper.classList.add('d-none');
+                if (mobileViewer) mobileViewer.classList.remove('d-none');
+                await initCanvasViewer(key, data.bytes, showAll, totalPages);
             }
+        }
+
+        async function showPreview(iframeId, wrapperId, placeholderId, pdfBytes, totalPages) {
+            const key = iframeId === 'mergePreviewFrame' ? 'merge' : 'split';
+            let pages = totalPages;
+            if (!pages) {
+                try {
+                    const doc = await PDFDocument.load(pdfBytes);
+                    pages = doc.getPageCount();
+                } catch {
+                    pages = 1;
+                }
+            }
+            lastPdfData[key] = { bytes: pdfBytes, totalPages: pages };
+            await updatePreview(key);
         }
 
         // =====================================================
@@ -620,7 +721,7 @@
                     }
                 }
                 mergedPdfBytes = await mergedPdf.save();
-                showPreview('mergePreviewFrame', 'mergePreviewWrapper', 'mergePreviewPlaceholder', mergedPdfBytes);
+                showPreview('mergePreviewFrame', 'mergePreviewWrapper', 'mergePreviewPlaceholder', mergedPdfBytes, mergedPdf.getPageCount());
                 document.getElementById('btnMergeDownload').classList.remove('d-none');
             } catch (err) {
                 console.error('합치기 오류:', err);
@@ -660,6 +761,8 @@
             mergeFilesArray = Array.from(e.target.files);
             mergePdfCache = {};
             mergedPdfBytes = null;
+            const mergeToggle = document.getElementById('mergePreviewAllToggle');
+            if (mergeToggle) mergeToggle.checked = false;
 
             const tbody = document.getElementById('mergeTableBody');
             tbody.innerHTML = '';
@@ -729,7 +832,7 @@
                 const copied = await newPdf.copyPages(splitPdfDoc, pagesToExtract);
                 copied.forEach(page => newPdf.addPage(page));
                 splitPdfBytes = await newPdf.save();
-                showPreview('splitPreviewFrame', 'splitPreviewWrapper', 'splitPreviewPlaceholder', splitPdfBytes);
+                showPreview('splitPreviewFrame', 'splitPreviewWrapper', 'splitPreviewPlaceholder', splitPdfBytes, pagesToExtract.length);
                 document.getElementById('btnSplitDownload').classList.remove('d-none');
             } catch (err) {
                 console.error('분할 미리보기 오류:', err);
@@ -741,6 +844,8 @@
         document.getElementById('splitFile').addEventListener('change', async function (e) {
             splitPdfDoc = null;
             splitPdfBytes = null;
+            const splitToggle = document.getElementById('splitPreviewAllToggle');
+            if (splitToggle) splitToggle.checked = false;
             document.getElementById('splitRange').disabled = true;
             document.getElementById('splitRange').value = '';
             document.getElementById('splitPageCount').textContent = '';
