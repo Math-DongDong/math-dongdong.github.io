@@ -21,6 +21,9 @@
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <!-- PDF.js (모바일/태블릿 Canvas 미리보기용) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs" type="module"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs" type="module"></script>
 
     <style>
         body {
@@ -161,35 +164,62 @@
             z-index: 10;
         }
 
-        /* 모바일/태블릿 전용 미리보기 액션 카드 */
-        .preview-mobile-card {
+        /* 모바일/태블릿 전용 Canvas PDF 뷰어 */
+        .canvas-viewer {
             width: 100%;
-            border: 2px dashed #b6d4fe;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%);
-            padding: 2rem 1.5rem;
-            text-align: center;
-            color: #495057;
-        }
-
-        .preview-mobile-card i.icon-big {
-            font-size: 2.5rem;
-            color: #0d6efd;
-            margin-bottom: 0.75rem;
-            display: block;
-        }
-
-        .preview-mobile-card .card-info {
-            font-size: 0.92rem;
-            color: #6c757d;
-            margin-bottom: 1rem;
-        }
-
-        .preview-mobile-card .btn-preview-newtab {
-            font-size: 1rem;
-            font-weight: 600;
-            padding: 0.6rem 1.8rem;
+            border: 1px solid #dee2e6;
             border-radius: 8px;
+            background-color: #f8f9fa;
+            overflow: hidden;
+        }
+
+        .canvas-viewer .cv-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.5rem;
+            background: #ffffff;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .canvas-viewer .cv-nav .btn {
+            min-width: 36px;
+        }
+
+        .canvas-viewer .cv-info {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #495057;
+            white-space: nowrap;
+        }
+
+        .canvas-viewer .cv-body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+            padding: 0.5rem;
+            background: #e9ecef;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .canvas-viewer .cv-body canvas {
+            max-width: 100%;
+            height: auto;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 4px;
+        }
+
+        .canvas-viewer .cv-limit-note {
+            font-size: 0.8rem;
+            color: #6c757d;
+            text-align: center;
+            padding: 0.4rem;
+            background: #fff8e1;
+            border-top: 1px solid #e9ecef;
         }
     </style>
 </head>
@@ -279,14 +309,16 @@
                         <div id="mergePreviewWrapper" class="d-none position-relative">
                             <iframe id="mergePreviewFrame" class="preview-frame"></iframe>
                         </div>
-                        <!-- 모바일/태블릿: 새 탭 미리보기 카드 -->
+                        <!-- 모바일/태블릿: Canvas PDF 뷰어 -->
                         <div id="mergePreviewMobile" class="d-none">
-                            <div class="preview-mobile-card">
-                                <i class="bi bi-file-earmark-check icon-big"></i>
-                                <div class="card-info" id="mergePreviewMobileInfo">병합된 PDF가 준비되었습니다.</div>
-                                <button class="btn btn-primary btn-preview-newtab" id="btnMergePreviewOpen">
-                                    <i class="bi bi-box-arrow-up-right me-1"></i> 새 탭에서 미리보기
-                                </button>
+                            <div class="canvas-viewer">
+                                <div class="cv-nav">
+                                    <button class="btn btn-sm btn-outline-secondary" data-cv-action="prev" data-cv-target="merge"><i class="bi bi-chevron-left"></i></button>
+                                    <span class="cv-info" id="mergeCanvasInfo">1 / 1</span>
+                                    <button class="btn btn-sm btn-outline-secondary" data-cv-action="next" data-cv-target="merge"><i class="bi bi-chevron-right"></i></button>
+                                </div>
+                                <div class="cv-body"><canvas id="mergeCanvas"></canvas></div>
+                                <div class="cv-limit-note d-none" id="mergeLimitNote"></div>
                             </div>
                         </div>
                     </div>
@@ -324,14 +356,16 @@
                         <div id="splitPreviewWrapper" class="d-none position-relative">
                             <iframe id="splitPreviewFrame" class="preview-frame"></iframe>
                         </div>
-                        <!-- 모바일/태블릿: 새 탭 미리보기 카드 -->
+                        <!-- 모바일/태블릿: Canvas PDF 뷰어 -->
                         <div id="splitPreviewMobile" class="d-none">
-                            <div class="preview-mobile-card">
-                                <i class="bi bi-file-earmark-check icon-big"></i>
-                                <div class="card-info" id="splitPreviewMobileInfo">추출된 PDF가 준비되었습니다.</div>
-                                <button class="btn btn-primary btn-preview-newtab" id="btnSplitPreviewOpen">
-                                    <i class="bi bi-box-arrow-up-right me-1"></i> 새 탭에서 미리보기
-                                </button>
+                            <div class="canvas-viewer">
+                                <div class="cv-nav">
+                                    <button class="btn btn-sm btn-outline-secondary" data-cv-action="prev" data-cv-target="split"><i class="bi bi-chevron-left"></i></button>
+                                    <span class="cv-info" id="splitCanvasInfo">1 / 1</span>
+                                    <button class="btn btn-sm btn-outline-secondary" data-cv-action="next" data-cv-target="split"><i class="bi bi-chevron-right"></i></button>
+                                </div>
+                                <div class="cv-body"><canvas id="splitCanvas"></canvas></div>
+                                <div class="cv-limit-note d-none" id="splitLimitNote"></div>
                             </div>
                         </div>
                     </div>
@@ -415,13 +449,98 @@
         // 2) 폴백: 터치스크린 기기(iPadOS 데스크탑 모드 포함) 감지
         const canInlinePreview = (() => {
             if (typeof navigator.pdfViewerEnabled === 'boolean') return navigator.pdfViewerEnabled;
-            // iPadOS는 UA를 Mac으로 위장하므로 maxTouchPoints로 잡음
             const isTouchDevice = navigator.maxTouchPoints > 1;
             const isMobileUA = /Android|iPhone|iPod/i.test(navigator.userAgent);
             return !(isTouchDevice || isMobileUA);
         })();
 
-        // PDF bytes → Blob URL 생성 및 미리보기 표시
+        // =====================================================
+        // PDF.js Canvas 뷰어 (모바일/태블릿 전용)
+        // 대용량 PDF는 최대 MAX_PREVIEW_PAGES 페이지만 미리보기
+        // =====================================================
+        const MAX_PREVIEW_PAGES = 5;
+        const canvasViewerState = { merge: null, split: null };
+
+        // PDF.js 라이브러리 로드 (ES Module CDN 대응)
+        let pdfjsLib = null;
+        async function loadPdfJs() {
+            if (pdfjsLib) return pdfjsLib;
+            pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+            return pdfjsLib;
+        }
+
+        async function renderCanvasPage(key) {
+            const state = canvasViewerState[key];
+            if (!state || !state.pdfDoc) return;
+
+            const canvas = document.getElementById(key + 'Canvas');
+            const ctx = canvas.getContext('2d');
+            const page = await state.pdfDoc.getPage(state.currentPage);
+
+            // 캔버스 너비를 컨테이너에 맞추되 최대 devicePixelRatio 2배로 제한
+            const containerWidth = canvas.parentElement.clientWidth - 16;
+            const viewport = page.getViewport({ scale: 1 });
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const scale = (containerWidth / viewport.width) * dpr;
+            const scaledViewport = page.getViewport({ scale });
+
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            canvas.style.width = (scaledViewport.width / dpr) + 'px';
+            canvas.style.height = (scaledViewport.height / dpr) + 'px';
+
+            await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+
+            // 페이지 정보 갱신
+            const infoEl = document.getElementById(key + 'CanvasInfo');
+            infoEl.textContent = `${state.currentPage} / ${state.previewTotal} 쪽`;
+
+            // 버튼 활성/비활성
+            document.querySelector(`[data-cv-action="prev"][data-cv-target="${key}"]`).disabled = state.currentPage <= 1;
+            document.querySelector(`[data-cv-action="next"][data-cv-target="${key}"]`).disabled = state.currentPage >= state.previewTotal;
+        }
+
+        async function initCanvasViewer(key, pdfBytes) {
+            const lib = await loadPdfJs();
+            const pdfDoc = await lib.getDocument({ data: pdfBytes }).promise;
+            const totalPages = pdfDoc.numPages;
+            const previewTotal = Math.min(totalPages, MAX_PREVIEW_PAGES);
+
+            canvasViewerState[key] = { pdfDoc, totalPages, previewTotal, currentPage: 1 };
+
+            // 제한 안내 표시
+            const limitNote = document.getElementById(key + 'LimitNote');
+            if (totalPages > MAX_PREVIEW_PAGES) {
+                limitNote.textContent = `전체 ${totalPages}쪽 중 처음 ${MAX_PREVIEW_PAGES}쪽만 미리보기합니다.`;
+                limitNote.classList.remove('d-none');
+            } else {
+                limitNote.classList.add('d-none');
+            }
+
+            await renderCanvasPage(key);
+        }
+
+        // 페이지 네비게이션 이벤트 위임
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-cv-action]');
+            if (!btn) return;
+            const key = btn.dataset.cvTarget;
+            const state = canvasViewerState[key];
+            if (!state) return;
+
+            if (btn.dataset.cvAction === 'prev' && state.currentPage > 1) {
+                state.currentPage--;
+                renderCanvasPage(key);
+            } else if (btn.dataset.cvAction === 'next' && state.currentPage < state.previewTotal) {
+                state.currentPage++;
+                renderCanvasPage(key);
+            }
+        });
+
+        // =====================================================
+        // PDF bytes → 미리보기 표시 (데스크탑: iframe / 모바일: Canvas)
+        // =====================================================
         let mergeObjectUrl = null;
         let splitObjectUrl = null;
 
@@ -429,43 +548,29 @@
             const wrapper = document.getElementById(wrapperId);
             const placeholder = document.getElementById(placeholderId);
             const iframe = document.getElementById(iframeId);
+            const isMerge = iframeId === 'mergePreviewFrame';
+            const mobileCard = document.getElementById(isMerge ? 'mergePreviewMobile' : 'splitPreviewMobile');
 
-            // 이전 Object URL 해제 (메모리 누수 방지)
-            if (iframeId === 'mergePreviewFrame' && mergeObjectUrl) URL.revokeObjectURL(mergeObjectUrl);
-            if (iframeId === 'splitPreviewFrame' && splitObjectUrl) URL.revokeObjectURL(splitObjectUrl);
-
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-
-            if (iframeId === 'mergePreviewFrame') mergeObjectUrl = url;
-            if (iframeId === 'splitPreviewFrame') splitObjectUrl = url;
+            // 이전 Object URL 해제
+            if (isMerge && mergeObjectUrl) URL.revokeObjectURL(mergeObjectUrl);
+            if (!isMerge && splitObjectUrl) URL.revokeObjectURL(splitObjectUrl);
 
             placeholder.classList.add('d-none');
 
             if (canInlinePreview) {
                 // 데스크탑: iframe 인라인 뷰어
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                if (isMerge) mergeObjectUrl = url; else splitObjectUrl = url;
+
                 iframe.src = url;
                 wrapper.classList.remove('d-none');
+                mobileCard.classList.add('d-none');
             } else {
-                // 모바일/태블릿: 새 탭 미리보기 카드
-                const isMerge = iframeId === 'mergePreviewFrame';
-                const mobileCard = document.getElementById(isMerge ? 'mergePreviewMobile' : 'splitPreviewMobile');
-                const infoEl = document.getElementById(isMerge ? 'mergePreviewMobileInfo' : 'splitPreviewMobileInfo');
-                const btnId = isMerge ? 'btnMergePreviewOpen' : 'btnSplitPreviewOpen';
-
-                // PDF 페이지 수 안내
-                PDFLib.PDFDocument.load(pdfBytes).then(doc => {
-                    infoEl.textContent = `${doc.getPageCount()}쪽의 PDF가 준비되었습니다.`;
-                }).catch(() => { });
-
-                mobileCard.classList.remove('d-none');
+                // 모바일/태블릿: PDF.js Canvas 렌더링
                 wrapper.classList.add('d-none');
-
-                // 버튼 클릭 시 새 탭 열기 (팝업 차단 방지를 위해 사용자 제스처로 실행)
-                const btn = document.getElementById(btnId);
-                const newHandler = () => window.open(url, '_blank');
-                btn.replaceWith(btn.cloneNode(true)); // 이전 핸들러 제거
-                document.getElementById(btnId).addEventListener('click', newHandler);
+                mobileCard.classList.remove('d-none');
+                initCanvasViewer(isMerge ? 'merge' : 'split', pdfBytes);
             }
         }
 
