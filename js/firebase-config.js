@@ -25,9 +25,10 @@ const rtdbBlotto = getDatabase(app, "https://blottogame.asia-southeast1.firebase
 const rtdbSentiment = getDatabase(app, "https://sentimentanalysis.asia-southeast1.firebasedatabase.app/");
 const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
 const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
+const rtdbStudentsReview = getDatabase(app, "https://studentsreview.asia-southeast1.firebasedatabase.app/");
 
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, auth, googleProvider };
+export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbStudentsReview, auth, googleProvider };
 
