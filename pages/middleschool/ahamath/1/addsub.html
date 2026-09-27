@@ -251,6 +251,96 @@
         .fracbar.on .fb-line.new {
             opacity: 1;
         }
+
+        /* 통분 시각 자료 : 가로로 나타나며 분모·분자에 곱하는 과정 후 결과로 전환 */
+        .tongbun-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            min-height: 52px;
+        }
+
+        .tb-from {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .tb-arrow {
+            color: #6c757d;
+            font-size: 1.15rem;
+            opacity: 0;
+            transform: translateX(-6px);
+            transition: opacity .35s ease, transform .35s ease;
+        }
+
+        .tb-arrow.on {
+            opacity: 1;
+            transform: none;
+        }
+
+        .tb-target {
+            display: grid;
+            align-items: center;
+            min-width: 100px;
+        }
+
+        .tb-step {
+            grid-area: 1 / 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.92);
+            transition: opacity .3s ease, transform .3s ease;
+            pointer-events: none;
+        }
+
+        .tb-step.on {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+
+        .tb-step.step-mid .frac:first-child {
+            color: #d97706;
+        }
+
+        .tb-step.step-mid.on {
+            animation: tbPop .45s ease;
+        }
+
+        .tb-step.step-to.on {
+            animation: tbPop .45s ease;
+            color: #0d6efd;
+        }
+
+        @keyframes tbPop {
+            from {
+                transform: scale(.65);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .tongbun-note {
+            text-align: center;
+            font-size: .9rem;
+            color: #6c757d;
+            margin-top: .4rem;
+            min-height: 1.4rem;
+            transition: color .3s ease;
+        }
+
+        .tongbun-note.done {
+            color: #0d6efd;
+            font-weight: 600;
+        }
     </style>
 </head>
 
@@ -574,8 +664,10 @@
                 <h2 class="card-title">통분한 뒤에는 분자만</h2>
                 <p class="lead-text">분모가 같아지면 칸의 크기가 같아요. 이제 칸 수, 곧 <b>분자</b>만 세면 돼요.</p>
                 <div class="vis">
-                    <div class="flipbox" data-vis="flip" data-from="1/3 + 1/6" data-to="2/6 + 1/6"
-                        data-note="분모를 6으로 같게 맞춰요"></div>
+                    <div class="tongbun-box" data-vis="tongbun" data-from="1/3 + 1/6"
+                        data-mid="(1 × 2)/(3 × 2) + 1/6" data-to="2/6 + 1/6"
+                        data-note1="분모를 6으로 맞추기 위해 분모와 분자에 2를 곱해요"
+                        data-note2="분모가 6으로 같아졌어요! 이제 분자만 더해요"></div>
                     <button class="replay"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
                 </div>
                 <table class="table-simple center mb-3">
@@ -810,6 +902,24 @@
                 if (type === 'fracbar') {
                     el.innerHTML = fracBarHtml(el);
                 }
+
+                if (type === 'tongbun') {
+                    var from = el.dataset.from || '1/3 + 1/6';
+                    var mid = el.dataset.mid || '(1 × 2)/(3 × 2) + 1/6';
+                    var to = el.dataset.to || '2/6 + 1/6';
+                    var note1 = el.dataset.note1 || '분모를 6으로 맞추기 위해 분모와 분자에 2를 곱해요';
+
+                    el.innerHTML =
+                        '<div class="tongbun-wrap">' +
+                            '<div class="tb-from">' + fracText(from) + '</div>' +
+                            '<div class="tb-arrow">→</div>' +
+                            '<div class="tb-target">' +
+                                '<div class="tb-step step-mid">' + fracText(mid) + '</div>' +
+                                '<div class="tb-step step-to">' + fracText(to) + '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="tongbun-note">' + note1 + '</div>';
+                }
             },
 
             play: function (el) {
@@ -847,6 +957,37 @@
                 if (type === 'fracbar') {
                     el.classList.remove('on');
                     setTimeout(function () { el.classList.add('on'); }, wait(400));
+                }
+
+                if (type === 'tongbun') {
+                    var arrow = el.querySelector('.tb-arrow');
+                    var stepMid = el.querySelector('.step-mid');
+                    var stepTo = el.querySelector('.step-to');
+                    var note = el.querySelector('.tongbun-note');
+                    var note1 = el.dataset.note1 || '분모를 6으로 맞추기 위해 분모와 분자에 2를 곱해요';
+                    var note2 = el.dataset.note2 || '분모가 6으로 같아졌어요! 이제 분자만 더해요';
+
+                    if (arrow) arrow.classList.remove('on');
+                    if (stepMid) stepMid.classList.remove('on');
+                    if (stepTo) stepTo.classList.remove('on');
+                    if (note) {
+                        note.innerHTML = note1;
+                        note.classList.remove('done');
+                    }
+
+                    setTimeout(function () {
+                        if (arrow) arrow.classList.add('on');
+                        if (stepMid) stepMid.classList.add('on');
+                    }, wait(350));
+
+                    setTimeout(function () {
+                        if (stepMid) stepMid.classList.remove('on');
+                        if (stepTo) stepTo.classList.add('on');
+                        if (note) {
+                            note.innerHTML = note2;
+                            note.classList.add('done');
+                        }
+                    }, wait(1900));
                 }
             }
         });
