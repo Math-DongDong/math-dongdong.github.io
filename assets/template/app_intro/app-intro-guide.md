@@ -43,7 +43,8 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 2. **기능 캐러셀**: `#featureCarousel`
 3. **복사(다운로드) 및 배포 가이드**: 제목 오른쪽에 CTA 버튼, 아래에 번호 단계 카드
 4. **데이터 관리 & 팁**: 팁 카드, 필요하면 주의 카드
-5. (선택) 버튼이 안 될 때를 위한 안내 `alert alert-info` (appsheet.html 참고)
+5. **소스 코드 확인 및 복사 (선택)**: `#sourceCodeCollapse` 접이식 코드 뷰어 및 탭별 원클릭 복사
+6. (선택) 버튼이 안 될 때를 위한 안내 `alert alert-info` (appsheet.html 참고)
 
 ## 4. 컴포넌트 규칙
 
@@ -73,6 +74,7 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 - 하위 목록은 `ol`(순서 있음) 또는 `ul`(순서 없음)에 `class="ps-3 mb-2 text-secondary" style="line-height: 1.8;"`을 씁니다.
 - 시트 열 안내는 흰 상자 안에 배지로 씁니다. `<span class="badge bg-primary me-2">A열</span> 번호 &nbsp;|&nbsp; ...`
 - 보충 설명은 카드 끝에 `p.text-muted.small` + `bi-info-circle-fill` 아이콘으로 씁니다.
+- 학생 접속 웹 앱인 경우, 만 13세 미만 학생 접속 안내(시크릿 모드 또는 카카오톡 대화방 링크 클릭)를 노란 경고 박스(`alert alert-warning`)로 4단계 카드 내에 강조하여 넣습니다.
 
 ### 4-3. CTA(복사·다운로드) 버튼
 
@@ -81,6 +83,15 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 - 구글 시트 템플릿: `https://docs.google.com/spreadsheets/d/{시트ID}/copy?usp=sharing`
   - 버튼 이름은 **구글 시트 템플릿 복사하기**, 아이콘은 `bi-file-earmark-spreadsheet`
 - AppSheet 템플릿: AppSheet 템플릿 주소를 넣고, 버튼 이름은 **앱 다운받기**, 아이콘은 `bi-download`
+
+### 4-4. 소스 코드 확인 및 복사 컴포넌트
+
+- 사용자가 템플릿 시트 복사 외에 직접 새 스프레드시트의 Apps Script 편집기에 코드를 붙여넣어 앱을 구성할 수 있도록 지원할 때 사용합니다.
+- 전체 섹션을 접이식 카드(`#sourceCodeCollapse`)로 구성하고 기본값으로 닫아두어(`collapse`) 모바일/데스크톱 화면에서 스크롤 부담을 최소화합니다.
+- Bootstrap 5 탭(`nav nav-pills`, `tab-content`)을 적용해 `Code.gs`, `index.html` 및 대화상자 HTML 파일들을 탭 버튼으로 손쉽게 전환할 수 있게 만듭니다.
+- 다크 테마 박스(`.code-box-wrapper`, `.code-box-header`, `.code-box-pre`)와 고정폭 폰트(`Consolas`, `Monaco` 등)를 적용합니다.
+- **중요**: `<pre><code id="...">` 내부의 코드는 본문 HTML 태그 및 스크립트 실행 충돌을 방지하기 위해 반드시 `&amp;`, `&lt;`, `&gt;`로 이스케이프하여 작성합니다.
+- 각 탭 헤더에 있는 [코드 복사] 버튼은 `copySourceCode(elementId, btn)` 함수를 호출하여 브라우저 클립보드에 원본 코드를 복사하고 2초간 `복사 완료!` 성공 피드백을 표시합니다.
 
 ## 5. 이미지 규칙
 
@@ -114,6 +125,7 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
    - 최초 권한 승인: [액세스 승인] > 계정 선택 > [고급] > [~(으)로 이동(안전하지 않음)] > [허용]
    - 코드를 고친 뒤: [배포] > [배포 관리] > 연필 아이콘 > 버전 [새 버전] > [배포] (주소 유지)
 4. **웹 앱 URL로 접속 및 공유**
+   - 학생이 접속하는 웹 앱에는 **만 13세 미만 학생 접속 안내**(시크릿 모드 또는 카카오톡 인앱 브라우저 우회)를 `alert alert-warning` 박스로 4단계 카드 내에 넣습니다.
 
 ## 8. 구글 시트 템플릿 공유 전 점검표
 
@@ -137,6 +149,7 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 - [ ] 페이지에 적은 버튼·메뉴 이름이 실제 앱 화면과 같다.
 - [ ] 사이트의 목록 페이지나 네비게이션에 새 페이지 링크를 추가했다. (필요한 경우)
 - [ ] 사이트 폴더 안의 md 파일에 여는 중괄호 두 개, 또는 중괄호와 퍼센트 기호를 붙인 글자가 없다. (11번 참고)
+- [ ] (소스 코드 섹션 사용 시) `<pre><code id="...">` 안의 코드가 `&amp;`, `&lt;`, `&gt;`로 이스케이프되었고, 복사 버튼 및 피드백(`복사 완료!`)이 정상 작동한다.
 
 ## 10. AI 에이전트에게 맡길 때 요청 예시
 
@@ -153,6 +166,7 @@ pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 - 가운데 준비 단계에 꼭 들어갈 내용: {명단 입력 열, 메뉴 이름, 환경설정 항목 등}
 - 데이터 관리 & 팁에 넣을 내용: {시트 탭별로 쌓이는 데이터, 주의할 점}
 - 참고할 앱 코드: {code.gs, index.html 등 경로}
+- (선택) 소스 코드 뷰어에 넣을 파일 목록: {Code.gs, index.html, dbSetup.html, settings.html 등}
 
 완성하면 9번 완성 전 점검표를 하나씩 확인하고 결과를 알려 줘.
 ```
@@ -171,11 +185,11 @@ pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 
 ## 부록 A. 지금 있는 앱 소개 페이지
 
-| 페이지 | 플랫폼 | 다운로드 방식 | 캐러셀 |
-| --- | --- | --- | --- |
-| `pages/automation/student/appsheet.html` | AppSheet | AppSheet 템플릿 [Copy and Customize] | 4장 |
-| `pages/automation/student/seatingarrangement.html` | Apps Script | 구글 시트 템플릿 복사 | 8장 |
-| `pages/automation/student/reviewmanagement.html` | Apps Script | 구글 시트 템플릿 복사 | 9장 |
+| 페이지 | 플랫폼 | 다운로드 방식 | 캐러셀 | 소스 코드 탭 |
+| --- | --- | --- | --- | --- |
+| `pages/automation/student/appsheet.html` | AppSheet | AppSheet 템플릿 [Copy and Customize] | 4장 | — |
+| `pages/automation/student/seatingarrangement.html` | Apps Script | 구글 시트 템플릿 복사 | 8장 | 2개 (Code.gs, index.html) |
+| `pages/automation/student/reviewmanagement.html` | Apps Script | 구글 시트 템플릿 복사 | 9장 | 4개 (Code.gs, index.html, dbSetup.html, settings.html) |
 
 ## 부록 B. 소감문 관리 앱(reviewmanagement) 이미지 목록
 
