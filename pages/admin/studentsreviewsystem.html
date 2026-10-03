@@ -114,6 +114,37 @@
         @media (min-width: 1024px) { .modal-xl { max-width: 860px; } }
         .modal-dialog-centered { display: flex; align-items: center; min-height: calc(100% - 3.5rem); }
         .modal-content { position: relative; display: flex; flex-direction: column; width: 100%; pointer-events: auto; background-color: #fff; outline: 0; }
+        #customModal .modal-content,
+        #roomModeModal .modal-content {
+            border: 1px solid #D5DEDA;
+            border-radius: 1rem;
+            padding: 1.25rem;
+            box-shadow: 0 20px 35px rgba(29, 43, 38, .18);
+        }
+        #customModal .modal-title,
+        #roomModeModal .modal-title { color: #1D2B26; font-weight: 800; }
+        #customModal .modal-body,
+        #roomModeModal .modal-body { color: #5F706A; line-height: 1.6; }
+        #customModal #customModalInput {
+            border: 1.5px solid #D5DEDA;
+            border-radius: .625rem;
+            padding: .75rem 1rem;
+            color: #1D2B26;
+        }
+        #customModal #customModalInput:focus {
+            border-color: #24493D;
+            box-shadow: 0 0 0 3px rgba(36, 73, 61, .14);
+            outline: none;
+        }
+        #customModal #customModalCancel {
+            background: #fff;
+            color: #1D2B26;
+            box-shadow: inset 0 0 0 1px #D5DEDA;
+        }
+        #customModal #customModalConfirm {
+            background: #24493D;
+            color: #F3F0E4;
+        }
         .modal-backdrop { position: fixed; top: 0; left: 0; z-index: 70; width: 100vw; height: 100vh; background-color: #1D2B26; }
         .modal-backdrop.fade { opacity: 0; transition: opacity .15s linear; }
         .modal-backdrop.show { opacity: .5; }
@@ -282,10 +313,13 @@
                     <button type="button" id="btnDeleteRoom" class="btn btn-ghost btn-sm text-stamp border-stamp/40 whitespace-nowrap" disabled>
                         <i class="bi bi-trash"></i> 방 삭제
                     </button>
-                    <span class="text-xs text-ink-muted whitespace-nowrap" id="roomStatusText">방을 선택하면 소감문 관리가 시작됩니다.</span>
+                    <button type="button" id="btnResetStudentPin" class="btn btn-ghost btn-sm whitespace-nowrap" disabled>
+                        <i class="bi bi-key"></i> PIN 번호 초기화
+                    </button>
                 </div>
                 <div class="ml-auto" id="activeRoomInfo"></div>
             </div>
+            <div id="guestApprovalBox" class="d-none mt-4 rounded-xl border border-chalk-yellow/70 bg-chalk-yellow/15 p-3"></div>
         </div>
 
         <!-- ============================================================== -->
@@ -295,10 +329,9 @@
             <!-- 1-0. 학생 방 코드 입력 & 기기등록 입장 화면 (첫 진입) -->
             <div id="studentRoomEntryBox" class="-mt-8 mx-auto w-full max-w-md px-4 pb-12 relative z-10">
                 <div class="panel p-6 sm:p-7 shadow-lg bg-white border border-line">
-                    <!-- 학생 / 교사 탭 전환 (스크린샷 일치) -->
-                    <div class="grid grid-cols-2 gap-1 rounded-lg bg-page p-1 mb-5" role="tablist">
-                        <button type="button" class="tab-item is-active" id="entryTabStudent">학생</button>
-                        <button type="button" class="tab-item" id="entryTabTeacher">교사</button>
+                    <div class="grid grid-cols-2 gap-1 rounded-lg bg-page p-1 mb-5" aria-label="현재 화면" role="group">
+                        <span class="tab-item is-active text-center" id="entryTabStudent" data-screen-role="student" aria-current="page">학생</span>
+                        <span class="tab-item text-center" id="entryTabTeacher" data-screen-role="teacher">교사</span>
                     </div>
 
                     <div class="mb-2">
@@ -426,6 +459,10 @@
             <div id="teacherDashboard">
                 <!-- 통계 카드 & 상단 기능 바 -->
                 <div class="panel bg-board-soft/70 border-board/30 p-4 mb-5 shadow-sm">
+                    <div class="grid grid-cols-2 gap-1 rounded-lg bg-white/60 p-1 mb-4 max-w-xs" aria-label="현재 화면" role="group">
+                        <span class="tab-item text-center" data-screen-role="student">학생</span>
+                        <span class="tab-item is-active text-center" data-screen-role="teacher" aria-current="page">교사</span>
+                    </div>
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 class="text-lg font-extrabold text-board mb-0.5">
@@ -471,7 +508,7 @@
                         <div class="panel p-4 shadow-sm">
                             <h3 class="text-sm font-extrabold mb-0.5">등록된 활동 목록</h3>
                             <p class="text-xs text-ink-muted mb-3">활동을 누르면 해당 활동 제출 현황을 필터링합니다.</p>
-                            <div id="teacherActivityList" class="grid gap-1.5 max-h-[480px] overflow-y-auto pr-1">
+                            <div id="teacherActivityList" class="grid gap-1.5 max-h-[480px] overflow-y-auto p-1">
                                 <p class="text-xs text-ink-muted text-center py-6">등록된 활동이 없습니다.</p>
                             </div>
                         </div>
@@ -754,7 +791,8 @@
             onSnapshot, serverTimestamp, query, where, orderBy
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { firestoreRoom } from '../../js/game-kit.js?v=4.1';
-        import { renderRoomEntrance, resolveRoomOwner } from '../../js/room-auth.js?v=4.2';
+        import { renderRoomEntrance, resolveRoomOwner, makeStudentKey, customPrompt, resetStudentPin } from '../../js/room-auth.js?v=4.2';
+        import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
 
         // ── 컬렉션 및 기본 상수 ──
         const COLLECTION_NAME = "studentsreview_records";
@@ -867,6 +905,7 @@
         const ADMIN_EMAIL = 'jjes0107@gmail.com';
 
         function switchRole(role) {
+            if (role === 'teacher' && !window.isApprovedTeacher && !window.isAdmin) role = 'student';
             currentMode = role;
             $('studentSection').classList.toggle('d-none', role !== 'student');
             $('teacherSection').classList.toggle('d-none', role !== 'teacher');
@@ -880,13 +919,14 @@
             $('teacherHeaderInfo').classList.toggle('d-none', role !== 'teacher');
             $('studentHeaderInfo').classList.toggle('d-none', role !== 'student');
 
-            // 로그인 카드 탭 상태 동기화
-            $('entryTabStudent')?.classList.toggle('is-active', role === 'student');
-            $('entryTabTeacher')?.classList.toggle('is-active', role === 'teacher');
+            document.querySelectorAll('[data-screen-role]').forEach(tab => {
+                const active = tab.dataset.screenRole === role;
+                tab.classList.toggle('is-active', active);
+                if (active) tab.setAttribute('aria-current', 'page');
+                else tab.removeAttribute('aria-current');
+            });
         }
 
-        $('entryTabStudent')?.addEventListener('click', () => switchRole('student'));
-        $('entryTabTeacher')?.addEventListener('click', () => switchRole('teacher'));
         $('btnBackToStudentFromGate')?.addEventListener('click', () => switchRole('student'));
 
         onAuthStateChanged(auth, async (user) => {
@@ -975,27 +1015,117 @@
             selectRoom(e.target.value);
         });
 
+        $('btnResetStudentPin').addEventListener('click', async () => {
+            if (!currentRoomCode) return customAlert('알림', '방을 먼저 선택하세요.');
+            const enteredStudentId = await customPrompt('PIN 번호 초기화', '초기화할 학생의 학번을 입력하세요.');
+            if (enteredStudentId === null) return;
+            const studentId = String(enteredStudentId).trim();
+            if (!studentId) return;
+            if (!/^\d{4,5}$/.test(studentId)) return customAlert('입력 확인', '학번은 숫자 4~5자리로 입력해주세요.');
+
+            try {
+                const selectedRoom = await roomKit.getRoomData(currentRoomCode);
+                const school = String(selectedRoom?.creatorSchool || window.currentTeacherSchool || (window.isAdmin ? '수학동동' : '')).trim();
+                if (!school) return customAlert('학교 정보 없음', '이 방의 학교 정보를 확인할 수 없어 PIN을 초기화할 수 없습니다.');
+                const studentKey = makeStudentKey(school, studentId);
+                const studentSnap = await getDoc(doc(db, 'student_auth', studentKey));
+                if (!studentSnap.exists()) return customAlert('학생 확인', `${escapeHtml(studentId)} 학생 계정을 찾을 수 없습니다.`);
+                if (!await customConfirm('PIN 번호 초기화', `${escapeHtml(studentId)} 학생의 PIN을 초기화할까요?<br>다음 접속 때 새 PIN을 설정하게 됩니다.`)) return;
+
+                await resetStudentPin(studentKey);
+                await customAlert('완료', `${escapeHtml(studentId)} 학생의 PIN이 초기화되었습니다.`);
+            } catch (err) {
+                console.error('학생 PIN 초기화 오류:', err);
+                await customAlert('오류', 'PIN 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.');
+            }
+        });
+
+        function renderGuestApprovals(students) {
+            const box = $('guestApprovalBox');
+            const pending = (students || []).filter(student => student?.isGuest && student.status === 'pending');
+            if (!pending.length) {
+                box.innerHTML = '';
+                box.classList.add('d-none');
+                return;
+            }
+
+            box.classList.remove('d-none');
+            box.innerHTML = `
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <h3 class="text-sm font-extrabold text-ink mb-0"><i class="bi bi-person-check"></i> 게스트 학생 승인 대기</h3>
+                    <span class="rounded-full bg-chalk-yellow px-2 py-0.5 text-xs font-bold text-ink">${pending.length}명</span>
+                </div>
+                <div class="grid gap-2">
+                    ${pending.map(student => `
+                        <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 py-2">
+                            <div class="min-w-0 text-sm">
+                                <strong class="text-board">${escapeHtml(student.nickname)}</strong>
+                                <span class="ml-1 text-xs text-ink-muted">${escapeHtml(student.school || '')} · ${escapeHtml(student.studentId || '')}</span>
+                            </div>
+                            <div class="flex gap-1.5">
+                                <button type="button" class="btn btn-primary btn-sm" data-guest-action="approve" data-nickname="${escapeHtml(student.nickname)}" data-student-key="${escapeHtml(student.studentKey || '')}">
+                                    <i class="bi bi-check-lg"></i> 승인
+                                </button>
+                                <button type="button" class="btn btn-ghost btn-sm text-stamp" data-guest-action="reject" data-nickname="${escapeHtml(student.nickname)}" data-student-key="${escapeHtml(student.studentKey || '')}">
+                                    거절
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        }
+
+        $('guestApprovalBox').addEventListener('click', async (event) => {
+            const button = event.target.closest('[data-guest-action]');
+            if (!button || !currentRoomCode) return;
+            const nickname = button.dataset.nickname;
+            const studentKey = button.dataset.studentKey;
+            const approved = button.dataset.guestAction === 'approve';
+            button.disabled = true;
+
+            try {
+                const status = approved ? 'online' : 'rejected';
+                await updateDoc(doc(roomKit.students(currentRoomCode), nickname), { status });
+                await setDoc(doc(roomKit.guests(currentRoomCode), nickname), { status }, { merge: true });
+                if (studentKey) {
+                    await updateDoc(doc(db, 'student_auth', studentKey), approved
+                        ? { presence: 'online', lastActive: serverTimestamp() }
+                        : { presence: 'offline' });
+                }
+            } catch (err) {
+                console.error('게스트 승인 처리 오류:', err);
+                button.disabled = false;
+                await customAlert('오류', '게스트 접속 요청을 처리하지 못했습니다.');
+            }
+        });
+
         async function selectRoom(code) {
             currentRoomCode = code;
             if (unsubRoomDoc) { unsubRoomDoc(); unsubRoomDoc = null; }
             if (unsubReviews) { unsubReviews(); unsubReviews = null; }
             if (unsubStudents) { unsubStudents(); unsubStudents = null; }
             allReviews = [];
+            roomData = null;
 
             if (!code) {
                 activityList = [];
                 studentRoster = [];
                 selectedActivityDate = '';
                 $('btnDeleteRoom').disabled = true;
+                $('btnResetStudentPin').disabled = true;
                 $('activeRoomInfo').textContent = '';
-                $('roomStatusText').textContent = '방을 선택하면 소감문 관리가 시작됩니다.';
+                $('guestApprovalBox').innerHTML = '';
+                $('guestApprovalBox').classList.add('d-none');
                 $('teacherRoomNameDisplay').textContent = '방을 선택하세요';
+                if (isTeacherLocked) closeQrPanel(false);
                 renderActivityOptions();
                 renderAll();
                 return;
             }
 
             $('btnDeleteRoom').disabled = false;
+            $('btnResetStudentPin').disabled = false;
+            if (isTeacherLocked) openQrPanel();
             $('activeRoomInfo').innerHTML = `<span class="inline-block rounded-xl bg-board text-chalk text-sm sm:text-base font-extrabold px-3.5 py-1.5 shadow-sm tracking-wider">방 코드: ${code}</span>`;
 
             // 방 문서 실시간 구독 (활동, 학생 명단, 프롬프트)
@@ -1025,6 +1155,7 @@
                         const sid = d.data()?.studentId;
                         if (sid) joinedIds.push(sid);
                     });
+                    renderGuestApprovals(snap.docs.map(d => ({ ...d.data(), nickname: d.id })));
                     if (joinedIds.length) {
                         const combined = Array.from(new Set([...studentRoster, ...joinedIds])).sort();
                         if (combined.length !== studentRoster.length) {
