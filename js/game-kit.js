@@ -29,7 +29,7 @@ import {
     ref, get, set, update, remove, serverTimestamp as rtTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 import {
-    escapeHtml, safeNumber, customAlert, customConfirm, promptRoomMode
+    escapeHtml, safeNumber, customAlert, customConfirm, customPrompt, promptRoomMode
 } from "./room-auth.js?v=4.1";
 
 // =====================================================================
@@ -162,6 +162,11 @@ export function firestoreRoom(collectionName) {
                 return null;
             }
 
+            // 메모 입력 (선택 사항)
+            const memoInput = await customPrompt("방 메모 입력", "이 방을 구분할 메모를 입력하세요 (예: 1반, 2교시)<br><span class='text-muted small'>빈칸으로 두면 메모 없이 생성됩니다.</span>");
+            if (memoInput === null) return null;   // 취소
+            const memo = String(memoInput).trim().slice(0, 40);
+
             let code = null;
             for (let i = 0; i < 20; i++) {
                 const candidate = generateRoomCode();
@@ -177,11 +182,13 @@ export function firestoreRoom(collectionName) {
                 createdBy: window.currentTeacherUid || '',
                 creatorName: window.currentTeacherName || '',
                 creatorSchool: teacherSchool,
+                memo,
                 ...extra
             });
 
             await customAlert("방 생성 완료",
-                `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.<br>` +
+                `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.` +
+                (memo ? `<br>메모: <strong>${escapeHtml(memo)}</strong>` : '') + `<br>` +
                 `설정 모드: <strong>${mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>` +
                 (mode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''));
             return code;
@@ -231,7 +238,9 @@ export function firestoreRoom(collectionName) {
                 let count = 0;
                 snap.forEach(d => {
                     count++;
-                    html += `<option value="${escapeHtml(d.id)}">${escapeHtml(d.id)}</option>`;
+                    const data = d.data() || {};
+                    const label = data.memo ? `${d.id} | ${data.memo}` : d.id;
+                    html += `<option value="${escapeHtml(d.id)}">${escapeHtml(label)}</option>`;
                 });
                 if (count === 0 && !window.isAdmin) {
                     html = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
@@ -311,7 +320,7 @@ export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } =
          * 인덱스가 없던 시절 방을 위해 한 번만 자동으로 인덱스를 만들어 줍니다.
          * @param {Function} labelFn (code, indexData) → 화면에 보일 문자열
          */
-        async loadRooms(selectEl, labelFn = (code) => code, migrateFields = []) {
+        async loadRooms(selectEl, labelFn = (code, r) => (r && r.memo) ? `${code} | ${r.memo}` : code, migrateFields = []) {
             if (!selectEl) return;
             if (!window.isApprovedTeacher && !window.isAdmin) return;
 
@@ -327,7 +336,8 @@ export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } =
                         const entry = {
                             createdAt: r.createdAt || 0,
                             createdBy: r.createdBy || '',
-                            creatorName: r.creatorName || ''
+                            creatorName: r.creatorName || '',
+                            memo: r.memo || ''
                         };
                         migrateFields.forEach(f => { entry[f] = r[f] ?? ''; });
                         migrate[code] = entry;

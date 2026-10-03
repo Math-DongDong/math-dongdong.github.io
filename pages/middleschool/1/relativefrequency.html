@@ -1465,12 +1465,17 @@
                     "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
             }
 
+            // 메모 입력 (선택 사항)
+            const memoInput = await customPrompt("방 메모 입력", "이 방을 구분할 메모를 입력하세요 (예: 1반, 2교시)<br><span class='text-muted small'>빈칸으로 두면 메모 없이 생성됩니다.</span>");
+            if (memoInput === null) return;   // 취소
+            const memo = String(memoInput).trim().slice(0, 40);
+
             const code = await roomKit.newCode('status');
             if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
 
             try {
                 // ① RTDB — 대전용. status는 학생도 읽습니다(방 존재 확인). 방·인덱스는 game-kit이 함께 씁니다.
-                await roomKit.createRoom(code, { status: 'playing' });
+                await roomKit.createRoom(code, { status: 'playing' }, { memo });
 
                 // ② Firestore — 인증·닉네임·게스트 승인용. 모드가 여기 들어갑니다.
                 await setDoc(fsRoomDocRef(code), {
@@ -1480,7 +1485,8 @@
                     createdAt: fsServerTimestamp(),
                     createdBy: window.currentTeacherUid || '',
                     creatorName: window.currentTeacherName || '',
-                    creatorSchool: teacherSchool
+                    creatorSchool: teacherSchool,
+                    memo
                 });
             } catch (e) {
                 console.error(e);
@@ -1488,7 +1494,8 @@
             }
 
             await customAlert('방 생성',
-                `새로운 방(<b class="text-primary fs-4">${escapeHtml(code)}</b>)이 생성되었습니다.<br>` +
+                `새로운 방(<b class="text-primary fs-4">${escapeHtml(code)}</b>)이 생성되었습니다.` +
+                (memo ? `<br>메모: <strong>${escapeHtml(memo)}</strong>` : '') + `<br>` +
                 `설정 모드: <strong>${selectedMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>${selectedMode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''}`);
             await loadAdminRooms();
             const select = $('admin-room-select');

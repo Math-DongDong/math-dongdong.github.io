@@ -785,20 +785,27 @@
 
         document.getElementById('btn-create-room')?.addEventListener('click', async () => {
             const btn = document.getElementById('btn-create-room');
+
+            // 메모 입력 (선택 사항)
+            const memoInput = await customPrompt("방 메모 입력", "이 방을 구분할 메모를 입력하세요 (예: 1반, 2교시)<br><span class='text-muted small'>빈칸으로 두면 메모 없이 생성됩니다.</span>");
+            if (memoInput === null) return;   // 취소
+            const memo = String(memoInput).trim().slice(0, 40);
+
             btn.disabled = true;
             try {
                 const roomCode = await roomKit.newCode('status');
                 if (!roomCode) return await customAlert('오류', '방 코드를 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
                 // status는 학생도 읽습니다(방 존재 확인용 한 칸). 방·인덱스는 game-kit이 함께 씁니다.
-                await roomKit.createRoom(roomCode, { status: 'playing' });
+                await roomKit.createRoom(roomCode, { status: 'playing' }, { memo });
 
                 await loadAdminRooms();
                 const sel = document.getElementById('admin-room-select');
                 if (sel) sel.value = roomCode;
                 startAdminMonitoring(roomCode);
                 await customAlert('생성 완료',
-                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(roomCode)}</b> ]<br>` +
-                    `<span class="text-muted small">학생은 이 코드만 입력하면 바로 시작합니다.</span>`);
+                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(roomCode)}</b> ]` +
+                    (memo ? `<br>메모: <strong>${escapeHtml(memo)}</strong>` : '') +
+                    `<br><span class="text-muted small">학생은 이 코드만 입력하면 바로 시작합니다.</span>`);
             } catch (error) {
                 console.error(error);
                 await customAlert('오류', '방을 만들지 못했습니다. 잠시 후 다시 시도해주세요.');

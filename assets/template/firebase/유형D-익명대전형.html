@@ -181,7 +181,7 @@
         // ★ 여기: 진행용 Realtime Database
         import { rtdbGridGomoku as db, db as fsdb } from "../../../js/firebase-config.js";
         import {
-            renderRoomEntrance, customAlert, customConfirm,
+            renderRoomEntrance, customAlert, customConfirm, customPrompt,
             isValidRtdbKey, rememberEntrance, getDeviceId, rerollRoomNickname
         } from "../../../js/room-auth.js?v=4.1";
         import {
@@ -616,6 +616,11 @@
         window.addEventListener('teacherAuthChanged', () => { if (isTeacher) loadRooms(); });
 
         $('btn-create-room')?.addEventListener('click', async () => {
+            // 메모 입력 (선택 사항)
+            const memoInput = await customPrompt("방 메모 입력", "이 방을 구분할 메모를 입력하세요 (예: 1반, 2교시)<br><span class='text-muted small'>빈칸으로 두면 메모 없이 생성됩니다.</span>");
+            if (memoInput === null) return;   // 취소
+            const memo = String(memoInput).trim().slice(0, 40);
+
             const btn = $('btn-create-room');
             btn.disabled = true;
             try {
@@ -623,11 +628,12 @@
                 if (!code) return await customAlert('오류', '방 코드를 만들지 못했습니다.');
 
                 // status는 학생도 읽습니다(방 존재 확인용 한 칸).
-                await room.createRoom(code, { status: 'playing' });
+                await room.createRoom(code, { status: 'playing' }, { memo });
 
                 await customAlert('생성 완료',
-                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(code)}</b> ]<br>` +
-                    `<span class="text-muted small">학생은 이 코드만 입력하면 바로 시작합니다.</span>`);
+                    `방 코드: [ <b class="text-primary fs-3">${escapeHtml(code)}</b> ]` +
+                    (memo ? `<br>메모: <strong>${escapeHtml(memo)}</strong>` : '') +
+                    `<br><span class="text-muted small">학생은 이 코드만 입력하면 바로 시작합니다.</span>`);
                 await loadRooms();
                 $('admin-room-select').value = code;
                 $('admin-room-select').dispatchEvent(new Event('change'));
