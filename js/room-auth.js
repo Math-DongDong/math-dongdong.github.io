@@ -1066,7 +1066,7 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
  * 인증 모드 입장 시 저장된 학생 정보 확인 모달
  * 반환: 'ok'(이대로 입장) | 'edit'(학번 바꾸기) | null(취소)
  */
-export function promptStudentConfirmModal({ school = '', studentId = '', teachers = [], nickname = '', deviceCount = 0 } = {}) {
+export function promptStudentConfirmModal({ school = '', studentId = '', teachers = [], nickname = '', deviceCount = 0, showNickname = true } = {}) {
     return new Promise((resolve) => {
         let modalEl = document.getElementById('studentConfirmModal');
         if (!modalEl) {
@@ -1079,7 +1079,7 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
                         </div>
                         <div class="modal-body py-3">
-                            <p class="text-muted small mb-3">이 학번으로 게임에 접속합니다. 내 학번이 아니면 [학번 바꾸기]를 눌러주세요.</p>
+                            <p class="text-muted small mb-3">이 학번으로 접속합니다. 내 학번이 아니면 [학번 바꾸기]를 눌러주세요.</p>
                             <ul class="list-group list-group-flush border rounded-3" id="studentConfirmList"></ul>
                         </div>
                         <div class="modal-footer border-0 pt-0">
@@ -1090,6 +1090,9 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
                 </div>
             </div>`);
             modalEl = document.getElementById('studentConfirmModal');
+            modalEl.addEventListener('hide.bs.modal', function () {
+                if (document.activeElement && this.contains(document.activeElement)) document.activeElement.blur();
+            });
         }
 
         const row = (label, value) => `
@@ -1102,7 +1105,7 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
             row('학교', escapeHtml(school)) +
             row('학번', escapeHtml(studentId)) +
             row('담당 선생님', (teachers && teachers.length) ? escapeHtml(teachers.join(', ')) : '<span class="text-muted fw-normal">미지정</span>') +
-            (nickname ? row('내 닉네임', `<span class="text-primary">${escapeHtml(nickname)}</span>`) : '') +
+            (showNickname && nickname ? row('내 닉네임', `<span class="text-primary">${escapeHtml(nickname)}</span>`) : '') +
             row('등록 기기', `${safeNumber(deviceCount)}/${MAX_DEVICES}대`);
 
         const okBtn = document.getElementById('btnConfirmStudentInfo');
@@ -1110,8 +1113,16 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
         const bsModal = bsModalFor(modalEl);
         let answer = null;
 
-        const onOk = () => { answer = 'ok'; bsModal.hide(); };
-        const onEdit = () => { answer = 'edit'; bsModal.hide(); };
+        const onOk = () => {
+            answer = 'ok';
+            if (document.activeElement && modalEl.contains(document.activeElement)) document.activeElement.blur();
+            bsModal.hide();
+        };
+        const onEdit = () => {
+            answer = 'edit';
+            if (document.activeElement && modalEl.contains(document.activeElement)) document.activeElement.blur();
+            bsModal.hide();
+        };
         const onHidden = () => {
             okBtn.removeEventListener('click', onOk);
             editBtn.removeEventListener('click', onEdit);
@@ -1445,6 +1456,7 @@ export function renderRoomEntrance(container, options = {}) {
         // ★ RTDB 게임(오목·가위바위보·블로토)처럼 인증 모드가 없는 페이지는
         //   showGuestToggle: false 로 두면 헷갈리는 체크박스가 사라집니다.
         showGuestToggle = true,
+        showNickname = true,
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -1880,8 +1892,9 @@ export function renderRoomEntrance(container, options = {}) {
                         const answer = await promptStudentConfirmModal({
                             school: roomSchool, studentId,
                             teachers: mergeTeacherList(sData.teachers, roomTeacher),
-                            nickname: getRoomNickname(roomCode) || getLocalGameNickname(),
-                            deviceCount: Array.isArray(sData.devices) ? sData.devices.length : 0
+                            nickname: showNickname ? (getRoomNickname(roomCode) || getLocalGameNickname()) : '',
+                            deviceCount: Array.isArray(sData.devices) ? sData.devices.length : 0,
+                            showNickname
                         });
                         if (!answer) return;                // 창을 닫음
                         if (answer === 'edit') needInput = true;

@@ -698,7 +698,7 @@
             onSnapshot, serverTimestamp, query, where, orderBy
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { firestoreRoom } from '../../js/game-kit.js?v=4.1';
-        import { renderRoomEntrance, resolveRoomOwner } from '../../js/room-auth.js?v=4.1';
+        import { renderRoomEntrance, resolveRoomOwner } from '../../js/room-auth.js?v=4.2';
 
         // ── 컬렉션 및 기본 상수 ──
         const COLLECTION_NAME = "studentsreview_records";
@@ -730,6 +730,7 @@
         let roomData = null;                 // 현재 방 문서 데이터
         let unsubRoomDoc = null;
         let unsubReviews = null;
+        let unsubStudents = null;
         let allReviews = [];                 // 현재 방의 소감문 목록
         let studentRoster = [];              // 학생 명단 [{id, pw}]
         let activityList = [];               // 창체활동 목록 [{date, activity}]
@@ -914,6 +915,7 @@
             currentRoomCode = code;
             if (unsubRoomDoc) { unsubRoomDoc(); unsubRoomDoc = null; }
             if (unsubReviews) { unsubReviews(); unsubReviews = null; }
+            if (unsubStudents) { unsubStudents(); unsubStudents = null; }
             allReviews = [];
 
             if (!code) {
@@ -945,6 +947,25 @@
                 renderTeacherActivities();
                 updateStats();
             });
+
+            // 교사 모드: 접속한 학생 서브컬렉션 구독 (한번이라도 접속한 학생을 명단에 실시간 자동 합산)
+            if (isTeacherLocked) {
+                unsubStudents = onSnapshot(collection(db, COLLECTION_NAME, code, "students"), (snap) => {
+                    const joinedIds = [];
+                    snap.forEach(d => {
+                        const sid = d.data()?.studentId;
+                        if (sid) joinedIds.push(sid);
+                    });
+                    if (joinedIds.length) {
+                        const combined = Array.from(new Set([...studentRoster, ...joinedIds])).sort();
+                        if (combined.length !== studentRoster.length) {
+                            studentRoster = combined;
+                            updateStats();
+                            renderAll();
+                        }
+                    }
+                }, () => {});
+            }
 
             // 소감문 하위 컬렉션 실시간 구독
             unsubReviews = onSnapshot(collection(db, COLLECTION_NAME, code, "records"), (snap) => {
@@ -979,6 +1000,7 @@
             joinBtnText: "접속하기",
             dashBtnText: "대시보드 열기",
             showGuestToggle: true,
+            showNickname: false,
             getRoomData: roomKit.getRoomData,
             studentsCollectionRef: roomKit.students,
             getRoomOwner: async (code, data) => {
@@ -997,21 +1019,6 @@
                 if (!currentStudentId) {
                     await customAlert("오류", "학생 정보를 확인할 수 없습니다.");
                     return;
-                }
-
-                // 방의 학생 목록에 현재 학번 등록 (한번이라도 접속한 학생 자동 등록)
-                try {
-                    const rRef = doc(db, COLLECTION_NAME, roomCode);
-                    const snap = await getDoc(rRef);
-                    if (snap.exists()) {
-                        const curList = snap.data().students || [];
-                        const ids = curList.map(s => typeof s === 'string' ? s : s?.id).filter(Boolean);
-                        if (!ids.includes(currentStudentId)) {
-                            await updateDoc(rRef, { students: [...ids, currentStudentId].sort() });
-                        }
-                    }
-                } catch (e) {
-                    console.error("학생 목록 등록 오류:", e);
                 }
 
                 await selectRoom(roomCode);
