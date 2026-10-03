@@ -1082,6 +1082,7 @@ function ensureStudentAuthModalStyle() {
         #studentAuthModalNotice {
             border: 1px solid #91e5f8;
             border-radius: .55rem;
+            padding-inline: 1rem;
             line-height: 1.55;
         }
         #studentAuthModalNotice.alert-info {
