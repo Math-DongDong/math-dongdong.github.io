@@ -1066,7 +1066,7 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
  * 인증 모드 입장 시 저장된 학생 정보 확인 모달
  * 반환: 'ok'(이대로 입장) | 'edit'(학번 바꾸기) | null(취소)
  */
-export function promptStudentConfirmModal({ school = '', studentId = '', teachers = [], nickname = '', deviceCount = 0, showNickname = true } = {}) {
+export function promptStudentConfirmModal({ school = '', studentId = '', teachers = [], deviceCount = 0 } = {}) {
     return new Promise((resolve) => {
         let modalEl = document.getElementById('studentConfirmModal');
         if (!modalEl) {
@@ -1105,7 +1105,6 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
             row('학교', escapeHtml(school)) +
             row('학번', escapeHtml(studentId)) +
             row('담당 선생님', (teachers && teachers.length) ? escapeHtml(teachers.join(', ')) : '<span class="text-muted fw-normal">미지정</span>') +
-            (showNickname && nickname ? row('내 닉네임', `<span class="text-primary">${escapeHtml(nickname)}</span>`) : '') +
             row('등록 기기', `${safeNumber(deviceCount)}/${MAX_DEVICES}대`);
 
         const okBtn = document.getElementById('btnConfirmStudentInfo');
@@ -1428,7 +1427,6 @@ export function renderRoomEntrance(container, options = {}) {
         // ★ RTDB 게임(오목·가위바위보·블로토)처럼 인증 모드가 없는 페이지는
         //   showGuestToggle: false 로 두면 헷갈리는 체크박스가 사라집니다.
         showGuestToggle = true,
-        showNickname = true,
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -1864,9 +1862,7 @@ export function renderRoomEntrance(container, options = {}) {
                         const answer = await promptStudentConfirmModal({
                             school: roomSchool, studentId,
                             teachers: mergeTeacherList(sData.teachers, roomTeacher),
-                            nickname: showNickname ? (getRoomNickname(roomCode) || getLocalGameNickname()) : '',
-                            deviceCount: Array.isArray(sData.devices) ? sData.devices.length : 0,
-                            showNickname
+                            deviceCount: Array.isArray(sData.devices) ? sData.devices.length : 0
                         });
                         if (!answer) return;                // 창을 닫음
                         if (answer === 'edit') needInput = true;
