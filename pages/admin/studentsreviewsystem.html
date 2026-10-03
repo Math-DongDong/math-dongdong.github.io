@@ -252,7 +252,7 @@
                 <div class="tab-content">
                     <!-- 탭 1: 소감문 작성 -->
                     <div class="tab-pane fade show active" id="tabWrite">
-                        <div class="card card-custom p-4 shadow-sm" style="max-width: 760px;">
+                        <div class="card card-custom p-4 shadow-sm">
                             <h3 class="h6 fw-bold mb-3" id="formTitle">소감문 작성</h3>
                             <input type="hidden" id="editUniqueId">
 
@@ -742,41 +742,68 @@
         const $ = (id) => document.getElementById(id);
         const escapeHtml = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
-        function customAlert(title, message) {
-            return new Promise((resolve) => {
+        let sysModalQueue = Promise.resolve();
+
+        function sysModalOpen(title, message, isConfirmMode) {
+            const run = () => new Promise((resolve) => {
+                const modalEl = $('sysModal');
                 $('sysModalTitle').textContent = title;
                 $('sysModalBody').innerHTML = message;
-                $('sysModalCancel').classList.add('d-none');
-                const modal = new bootstrap.Modal($('sysModal'));
+
                 const confirmBtn = $('sysModalConfirm');
-                const handler = () => {
-                    confirmBtn.removeEventListener('click', handler);
-                    modal.hide();
-                    resolve(true);
+                const cancelBtn = $('sysModalCancel');
+
+                if (isConfirmMode) cancelBtn.classList.remove('d-none');
+                else cancelBtn.classList.add('d-none');
+
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                let settled = false;
+                let result = isConfirmMode ? false : true;
+
+                const blurFocus = () => {
+                    if (document.activeElement && modalEl.contains(document.activeElement)) {
+                        document.activeElement.blur();
+                    }
                 };
-                confirmBtn.addEventListener('click', handler);
+
+                const onConfirm = () => {
+                    if (settled) return;
+                    settled = true;
+                    result = true;
+                    blurFocus();
+                    modal.hide();
+                };
+                const onCancel = () => {
+                    if (settled) return;
+                    settled = true;
+                    result = false;
+                    blurFocus();
+                    modal.hide();
+                };
+                const onHidden = () => {
+                    confirmBtn.removeEventListener('click', onConfirm);
+                    cancelBtn.removeEventListener('click', onCancel);
+                    modalEl.removeEventListener('hidden.bs.modal', onHidden);
+                    if (!settled) { settled = true; result = isConfirmMode ? false : true; }
+                    setTimeout(() => resolve(result), 0);
+                };
+
+                confirmBtn.addEventListener('click', onConfirm);
+                cancelBtn.addEventListener('click', onCancel);
+                modalEl.addEventListener('hidden.bs.modal', onHidden);
                 modal.show();
             });
+            const p = sysModalQueue.then(run, run);
+            sysModalQueue = p.catch(() => { });
+            return p;
+        }
+
+        function customAlert(title, message) {
+            return sysModalOpen(title, message, false);
         }
 
         function customConfirm(title, message) {
-            return new Promise((resolve) => {
-                $('sysModalTitle').textContent = title;
-                $('sysModalBody').innerHTML = message;
-                $('sysModalCancel').classList.remove('d-none');
-                const modal = new bootstrap.Modal($('sysModal'));
-                const confirmBtn = $('sysModalConfirm');
-                const cancelBtn = $('sysModalCancel');
-                const onConfirm = () => { cleanup(); modal.hide(); resolve(true); };
-                const onCancel = () => { cleanup(); modal.hide(); resolve(false); };
-                function cleanup() {
-                    confirmBtn.removeEventListener('click', onConfirm);
-                    cancelBtn.removeEventListener('click', onCancel);
-                }
-                confirmBtn.addEventListener('click', onConfirm);
-                cancelBtn.addEventListener('click', onCancel);
-                modal.show();
-            });
+            return sysModalOpen(title, message, true);
         }
 
         // ── 0. Firebase Auth 기반 자동 모드 전환 ──
@@ -947,7 +974,7 @@
 
         // ── 3. 학생 모드 방 입장 & 기기 등록 (room-auth.js 연동) ──
         renderRoomEntrance('room-entrance-container', {
-            title: "소감문 방 접속",
+            title: "학생 소감문 관리 시스템",
             roomCodePlaceholder: "방 코드 4자리 입력",
             joinBtnText: "접속하기",
             dashBtnText: "대시보드 열기",
