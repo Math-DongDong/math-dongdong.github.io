@@ -1067,6 +1067,8 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
  * 반환: 'ok'(이대로 입장) | 'edit'(학번 바꾸기) | null(취소)
  */
 export function promptStudentConfirmModal({ school = '', studentId = '', teachers = [], deviceCount = 0 } = {}) {
+    ensureStudentConfirmModalStyle();
+
     return new Promise((resolve) => {
         let modalEl = document.getElementById('studentConfirmModal');
         if (!modalEl) {
@@ -1079,12 +1081,12 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
                         </div>
                         <div class="modal-body py-3">
-                            <p class="text-muted small mb-3">이 학번으로 접속합니다. 내 학번이 아니면 [학번 바꾸기]를 눌러주세요.</p>
-                            <ul class="list-group list-group-flush border rounded-3" id="studentConfirmList"></ul>
+                            <p class="student-confirm-description">이 학번으로 접속합니다. 내 학번이 아니면 [학번 바꾸기]를 눌러주세요.</p>
+                            <ul class="student-confirm-list" id="studentConfirmList"></ul>
                         </div>
-                        <div class="modal-footer border-0 pt-0">
-                            <button type="button" class="btn btn-outline-secondary rounded-3 px-3 fw-bold" id="btnEditStudentInfo">✏️ 학번 바꾸기</button>
-                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold" id="btnConfirmStudentInfo">맞아요, 입장하기</button>
+                        <div class="modal-footer border-0 pt-0 student-confirm-actions">
+                            <button type="button" class="btn btn-outline-secondary rounded-3 px-3 fw-bold student-confirm-edit" id="btnEditStudentInfo">✏️ 학번 바꾸기</button>
+                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold student-confirm-primary" id="btnConfirmStudentInfo">맞아요, 입장하기</button>
                         </div>
                     </div>
                 </div>
@@ -1096,9 +1098,9 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
         }
 
         const row = (label, value) => `
-            <li class="list-group-item d-flex justify-content-between align-items-center px-3">
-                <span class="text-secondary small fw-bold">${label}</span>
-                <span class="fw-bold text-dark text-end">${value}</span>
+            <li class="student-confirm-row">
+                <span class="student-confirm-label">${label}</span>
+                <span class="student-confirm-value">${value}</span>
             </li>`;
 
         document.getElementById('studentConfirmList').innerHTML =
@@ -1134,6 +1136,68 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
         modalEl.addEventListener('hidden.bs.modal', onHidden);
         bsModal.show();
     });
+}
+
+function ensureStudentConfirmModalStyle() {
+    if (document.getElementById('student-confirm-modal-style')) return;
+    const style = document.createElement('style');
+    style.id = 'student-confirm-modal-style';
+    style.textContent = `
+        #studentConfirmModal .student-confirm-description {
+            margin: 0 0 .85rem;
+            color: #77818d;
+            font-size: .875rem;
+            line-height: 1.55;
+        }
+        #studentConfirmModal .student-confirm-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            overflow: hidden;
+            border: 1px solid #d8dee7;
+            border-radius: .65rem;
+        }
+        #studentConfirmModal .student-confirm-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: .65rem 1rem;
+            border-bottom: 1px solid #d8dee7;
+        }
+        #studentConfirmModal .student-confirm-row:last-child { border-bottom: 0; }
+        #studentConfirmModal .student-confirm-label {
+            flex: 0 0 auto;
+            color: #7b8490;
+            font-size: .875rem;
+            font-weight: 600;
+            text-align: left;
+        }
+        #studentConfirmModal .student-confirm-value {
+            min-width: 0;
+            color: #18212b;
+            font-weight: 750;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+        #studentConfirmModal .student-confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        #studentConfirmModal .student-confirm-edit {
+            border: 1px solid #87919c;
+            background: #fff;
+            color: #66717d;
+        }
+        #studentConfirmModal .student-confirm-primary {
+            border: 1px solid #24493d;
+            background: #24493d;
+            color: #f3f0e4;
+        }
+    `;
+    document.head.appendChild(style);
 }
 
 /** PIN 초기화 복구용 재설정 모달 (취소 가능) */
