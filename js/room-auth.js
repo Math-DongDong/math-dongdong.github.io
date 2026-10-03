@@ -1388,8 +1388,8 @@ export function showGuestWaitingModal(onCancel, { studentId = '', destinationLab
         <div class="modal fade" id="guestWaitingModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content guest-waiting-content rounded-4 border-0 shadow text-center p-4">
-                    <div class="spinner-border guest-waiting-spinner mx-auto my-3" role="status">
-                        <span class="visually-hidden">Loading...</span>
+                    <div class="guest-waiting-spinner mx-auto my-3" role="status">
+                        <span class="guest-waiting-sr-only">승인 대기 중</span>
                     </div>
                     <h5 class="guest-waiting-title mb-2">선생님의 승인을 기다리고 있습니다</h5>
                     <p class="guest-waiting-student mb-1">내 학번: <b id="guestWaitStudentId"></b></p>
@@ -1402,6 +1402,9 @@ export function showGuestWaitingModal(onCancel, { studentId = '', destinationLab
         const style = document.createElement('style');
         style.id = 'guest-waiting-modal-style';
         style.textContent = `
+            @keyframes guestWaitingSpin {
+                to { transform: rotate(360deg); }
+            }
             #guestWaitingModal .guest-waiting-content {
                 align-items: center;
                 padding: 1.5rem;
@@ -1410,10 +1413,26 @@ export function showGuestWaitingModal(onCancel, { studentId = '', destinationLab
                 box-shadow: 0 18px 42px rgba(20, 32, 45, .2);
             }
             #guestWaitingModal .guest-waiting-spinner {
+                display: inline-block;
+                box-sizing: border-box;
                 width: 4rem;
                 height: 4rem;
-                border-width: .3rem;
+                border: .3rem solid currentColor;
+                border-right-color: transparent;
+                border-radius: 50%;
                 color: #1677ff;
+                animation: guestWaitingSpin .75s linear infinite;
+            }
+            #guestWaitingModal .guest-waiting-sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
             }
             #guestWaitingModal .guest-waiting-title {
                 color: #252b33;
@@ -1437,6 +1456,9 @@ export function showGuestWaitingModal(onCancel, { studentId = '', destinationLab
                 border: 1px solid #77818d;
                 background: #fff;
                 color: #66717d;
+            }
+            @media (prefers-reduced-motion: reduce) {
+                #guestWaitingModal .guest-waiting-spinner { animation-duration: 1.8s; }
             }
         `;
         document.head.appendChild(style);
