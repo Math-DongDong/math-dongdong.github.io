@@ -1570,7 +1570,7 @@
 
             $('aiProgressArea').classList.add('d-none');
             $('btnStartAiBatch').disabled = false;
-            new bootstrap.Modal($('aiBatchModal')).show();
+            bootstrap.Modal.getOrCreateInstance($('aiBatchModal')).show();
         }
 
         $('aiPromptSelect').addEventListener('change', (e) => {
@@ -1674,10 +1674,25 @@
                 }
             }
 
-            $('aiProgressStatusText').textContent = `완료! 총 ${successCount}건이 저장되었습니다.`;
-            await customAlert("작업 완료", `AI 작업이 완료되었습니다. (${successCount}/${total}건 성공)`);
-            bootstrap.Modal.getInstance($('aiBatchModal')).hide();
-            renderAll();
+            const modalEl = $('aiBatchModal');
+            const aiModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+            if (document.activeElement && modalEl.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+
+            const taskLabel = currentAiTask === 'feedback' ? 'AI 피드백 일괄 생성' : '교사 시점 일괄 변환';
+
+            const onAiModalHidden = async () => {
+                modalEl.removeEventListener('hidden.bs.modal', onAiModalHidden);
+                $('aiProgressArea').classList.add('d-none');
+                $('btnStartAiBatch').disabled = false;
+                renderAll();
+                await customAlert("성공", `${taskLabel} 작업이 성공적으로 완료되었습니다.<br><span class="text-muted small">처리 결과: 총 ${total}건 중 ${successCount}건 저장 완료</span>`);
+            };
+
+            modalEl.addEventListener('hidden.bs.modal', onAiModalHidden);
+            aiModal.hide();
         });
 
         async function callGeminiApi(apiKey, model, promptTemplate, record) {
