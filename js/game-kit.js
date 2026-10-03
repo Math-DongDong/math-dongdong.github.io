@@ -149,17 +149,21 @@ export function firestoreRoom(collectionName) {
          * @param {boolean} askMode  false면 항상 빠른 입장으로 만듭니다.
          * @returns {string|null} 만들어진 방 코드
          */
-        async createRoom({ askMode = true, extra = {} } = {}) {
-            const mode = askMode ? await promptRoomMode() : 'quick';
-            if (!mode) return null;
+        async createRoom({ askMode = true, mode = null, extra = {} } = {}) {
+            const finalMode = mode || (askMode ? await promptRoomMode() : 'quick');
+            if (!finalMode) return null;
 
             // v4: 인증 방 학생의 학교는 방을 만든 선생님을 따릅니다 → 학교명이 꼭 있어야 합니다.
-            const teacherSchool = String(window.currentTeacherSchool || '').trim();
-            if (mode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
-                await customAlert("학교명이 필요해요",
-                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
-                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
-                return null;
+            let teacherSchool = String(window.currentTeacherSchool || '').trim();
+            if (finalMode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
+                if (window.isAdmin) {
+                    teacherSchool = '수학동동';
+                } else {
+                    await customAlert("학교명이 필요해요",
+                        "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
+                        "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
+                    return null;
+                }
             }
 
             // 메모 입력 (선택 사항)
@@ -176,8 +180,8 @@ export function firestoreRoom(collectionName) {
 
             await setDoc(roomDoc(code), {
                 roomCode: code,
-                roomMode: mode,
-                settings: { mode },
+                roomMode: finalMode,
+                settings: { mode: finalMode },
                 createdAt: fsTimestamp(),
                 createdBy: window.currentTeacherUid || '',
                 creatorName: window.currentTeacherName || '',
@@ -189,8 +193,8 @@ export function firestoreRoom(collectionName) {
             await customAlert("방 생성 완료",
                 `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.` +
                 (memo ? `<br>메모: <strong>${escapeHtml(memo)}</strong>` : '') + `<br>` +
-                `설정 모드: <strong>${mode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>` +
-                (mode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''));
+                `설정 모드: <strong>${finalMode === 'auth' ? '🔐 학생 인증 모드' : '🚀 빠른 입장 모드'}</strong>` +
+                (finalMode === 'auth' ? `<br>학생 학교: <strong>${escapeHtml(teacherSchool)}</strong>` : ''));
             return code;
         },
 
@@ -234,6 +238,7 @@ export function firestoreRoom(collectionName) {
 
             return onSnapshot(q, snap => {
                 const keep = selectEl.value;
+                const targetCode = selectEl.dataset.targetCode || keep;
                 let html = '<option value="">방을 선택하세요</option>';
                 let count = 0;
                 snap.forEach(d => {
@@ -246,7 +251,10 @@ export function firestoreRoom(collectionName) {
                     html = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
                 }
                 selectEl.innerHTML = html;
-                if (keep && [...selectEl.options].some(o => o.value === keep)) selectEl.value = keep;
+                if (targetCode && [...selectEl.options].some(o => o.value === targetCode)) {
+                    selectEl.value = targetCode;
+                    selectEl.dataset.targetCode = '';
+                }
             }, err => {
                 console.error('방 목록을 불러오지 못했습니다:', err);
                 if (typeof onError === 'function') onError(err);
