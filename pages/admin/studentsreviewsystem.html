@@ -324,7 +324,7 @@
         <div id="roomSelectBar" class="panel p-4 mb-5 shadow-sm">
             <div class="flex flex-wrap items-center gap-3">
                 <span class="text-sm font-bold text-ink flex items-center gap-1.5 whitespace-nowrap">
-                    <i class="bi bi-door-open"></i> 소감문 방 / 학급:
+                    <i class="bi bi-door-open"></i> 소감문 방 | 메모:
                 </span>
                 <div class="min-w-[220px] max-w-xs flex-1">
                     <select id="roomSelect" class="field mt-0 py-2 text-sm">
@@ -796,6 +796,33 @@
         </div>
     </div>
 
+    <!-- [모달 5] 학생 PIN 초기화 -->
+    <div class="modal fade" id="studentPinResetModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content panel p-6 shadow-xl border-line">
+                <div class="flex items-center justify-between pb-2 border-b border-line">
+                    <h5 class="text-lg font-extrabold text-stamp"><i class="bi bi-key-fill"></i> 학생 PIN 초기화</h5>
+                    <button type="button" class="text-ink-muted hover:text-ink text-xl leading-none" data-bs-dismiss="modal" aria-label="닫기">×</button>
+                </div>
+                <form id="studentPinResetForm">
+                    <div class="py-3">
+                        <p class="mb-3 text-sm leading-relaxed text-ink-muted">내 학교 학생의 학번을 입력하면 PIN이 초기화됩니다. 학생은 다음 접속 시 새 4자리 PIN을 설정합니다.</p>
+                        <label for="studentPinResetId" class="field-label mb-1.5 text-sm">학번 (숫자만)</label>
+                        <input type="text" id="studentPinResetId" class="field mt-1" placeholder="예: 1230" inputmode="numeric" maxlength="5" autocomplete="off">
+                        <div class="mt-4 rounded-lg border border-line bg-page/40 px-4 py-3 text-sm leading-relaxed text-ink-muted">
+                            여러 명을 한 번에 처리하거나 기기 등록을 초기화하려면 상단 메뉴의 <strong class="text-board">학생 관리</strong> 페이지를 이용하세요.
+                        </div>
+                        <p id="studentPinResetError" class="d-none mt-2 text-sm font-bold text-stamp" role="alert"></p>
+                    </div>
+                    <div class="flex justify-end gap-2 border-t border-line pt-3">
+                        <button type="button" class="btn btn-ghost btn-sm px-4" data-bs-dismiss="modal">취소</button>
+                        <button type="submit" class="btn btn-danger btn-sm px-5" id="btnExecuteStudentPinReset">초기화 실행</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- ============================================================== -->
     <!-- 4. 자바스크립트 로직 (Firebase Firestore 연동)                  -->
     <!-- ============================================================== -->
@@ -807,7 +834,7 @@
             onSnapshot, serverTimestamp, query, where, orderBy
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { firestoreRoom } from '../../js/game-kit.js?v=4.1';
-        import { renderRoomEntrance, resolveRoomOwner, makeStudentKey, customPrompt, resetStudentPin } from '../../js/room-auth.js?v=4.2';
+        import { renderRoomEntrance, resolveRoomOwner, makeStudentKey, resetStudentPin } from '../../js/room-auth.js?v=4.2';
         import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
 
         // ── 컬렉션 및 기본 상수 ──
@@ -1025,31 +1052,64 @@
             selectRoom(e.target.value);
         });
 
-        $('btnResetStudentPin').addEventListener('click', async () => {
-            if (!currentRoomCode) return customAlert('알림', '방을 먼저 선택하세요.');
-            const enteredStudentId = await customPrompt(
-                '<i class="bi bi-key"></i> 학생 PIN 초기화',
-                '내 학교 학생의 학번을 입력하면 PIN이 초기화됩니다. 학생은 다음 접속 시 새 4자리 PIN을 설정합니다.<br><strong>학번(숫자만)</strong>'
-            );
-            if (enteredStudentId === null) return;
-            const studentId = String(enteredStudentId).trim();
-            if (!studentId) return;
-            if (!/^\d{4,5}$/.test(studentId)) return customAlert('입력 확인', '학번은 숫자 4~5자리로 입력해주세요.');
+        const studentPinResetModal = bootstrap.Modal.getOrCreateInstance($('studentPinResetModal'));
+        const studentPinResetInput = $('studentPinResetId');
+        const studentPinResetError = $('studentPinResetError');
+        const studentPinResetButton = $('btnExecuteStudentPinReset');
 
+        $('btnResetStudentPin').addEventListener('click', () => {
+            if (!currentRoomCode) return customAlert('알림', '방을 먼저 선택하세요.');
+            studentPinResetInput.value = '';
+            studentPinResetError.textContent = '';
+            studentPinResetError.classList.add('d-none');
+            studentPinResetModal.show();
+        });
+
+        studentPinResetInput.addEventListener('input', () => {
+            studentPinResetInput.value = studentPinResetInput.value.replace(/\D/g, '').slice(0, 5);
+            studentPinResetError.classList.add('d-none');
+        });
+
+        $('studentPinResetModal').addEventListener('shown.bs.modal', () => studentPinResetInput.focus());
+
+        $('studentPinResetForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const studentId = studentPinResetInput.value.trim();
+            if (!/^\d{4,5}$/.test(studentId)) {
+                studentPinResetError.textContent = '학번은 숫자 4~5자리로 입력해주세요. (예: 1230)';
+                studentPinResetError.classList.remove('d-none');
+                studentPinResetInput.focus();
+                return;
+            }
+
+            studentPinResetButton.disabled = true;
+            studentPinResetButton.textContent = '처리 중...';
             try {
                 const selectedRoom = await roomKit.getRoomData(currentRoomCode);
                 const school = String(selectedRoom?.creatorSchool || window.currentTeacherSchool || (window.isAdmin ? '수학동동' : '')).trim();
-                if (!school) return customAlert('학교 정보 없음', '이 방의 학교 정보를 확인할 수 없어 PIN을 초기화할 수 없습니다.');
+                if (!school) {
+                    studentPinResetError.textContent = '이 방의 학교 정보를 확인할 수 없어 PIN을 초기화할 수 없습니다.';
+                    studentPinResetError.classList.remove('d-none');
+                    return;
+                }
                 const studentKey = makeStudentKey(school, studentId);
                 const studentSnap = await getDoc(doc(db, 'student_auth', studentKey));
-                if (!studentSnap.exists()) return customAlert('학생 확인', `${escapeHtml(studentId)} 학생 계정을 찾을 수 없습니다.`);
-                if (!await customConfirm('PIN 번호 초기화', `${escapeHtml(studentId)} 학생의 PIN을 초기화할까요?<br>다음 접속 때 새 PIN을 설정하게 됩니다.`)) return;
+                if (!studentSnap.exists()) {
+                    studentPinResetError.textContent = `${studentId} 학생 계정을 찾을 수 없습니다. 학번을 확인해주세요.`;
+                    studentPinResetError.classList.remove('d-none');
+                    return;
+                }
 
                 await resetStudentPin(studentKey);
+                studentPinResetModal.hide();
                 await customAlert('완료', `${escapeHtml(studentId)} 학생의 PIN이 초기화되었습니다.`);
             } catch (err) {
                 console.error('학생 PIN 초기화 오류:', err);
-                await customAlert('오류', 'PIN 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.');
+                studentPinResetError.textContent = 'PIN 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.';
+                studentPinResetError.classList.remove('d-none');
+            } finally {
+                studentPinResetButton.disabled = false;
+                studentPinResetButton.textContent = '초기화 실행';
             }
         });
 
