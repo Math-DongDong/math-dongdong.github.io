@@ -1703,13 +1703,19 @@
             if (!ok) return;
 
             try {
-                const newStudents = studentRoster.filter(s => s !== sid);
-                await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { students: newStudents });
+                const roomStudentSnapshot = await getDocs(roomKit.students(currentRoomCode));
+                const matchingRoomStudents = roomStudentSnapshot.docs.filter(studentDoc =>
+                    String(studentDoc.data()?.studentId || '') === String(sid)
+                );
+                await Promise.all(matchingRoomStudents.map(studentDoc => deleteDoc(studentDoc.ref)));
 
                 const targetRevs = allReviews.filter(r => r.studentId === sid);
                 for (const r of targetRevs) {
                     await deleteDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", r.id));
                 }
+
+                const newStudents = studentRoster.filter(studentId => studentId !== sid);
+                await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { students: newStudents });
 
                 customAlert("완료", `${sid} 학생이 삭제되었습니다.`);
             } catch (err) {
