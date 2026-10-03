@@ -359,6 +359,9 @@ function goToAdminPage() {
 function goToStudentManagerPage() {
     window.location.href = `${getRootPathForAuth()}pages/admin/student_manager.html`;
 }
+function goToReviewSystemPage() {
+    window.location.href = `${getRootPathForAuth()}pages/admin/studentsreviewsystem.html`;
+}
 
 function notifyAuthChanged() {
     window.dispatchEvent(new CustomEvent('teacherAuthChanged', {
@@ -442,6 +445,7 @@ function renderNavbarAuth(retryCount = 0) {
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoAdmin"><i class="bi bi-gear-fill me-2"></i>계정 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
+                        <li><a class="dropdown-item" href="#" id="btnGoReviews"><i class="bi bi-journal-text me-2"></i>소감문 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정 (학교명)</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
@@ -450,6 +454,7 @@ function renderNavbarAuth(retryCount = 0) {
             setTimeout(() => {
                 document.getElementById('btnGoAdmin').onclick = (e) => { e.preventDefault(); goToAdminPage(); };
                 document.getElementById('btnGoStudents').onclick = (e) => { e.preventDefault(); goToStudentManagerPage(); };
+                document.getElementById('btnGoReviews').onclick = (e) => { e.preventDefault(); goToReviewSystemPage(); };
                 document.getElementById('btnEditInfo').onclick = (e) => { e.preventDefault(); showTeacherInfoModal(user, data); };
                 document.getElementById('btnTeacherLogout').onclick = (e) => { e.preventDefault(); signOut(auth); };
             }, 0);
@@ -465,6 +470,7 @@ function renderNavbarAuth(retryCount = 0) {
                     <button class="btn btn-outline-primary btn-sm fw-bold dropdown-toggle shadow-sm" type="button" id="authDropdown" data-bs-toggle="dropdown" aria-expanded="false">${esc(data.name)} 선생님</button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0" aria-labelledby="authDropdown">
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
+                        <li><a class="dropdown-item" href="#" id="btnGoReviews"><i class="bi bi-journal-text me-2"></i>소감문 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
@@ -472,6 +478,7 @@ function renderNavbarAuth(retryCount = 0) {
                 </div>`;
             setTimeout(() => {
                 document.getElementById('btnGoStudents').onclick = (e) => { e.preventDefault(); goToStudentManagerPage(); };
+                document.getElementById('btnGoReviews').onclick = (e) => { e.preventDefault(); goToReviewSystemPage(); };
                 document.getElementById('btnEditInfo').onclick = (e) => { e.preventDefault(); showTeacherInfoModal(user, data); };
                 document.getElementById('btnTeacherLogout').onclick = (e) => { e.preventDefault(); signOut(auth); };
             }, 0);
