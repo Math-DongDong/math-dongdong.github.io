@@ -952,6 +952,7 @@ export function promptRoomMode() {
 export function promptStudentAuthModal({ isGuest = false, school = '', teacherName = '', initialSchool = '', initialStudentId = '' } = {}) {
     const roomSchool = String(school || initialSchool || '').trim();
     const roomTeacher = String(teacherName || '').trim();
+    ensureStudentAuthModalStyle();
 
     return new Promise((resolve) => {
         let modalEl = document.getElementById('studentAuthModal');
@@ -966,31 +967,31 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
                         </div>
                         <div class="modal-body py-3">
                             <div class="alert py-2 small mb-3" id="studentAuthModalNotice"></div>
-                            <ul class="list-group list-group-flush border rounded-3 mb-3">
-                                <li class="list-group-item d-flex justify-content-between align-items-center px-3">
-                                    <span class="text-secondary small fw-bold">학교</span>
-                                    <span class="fw-bold text-dark" id="authSchoolText"></span>
+                            <ul class="student-auth-info-list">
+                                <li class="student-auth-info-row">
+                                    <span class="student-auth-info-label">학교</span>
+                                    <span class="student-auth-info-value" id="authSchoolText"></span>
                                 </li>
-                                <li class="list-group-item d-flex justify-content-between align-items-center px-3">
-                                    <span class="text-secondary small fw-bold">선생님</span>
-                                    <span class="fw-bold text-dark" id="authTeacherText"></span>
+                                <li class="student-auth-info-row">
+                                    <span class="student-auth-info-label">선생님</span>
+                                    <span class="student-auth-info-value" id="authTeacherText"></span>
                                 </li>
                             </ul>
-                            <label class="form-label small fw-bold text-secondary" for="inputAuthStudentId">
+                            <label class="student-auth-field-label" for="inputAuthStudentId">
                                 학번 <span class="text-muted fw-normal">(숫자 4~5자리)</span>
                             </label>
-                            <input type="text" class="form-control form-control-lg bg-light text-center fw-bold" id="inputAuthStudentId"
+                            <input type="text" class="form-control form-control-lg student-auth-input" id="inputAuthStudentId"
                                 placeholder="예: 1230" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="${STUDENT_ID_MAX_LEN}" autocomplete="off">
-                            <div class="form-text small text-muted">학년·반·번호를 붙여 씁니다. 예) 1학년 2반 30번 → <b>1230</b>, 1학년 12반 5번 → <b>11205</b></div>
-                            <label class="form-label small fw-bold text-secondary mt-3" for="inputAuthPin">4자리 숫자 PIN</label>
-                            <input type="password" class="form-control form-control-lg bg-light text-center fw-bold" id="inputAuthPin"
+                            <div class="student-auth-help">학년·반·번호를 붙여 씁니다. 예) 1학년 2반 30번 → <b>1230</b>, 1학년 12반 5번 → <b>11205</b></div>
+                            <label class="student-auth-field-label student-auth-pin-label" for="inputAuthPin">4자리 숫자 PIN</label>
+                            <input type="password" class="form-control form-control-lg student-auth-input" id="inputAuthPin"
                                 placeholder="••••" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
-                            <div class="form-text small text-muted" id="authPinHelp"></div>
+                            <div class="student-auth-help" id="authPinHelp"></div>
                             <div id="authModalError" class="text-danger small fw-bold mt-2 d-none" role="alert"></div>
                         </div>
-                        <div class="modal-footer border-0 pt-0">
-                            <button type="button" class="btn btn-secondary rounded-3 px-3" data-bs-dismiss="modal">취소</button>
-                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold" id="btnConfirmStudentAuth">확인</button>
+                        <div class="modal-footer border-0 pt-0 student-auth-actions">
+                            <button type="button" class="btn btn-secondary rounded-3 px-3 student-auth-cancel" data-bs-dismiss="modal">취소</button>
+                            <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold student-auth-confirm" id="btnConfirmStudentAuth">확인</button>
                         </div>
                     </div>
                 </div>
@@ -1060,6 +1061,116 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
         modalEl.addEventListener('hidden.bs.modal', onHidden);
         bsModal.show();
     });
+}
+
+function ensureStudentAuthModalStyle() {
+    if (document.getElementById('student-auth-modal-style')) return;
+    const style = document.createElement('style');
+    style.id = 'student-auth-modal-style';
+    style.textContent = `
+        #studentAuthModal .modal-content {
+            border: 1px solid #d8dee7;
+            border-radius: 1rem;
+            background: #fff;
+            box-shadow: 0 18px 42px rgba(20, 32, 45, .2);
+        }
+        #studentAuthModal .modal-title {
+            color: #253244;
+            font-weight: 800;
+        }
+        #studentAuthModal .modal-body { padding-top: 1.25rem; }
+        #studentAuthModalNotice {
+            border: 1px solid #91e5f8;
+            border-radius: .55rem;
+            line-height: 1.55;
+        }
+        #studentAuthModalNotice.alert-info {
+            background: #d9f6fc;
+            color: #075d72;
+        }
+        #studentAuthModalNotice.alert-warning {
+            border-color: #f2d58a;
+            background: #fff6dc;
+            color: #72540b;
+        }
+        #studentAuthModal .student-auth-info-list {
+            margin: 0 0 1.25rem;
+            padding: 0;
+            list-style: none;
+            overflow: hidden;
+            border: 1px solid #d8dee7;
+            border-radius: .65rem;
+        }
+        #studentAuthModal .student-auth-info-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: .65rem 1rem;
+            border-bottom: 1px solid #d8dee7;
+        }
+        #studentAuthModal .student-auth-info-row:last-child { border-bottom: 0; }
+        #studentAuthModal .student-auth-info-label {
+            flex: 0 0 auto;
+            color: #7b8490;
+            font-size: .875rem;
+            font-weight: 600;
+        }
+        #studentAuthModal .student-auth-info-value {
+            min-width: 0;
+            color: #18212b;
+            font-weight: 750;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+        #studentAuthModal .student-auth-field-label {
+            display: block;
+            margin: 0 0 .35rem;
+            color: #697482;
+            font-size: .875rem;
+            font-weight: 700;
+        }
+        #studentAuthModal .student-auth-pin-label { margin-top: 1rem; }
+        #studentAuthModal .student-auth-input {
+            box-sizing: border-box;
+            width: 100%;
+            border: 1px solid #d8dee7;
+            border-radius: .6rem;
+            background: #f7f8fa;
+            color: #18212b;
+            text-align: center;
+            font-weight: 750;
+        }
+        #studentAuthModal .student-auth-input::placeholder { color: #9aa3ad; opacity: 1; }
+        #studentAuthModal .student-auth-input:focus {
+            border-color: #24493d;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(36, 73, 61, .14);
+        }
+        #studentAuthModal .student-auth-help {
+            margin-top: .3rem;
+            color: #78828e;
+            font-size: .78rem;
+            line-height: 1.55;
+        }
+        #studentAuthModal .student-auth-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        #studentAuthModal .student-auth-cancel {
+            border: 1px solid #c9d0d8;
+            background: #747e88;
+            color: #fff;
+        }
+        #studentAuthModal .student-auth-confirm {
+            border: 1px solid #0d6efd;
+            background: #0d6efd;
+            color: #fff;
+        }
+    `;
+    document.head.appendChild(style);
 }
 
 /**
