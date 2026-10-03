@@ -1381,27 +1381,69 @@ export function promptNewPinModal() {
 }
 
 /** 게스트 입장 대기 스피너 모달 */
-export function showGuestWaitingModal(onCancel) {
+export function showGuestWaitingModal(onCancel, { studentId = '', destinationLabel = '게임 화면' } = {}) {
     let modalEl = document.getElementById('guestWaitingModal');
     if (!modalEl) {
         document.body.insertAdjacentHTML('beforeend', `
         <div class="modal fade" id="guestWaitingModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content rounded-4 border-0 shadow text-center p-4">
-                    <div class="spinner-border text-primary mx-auto my-3" style="width: 3.5rem; height: 3.5rem;" role="status">
+                <div class="modal-content guest-waiting-content rounded-4 border-0 shadow text-center p-4">
+                    <div class="spinner-border guest-waiting-spinner mx-auto my-3" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
-                    <h5 class="fw-bold text-dark mb-2">선생님의 승인을 기다리고 있습니다</h5>
-                    <p class="text-muted small mb-1">내 이름: <b class="text-primary" id="guestWaitNickname"></b></p>
-                    <p class="text-muted small mb-4">선생님이 대시보드에서 입장을 승인하면 자동으로 게임 화면으로 이동합니다.</p>
-                    <div>
-                        <button type="button" class="btn btn-outline-secondary rounded-3 px-4" id="btnCancelGuestWait">입장 대기 취소</button>
-                    </div>
+                    <h5 class="guest-waiting-title mb-2">선생님의 승인을 기다리고 있습니다</h5>
+                    <p class="guest-waiting-student mb-1">내 학번: <b id="guestWaitStudentId"></b></p>
+                    <p class="guest-waiting-message mb-4" id="guestWaitMessage"></p>
+                    <button type="button" class="btn btn-outline-secondary rounded-3 px-4 guest-waiting-cancel" id="btnCancelGuestWait">입장 대기 취소</button>
                 </div>
             </div>
         </div>`);
         modalEl = document.getElementById('guestWaitingModal');
+        const style = document.createElement('style');
+        style.id = 'guest-waiting-modal-style';
+        style.textContent = `
+            #guestWaitingModal .guest-waiting-content {
+                align-items: center;
+                padding: 1.5rem;
+                border-radius: 1.15rem;
+                background: #fff;
+                box-shadow: 0 18px 42px rgba(20, 32, 45, .2);
+            }
+            #guestWaitingModal .guest-waiting-spinner {
+                width: 4rem;
+                height: 4rem;
+                border-width: .3rem;
+                color: #1677ff;
+            }
+            #guestWaitingModal .guest-waiting-title {
+                color: #252b33;
+                font-size: 1.25rem;
+                font-weight: 800;
+            }
+            #guestWaitingModal .guest-waiting-student {
+                color: #7b8490;
+                font-size: .9rem;
+            }
+            #guestWaitingModal .guest-waiting-student b {
+                color: #1677ff;
+                font-weight: 750;
+            }
+            #guestWaitingModal .guest-waiting-message {
+                color: #77818d;
+                font-size: .9rem;
+                line-height: 1.55;
+            }
+            #guestWaitingModal .guest-waiting-cancel {
+                border: 1px solid #77818d;
+                background: #fff;
+                color: #66717d;
+            }
+        `;
+        document.head.appendChild(style);
     }
+
+    document.getElementById('guestWaitStudentId').textContent = studentId;
+    document.getElementById('guestWaitMessage').textContent = `선생님이 대시보드에서 입장을 승인하면 자동으로 ${destinationLabel}으로 이동합니다.`;
 
     const bsModal = bsModalFor(modalEl);
     const cancelBtn = document.getElementById('btnCancelGuestWait');
@@ -1415,10 +1457,6 @@ export function showGuestWaitingModal(onCancel) {
     bsModal.show();
 
     return {
-        setNickname: (nick) => {
-            const el = document.getElementById('guestWaitNickname');
-            if (el) el.textContent = nick || '';
-        },
         close: () => {
             cancelBtn.onclick = null;
             bsModal.hide();
@@ -1603,6 +1641,7 @@ export function renderRoomEntrance(container, options = {}) {
         // ★ RTDB 게임(오목·가위바위보·블로토)처럼 인증 모드가 없는 페이지는
         //   showGuestToggle: false 로 두면 헷갈리는 체크박스가 사라집니다.
         showGuestToggle = true,
+        waitingDestination = '게임 화면',
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -1958,8 +1997,7 @@ export function renderRoomEntrance(container, options = {}) {
                     }
                     releasePresence();
                     clearGuestAuth();
-                });
-                waitingModal.setNickname(guestNick);
+                }, { studentId: guestInput.studentId, destinationLabel: waitingDestination });
 
                 if (!guestGateRef) {
                     waitingModal.close();
