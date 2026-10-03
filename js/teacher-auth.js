@@ -360,7 +360,7 @@ function goToStudentManagerPage() {
     window.location.href = `${getRootPathForAuth()}pages/admin/student_manager.html`;
 }
 function goToReviewSystemPage() {
-    window.location.href = `${getRootPathForAuth()}pages/admin/studentsreviewsystem.html`;
+    window.open(`${getRootPathForAuth()}pages/admin/studentsreviewsystem.html`, '_blank');
 }
 
 function notifyAuthChanged() {

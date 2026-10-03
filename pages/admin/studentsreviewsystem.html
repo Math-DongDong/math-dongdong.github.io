@@ -9,7 +9,6 @@
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="../../css/navbar.css">
     <link rel="stylesheet" href="../../css/dashboard.css">
     <!-- Pretendard Font -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
@@ -128,9 +127,6 @@
 </head>
 
 <body>
-    <!-- 상단 네비게이션바 -->
-    <div id="navbar-placeholder"></div>
-    <script src="../../js/navbar.js"></script>
 
     <!-- 공통 알림/확인 모달 -->
     <div class="modal fade" id="sysModal" tabindex="-1" aria-hidden="true">
@@ -158,12 +154,15 @@
                 </h1>
                 <p class="small text-white-50 mb-0">창의적 체험활동 소감문 작성 · 교사 피드백 · 생기부 교사 시점 AI 변환</p>
             </div>
-            <!-- 역할 전환 버튼 및 방 선택 -->
-            <div class="d-flex align-items-center flex-wrap gap-2">
-                <div class="btn-group bg-white p-1 rounded-3 shadow-sm" role="group">
-                    <button type="button" id="roleBtnStudent" class="btn btn-sm btn-board active rounded-2">🧑‍🎓 학생 모드</button>
-                    <button type="button" id="roleBtnTeacher" class="btn btn-sm btn-outline-secondary rounded-2">👩‍🏫 교사 모드</button>
-                </div>
+            <!-- 교사 모드일 때 교사 정보 및 로그아웃 -->
+            <div id="teacherHeaderInfo" class="d-none d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark px-3 py-2 fs-6">👩‍🏫 교사 모드</span>
+                <span class="small text-white-50" id="teacherNameDisplay"></span>
+                <button type="button" id="btnTeacherLogoutHeader" class="btn btn-sm btn-outline-light">로그아웃</button>
+            </div>
+            <!-- 학생 모드일 때 표시 -->
+            <div id="studentHeaderInfo" class="d-none">
+                <span class="badge bg-light text-dark px-3 py-2 fs-6">🧑‍🎓 학생 모드</span>
             </div>
         </div>
     </header>
@@ -172,7 +171,7 @@
         <!-- ============================================================== -->
         <!-- 방/학급 선택 바 (공통)                                          -->
         <!-- ============================================================== -->
-        <div class="card card-custom p-3 mb-4 bg-light">
+        <div id="roomSelectBar" class="card card-custom p-3 mb-4 bg-light">
             <div class="row g-2 align-items-center">
                 <div class="col-md-3">
                     <label class="form-label small fw-bold mb-1 text-secondary">
@@ -199,17 +198,34 @@
         <!-- 1. 학생 화면 섹션                                              -->
         <!-- ============================================================== -->
         <section id="studentSection">
-            <!-- 1-1. 학생 로그인 폼 (로그인 전) -->
-            <div id="studentLoginBox" class="mx-auto card card-custom p-4 shadow-sm" style="max-width: 440px;">
+            <!-- 1-0. 학생 방 코드 입력 화면 (첫 진입) -->
+            <div id="studentRoomEntryBox" class="mx-auto card card-custom p-4 shadow-sm" style="max-width: 440px;">
+                <div class="text-center mb-3">
+                    <div class="mb-3"><i class="bi bi-door-open-fill text-board" style="font-size: 3rem;"></i></div>
+                    <h2 class="h5 fw-bold text-dark mb-1">소감문 방 입장</h2>
+                    <p class="text-muted small">선생님이 알려준 방 코드를 입력하세요.</p>
+                </div>
+                <form id="roomEntryForm" onsubmit="return false;">
+                    <div class="mb-3">
+                        <label for="roomEntryCode" class="form-label small fw-bold">방 코드 (4~6자리)</label>
+                        <input type="text" id="roomEntryCode" class="form-control form-control-lg text-center fw-bold" placeholder="예: 7421" required maxlength="6" style="letter-spacing: 4px; font-size: 1.5rem;">
+                    </div>
+                    <button type="submit" id="btnEnterRoom" class="btn btn-board w-100 py-2 fw-bold">
+                        <i class="bi bi-box-arrow-in-right me-1"></i> 방 입장하기
+                    </button>
+                </form>
+            </div>
+
+            <!-- 1-1. 학생 로그인 폼 (방 코드 입력 후) -->
+            <div id="studentLoginBox" class="mx-auto card card-custom p-4 shadow-sm d-none" style="max-width: 440px;">
                 <div class="text-center mb-3">
                     <h2 class="h5 fw-bold text-dark mb-1">소감문 작성 로그인</h2>
-                    <p class="text-muted small">선생님이 개설한 방 코드와 본인의 학번을 입력하세요.</p>
+                    <p class="text-muted small">학번과 비밀번호를 입력하세요.</p>
+                    <span class="badge bg-secondary px-3 py-1" id="studentEnteredRoomBadge">방 코드: ---</span>
+                    <button type="button" id="btnBackToRoomEntry" class="btn btn-sm btn-link text-muted mt-1 d-block mx-auto">← 다른 방 코드 입력</button>
                 </div>
                 <form id="studentLoginForm" onsubmit="return false;">
-                    <div class="mb-3">
-                        <label for="studentInputRoomCode" class="form-label small fw-bold">방 코드 (4~6자리)</label>
-                        <input type="text" id="studentInputRoomCode" class="form-control" placeholder="예: 7421" required>
-                    </div>
+                    <input type="hidden" id="studentInputRoomCode">
                     <div class="mb-3">
                         <label for="studentInputId" class="form-label small fw-bold">학번</label>
                         <input type="text" id="studentInputId" class="form-control" placeholder="예: 1101" required>
@@ -748,7 +764,8 @@
     <!-- 4. 자바스크립트 로직 (Firebase Firestore 연동)                  -->
     <!-- ============================================================== -->
     <script type="module">
-        import { db } from '../../js/firebase-config.js';
+        import { auth, db } from '../../js/firebase-config.js';
+        import { onAuthStateChanged, signOut as firebaseSignOut } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
         import {
             collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
             onSnapshot, serverTimestamp, query, where, orderBy
@@ -780,6 +797,7 @@
 
         // ── 애플리케이션 상태 ──
         let currentMode = 'student';         // 'student' | 'teacher'
+        let isTeacherLocked = false;         // 교사 승인 시 모드 고정
         let currentRoomCode = '';
         let roomData = null;                 // 현재 방 문서 데이터
         let unsubRoomDoc = null;
@@ -833,35 +851,86 @@
             });
         }
 
-        // ── 1. 역할 전환 및 초기화 ──
-        $('roleBtnStudent').addEventListener('click', () => switchRole('student'));
-        $('roleBtnTeacher').addEventListener('click', () => switchRole('teacher'));
+        // ── 0. Firebase Auth 기반 자동 모드 전환 ──
+        const ADMIN_EMAIL = 'jjes0107@gmail.com';
 
         function switchRole(role) {
             currentMode = role;
-            $('roleBtnStudent').classList.toggle('active', role === 'student');
-            $('roleBtnStudent').classList.toggle('btn-board', role === 'student');
-            $('roleBtnStudent').classList.toggle('btn-outline-secondary', role !== 'student');
-
-            $('roleBtnTeacher').classList.toggle('active', role === 'teacher');
-            $('roleBtnTeacher').classList.toggle('btn-board', role === 'teacher');
-            $('roleBtnTeacher').classList.toggle('btn-outline-secondary', role !== 'teacher');
-
             $('studentSection').classList.toggle('d-none', role !== 'student');
             $('teacherSection').classList.toggle('d-none', role !== 'teacher');
 
+            // 방 관리 컨트롤은 교사만
             $('teacherRoomControls').classList.toggle('d-none', role !== 'teacher');
+            // 방 선택 바: 교사만 표시
+            $('roomSelectBar').classList.toggle('d-none', role !== 'teacher');
 
-            if (role === 'teacher') checkTeacherAuth();
+            // 헤더 모드 표시
+            $('teacherHeaderInfo').classList.toggle('d-none', role !== 'teacher');
+            $('studentHeaderInfo').classList.toggle('d-none', role !== 'student');
         }
 
-        function checkTeacherAuth() {
-            const isAuth = !!(window.isApprovedTeacher || window.isAdmin);
-            $('teacherAuthGate').classList.toggle('d-none', isAuth);
-            $('teacherDashboard').classList.toggle('d-none', !isAuth);
-        }
-        window.addEventListener('teacherAuthChanged', checkTeacherAuth);
-        setTimeout(checkTeacherAuth, 500);
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                try {
+                    const teacherSnap = await getDoc(doc(db, "teachers", user.uid));
+                    if (teacherSnap.exists()) {
+                        const data = teacherSnap.data() || {};
+                        const isApproved = user.email === ADMIN_EMAIL || data.status === 'approved';
+                        if (isApproved) {
+                            // 승인된 교사 → 교사 모드 고정
+                            isTeacherLocked = true;
+                            window.isApprovedTeacher = true;
+                            window.isAdmin = user.email === ADMIN_EMAIL;
+                            window.currentTeacherUid = user.uid;
+                            $('teacherNameDisplay').textContent = `${data.name || '교사'} 선생님 (${data.school || ''})`;
+                            switchRole('teacher');
+                            $('teacherAuthGate').classList.add('d-none');
+                            $('teacherDashboard').classList.remove('d-none');
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    console.error("교사 인증 확인 오류:", err);
+                }
+            }
+            // 미승인 또는 로그인하지 않은 경우 → 학생 모드 고정
+            isTeacherLocked = false;
+            window.isApprovedTeacher = false;
+            window.isAdmin = false;
+            switchRole('student');
+        });
+
+        // 교사 로그아웃
+        $('btnTeacherLogoutHeader').addEventListener('click', async () => {
+            const ok = await customConfirm("로그아웃", "교사 모드에서 로그아웃 하시겠습니까?");
+            if (!ok) return;
+            await firebaseSignOut(auth);
+        });
+
+        // ── 1. 학생 방 코드 입력 화면 로직 ──
+        $('roomEntryForm').addEventListener('submit', async () => {
+            const code = $('roomEntryCode').value.trim();
+            if (!code) return customAlert("알림", "방 코드를 입력해주세요.");
+
+            // 방 존재 확인
+            const docSnap = await getDoc(doc(db, COLLECTION_NAME, code));
+            if (!docSnap.exists()) return customAlert("오류", "존재하지 않는 방 코드입니다. 선생님에게 확인해주세요.");
+
+            // 방 코드로 진입 → 로그인 화면 표시
+            $('studentInputRoomCode').value = code;
+            $('studentEnteredRoomBadge').textContent = `방 코드: ${code}`;
+            $('studentRoomEntryBox').classList.add('d-none');
+            $('studentLoginBox').classList.remove('d-none');
+
+            // 방 구독 시작
+            await selectRoom(code);
+        });
+
+        $('btnBackToRoomEntry').addEventListener('click', () => {
+            $('studentLoginBox').classList.add('d-none');
+            $('studentRoomEntryBox').classList.remove('d-none');
+            $('roomEntryCode').value = '';
+        });
 
         // ── 2. 방 관리 (생성, 목록 구독, 삭제) ──
         let unsubRooms = roomKit.watchRooms($('roomSelect'));
@@ -870,19 +939,12 @@
             if (!window.isApprovedTeacher && !window.isAdmin) {
                 return customAlert("알림", "방 생성은 승인된 교사만 가능합니다.");
             }
+            // 학생인증모드(askMode: false)로만 생성
             const code = await roomKit.createRoom({
                 askMode: false,
                 extra: {
-                    activities: [
-                        { date: '2026-03-12', activity: '학교폭력 예방교육' },
-                        { date: '2026-04-09', activity: '디지털 시민교육' },
-                        { date: '2026-05-21', activity: '생명존중 교육' }
-                    ],
-                    students: [
-                        { id: '1101', pw: DEFAULT_STUDENT_PW },
-                        { id: '1102', pw: DEFAULT_STUDENT_PW },
-                        { id: '1103', pw: DEFAULT_STUDENT_PW }
-                    ],
+                    activities: [],
+                    students: [],
                     prompts: [
                         { name: '칭찬 한 가지 + 보완 한 가지', type: 'feedback', text: DEFAULT_PROMPTS.feedback },
                         { name: '생기부 관찰기록 명사형', type: 'teacherView', text: DEFAULT_PROMPTS.teacherView }
@@ -909,13 +971,11 @@
                 $('btnDeleteRoom').disabled = true;
                 $('activeRoomInfo').textContent = '';
                 $('roomStatusText').textContent = '방을 선택하면 소감문 관리가 시작됩니다.';
-                $('studentInputRoomCode').value = '';
                 renderAll();
                 return;
             }
 
             $('btnDeleteRoom').disabled = false;
-            $('studentInputRoomCode').value = code;
             $('activeRoomInfo').innerHTML = `<span class="badge bg-secondary">방 코드: ${code}</span>`;
 
             // 방 문서 실시간 구독 (활동, 학생 명단, 프롬프트)
@@ -1010,15 +1070,17 @@
             if (!ok) return;
             currentStudentId = '';
             $('studentDashboardBox').classList.add('d-none');
-            $('studentLoginBox').classList.remove('d-none');
+            $('studentLoginBox').classList.add('d-none');
+            $('studentRoomEntryBox').classList.remove('d-none');
+            $('roomEntryCode').value = '';
             resetStudentForm();
         });
 
-        // 자동 로그인 복원
+        // 자동 로그인 복원 (방 코드가 저장되어 있으면 방 입장 화면에 미리 채움)
         try {
             const saved = JSON.parse(localStorage.getItem('student_review_auth'));
             if (saved && saved.roomCode && saved.sid) {
-                $('studentInputRoomCode').value = saved.roomCode;
+                $('roomEntryCode').value = saved.roomCode;
                 $('studentInputId').value = saved.sid;
                 $('studentInputPw').value = saved.pw;
             }
