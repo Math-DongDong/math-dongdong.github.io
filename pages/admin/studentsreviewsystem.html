@@ -1908,6 +1908,7 @@
                                     <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 btn-edit-fb" data-id="${r.id}">
                                         ${r.feedback ? '수정' : '작성'}
                                     </button>
+                                    ${r.feedback ? `<button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 text-stamp btn-remove-fb" data-id="${r.id}"><i class="bi bi-trash3" aria-hidden="true"></i> 제거</button>` : ''}
                                 </div>
 
                                 <div class="p-2.5 rounded-lg bg-page/70 border border-line flex justify-between items-start gap-2">
@@ -1918,6 +1919,7 @@
                                     <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 btn-edit-tv" data-id="${r.id}">
                                         ${r.teacherView ? '수정' : '작성'}
                                     </button>
+                                    ${r.teacherView ? `<button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 text-stamp btn-remove-tv" data-id="${r.id}"><i class="bi bi-trash3" aria-hidden="true"></i> 제거</button>` : ''}
                                 </div>
                             </td>
                         </tr>
@@ -1956,6 +1958,14 @@
 
             tbody.querySelectorAll('.btn-edit-tv').forEach(b => {
                 b.addEventListener('click', () => openTextEditModal(b.dataset.id, 'teacherView'));
+            });
+
+            tbody.querySelectorAll('.btn-remove-fb').forEach(b => {
+                b.addEventListener('click', () => removeReviewText(b.dataset.id, 'feedback'));
+            });
+
+            tbody.querySelectorAll('.btn-remove-tv').forEach(b => {
+                b.addEventListener('click', () => removeReviewText(b.dataset.id, 'teacherView'));
             });
 
             updateBulkBar();
@@ -2010,6 +2020,27 @@
                 renderAll();
             };
             modal.show();
+        }
+
+        async function removeReviewText(reviewId, field) {
+            const review = allReviews.find(item => item.id === reviewId);
+            if (!review || !review[field]) return;
+
+            const label = field === 'feedback' ? '피드백' : '교사 시점 관찰 글';
+            const confirmed = await customConfirm(
+                `${label} 제거`,
+                `[<strong>${escapeHtml(review.studentId)}</strong>] 학생의 ${label} 내용을 제거하시겠습니까? 다시 작성할 수 있습니다.`
+            );
+            if (!confirmed) return;
+
+            try {
+                await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", reviewId), { [field]: '' });
+                review[field] = '';
+                renderAll();
+            } catch (err) {
+                console.error(`${label} 제거 오류:`, err);
+                await customAlert('오류', `${label} 제거 중 오류가 발생했습니다.`);
+            }
         }
 
         // ── 5. AI 일괄 작업 (Gemini API) ──
