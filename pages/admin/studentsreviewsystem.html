@@ -432,6 +432,9 @@
                     <button type="button" id="btnResetStudentPin" class="btn btn-ghost btn-sm whitespace-nowrap" disabled>
                         <i class="bi bi-key"></i> PIN 초기화
                     </button>
+                    <button type="button" id="btnDeleteStudent" class="btn btn-ghost btn-sm text-stamp whitespace-nowrap" disabled>
+                        <i class="bi bi-person-x"></i> 학생 삭제
+                    </button>
                 </div>
                 <div class="ml-auto" id="activeRoomInfo"></div>
             </div>
@@ -675,12 +678,11 @@
                                             <th class="th w-16 text-center">상태</th>
                                             <th class="th w-16 text-center">확인</th>
                                             <th class="th">소감문 내용 및 교사 피드백 / 교사 시점</th>
-                                            <th class="th w-16 text-center">관리</th>
                                         </tr>
                                     </thead>
                                     <tbody id="teacherReviewTbody">
                                         <tr>
-                                            <td colspan="7" class="td py-14 text-center text-ink-muted">방을 선택해주세요.</td>
+                                            <td colspan="6" class="td py-14 text-center text-ink-muted">방을 선택해주세요.</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -908,6 +910,30 @@
                     <div class="flex justify-end gap-2 pt-3">
                         <button type="button" class="btn btn-ghost btn-sm px-4" data-bs-dismiss="modal">취소</button>
                         <button type="submit" class="btn btn-danger btn-sm px-5" id="btnExecuteStudentPinReset">초기화 실행</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- [모달 6] 학생 삭제 -->
+    <div class="modal fade" id="studentDeleteModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content panel p-6 shadow-xl border-line">
+                <div class="flex items-center justify-between pb-2">
+                    <h5 class="text-lg font-extrabold text-stamp"><i class="bi bi-person-x-fill"></i> 학생 삭제</h5>
+                    <button type="button" class="text-ink-muted hover:text-ink text-xl leading-none" data-bs-dismiss="modal" aria-label="닫기">×</button>
+                </div>
+                <form id="studentDeleteForm">
+                    <div class="py-3">
+                        <p class="mb-3 text-sm leading-relaxed text-ink-muted">현재 선택한 방에서 해당 학번 학생을 삭제합니다. 학생 명단과 작성한 소감문 기록도 함께 삭제됩니다.</p>
+                        <label for="studentDeleteId" class="field-label mb-1.5 text-sm">학번 (숫자만)</label>
+                        <input type="text" id="studentDeleteId" class="field mt-1" placeholder="예: 1230" inputmode="numeric" maxlength="5" autocomplete="off">
+                        <p id="studentDeleteError" class="d-none mt-2 text-sm font-bold text-stamp" role="alert"></p>
+                    </div>
+                    <div class="flex justify-end gap-2 pt-3">
+                        <button type="button" class="btn btn-ghost btn-sm px-4" data-bs-dismiss="modal">취소</button>
+                        <button type="submit" class="btn btn-danger btn-sm px-5" id="btnExecuteStudentDelete">삭제 실행</button>
                     </div>
                 </form>
             </div>
@@ -1218,6 +1244,50 @@
             }
         });
 
+        const studentDeleteModal = bootstrap.Modal.getOrCreateInstance($('studentDeleteModal'));
+        const studentDeleteInput = $('studentDeleteId');
+        const studentDeleteError = $('studentDeleteError');
+        const studentDeleteButton = $('btnExecuteStudentDelete');
+
+        $('btnDeleteStudent').addEventListener('click', () => {
+            if (!currentRoomCode) return customAlert('알림', '방을 먼저 선택하세요.');
+            studentDeleteInput.value = '';
+            studentDeleteError.textContent = '';
+            studentDeleteError.classList.add('d-none');
+            studentDeleteModal.show();
+        });
+
+        studentDeleteInput.addEventListener('input', () => {
+            studentDeleteInput.value = studentDeleteInput.value.replace(/\D/g, '').slice(0, 5);
+            studentDeleteError.classList.add('d-none');
+        });
+
+        $('studentDeleteModal').addEventListener('shown.bs.modal', () => studentDeleteInput.focus());
+
+        $('studentDeleteForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const studentId = studentDeleteInput.value.trim();
+            if (!/^\d{4,5}$/.test(studentId)) {
+                studentDeleteError.textContent = '학번은 숫자 4~5자리로 입력해주세요. (예: 1230)';
+                studentDeleteError.classList.remove('d-none');
+                studentDeleteInput.focus();
+                return;
+            }
+
+            studentDeleteButton.disabled = true;
+            studentDeleteButton.textContent = '처리 중...';
+            try {
+                const deleted = await deleteStudentFromRoom(studentId);
+                if (deleted) {
+                    studentDeleteModal.hide();
+                    await customAlert('완료', `${escapeHtml(studentId)} 학생이 삭제되었습니다.`);
+                }
+            } finally {
+                studentDeleteButton.disabled = false;
+                studentDeleteButton.textContent = '삭제 실행';
+            }
+        });
+
         function renderGuestApprovals(students) {
             const box = $('guestApprovalBox');
             const pending = (students || []).filter(student => student?.isGuest && student.status === 'pending');
@@ -1291,6 +1361,7 @@
                 selectedActivityDate = '';
                 $('btnDeleteRoom').disabled = true;
                 $('btnResetStudentPin').disabled = true;
+                $('btnDeleteStudent').disabled = true;
                 $('activeRoomInfo').textContent = '';
                 $('guestApprovalBox').innerHTML = '';
                 $('guestApprovalBox').classList.add('d-none');
@@ -1303,6 +1374,7 @@
 
             $('btnDeleteRoom').disabled = false;
             $('btnResetStudentPin').disabled = false;
+            $('btnDeleteStudent').disabled = false;
             if (isTeacherLocked) openQrPanel();
             $('activeRoomInfo').innerHTML = `<span class="inline-block rounded-xl bg-board text-chalk text-sm sm:text-base font-extrabold px-3.5 py-1.5 shadow-sm tracking-wider">방 코드: ${code}</span>`;
 
@@ -1698,9 +1770,9 @@
         });
 
         async function deleteStudentFromRoom(sid) {
-            if (!currentRoomCode || !sid) return;
+            if (!currentRoomCode || !sid) return false;
             const ok = await customConfirm("학생 삭제", `[<strong>${escapeHtml(sid)}</strong>] 학생을 이 방의 학생 목록에서 삭제하시겠습니까?\n(해당 학생이 작성한 소감문 기록도 함께 정리됩니다.)`);
-            if (!ok) return;
+            if (!ok) return false;
 
             try {
                 const roomStudentSnapshot = await getDocs(roomKit.students(currentRoomCode));
@@ -1717,10 +1789,11 @@
                 const newStudents = studentRoster.filter(studentId => studentId !== sid);
                 await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { students: newStudents });
 
-                customAlert("완료", `${sid} 학생이 삭제되었습니다.`);
+                return true;
             } catch (err) {
                 console.error("학생 삭제 오류:", err);
-                customAlert("오류", "학생 삭제 중 오류가 발생했습니다.");
+                await customAlert("오류", "학생 삭제 중 오류가 발생했습니다.");
+                return false;
             }
         }
 
@@ -1805,7 +1878,7 @@
             }
 
             if (!displayRows.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="td text-center py-10 text-ink-muted">해당하는 소감문 또는 학생 데이터가 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="td text-center py-10 text-ink-muted">해당하는 소감문 또는 학생 데이터가 없습니다.</td></tr>';
                 return;
             }
 
@@ -1844,11 +1917,6 @@
                                     </button>
                                 </div>
                             </td>
-                            <td class="td text-center">
-                                <button type="button" class="btn btn-ghost btn-sm text-stamp p-1 btn-delete-student" data-sid="${escapeHtml(r.studentId)}" title="학생 삭제">
-                                    <i class="bi bi-person-x"></i>
-                                </button>
-                            </td>
                         </tr>
                     `;
                 } else {
@@ -1863,11 +1931,6 @@
                             <td class="td text-center text-ink-muted">-</td>
                             <td class="td">
                                 <div class="text-ink-muted text-xs italic py-2"><i class="bi bi-hourglass-split mr-1"></i>아직 소감문을 제출하지 않았습니다.</div>
-                            </td>
-                            <td class="td text-center">
-                                <button type="button" class="btn btn-ghost btn-sm text-stamp p-1 btn-delete-student" data-sid="${escapeHtml(r.studentId)}" title="학생 삭제">
-                                    <i class="bi bi-person-x"></i>
-                                </button>
                             </td>
                         </tr>
                     `;
@@ -1889,10 +1952,6 @@
 
             tbody.querySelectorAll('.btn-edit-tv').forEach(b => {
                 b.addEventListener('click', () => openTextEditModal(b.dataset.id, 'teacherView'));
-            });
-
-            tbody.querySelectorAll('.btn-delete-student').forEach(b => {
-                b.addEventListener('click', () => deleteStudentFromRoom(b.dataset.sid));
             });
 
             updateBulkBar();
