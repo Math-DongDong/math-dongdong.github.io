@@ -1663,6 +1663,7 @@ export function renderRoomEntrance(container, options = {}) {
         // ★ RTDB 게임(오목·가위바위보·블로토)처럼 인증 모드가 없는 페이지는
         //   showGuestToggle: false 로 두면 헷갈리는 체크박스가 사라집니다.
         showGuestToggle = true,
+        authenticatedRoomKey = null,
         waitingDestination = '게임 화면',
         onJoin = null,
         onAdminSuccess = null,
@@ -1781,6 +1782,7 @@ export function renderRoomEntrance(container, options = {}) {
         //  그 매핑 하나가 순위표의 익명성을 통째로 무너뜨립니다.
         //  대신 방마다 빈 마커 문서로 이름을 선점합니다.
         const markerRefFn = (nick) => {
+            if (options.useNicknameMarkers === false) return null;
             if (typeof options.nicknameMarkerRef === 'function') {
                 return options.nicknameMarkerRef(roomCode, nick);
             }
@@ -1800,7 +1802,12 @@ export function renderRoomEntrance(container, options = {}) {
         };
 
         const hasMarker = () => markerRefFn('__probe__') !== null;
-        const fallbackNickname = () => `${generateRandomNickname()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+        const getAuthenticatedRoomKey = async (student) => {
+            if (typeof authenticatedRoomKey !== 'function') return null;
+            const key = String(await authenticatedRoomKey(student, roomCode) || '').trim();
+            return isValidRtdbKey(key) ? key : null;
+        };
 
         /** 이 기기가 이 방에서 쓰던 이름을 그대로 씁니다 (본인 기기 · 빠른 입장) */
         const resolveRoomNickname = async () => {
@@ -1814,14 +1821,7 @@ export function renderRoomEntrance(container, options = {}) {
                 setRoomNickname(roomCode, start);
                 return start;
             }
-            const claimed = await claimRoomNickname(markerRefFn, start, options.nicknameClaimTries || 40);
-            if (!claimed && options.allowUnreservedNicknameFallback) {
-                console.warn('닉네임 마커를 선점하지 못해 고유 접미사로 대체합니다. Firestore nicknames 규칙을 확인하세요.');
-                const fallback = fallbackNickname();
-                setLocalGameNickname(fallback);
-                setRoomNickname(roomCode, fallback);
-                return fallback;
-            }
+            const claimed = await claimRoomNickname(markerRefFn, start);
             if (!claimed) return null;
             setLocalGameNickname(claimed);
             setRoomNickname(roomCode, claimed);
@@ -1838,10 +1838,7 @@ export function renderRoomEntrance(container, options = {}) {
         const claimFreshNickname = async () => {
             const start = generateRandomNickname();
             if (!hasMarker()) return start;
-            const claimed = await claimRoomNickname(markerRefFn, start, options.nicknameClaimTries || 40);
-            if (claimed || !options.allowUnreservedNicknameFallback) return claimed;
-            console.warn('게스트 닉네임 마커를 선점하지 못해 고유 접미사로 대체합니다. Firestore nicknames 규칙을 확인하세요.');
-            return fallbackNickname();
+            return await claimRoomNickname(markerRefFn, start);
         };
 
         try {
@@ -1988,7 +1985,9 @@ export function renderRoomEntrance(container, options = {}) {
                 }
 
                 // (3) 이 방에서 쓸 새 이름 선점 (기기 기억 무시)
-                const guestNick = await claimFreshNickname();
+                const guestNick = typeof authenticatedRoomKey === 'function'
+                    ? await getAuthenticatedRoomKey({ ...guestInput, isGuest: true })
+                    : await claimFreshNickname();
                 if (!guestNick) {
                     await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
                     return;
@@ -2202,7 +2201,9 @@ export function renderRoomEntrance(container, options = {}) {
 
             // ── 이 방에서 쓸 이름 ────────────────────────────────
             //  학번과 닉네임을 연결하는 기록은 어디에도 남기지 않습니다.
-            const nickname = await resolveRoomNickname();
+            const nickname = typeof authenticatedRoomKey === 'function'
+                ? await getAuthenticatedRoomKey({ school, studentId, isGuest: false })
+                : await resolveRoomNickname();
             if (!nickname) {
                 await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
                 return;
