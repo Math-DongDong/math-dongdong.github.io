@@ -602,14 +602,21 @@
                 <h2 class="text-lg font-extrabold">설문 마감 예약</h2>
                 <button type="button" id="closeScheduleDismiss" class="text-xl font-bold text-muted" aria-label="닫기">&times;</button>
             </div>
-            <label for="closeScheduleDateTime" class="block text-sm font-bold">마감 날짜와 시간
-                <input id="closeScheduleDateTime" type="datetime-local" class="field mt-1" required>
+            <label class="mb-3 flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5 text-sm font-bold" for="closeScheduleToggle">
+                <span>예약 마감 사용</span>
+                <input id="closeScheduleToggle" type="checkbox" class="h-5 w-5 accent-[#24493D]">
             </label>
-            <p class="mt-2 text-xs leading-relaxed text-muted">예약 시각 이후에는 새 응답과 수정이 차단됩니다.</p>
+            <div id="closeScheduleDateTimeField" hidden>
+                <label for="closeScheduleDateTime" class="block text-sm font-bold">마감 날짜와 시간
+                    <input id="closeScheduleDateTime" type="datetime-local" class="field mt-1">
+                </label>
+                <p class="mt-2 text-xs leading-relaxed text-muted">예약 시각 이후에는 새 응답과 수정이 차단됩니다.</p>
+            </div>
+            <p id="immediateCloseHint" class="mt-2 text-xs leading-relaxed text-muted">예약을 끄면 확인 후 바로 마감됩니다.</p>
             <div class="mt-6 flex justify-end gap-2">
                 <button type="button" id="clearCloseSchedule" class="btn btn-light mr-auto text-sm" hidden>예약 취소</button>
                 <button type="button" id="cancelCloseSchedule" class="btn btn-light text-sm">취소</button>
-                <button type="submit" id="saveCloseSchedule" class="btn btn-primary text-sm">마감 예약</button>
+                <button type="submit" id="saveCloseSchedule" class="btn btn-primary text-sm">바로 마감</button>
             </div>
         </form>
     </div>
@@ -1260,9 +1267,14 @@
             if (!currentRoom || !currentRoomData) return;
             if (schemaDirty && !await customConfirm('변경 사항 확인', '저장하지 않은 문항 변경 사항은 버려집니다. 계속할까요?')) return;
             if (currentRoomData.status !== 'closed') {
-                $('closeScheduleDateTime').value = toLocalDateTime(currentRoomData.scheduledCloseAt);
+                const hasSchedule = timestampMillis(currentRoomData.scheduledCloseAt) > Date.now();
+                $('closeScheduleToggle').checked = hasSchedule;
+                $('closeScheduleDateTime').value = hasSchedule ? toLocalDateTime(currentRoomData.scheduledCloseAt) : '';
+                $('closeScheduleDateTimeField').hidden = !hasSchedule;
+                $('closeScheduleDateTime').required = hasSchedule;
+                $('immediateCloseHint').hidden = hasSchedule;
                 $('clearCloseSchedule').hidden = !currentRoomData.scheduledCloseAt;
-                $('saveCloseSchedule').textContent = currentRoomData.scheduledCloseAt ? '예약 변경' : '마감 예약';
+                $('saveCloseSchedule').textContent = hasSchedule ? '마감 예약' : '바로 마감';
                 $('closeScheduleModal').hidden = false;
                 return;
             }
@@ -1286,6 +1298,13 @@
         function hideCloseScheduleModal() {
             $('closeScheduleModal').hidden = true;
         }
+        $('closeScheduleToggle').addEventListener('change', event => {
+            const scheduled = event.target.checked;
+            $('closeScheduleDateTimeField').hidden = !scheduled;
+            $('closeScheduleDateTime').required = scheduled;
+            $('immediateCloseHint').hidden = scheduled;
+            $('saveCloseSchedule').textContent = scheduled ? '마감 예약' : '바로 마감';
+        });
         $('closeScheduleDismiss').addEventListener('click', hideCloseScheduleModal);
         $('cancelCloseSchedule').addEventListener('click', hideCloseScheduleModal);
         $('closeScheduleModal').addEventListener('click', event => {
@@ -1294,8 +1313,9 @@
         $('closeScheduleForm').addEventListener('submit', async event => {
             event.preventDefault();
             if (!currentRoom) return;
-            const closeAtDate = new Date($('closeScheduleDateTime').value);
-            if (!Number.isFinite(closeAtDate.getTime()) || closeAtDate.getTime() <= Date.now()) {
+            const scheduled = $('closeScheduleToggle').checked;
+            const closeAtDate = scheduled ? new Date($('closeScheduleDateTime').value) : null;
+            if (scheduled && (!Number.isFinite(closeAtDate.getTime()) || closeAtDate.getTime() <= Date.now())) {
                 showNotice('마감 날짜와 시간은 현재보다 뒤로 설정해주세요.', true);
                 return;
             }
@@ -1303,14 +1323,17 @@
             submitButton.disabled = true;
             try {
                 await updateDoc(doc(db, 'custom_forms', currentRoom), {
-                    scheduledCloseAt: Timestamp.fromDate(closeAtDate),
+                    status: scheduled ? 'active' : 'closed',
+                    scheduledCloseAt: scheduled ? Timestamp.fromDate(closeAtDate) : null,
                     updatedAt: serverTimestamp()
                 });
                 hideCloseScheduleModal();
                 await loadTeacherRooms();
                 $('roomSelect').value = currentRoom;
                 await selectRoom(currentRoom);
-                showNotice(`${formatCloseDate(closeAtDate)}에 설문을 마감하도록 예약했습니다.`);
+                showNotice(scheduled
+                    ? `${formatCloseDate(closeAtDate)}에 설문을 마감하도록 예약했습니다.`
+                    : '설문을 바로 마감했습니다.');
             } catch (error) {
                 console.error('마감 예약 저장 실패:', error);
                 showNotice(`마감을 예약하지 못했습니다: ${error.message || '권한과 네트워크를 확인해주세요.'}`, true);
