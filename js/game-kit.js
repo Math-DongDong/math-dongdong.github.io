@@ -228,7 +228,7 @@ export function firestoreRoom(collectionName) {
             let teacherSchool = String(window.currentTeacherSchool || '').trim();
             if (finalMode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
                 if (window.isAdmin) {
-                    teacherSchool = '수학동동';
+                    teacherSchool = '동동쌤';
                 } else {
                     await customAlert("학교명이 필요해요",
                         "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +

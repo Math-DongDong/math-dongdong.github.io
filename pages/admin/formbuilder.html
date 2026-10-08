@@ -832,14 +832,21 @@
             }
             try {
                 const isAdmin = user.email?.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
-                const teacherSnapshot = isAdmin ? null : await getDoc(doc(db, 'teachers', user.uid));
-                const record = teacherSnapshot?.exists() ? teacherSnapshot.data() : {};
+                let record = {};
+                try {
+                    const teacherSnapshot = await getDoc(doc(db, 'teachers', user.uid));
+                    if (teacherSnapshot.exists()) {
+                        record = teacherSnapshot.data() || {};
+                    }
+                } catch (e) {
+                    console.warn('교사 정보 조회 실패:', e);
+                }
                 if (!isAdmin && record.status !== 'approved') {
                     showMode('student');
                     showNotice('승인된 교사 계정이 아니므로 학생 로그인 화면으로 이동했습니다.', true);
                     return;
                 }
-                teacher = { name: record.name || (isAdmin ? '관리자' : '교사'), school: record.school || (isAdmin ? '수학동동' : ''), isAdmin };
+                teacher = { name: record.name || (isAdmin ? '관리자' : '교사'), school: record.school || (isAdmin ? '동동쌤' : ''), isAdmin };
                 $('teacherIdentity').textContent = `${teacher.name} 선생님${teacher.school ? ` · ${teacher.school}` : ''}`;
                 $('teacherDashboard').hidden = false;
                 $('logoutButton').hidden = false;

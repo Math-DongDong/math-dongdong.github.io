@@ -1179,18 +1179,21 @@
             if (user) {
                 try {
                     const teacherSnap = await getDoc(doc(db, "teachers", user.uid));
+                    const isAdmin = user.email === ADMIN_EMAIL;
+                    let data = {};
                     if (teacherSnap.exists()) {
-                        const data = teacherSnap.data() || {};
-                        const isApproved = user.email === ADMIN_EMAIL || data.status === 'approved';
-                        if (isApproved) {
-                            // 승인된 교사 → 교사 모드 고정
-                            isTeacherLocked = true;
-                            window.isApprovedTeacher = true;
-                            window.isAdmin = user.email === ADMIN_EMAIL;
-                            window.currentTeacherUid = user.uid;
-                            window.currentTeacherName = data.name || (user.email === ADMIN_EMAIL ? '관리자' : '교사');
-                            window.currentTeacherSchool = data.school || (user.email === ADMIN_EMAIL ? '수학동동' : '');
-                            $('teacherNameDisplay').textContent = `${window.currentTeacherName} 선생님 (${window.currentTeacherSchool})`;
+                        data = teacherSnap.data() || {};
+                    }
+                    const isApproved = isAdmin || data.status === 'approved';
+                    if (isApproved) {
+                        // 승인된 교사 → 교사 모드 고정
+                        isTeacherLocked = true;
+                        window.isApprovedTeacher = true;
+                        window.isAdmin = isAdmin;
+                        window.currentTeacherUid = user.uid;
+                        window.currentTeacherName = data.name || (isAdmin ? '관리자' : '교사');
+                        window.currentTeacherSchool = data.school || (isAdmin ? '동동쌤' : '');
+                        $('teacherNameDisplay').textContent = `${window.currentTeacherName} 선생님 (${window.currentTeacherSchool})`;
                             switchRole('teacher');
                             $('teacherAuthGate').classList.add('d-none');
                             $('teacherDashboard').classList.remove('d-none');
@@ -1351,7 +1354,7 @@
             studentPinResetButton.textContent = '처리 중...';
             try {
                 const selectedRoom = await roomKit.getRoomData(currentRoomCode);
-                const school = String(selectedRoom?.creatorSchool || window.currentTeacherSchool || (window.isAdmin ? '수학동동' : '')).trim();
+                const school = String(selectedRoom?.creatorSchool || window.currentTeacherSchool || (window.isAdmin ? '동동쌤' : '')).trim();
                 if (!school) {
                     studentPinResetError.textContent = '이 방의 학교 정보를 확인할 수 없어 PIN을 초기화할 수 없습니다.';
                     studentPinResetError.classList.remove('d-none');
@@ -1590,7 +1593,7 @@
                 let owner = await resolveRoomOwner(data);
                 if (!owner) {
                     owner = {
-                        school: data?.creatorSchool || '수학동동',
+                        school: data?.creatorSchool || '동동쌤',
                         teacherName: data?.creatorName || '선생님'
                     };
                 }
