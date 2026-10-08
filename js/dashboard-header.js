@@ -53,6 +53,12 @@
                     <h2 class="fw-bold mb-0 text-dark">${esc(title)}</h2>
                 </div>
                 <button id="btn-delete-room" class="btn btn-danger fw-bold dash-delete">현재 방 삭제하기</button>
+                <div id="admin-school-filter" class="dash-school-filter d-none">
+                    <label class="visually-hidden" for="admin-school-select">학교별 방 필터</label>
+                    <select id="admin-school-select" class="form-select fw-bold bg-light dash-school-select">
+                        <option value="">전체 학교</option>
+                    </select>
+                </div>
             </div>
             <div class="dash-right">
                 <label class="visually-hidden" for="${esc(selectId)}">방 선택</label>

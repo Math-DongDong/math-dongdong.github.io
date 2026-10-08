@@ -117,6 +117,77 @@ export function bindStudentIdToggle(checkbox, targets) {
     });
 }
 
+const adminRoomOptionRenderers = new WeakMap();
+
+function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '') {
+    const schoolFilter = document.getElementById('admin-school-select');
+    const schoolFilterWrap = document.getElementById('admin-school-filter');
+    const isAdmin = Boolean(window.isAdmin && schoolFilter && schoolFilterWrap);
+    selectEl.closest('.dash-header')?.classList.toggle('has-admin-school-filter', isAdmin);
+    const unspecifiedSchool = '__unspecified__';
+    const getSchool = room => String(room.data.creatorSchool || '').trim() || unspecifiedSchool;
+    const previousCode = selectEl.value;
+    const explicitTargetCode = selectEl.dataset.targetCode;
+    const targetCode = explicitTargetCode || previousCode;
+
+    if (isAdmin) {
+        schoolFilterWrap.classList.remove('d-none');
+        const selectedSchool = schoolFilter.value;
+        const schools = [...new Set(rooms.map(getSchool))].sort((a, b) => a.localeCompare(b, 'ko'));
+
+        schoolFilter.innerHTML = '<option value="">전체 학교</option>' + schools.map(school => {
+            const label = school === unspecifiedSchool ? '학교 미지정' : school;
+            return `<option value="${escapeHtml(school)}">${escapeHtml(label)}</option>`;
+        }).join('');
+        schoolFilter.value = schools.includes(selectedSchool) ? selectedSchool : '';
+        const targetRoom = explicitTargetCode && rooms.find(room => room.code === explicitTargetCode);
+        if (targetRoom) schoolFilter.value = getSchool(targetRoom);
+
+        const renderFilteredRooms = (shouldNotify = true) => {
+            const keepCode = selectEl.value;
+            const requestedCode = selectEl.dataset.targetCode || keepCode;
+            const visibleRooms = rooms
+                .filter(room => !schoolFilter.value || getSchool(room) === schoolFilter.value);
+            selectEl.innerHTML = '<option value="">방을 선택하세요</option>' + visibleRooms.map(room =>
+                `<option value="${escapeHtml(room.code)}">${escapeHtml(labelFn(room.code, room.data))}</option>`
+            ).join('');
+
+            if (requestedCode && visibleRooms.some(room => room.code === requestedCode)) {
+                selectEl.value = requestedCode;
+                selectEl.dataset.targetCode = '';
+            } else if (requestedCode && selectEl.dataset.targetCode !== requestedCode) {
+                selectEl.dataset.targetCode = '';
+                if (shouldNotify) selectEl.dispatchEvent(new Event('change'));
+            }
+        };
+
+        adminRoomOptionRenderers.set(selectEl, renderFilteredRooms);
+        if (schoolFilter.dataset.roomFilterBound !== 'true') {
+            schoolFilter.dataset.roomFilterBound = 'true';
+            schoolFilter.addEventListener('change', () => {
+                adminRoomOptionRenderers.get(selectEl)?.();
+            });
+        }
+        renderFilteredRooms(false);
+        if (targetCode && ![...selectEl.options].some(option => option.value === targetCode) && previousCode && !selectEl.dataset.targetCode) {
+            selectEl.dispatchEvent(new Event('change'));
+        }
+        return;
+    }
+
+    if (schoolFilterWrap) schoolFilterWrap.classList.add('d-none');
+    selectEl.innerHTML = '<option value="">방을 선택하세요</option>' + rooms.map(room =>
+        `<option value="${escapeHtml(room.code)}">${escapeHtml(labelFn(room.code, room.data))}</option>`
+    ).join('');
+    if (!rooms.length && emptyTeacherText) {
+        selectEl.innerHTML = `<option value="">${escapeHtml(emptyTeacherText)}</option>`;
+    }
+    if (targetCode && [...selectEl.options].some(option => option.value === targetCode)) {
+        selectEl.value = targetCode;
+        selectEl.dataset.targetCode = '';
+    }
+}
+
 // =====================================================================
 // 2. Firestore 방 도구  (유형 A: 개인 기록형)
 //
@@ -189,6 +260,8 @@ export function firestoreRoom(collectionName) {
                 memo,
                 ...extra
             });
+            const roomSelect = document.getElementById(window.dashboardSelectId || 'roomSelect');
+            if (roomSelect) roomSelect.dataset.targetCode = code;
 
             await customAlert("방 생성 완료",
                 `새로운 방 [<strong>${escapeHtml(code)}</strong>]이 생성되었습니다.` +
@@ -237,24 +310,13 @@ export function firestoreRoom(collectionName) {
                 : query(base, where("createdBy", "==", window.currentTeacherUid || "__none__"));
 
             return onSnapshot(q, snap => {
-                const keep = selectEl.value;
-                const targetCode = selectEl.dataset.targetCode || keep;
-                let html = '<option value="">방을 선택하세요</option>';
-                let count = 0;
-                snap.forEach(d => {
-                    count++;
-                    const data = d.data() || {};
-                    const label = data.memo ? `${d.id} | ${data.memo}` : d.id;
-                    html += `<option value="${escapeHtml(d.id)}">${escapeHtml(label)}</option>`;
-                });
-                if (count === 0 && !window.isAdmin) {
-                    html = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-                }
-                selectEl.innerHTML = html;
-                if (targetCode && [...selectEl.options].some(o => o.value === targetCode)) {
-                    selectEl.value = targetCode;
-                    selectEl.dataset.targetCode = '';
-                }
+                const rooms = snap.docs.map(d => ({ code: d.id, data: d.data() || {} }));
+                renderRoomOptions(
+                    selectEl,
+                    rooms,
+                    (code, data) => data.memo ? `${code} | ${data.memo}` : code,
+                    '생성한 방이 없습니다 (새 방을 만드세요)'
+                );
             }, err => {
                 console.error('방 목록을 불러오지 못했습니다:', err);
                 if (typeof onError === 'function') onError(err);
@@ -303,10 +365,13 @@ export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } =
         async createRoom(code, roomData = {}, indexData = {}) {
             const owner = {
                 createdBy: window.currentTeacherUid || '',
-                creatorName: window.currentTeacherName || ''
+                creatorName: window.currentTeacherName || '',
+                creatorSchool: window.currentTeacherSchool || ''
             };
             await set(roomRef(code), { createdAt: rtTimestamp(), ...owner, ...roomData });
             await set(indexRef(code), { createdAt: Date.now(), ...owner, ...indexData });
+            const roomSelect = document.getElementById(window.dashboardSelectId || 'roomSelect');
+            if (roomSelect) roomSelect.dataset.targetCode = code;
             return code;
         },
 
@@ -345,6 +410,7 @@ export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } =
                             createdAt: r.createdAt || 0,
                             createdBy: r.createdBy || '',
                             creatorName: r.creatorName || '',
+                            creatorSchool: r.creatorSchool || '',
                             memo: r.memo || ''
                         };
                         migrateFields.forEach(f => { entry[f] = r[f] ?? ''; });
@@ -357,28 +423,17 @@ export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } =
                 }
             }
 
-            const keep = selectEl.value;
-            selectEl.innerHTML = '<option value="">방을 선택하세요</option>';
-            if (!snapshot.exists()) return;
-
-            const rooms = snapshot.val();
-            let count = 0;
-            Object.keys(rooms)
+            const rooms = snapshot.exists() ? snapshot.val() : {};
+            const visibleRooms = Object.keys(rooms)
                 .filter(code => window.isAdmin || (rooms[code] || {}).createdBy === window.currentTeacherUid)
                 .sort((a, b) => (rooms[b].createdAt || 0) - (rooms[a].createdAt || 0))
-                .forEach(code => {
-                    count++;
-                    const option = document.createElement('option');
-                    option.value = code;
-                    // textContent라 방 제목에 무엇이 들어 있어도 코드로 해석되지 않습니다.
-                    option.textContent = labelFn(code, rooms[code]);
-                    selectEl.appendChild(option);
-                });
-
-            if (count === 0 && !window.isAdmin) {
-                selectEl.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-            }
-            if (keep && [...selectEl.options].some(o => o.value === keep)) selectEl.value = keep;
+                .map(code => ({ code, data: rooms[code] || {} }));
+            renderRoomOptions(
+                selectEl,
+                visibleRooms,
+                labelFn,
+                '생성한 방이 없습니다 (새 방을 만드세요)'
+            );
         }
     };
 }
