@@ -424,6 +424,24 @@
         </section>
     </main>
 
+    <div id="closeScheduleModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" hidden>
+        <form id="closeScheduleForm" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div class="mb-4 flex items-center justify-between border-b border-line pb-3">
+                <h2 class="text-lg font-extrabold">설문 마감 예약</h2>
+                <button type="button" id="closeScheduleDismiss" class="text-xl font-bold text-muted" aria-label="닫기">&times;</button>
+            </div>
+            <label for="closeScheduleDateTime" class="block text-sm font-bold">마감 날짜와 시간
+                <input id="closeScheduleDateTime" type="datetime-local" class="field mt-1" required>
+            </label>
+            <p class="mt-2 text-xs leading-relaxed text-muted">예약 시각 이후에는 새 응답과 수정이 차단됩니다.</p>
+            <div class="mt-6 flex justify-end gap-2">
+                <button type="button" id="clearCloseSchedule" class="btn btn-light mr-auto text-sm" hidden>예약 취소</button>
+                <button type="button" id="cancelCloseSchedule" class="btn btn-light text-sm">취소</button>
+                <button type="submit" id="saveCloseSchedule" class="btn btn-primary text-sm">마감 예약</button>
+            </div>
+        </form>
+    </div>
+
     <!-- 설문 생성 모달 -->
     <div id="roomModeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" hidden>
         <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
@@ -470,7 +488,7 @@
         import { makeStudentKey, renderRoomEntrance } from '../../js/room-auth.js';
         import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
         import {
-            arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, setDoc,
+            arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, setDoc, Timestamp,
             serverTimestamp, updateDoc, where
         } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js';
 
@@ -502,6 +520,84 @@
         let studentRoomData = null;
         let studentResponseExists = false;
         let isDirty = false;
+        let scheduledCloseTimer = null;
+        let studentCloseTimer = null;
+
+        function timestampMillis(value) {
+            if (typeof value?.toMillis === 'function') return value.toMillis();
+            if (value instanceof Date) return value.getTime();
+            return Number(value) || 0;
+        }
+
+        function toLocalDateTime(value) {
+            const milliseconds = timestampMillis(value);
+            if (!milliseconds) return '';
+            const local = new Date(milliseconds - new Date(milliseconds).getTimezoneOffset() * 60000);
+            return local.toISOString().slice(0, 16);
+        }
+
+        function formatCloseDate(value) {
+            const milliseconds = timestampMillis(value);
+            return milliseconds ? new Date(milliseconds).toLocaleString('ko-KR') : '';
+        }
+
+        function armScheduledClose(roomCode, scheduledCloseAt) {
+            clearTimeout(scheduledCloseTimer);
+            const closeAt = timestampMillis(scheduledCloseAt);
+            if (!closeAt) return;
+            const delay = closeAt - Date.now();
+            scheduledCloseTimer = setTimeout(() => {
+                if (Date.now() < closeAt) {
+                    armScheduledClose(roomCode, scheduledCloseAt);
+                    return;
+                }
+                closeRoomAtDeadline(roomCode, closeAt);
+            }, Math.max(0, Math.min(delay, 2147483647)));
+        }
+
+        function markStudentFormClosed() {
+            if (!studentRoomData) return;
+            studentRoomData.status = 'closed';
+            $('studentRoomStatus').textContent = '마감됨 · 조회 전용';
+            $('studentRoomStatus').className = 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800';
+            $('closedNotice').hidden = false;
+            $('submitResponseButton').hidden = true;
+            renderStudentQuestions(Array.isArray(studentRoomData.formSchema) ? studentRoomData.formSchema : [], collectAnswers(studentRoomData.formSchema || []), true);
+        }
+
+        function armStudentClose(roomCode, closeAt) {
+            clearTimeout(studentCloseTimer);
+            const delay = closeAt - Date.now();
+            studentCloseTimer = setTimeout(() => {
+                if (Date.now() < closeAt) {
+                    armStudentClose(roomCode, closeAt);
+                    return;
+                }
+                if (studentSession?.roomCode === roomCode) markStudentFormClosed();
+            }, Math.max(0, Math.min(delay, 2147483647)));
+        }
+
+        async function closeRoomAtDeadline(roomCode, closeAt) {
+            if (currentRoom !== roomCode) return;
+            try {
+                const ref = doc(db, 'custom_forms', roomCode);
+                const snapshot = await getDoc(ref);
+                if (!snapshot.exists()) return;
+                const latest = snapshot.data();
+                if (latest.status !== 'active' || timestampMillis(latest.scheduledCloseAt) !== closeAt) return;
+                if (closeAt > Date.now()) {
+                    armScheduledClose(roomCode, latest.scheduledCloseAt);
+                    return;
+                }
+                await updateDoc(ref, { status: 'closed', updatedAt: serverTimestamp() });
+                await loadTeacherRooms();
+                if (currentRoom === roomCode) await selectRoom(roomCode);
+                showNotice('예약한 시각이 되어 설문을 마감했습니다.');
+            } catch (error) {
+                console.error('예약 마감 처리 실패:', error);
+                showNotice('예약 시각은 지났지만 설문 상태를 자동으로 변경하지 못했습니다. 권한과 네트워크를 확인해주세요.', true);
+            }
+        }
 
         function showMode(mode) {
             $('authLoading').hidden = true;
@@ -724,6 +820,7 @@
 
         async function selectRoom(code) {
             if (unsubRoomStudents) { unsubRoomStudents(); unsubRoomStudents = null; }
+            clearTimeout(scheduledCloseTimer);
             currentRoom = code || null;
             currentRoomData = null;
             $('builderPanel').hidden = true;
@@ -750,8 +847,14 @@
                 $('roomMemoInput').value = currentRoomData.memo || '';
                 $('responseCountBadge').textContent = `${count}명 응답`;
                 $('roomCount').textContent = `${count}명 응답 · ${currentRoomData.status === 'closed' ? '마감됨' : '진행 중'}`;
-                $('toggleStatusButton').textContent = currentRoomData.status === 'closed' ? '다시 열기' : '마감하기';
+                const hasScheduledClose = currentRoomData.status === 'active' && timestampMillis(currentRoomData.scheduledCloseAt) > Date.now();
+                $('toggleStatusButton').textContent = currentRoomData.status === 'closed'
+                    ? '다시 열기'
+                    : hasScheduledClose ? '마감 예약 변경' : '마감하기';
                 $('toggleStatusButton').classList.toggle('btn-danger', currentRoomData.status !== 'closed');
+                if (hasScheduledClose) {
+                    $('roomCount').textContent += ` · ${formatCloseDate(currentRoomData.scheduledCloseAt)} 마감 예약`;
+                }
                 $('builderLockNotice').hidden = count === 0;
                 $('addQuestionButton').disabled = count > 0;
                 $('saveSchemaButton').disabled = count > 0;
@@ -761,6 +864,9 @@
                 $('builderPanel').hidden = false;
                 $('responsesPanel').hidden = false;
                 renderResponses(responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+                if (currentRoomData.status === 'active' && currentRoomData.scheduledCloseAt) {
+                    armScheduledClose(code, currentRoomData.scheduledCloseAt);
+                }
                 unsubRoomStudents = onSnapshot(collection(db, 'custom_forms', code, 'students'), snapshot => {
                     renderGuestApprovals(snapshot.docs.map(item => ({ nickname: item.id, ...item.data() })));
                 }, error => {
@@ -948,16 +1054,85 @@
         $('toggleStatusButton').addEventListener('click', async () => {
             if (!currentRoom || !currentRoomData) return;
             if (schemaDirty && !window.confirm('저장하지 않은 문항 변경 사항은 버려집니다. 설문 상태를 변경할까요?')) return;
-            const status = currentRoomData.status === 'closed' ? 'active' : 'closed';
+            if (currentRoomData.status !== 'closed') {
+                $('closeScheduleDateTime').value = toLocalDateTime(currentRoomData.scheduledCloseAt);
+                $('clearCloseSchedule').hidden = !currentRoomData.scheduledCloseAt;
+                $('saveCloseSchedule').textContent = currentRoomData.scheduledCloseAt ? '예약 변경' : '마감 예약';
+                $('closeScheduleModal').hidden = false;
+                return;
+            }
             try {
-                await updateDoc(doc(db, 'custom_forms', currentRoom), { status, updatedAt: serverTimestamp() });
+                clearTimeout(scheduledCloseTimer);
+                await updateDoc(doc(db, 'custom_forms', currentRoom), {
+                    status: 'active',
+                    scheduledCloseAt: null,
+                    updatedAt: serverTimestamp()
+                });
                 await loadTeacherRooms();
                 $('roomSelect').value = currentRoom;
                 await selectRoom(currentRoom);
-                showNotice(status === 'closed' ? '설문을 마감했습니다. 학생은 조회만 할 수 있습니다.' : '설문을 다시 열었습니다.');
+                showNotice('설문을 다시 열었습니다.');
             } catch (error) {
                 console.error('설문 상태 변경 실패:', error);
                 showNotice(`설문 상태를 변경하지 못했습니다: ${error.message || '권한과 네트워크를 확인해주세요.'}`, true);
+            }
+        });
+
+        function hideCloseScheduleModal() {
+            $('closeScheduleModal').hidden = true;
+        }
+        $('closeScheduleDismiss').addEventListener('click', hideCloseScheduleModal);
+        $('cancelCloseSchedule').addEventListener('click', hideCloseScheduleModal);
+        $('closeScheduleModal').addEventListener('click', event => {
+            if (event.target === $('closeScheduleModal')) hideCloseScheduleModal();
+        });
+        $('closeScheduleForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!currentRoom) return;
+            const closeAtDate = new Date($('closeScheduleDateTime').value);
+            if (!Number.isFinite(closeAtDate.getTime()) || closeAtDate.getTime() <= Date.now()) {
+                showNotice('마감 날짜와 시간은 현재보다 뒤로 설정해주세요.', true);
+                return;
+            }
+            const submitButton = $('saveCloseSchedule');
+            submitButton.disabled = true;
+            try {
+                await updateDoc(doc(db, 'custom_forms', currentRoom), {
+                    scheduledCloseAt: Timestamp.fromDate(closeAtDate),
+                    updatedAt: serverTimestamp()
+                });
+                hideCloseScheduleModal();
+                await loadTeacherRooms();
+                $('roomSelect').value = currentRoom;
+                await selectRoom(currentRoom);
+                showNotice(`${formatCloseDate(closeAtDate)}에 설문을 마감하도록 예약했습니다.`);
+            } catch (error) {
+                console.error('마감 예약 저장 실패:', error);
+                showNotice(`마감을 예약하지 못했습니다: ${error.message || '권한과 네트워크를 확인해주세요.'}`, true);
+            } finally {
+                submitButton.disabled = false;
+            }
+        });
+        $('clearCloseSchedule').addEventListener('click', async () => {
+            if (!currentRoom) return;
+            const button = $('clearCloseSchedule');
+            button.disabled = true;
+            try {
+                clearTimeout(scheduledCloseTimer);
+                await updateDoc(doc(db, 'custom_forms', currentRoom), {
+                    scheduledCloseAt: null,
+                    updatedAt: serverTimestamp()
+                });
+                hideCloseScheduleModal();
+                await loadTeacherRooms();
+                $('roomSelect').value = currentRoom;
+                await selectRoom(currentRoom);
+                showNotice('마감 예약을 취소했습니다.');
+            } catch (error) {
+                console.error('마감 예약 취소 실패:', error);
+                showNotice(`마감 예약을 취소하지 못했습니다: ${error.message || '권한과 네트워크를 확인해주세요.'}`, true);
+            } finally {
+                button.disabled = false;
             }
         });
 
@@ -1110,6 +1285,12 @@
             if (!roomSnapshot.exists()) throw new Error('설문 코드를 확인할 수 없습니다.');
             const roomData = roomSnapshot.data();
             if (!['active', 'closed'].includes(roomData.status)) throw new Error('설문 상태를 확인할 수 없습니다.');
+            clearTimeout(studentCloseTimer);
+            const scheduledCloseAt = timestampMillis(roomData.scheduledCloseAt);
+            if (roomData.status === 'active' && scheduledCloseAt) {
+                if (scheduledCloseAt <= Date.now()) roomData.status = 'closed';
+                else armStudentClose(roomCode, scheduledCloseAt);
+            }
 
             const isQuick = roomData.roomMode !== 'auth';
             const effectiveStudentId = isQuick
@@ -1210,7 +1391,10 @@
                     const roomSnapshot = await transaction.get(roomRef);
                     if (!roomSnapshot.exists()) throw new Error('설문 룸이 삭제되었습니다.');
                     const latestRoom = roomSnapshot.data();
-                    if (latestRoom.status !== 'active') throw new Error('설문이 마감되어 응답을 저장할 수 없습니다.');
+                    const closeAt = timestampMillis(latestRoom.scheduledCloseAt);
+                    if (latestRoom.status !== 'active' || (closeAt && closeAt <= Date.now())) {
+                        throw new Error('설문이 마감되어 응답을 저장할 수 없습니다.');
+                    }
                     if (JSON.stringify(latestRoom.formSchema || []) !== JSON.stringify(schema)) throw new Error('설문 구조가 변경되었습니다. 폼을 다시 불러온 뒤 응답해주세요.');
                     const existing = await transaction.get(responseRef);
                     const update = {
@@ -1234,6 +1418,7 @@
                 showNotice('응답이 안전하게 저장되었습니다.');
             } catch (error) {
                 console.error('응답 저장 실패:', error);
+                if (String(error.message || '').includes('마감')) markStudentFormClosed();
                 showNotice(`응답을 저장하지 못했습니다: ${error.message || '네트워크와 설문 권한을 확인해주세요.'}`, true);
             } finally {
                 button.disabled = false;
