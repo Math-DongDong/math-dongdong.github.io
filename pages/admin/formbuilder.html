@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#24493d">
+    <title>동적 커스텀 폼 빌더</title>
+    <link rel="icon" href="../../assets/images/mainPage/동동이.jpg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Pretendard', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'sans-serif'] }, colors: { board: '#24493D', page: '#E9EFEC', line: '#D5DEDA', ink: '#1D2B26', muted: '#5F706A', yellow: '#F0CF5C' } } }
+        };
+    </script>
+    <style>
+        body { background: #e9efec; }
+        .field { width: 100%; border: 1px solid #d5deda; border-radius: .65rem; background: white; padding: .65rem .8rem; color: #1d2b26; }
+        .field:focus { outline: 3px solid #f0cf5c88; border-color: #24493d; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border-radius: .65rem; padding: .65rem .9rem; font-weight: 700; transition: .15s; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .btn-primary { background: #24493d; color: #fff; }
+        .btn-primary:hover:not(:disabled) { background: #1b3a30; }
+        .btn-light { background: white; color: #24493d; border: 1px solid #d5deda; }
+        .btn-danger { background: #cf3a2e; color: white; }
+        .pill-choice { border: 1px solid #d5deda; border-radius: 999px; padding: .55rem .9rem; background: white; }
+        .pill-choice[aria-pressed="true"] { background: #24493d; color: white; border-color: #24493d; }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+    <header class="bg-board text-white shadow-md">
+        <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
+            <a href="../../index.html" class="text-xl font-extrabold text-white no-underline">📝 동적 커스텀 폼</a>
+            <div id="headerActions" class="flex flex-wrap items-center gap-2">
+                <button class="btn bg-white/10 text-white" id="studentModeButton">학생 응답</button>
+                <button class="btn bg-yellow text-ink" id="teacherModeButton">교사 모드</button>
+                <button class="btn bg-white/10 text-white" id="logoutButton" hidden>로그아웃</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-4 py-6">
+        <div id="notice" class="mb-4 rounded-xl border border-line bg-white px-4 py-3 text-sm" role="status" aria-live="polite" hidden></div>
+        <section id="studentSection" class="mx-auto max-w-2xl">
+            <div class="mb-5">
+                <p class="mb-1 text-sm font-bold text-board">STUDENT</p>
+                <h1 class="text-2xl font-extrabold">설문에 참여하거나 응답을 수정하세요</h1>
+                <p class="mt-2 text-sm text-muted">룸 코드와 학교 학생 인증 PIN을 입력하면 기존 응답을 불러옵니다.</p>
+            </div>
+            <form id="studentLoginForm" class="panel rounded-2xl border border-line bg-white p-5 shadow-sm">
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <label class="text-sm font-bold">룸 코드
+                        <input id="roomCodeInput" class="field mt-1" maxlength="6" autocomplete="off" placeholder="예: A1B2" required>
+                    </label>
+                    <label class="text-sm font-bold">학번
+                        <input id="studentIdInput" class="field mt-1" inputmode="numeric" maxlength="5" autocomplete="username" placeholder="4~5자리" required>
+                    </label>
+                    <label class="text-sm font-bold">이름
+                        <input id="studentNameInput" class="field mt-1" maxlength="40" autocomplete="name" placeholder="응답에 표시될 이름">
+                    </label>
+                    <label class="text-sm font-bold">학생 PIN
+                        <input id="studentPinInput" type="password" class="field mt-1" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="4자리 숫자" required>
+                    </label>
+                </div>
+                <button class="btn btn-primary mt-5 w-full" id="studentLoginButton" type="submit">폼 불러오기</button>
+            </form>
+            <section id="studentFormPanel" class="mt-5 rounded-2xl border border-line bg-white p-5 shadow-sm" hidden>
+                <div class="mb-4 border-b border-line pb-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h2 id="studentFormTitle" class="text-xl font-extrabold"></h2>
+                        <span id="studentRoomStatus" class="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800"></span>
+                    </div>
+                    <p id="studentFormMemo" class="mt-2 whitespace-pre-wrap text-sm text-muted"></p>
+                    <p id="existingResponseNotice" class="mt-3 text-sm font-bold text-board" hidden>기존 응답을 불러왔습니다. 수정한 뒤 저장할 수 있습니다.</p>
+                    <p id="closedNotice" class="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-800" hidden>마감된 설문입니다. 응답을 조회할 수 있지만 수정할 수 없습니다.</p>
+                </div>
+                <form id="dynamicForm">
+                    <div id="dynamicQuestions" class="space-y-5"></div>
+                    <button id="submitResponseButton" class="btn btn-primary mt-6 w-full" type="submit">응답 제출</button>
+                </form>
+            </section>
+        </section>
+
+        <section id="teacherSection" hidden>
+            <div id="teacherLoginPanel" class="mx-auto max-w-xl rounded-2xl border border-line bg-white p-6 text-center shadow-sm">
+                <div class="mb-3 text-4xl">👩‍🏫</div>
+                <h1 class="text-2xl font-extrabold">교사 폼 관리</h1>
+                <p class="my-3 text-sm text-muted">승인된 교사 계정으로 로그인하면 설문 룸을 만들고 관리할 수 있습니다.</p>
+                <button id="googleLoginButton" class="btn btn-primary mt-2"><i class="bi bi-google"></i> Google 계정으로 로그인</button>
+            </div>
+            <div id="teacherDashboard" hidden>
+                <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p class="mb-1 text-sm font-bold text-board">TEACHER</p>
+                        <h1 class="text-2xl font-extrabold">설문 양식 관리</h1>
+                        <p id="teacherIdentity" class="mt-1 text-sm text-muted"></p>
+                    </div>
+                    <button id="createRoomButton" class="btn btn-primary"><i class="bi bi-plus-lg"></i> 새 설문 만들기</button>
+                </div>
+                <div class="grid gap-5 lg:grid-cols-[minmax(250px,1fr)_2fr]">
+                    <aside class="h-fit rounded-2xl border border-line bg-white p-4 shadow-sm">
+                        <label class="text-sm font-bold" for="roomSelect">내 설문 룸</label>
+                        <select id="roomSelect" class="field mt-2"><option value="">룸을 선택하세요</option></select>
+                        <p id="roomCount" class="mt-2 text-xs text-muted"></p>
+                        <div class="mt-4 grid grid-cols-2 gap-2">
+                            <button id="toggleStatusButton" class="btn btn-light text-sm" disabled>마감하기</button>
+                            <button id="cloneRoomButton" class="btn btn-light text-sm" disabled><i class="bi bi-copy"></i> 양식 복제</button>
+                        </div>
+                        <button id="downloadXlsxButton" class="btn btn-light mt-2 w-full text-sm" disabled><i class="bi bi-file-earmark-spreadsheet"></i> 응답 XLSX 다운로드</button>
+                    </aside>
+                    <div class="space-y-5">
+                        <section id="builderPanel" class="rounded-2xl border border-line bg-white p-4 shadow-sm" hidden>
+                            <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+                                <div>
+                                    <h2 class="text-lg font-extrabold">폼 빌더</h2>
+                                    <p id="builderLockNotice" class="mt-1 text-sm text-amber-800" hidden>응답 데이터가 존재하여 문항 구조를 변경할 수 없습니다. 수정을 원하면 [양식 복제]를 이용하세요.</p>
+                                </div>
+                                <span id="roomCodeBadge" class="rounded-lg bg-page px-3 py-2 font-mono text-lg font-extrabold tracking-widest"></span>
+                            </div>
+                            <label class="text-sm font-bold">방 제목 / 메모
+                                <input id="roomMemoInput" class="field mt-1" maxlength="160" placeholder="예: 2026학년도 1학기 기초조사">
+                            </label>
+                            <div class="my-4 flex flex-wrap items-center justify-between gap-2">
+                                <h3 class="font-extrabold">문항 구조</h3>
+                                <button id="addQuestionButton" class="btn btn-light text-sm"><i class="bi bi-plus-lg"></i> 문항 추가</button>
+                            </div>
+                            <div id="builderQuestions" class="space-y-3"></div>
+                            <button id="saveSchemaButton" class="btn btn-primary mt-4 w-full">양식 저장</button>
+                        </section>
+                        <section id="responsesPanel" class="rounded-2xl border border-line bg-white p-4 shadow-sm" hidden>
+                            <div class="mb-3 flex items-center justify-between gap-3">
+                                <h2 class="text-lg font-extrabold">학생 응답</h2>
+                                <span id="responseCountBadge" class="rounded-full bg-page px-3 py-1 text-sm font-bold"></span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full border-collapse text-left text-sm">
+                                    <thead id="responseTableHead"></thead>
+                                    <tbody id="responseTableBody"></tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module">
+        import { auth, db, googleProvider } from '../../js/firebase-config.js';
+        import { verifyPinViaGate, deriveDeviceFingerprint } from '../../js/student-crypto.js';
+        import { makeStudentKey, getDeviceId } from '../../js/room-auth.js';
+        import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
+        import {
+            arrayUnion, collection, doc, getDoc, getDocs, query, runTransaction, setDoc,
+            serverTimestamp, updateDoc, where
+        } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js';
+
+        const ADMIN_EMAIL = 'jjes0107@gmail.com';
+        const VALIDATIONS = {
+            none: '제한 없음', number: '숫자만', number_4_5: '4~5자리 숫자',
+            phone: '휴대폰 번호', email: '이메일'
+        };
+        const $ = id => document.getElementById(id);
+        const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        const showNotice = (message, isError = false) => {
+            const el = $('notice');
+            el.textContent = message;
+            el.className = `mb-4 rounded-xl border px-4 py-3 text-sm ${isError ? 'border-red-200 bg-red-50 text-red-800' : 'border-line bg-white text-ink'}`;
+            el.hidden = false;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+        const hideNotice = () => { $('notice').hidden = true; };
+        const asOptions = value => String(value ?? '').split(/\r?\n|,/).map(v => v.trim()).filter(Boolean).slice(0, 40);
+        const newQuestion = () => ({ id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, type: 'short', title: '', placeholder: '', required: false, validation: 'none', hasTail: false, options: [], tailCondition: '', tailTitle: '', tailPlaceholder: '' });
+        let currentUser = null;
+        let teacher = null;
+        let teacherRooms = [];
+        let currentRoom = null;
+        let currentRoomData = null;
+        let schemaDirty = false;
+        let studentSession = null;
+        let studentRoomData = null;
+        let studentResponseExists = false;
+        let isDirty = false;
+
+        function showMode(mode) {
+            $('studentSection').hidden = mode !== 'student';
+            $('teacherSection').hidden = mode !== 'teacher';
+            hideNotice();
+        }
+
+        async function loadTeacherRooms() {
+            const list = $('roomSelect');
+            list.innerHTML = '<option value="">룸을 선택하세요</option>';
+            const base = collection(db, 'custom_forms');
+            const roomsSnapshot = teacher.isAdmin
+                ? await getDocs(base)
+                : await getDocs(query(base, where('creatorUid', '==', currentUser.uid)));
+            teacherRooms = roomsSnapshot.docs.map(item => ({ code: item.id, data: item.data() }));
+            teacherRooms.sort((a, b) => String(b.data.createdAt?.toMillis?.() || 0).localeCompare(String(a.data.createdAt?.toMillis?.() || 0)));
+            for (const room of teacherRooms) {
+                const option = document.createElement('option');
+                option.value = room.code;
+                option.textContent = `${room.code} · ${room.data.memo || '제목 없는 설문'} · ${room.data.status === 'closed' ? '마감' : '진행 중'}`;
+                list.append(option);
+            }
+            $('roomCount').textContent = `${teacherRooms.length}개 설문`;
+        }
+
+        function makeRoomCode() {
+            const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            return Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+        }
+
+        async function createRoom(source = null) {
+            const button = $('createRoomButton');
+            button.disabled = true;
+            try {
+                const baseData = source?.data || {};
+                const roomData = {
+                    creatorUid: currentUser.uid,
+                    creatorName: teacher.name,
+                    creatorSchool: teacher.school || '',
+                    createdAt: serverTimestamp(),
+                    memo: String(baseData.memo || ''),
+                    status: 'active',
+                    responseCount: 0,
+                    students: [],
+                    formSchema: Array.isArray(baseData.formSchema) ? structuredClone(baseData.formSchema) : []
+                };
+                let createdCode = '';
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const code = makeRoomCode();
+                    try {
+                        await runTransaction(db, async transaction => {
+                            const ref = doc(db, 'custom_forms', code);
+                            if ((await transaction.get(ref)).exists()) throw new Error('ROOM_CODE_TAKEN');
+                            transaction.set(ref, roomData);
+                        });
+                        createdCode = code;
+                        break;
+                    } catch (error) {
+                        if (error.message !== 'ROOM_CODE_TAKEN') throw error;
+                    }
+                }
+                if (!createdCode) throw new Error('룸 코드를 발급하지 못했습니다. 다시 시도해주세요.');
+                await loadTeacherRooms();
+                $('roomSelect').value = createdCode;
+                await selectRoom(createdCode);
+                showNotice(source ? `양식이 복제되었습니다. 새 룸 코드: ${createdCode}` : `새 설문이 만들어졌습니다. 룸 코드: ${createdCode}`);
+            } catch (error) {
+                console.error('설문 룸 생성 실패:', error);
+                showNotice(`설문 룸을 만들지 못했습니다: ${error.message || '잠시 후 다시 시도해주세요.'}`, true);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function selectRoom(code) {
+            currentRoom = code || null;
+            currentRoomData = null;
+            $('builderPanel').hidden = true;
+            $('responsesPanel').hidden = true;
+            $('toggleStatusButton').disabled = !code;
+            $('cloneRoomButton').disabled = !code;
+            $('downloadXlsxButton').disabled = !code;
+            if (!code) return;
+            try {
+                const snapshot = await getDoc(doc(db, 'custom_forms', code));
+                if (!snapshot.exists()) throw new Error('선택한 설문 룸을 찾을 수 없습니다.');
+                currentRoomData = snapshot.data();
+                if (!teacher.isAdmin && currentRoomData.creatorUid !== currentUser.uid) throw new Error('이 설문 룸을 관리할 권한이 없습니다.');
+                const responseSnapshot = await getDocs(collection(db, 'custom_forms', code, 'responses'));
+                const count = Math.max(Number(currentRoomData.responseCount) || 0, responseSnapshot.size);
+                currentRoomData.responseCount = count;
+                $('roomCodeBadge').textContent = code;
+                $('roomMemoInput').value = currentRoomData.memo || '';
+                $('responseCountBadge').textContent = `${count}명 응답`;
+                $('roomCount').textContent = `${count}명 응답 · ${currentRoomData.status === 'closed' ? '마감됨' : '진행 중'}`;
+                $('toggleStatusButton').textContent = currentRoomData.status === 'closed' ? '다시 열기' : '마감하기';
+                $('toggleStatusButton').classList.toggle('btn-danger', currentRoomData.status !== 'closed');
+                $('builderLockNotice').hidden = count === 0;
+                $('addQuestionButton').disabled = count > 0;
+                $('saveSchemaButton').disabled = count > 0;
+                $('roomMemoInput').disabled = count > 0;
+                schemaDirty = false;
+                renderBuilder(Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : []);
+                $('builderPanel').hidden = false;
+                $('responsesPanel').hidden = false;
+                renderResponses(responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+            } catch (error) {
+                console.error('설문 룸 조회 실패:', error);
+                showNotice(`설문 정보를 불러오지 못했습니다: ${error.message || 'Firestore 권한과 네트워크를 확인해주세요.'}`, true);
+            }
+        }
+
+        function renderBuilder(schema) {
+            const container = $('builderQuestions');
+            const locked = Number(currentRoomData?.responseCount) > 0;
+            if (!schema.length) {
+                container.innerHTML = '<p class="rounded-lg bg-page p-4 text-sm text-muted">아직 문항이 없습니다. [문항 추가]를 눌러 시작하세요.</p>';
+                return;
+            }
+            container.innerHTML = schema.map((question, index) => `
+                <article class="builder-card rounded-xl border border-line bg-page/50 p-3" data-index="${index}">
+                    <div class="mb-3 flex items-center justify-between gap-2">
+                        <strong>문항 ${index + 1}</strong>
+                        <div class="flex gap-1">
+                            <button type="button" class="btn btn-light !px-2 !py-1 text-sm" data-action="up" aria-label="위로" ${locked || index === 0 ? 'disabled' : ''}>↑</button>
+                            <button type="button" class="btn btn-light !px-2 !py-1 text-sm" data-action="down" aria-label="아래로" ${locked || index === schema.length - 1 ? 'disabled' : ''}>↓</button>
+                            <button type="button" class="btn btn-danger !px-2 !py-1 text-sm" data-action="delete" ${locked ? 'disabled' : ''}>삭제</button>
+                        </div>
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <label class="text-xs font-bold">문항 유형
+                            <select class="field mt-1" data-field="type" ${locked ? 'disabled' : ''}>
+                                <option value="short" ${question.type === 'short' ? 'selected' : ''}>단답형</option>
+                                <option value="long" ${question.type === 'long' ? 'selected' : ''}>장문형</option>
+                                <option value="dropdown" ${question.type === 'dropdown' ? 'selected' : ''}>드롭다운</option>
+                                <option value="pill" ${question.type === 'pill' ? 'selected' : ''}>알약형 다중 선택</option>
+                            </select>
+                        </label>
+                        <label class="text-xs font-bold">문항 제목
+                            <input class="field mt-1" data-field="title" maxlength="200" value="${escapeHtml(question.title || '')}" placeholder="질문을 입력하세요" ${locked ? 'disabled' : ''}>
+                        </label>
+                        <label class="text-xs font-bold">안내 문구
+                            <input class="field mt-1" data-field="placeholder" maxlength="160" value="${escapeHtml(question.placeholder || '')}" placeholder="선택 입력" ${locked ? 'disabled' : ''}>
+                        </label>
+                        ${question.type === 'short' ? `<label class="text-xs font-bold">유효성 검사
+                            <select class="field mt-1" data-field="validation" ${locked ? 'disabled' : ''}>${Object.entries(VALIDATIONS).map(([value, label]) => `<option value="${value}" ${question.validation === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
+                        </label>` : ''}
+                        ${['dropdown', 'pill'].includes(question.type) ? `<label class="text-xs font-bold sm:col-span-2">선택지 (줄바꿈 또는 쉼표로 구분)
+                            <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\\n'))}</textarea>
+                        </label>` : ''}
+                        <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="required" ${question.required ? 'checked' : ''} ${locked ? 'disabled' : ''}> 필수 문항</label>
+                        ${['dropdown', 'pill'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택지별 꼬리 질문</label>` : ''}
+                        ${question.hasTail && ['dropdown', 'pill'].includes(question.type) ? `
+                            <label class="text-xs font-bold sm:col-span-2">꼬리 질문 제목
+                                <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="[{option}]에 대해 설명해주세요" ${locked ? 'disabled' : ''}>
+                            </label>
+                            <label class="text-xs font-bold sm:col-span-2">꼬리 질문 안내 문구
+                                <input class="field mt-1" data-field="tailPlaceholder" maxlength="160" value="${escapeHtml(question.tailPlaceholder || '')}" placeholder="자세히 적어주세요" ${locked ? 'disabled' : ''}>
+                            </label>
+                            ${question.type === 'dropdown' ? `<label class="text-xs font-bold sm:col-span-2">꼬리 질문을 표시할 선택지
+                                <select class="field mt-1" data-field="tailCondition" ${locked ? 'disabled' : ''}><option value="">선택지 전체에서 표시 안 함</option>${(question.options || []).map(option => `<option value="${escapeHtml(option)}" ${question.tailCondition === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>
+                            </label>` : ''}
+                        ` : ''}
+                    </div>
+                </article>`).join('');
+        }
+
+        function markSchemaDirty() { schemaDirty = true; }
+
+        $('builderQuestions').addEventListener('input', event => {
+            const card = event.target.closest('.builder-card');
+            if (!card || !currentRoomData) return;
+            const index = Number(card.dataset.index);
+            const question = currentRoomData.formSchema[index];
+            if (!question) return;
+            const field = event.target.dataset.field;
+            if (field === 'options') question.options = asOptions(event.target.value);
+            else if (field) question[field] = event.target.value;
+            markSchemaDirty();
+        });
+        $('builderQuestions').addEventListener('change', event => {
+            const card = event.target.closest('.builder-card');
+            if (!card || !currentRoomData) return;
+            const index = Number(card.dataset.index);
+            const question = currentRoomData.formSchema[index];
+            if (!question) return;
+            const field = event.target.dataset.field;
+            if (field === 'options') question.options = asOptions(event.target.value);
+            else if (field === 'required' || field === 'hasTail') question[field] = event.target.checked;
+            else if (field) question[field] = event.target.value;
+            if (field === 'type') {
+                if (['dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
+                if (question.type !== 'short') question.validation = 'none';
+                if (!['dropdown', 'pill'].includes(question.type)) question.hasTail = false;
+                renderBuilder(currentRoomData.formSchema);
+            }
+            if (field === 'options' || field === 'hasTail' || field === 'tailCondition') renderBuilder(currentRoomData.formSchema);
+            markSchemaDirty();
+        });
+        $('builderQuestions').addEventListener('click', event => {
+            const button = event.target.closest('button[data-action]');
+            if (!button || !currentRoomData || Number(currentRoomData.responseCount) > 0) return;
+            const card = button.closest('.builder-card');
+            const index = Number(card.dataset.index);
+            if (button.dataset.action === 'delete') currentRoomData.formSchema.splice(index, 1);
+            else {
+                const offset = button.dataset.action === 'up' ? -1 : 1;
+                [currentRoomData.formSchema[index], currentRoomData.formSchema[index + offset]] = [currentRoomData.formSchema[index + offset], currentRoomData.formSchema[index]];
+            }
+            renderBuilder(currentRoomData.formSchema);
+            markSchemaDirty();
+        });
+
+        $('addQuestionButton').addEventListener('click', () => {
+            if (!currentRoomData || Number(currentRoomData.responseCount) > 0) return;
+            currentRoomData.formSchema.push(newQuestion());
+            renderBuilder(currentRoomData.formSchema);
+            markSchemaDirty();
+        });
+
+        $('saveSchemaButton').addEventListener('click', async () => {
+            if (!currentRoom || !currentRoomData || Number(currentRoomData.responseCount) > 0) return;
+            const schema = currentRoomData.formSchema || [];
+            if (schema.some(question => !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
+            if (schema.some(question => ['dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('드롭다운과 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
+            if (schema.some(question => question.hasTail && question.type === 'dropdown' && !question.tailCondition)) return showNotice('드롭다운 꼬리 질문의 표시 조건을 선택해주세요.', true);
+            const button = $('saveSchemaButton');
+            button.disabled = true;
+            try {
+                const ref = doc(db, 'custom_forms', currentRoom);
+                await runTransaction(db, async transaction => {
+                    const snapshot = await transaction.get(ref);
+                    if (!snapshot.exists()) throw new Error('설문 룸이 삭제되었습니다.');
+                    const latest = snapshot.data();
+                    if (!teacher.isAdmin && latest.creatorUid !== currentUser.uid) throw new Error('이 설문을 수정할 권한이 없습니다.');
+                    if ((Number(latest.responseCount) || 0) > 0) throw new Error('응답이 제출되어 양식 수정이 잠겼습니다. 양식을 복제해주세요.');
+                    transaction.update(ref, {
+                        memo: $('roomMemoInput').value.trim(),
+                        formSchema: schema,
+                        updatedAt: serverTimestamp()
+                    });
+                });
+                schemaDirty = false;
+                await selectRoom(currentRoom);
+                showNotice('설문 양식이 저장되었습니다.');
+            } catch (error) {
+                console.error('양식 저장 실패:', error);
+                showNotice(`양식을 저장하지 못했습니다: ${error.message || '다시 시도해주세요.'}`, true);
+                if (error.message?.includes('잠겼습니다')) await selectRoom(currentRoom);
+            } finally {
+                button.disabled = Number(currentRoomData?.responseCount) > 0;
+            }
+        });
+
+        $('roomMemoInput').addEventListener('input', markSchemaDirty);
+        $('roomSelect').addEventListener('change', async event => {
+            if (schemaDirty && !window.confirm('저장하지 않은 양식 변경 사항이 사라집니다. 계속할까요?')) {
+                event.target.value = currentRoom || '';
+                return;
+            }
+            schemaDirty = false;
+            await selectRoom(event.target.value);
+        });
+        $('createRoomButton').addEventListener('click', () => {
+            if (schemaDirty && !window.confirm('저장하지 않은 변경 사항은 새 설문에 반영되지 않습니다. 새 설문을 만들까요?')) return;
+            schemaDirty = false;
+            createRoom();
+        });
+        $('cloneRoomButton').addEventListener('click', async () => {
+            if (!currentRoomData) return;
+            await createRoom({ data: { ...currentRoomData, memo: $('roomMemoInput').value.trim() } });
+        });
+        $('toggleStatusButton').addEventListener('click', async () => {
+            if (!currentRoom || !currentRoomData) return;
+            if (schemaDirty && !window.confirm('저장하지 않은 문항 변경 사항은 버려집니다. 설문 상태를 변경할까요?')) return;
+            const status = currentRoomData.status === 'closed' ? 'active' : 'closed';
+            try {
+                await updateDoc(doc(db, 'custom_forms', currentRoom), { status, updatedAt: serverTimestamp() });
+                await loadTeacherRooms();
+                $('roomSelect').value = currentRoom;
+                await selectRoom(currentRoom);
+                showNotice(status === 'closed' ? '설문을 마감했습니다. 학생은 조회만 할 수 있습니다.' : '설문을 다시 열었습니다.');
+            } catch (error) {
+                console.error('설문 상태 변경 실패:', error);
+                showNotice(`설문 상태를 변경하지 못했습니다: ${error.message || '권한과 네트워크를 확인해주세요.'}`, true);
+            }
+        });
+
+        function formatAnswer(answer) {
+            if (answer == null) return '';
+            if (typeof answer !== 'object') return String(answer);
+            const selected = Array.isArray(answer.selected) ? answer.selected : [answer.selected].filter(Boolean);
+            const tails = answer.tailAnswers || {};
+            return selected.map(option => tails[option] ? `${option}: ${tails[option]}` : option).join('\n');
+        }
+
+        function renderResponses(responses) {
+            const schema = currentRoomData.formSchema || [];
+            $('responseCountBadge').textContent = `${Math.max(Number(currentRoomData.responseCount) || 0, responses.length)}명 응답`;
+            $('responseTableHead').innerHTML = `<tr><th class="border-b border-line p-2">학번</th><th class="border-b border-line p-2">이름</th><th class="border-b border-line p-2">수정일</th>${schema.map(question => `<th class="border-b border-line p-2">${escapeHtml(question.title)}</th>`).join('')}</tr>`;
+            if (!responses.length) {
+                $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + 3}">아직 제출된 응답이 없습니다.</td></tr>`;
+                return;
+            }
+            responses.sort((a, b) => String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }));
+            $('responseTableBody').innerHTML = responses.map(response => {
+                const updatedAt = response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '';
+                return `<tr><td class="border-b border-line/60 p-2">${escapeHtml(response.studentId)}</td><td class="border-b border-line/60 p-2">${escapeHtml(response.studentName)}</td><td class="border-b border-line/60 p-2 whitespace-nowrap">${escapeHtml(updatedAt)}</td>${schema.map(question => `<td class="max-w-xs whitespace-pre-wrap break-words border-b border-line/60 p-2">${escapeHtml(formatAnswer(response.answers?.[question.id]))}</td>`).join('')}</tr>`;
+            }).join('');
+        }
+
+        $('downloadXlsxButton').addEventListener('click', async () => {
+            if (!currentRoom || !currentRoomData) return;
+            try {
+                const snapshot = await getDocs(collection(db, 'custom_forms', currentRoom, 'responses'));
+                const schema = currentRoomData.formSchema || [];
+                const responses = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+                const columns = [
+                    { header: '학번', width: 12 }, { header: '이름', width: 18 }, { header: '최종 수정', width: 22 },
+                    ...schema.map(question => ({ header: question.title, width: 28 }))
+                ];
+                const rows = responses.map(response => [
+                    response.studentId || '', response.studentName || '',
+                    response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '',
+                    ...schema.map(question => formatAnswer(response.answers?.[question.id]))
+                ]);
+                const blob = new Blob([buildXlsx([{ name: '응답', columns, rows }])], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = url;
+                anchor.download = `설문_${currentRoom}_응답.xlsx`;
+                anchor.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (error) {
+                console.error('응답 다운로드 실패:', error);
+                showNotice(`응답 파일을 만들지 못했습니다: ${error.message || '응답 권한을 확인해주세요.'}`, true);
+            }
+        });
+
+        function renderStudentQuestions(schema, answers, disabled) {
+            $('dynamicQuestions').innerHTML = schema.map((question, index) => {
+                const answer = answers?.[question.id];
+                const selected = Array.isArray(answer?.selected) ? answer.selected : [];
+                const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
+                let control = '';
+                if (question.type === 'short') {
+                    control = `<input class="field mt-2" data-answer="${escapeHtml(question.id)}" data-validation="${escapeHtml(question.validation || 'none')}" value="${escapeHtml(typeof answer === 'string' ? answer : '')}" placeholder="${escapeHtml(question.placeholder || '')}" ${disabled ? 'disabled' : ''}>`;
+                } else if (question.type === 'long') {
+                    control = `<textarea class="field mt-2" rows="4" data-answer="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.placeholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(typeof answer === 'string' ? answer : '')}</textarea>`;
+                } else if (question.type === 'dropdown') {
+                    control = `<select class="field mt-2" data-answer="${escapeHtml(question.id)}" ${disabled ? 'disabled' : ''}><option value="">${escapeHtml(question.placeholder || '선택해주세요')}</option>${(question.options || []).map(option => `<option value="${escapeHtml(option)}" ${selectedDropdown === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>`;
+                    if (question.hasTail && selectedDropdown && (!question.tailCondition || selectedDropdown === question.tailCondition)) {
+                        control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', selectedDropdown))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedDropdown)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[selectedDropdown] || '')}</textarea></label>`;
+                    }
+                } else if (question.type === 'pill') {
+                    control = `<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => `<button type="button" class="pill-choice" data-pill="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${selected.includes(option)}" ${disabled ? 'disabled' : ''}>${escapeHtml(option)}</button>`).join('')}</div>`;
+                    if (question.hasTail) control += (question.options || []).filter(option => selected.includes(option)).map(option => `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', option))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('');
+                }
+                return `<fieldset class="rounded-xl border border-line p-4" data-question="${escapeHtml(question.id)}"><legend class="px-1 font-bold">${index + 1}. ${escapeHtml(question.title)}${question.required ? ' <span class="text-red-600">*</span>' : ''}</legend>${control}</fieldset>`;
+            }).join('');
+        }
+
+        function setDirty() {
+            isDirty = true;
+            window.onbeforeunload = event => {
+                if (!isDirty) return;
+                event.preventDefault();
+                event.returnValue = '';
+            };
+        }
+        function clearDirty() {
+            isDirty = false;
+            window.onbeforeunload = null;
+        }
+        function collectAnswers(schema) {
+            const answers = {};
+            for (const question of schema) {
+                const block = document.querySelector(`[data-question="${CSS.escape(question.id)}"]`);
+                const tailAnswers = {};
+                block.querySelectorAll(`[data-tail="${CSS.escape(question.id)}"]`).forEach(input => { tailAnswers[input.dataset.option] = input.value.trim(); });
+                if (question.type === 'short' || question.type === 'long') {
+                    const input = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
+                    answers[question.id] = input.value.trim();
+                } else if (question.type === 'dropdown') {
+                    const selected = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`).value;
+                    answers[question.id] = { selected, tailAnswers };
+                } else {
+                    const selected = [...block.querySelectorAll(`[data-pill="${CSS.escape(question.id)}"][aria-pressed="true"]`)].map(button => button.dataset.option);
+                    answers[question.id] = { selected, tailAnswers };
+                }
+            }
+            return answers;
+        }
+
+        function formatPhone(value) {
+            const digits = value.replace(/\D/g, '').slice(0, 11);
+            if (digits.length < 4) return digits;
+            if (digits.length < 8) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+            return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+        }
+        $('dynamicQuestions').addEventListener('input', event => {
+            const input = event.target;
+            if (!input.matches('input, textarea, select')) return;
+            if (input.dataset.validation === 'number') input.value = input.value.replace(/[^0-9]/g, '');
+            if (input.dataset.validation === 'number_4_5') input.value = input.value.replace(/[^0-9]/g, '').slice(0, 5);
+            if (input.dataset.validation === 'phone') input.value = formatPhone(input.value);
+            setDirty();
+        });
+        $('dynamicQuestions').addEventListener('change', event => {
+            const input = event.target;
+            if (input.matches('select[data-answer]')) {
+                const currentAnswers = collectAnswers(studentRoomData.formSchema);
+                const currentAnswer = currentAnswers[input.dataset.answer];
+                currentAnswers[input.dataset.answer] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
+                renderStudentQuestions(studentRoomData.formSchema, currentAnswers, studentRoomData.status === 'closed');
+            }
+            if (input.matches('select, input, textarea')) setDirty();
+        });
+        $('dynamicQuestions').addEventListener('click', event => {
+            const button = event.target.closest('button[data-pill]');
+            if (!button || studentRoomData.status === 'closed') return;
+            const question = studentRoomData.formSchema.find(item => item.id === button.dataset.pill);
+            const nextAnswers = collectAnswers(studentRoomData.formSchema);
+            const answer = nextAnswers[question.id];
+            const selected = new Set(answer.selected);
+            if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
+            else selected.add(button.dataset.option);
+            nextAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers };
+            renderStudentQuestions(studentRoomData.formSchema, nextAnswers, false);
+            setDirty();
+        });
+
+        $('studentLoginForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            hideNotice();
+            const button = $('studentLoginButton');
+            const roomCode = $('roomCodeInput').value.trim().toUpperCase();
+            const studentId = $('studentIdInput').value.trim();
+            const pin = $('studentPinInput').value.trim();
+            const studentName = $('studentNameInput').value.trim();
+            if (!/^[A-Z0-9]{4,6}$/.test(roomCode)) return showNotice('룸 코드를 확인해주세요.', true);
+            if (!/^\d{4,5}$/.test(studentId)) return showNotice('학번은 4~5자리 숫자로 입력해주세요.', true);
+            if (!/^\d{4}$/.test(pin)) return showNotice('PIN은 4자리 숫자로 입력해주세요.', true);
+            button.disabled = true;
+            try {
+                const roomSnapshot = await getDoc(doc(db, 'custom_forms', roomCode));
+                if (!roomSnapshot.exists()) throw new Error('룸 코드를 확인할 수 없습니다.');
+                const roomData = roomSnapshot.data();
+                if (!['active', 'closed'].includes(roomData.status)) throw new Error('설문 상태를 확인할 수 없습니다.');
+                const school = String(roomData.creatorSchool || roomData.school || '').trim();
+                if (!school) throw new Error('이 룸에는 학교 정보가 설정되어 있지 않아 학생 PIN 인증을 진행할 수 없습니다. 선생님께 문의해주세요.');
+                const studentKey = makeStudentKey(school, studentId);
+                const studentSnapshot = await getDoc(doc(db, 'student_auth', studentKey));
+                if (!studentSnapshot.exists()) throw new Error('학생 계정을 찾을 수 없습니다. 학번과 학교를 확인해주세요.');
+                const deviceFp = await deriveDeviceFingerprint(getDeviceId());
+                const validPin = await verifyPinViaGate({ db, doc, setDoc, serverTimestamp }, studentKey, deviceFp, pin);
+                if (!validPin) throw new Error('PIN 인증에 실패했습니다. PIN을 확인해주세요.');
+                const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', studentId));
+                const storedResponse = responseSnapshot.data() || {};
+                const resolvedName = storedResponse.studentName || studentName || studentSnapshot.data().studentName || studentSnapshot.data().name || studentId;
+                $('studentNameInput').value = resolvedName;
+                studentSession = { roomCode, studentId, studentName: resolvedName };
+                studentRoomData = roomData;
+                studentResponseExists = responseSnapshot.exists();
+                $('studentFormTitle').textContent = roomData.memo || '설문';
+                $('studentFormMemo').textContent = roomData.description || '';
+                $('studentRoomStatus').textContent = roomData.status === 'closed' ? '마감됨 · 조회 전용' : '응답 가능';
+                $('studentRoomStatus').className = `rounded-full px-3 py-1 text-xs font-bold ${roomData.status === 'closed' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`;
+                $('existingResponseNotice').hidden = !studentResponseExists;
+                $('closedNotice').hidden = roomData.status !== 'closed';
+                renderStudentQuestions(Array.isArray(roomData.formSchema) ? roomData.formSchema : [], storedResponse.answers || {}, roomData.status === 'closed');
+                $('submitResponseButton').hidden = roomData.status === 'closed';
+                $('submitResponseButton').textContent = studentResponseExists ? '수정 내용 저장' : '응답 제출';
+                $('studentFormPanel').hidden = false;
+                $('studentPinInput').value = '';
+                clearDirty();
+                $('studentFormPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (error) {
+                console.error('학생 폼 인증/조회 실패:', error);
+                showNotice(error.message || '폼을 불러오지 못했습니다. 인터넷 연결을 확인해주세요.', true);
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        $('studentIdInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, '').slice(0, 5); });
+        $('studentPinInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, '').slice(0, 4); });
+        $('roomCodeInput').addEventListener('input', event => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
+
+        $('dynamicForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!studentSession || !studentRoomData || studentRoomData.status === 'closed') return;
+            const studentName = $('studentNameInput').value.trim();
+            if (!studentName) return showNotice('응답에 표시할 이름을 입력해주세요.', true);
+            studentSession.studentName = studentName;
+            const schema = Array.isArray(studentRoomData.formSchema) ? studentRoomData.formSchema : [];
+            if (!schema.length) return showNotice('아직 작성된 문항이 없습니다. 선생님께 문의해주세요.', true);
+            const answers = collectAnswers(schema);
+            for (const question of schema) {
+                const value = answers[question.id];
+                const empty = question.type === 'pill'
+                    ? value.selected.length === 0
+                    : question.type === 'dropdown'
+                        ? !value.selected
+                        : !String(value || '').trim();
+                if (question.required && empty) {
+                    showNotice(`필수 문항에 응답해주세요: ${question.title}`, true);
+                    document.querySelector(`[data-question="${CSS.escape(question.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+                const text = typeof value === 'string' ? value : '';
+                if (!text) continue;
+                if (question.validation === 'number_4_5' && !/^\d{4,5}$/.test(text)) return showNotice(`${question.title}: 4~5자리 숫자로 입력해주세요.`, true);
+                if (question.validation === 'phone' && !/^010-\d{4}-\d{4}$/.test(text)) return showNotice(`${question.title}: 010-0000-0000 형식으로 입력해주세요.`, true);
+                if (question.validation === 'email' && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(text)) return showNotice(`${question.title}: 이메일 주소를 확인해주세요.`, true);
+            }
+            const button = $('submitResponseButton');
+            button.disabled = true;
+            try {
+                const roomRef = doc(db, 'custom_forms', studentSession.roomCode);
+                const responseRef = doc(db, 'custom_forms', studentSession.roomCode, 'responses', studentSession.studentId);
+                await runTransaction(db, async transaction => {
+                    const roomSnapshot = await transaction.get(roomRef);
+                    if (!roomSnapshot.exists()) throw new Error('설문 룸이 삭제되었습니다.');
+                    const latestRoom = roomSnapshot.data();
+                    if (latestRoom.status !== 'active') throw new Error('설문이 마감되어 응답을 저장할 수 없습니다.');
+                    if (JSON.stringify(latestRoom.formSchema || []) !== JSON.stringify(schema)) throw new Error('설문 구조가 변경되었습니다. 폼을 다시 불러온 뒤 응답해주세요.');
+                    const existing = await transaction.get(responseRef);
+                    const update = {
+                        studentId: studentSession.studentId,
+                        studentName: studentSession.studentName,
+                        updatedAt: serverTimestamp(),
+                        answers
+                    };
+                    transaction.set(responseRef, update, { merge: true });
+                    if (!existing.exists()) {
+                        transaction.update(roomRef, {
+                            responseCount: (Number(latestRoom.responseCount) || 0) + 1,
+                            students: arrayUnion(studentSession.studentId)
+                        });
+                    }
+                });
+                studentResponseExists = true;
+                $('existingResponseNotice').hidden = false;
+                button.textContent = '수정 내용 저장';
+                clearDirty();
+                showNotice('응답이 안전하게 저장되었습니다.');
+            } catch (error) {
+                console.error('응답 저장 실패:', error);
+                showNotice(`응답을 저장하지 못했습니다: ${error.message || '네트워크와 설문 권한을 확인해주세요.'}`, true);
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        function buildXlsx(sheets) {
+            const xml = value => String(value ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const colName = index => {
+                let name = '';
+                for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(65 + (n - 1) % 26) + name;
+                return name;
+            };
+            const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+            const base = 'http://schemas.openxmlformats.org';
+            const rel = `${base}/officeDocument/2006/relationships`;
+            const main = `${base}/spreadsheetml/2006/main`;
+            const cell = (value, ref, header) => `<c r="${ref}" t="inlineStr" s="${header ? 1 : 2}"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
+            const sheetXml = sheet => head + `<worksheet xmlns="${main}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${sheet.columns.map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${column.width || 12}" customWidth="1"/>`).join('')}</cols><sheetData><row r="1">${sheet.columns.map((column, index) => cell(column.header, `${colName(index)}1`, true)).join('')}</row>${sheet.rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, index) => cell(value, `${colName(index)}${rowIndex + 2}`, false)).join('')}</row>`).join('')}</sheetData></worksheet>`;
+            const files = [
+                ['[Content_Types].xml', head + `<Types xmlns="${base}/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((sheet, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
+                ['_rels/.rels', head + `<Relationships xmlns="${base}/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+                ['xl/workbook.xml', head + `<workbook xmlns="${main}" xmlns:r="${rel}"><sheets>${sheets.map((sheet, index) => `<sheet name="${xml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join('')}</sheets></workbook>`],
+                ['xl/_rels/workbook.xml.rels', head + `<Relationships xmlns="${base}/package/2006/relationships">${sheets.map((sheet, index) => `<Relationship Id="rId${index + 1}" Type="${rel}/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="${rel}/styles" Target="styles.xml"/></Relationships>`],
+                ['xl/styles.xml', head + `<styleSheet xmlns="${main}"><fonts count="2"><font><sz val="11"/><name val="맑은 고딕"/></font><font><b/><sz val="11"/><name val="맑은 고딕"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE1EBE6"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`]
+            ];
+            sheets.forEach((sheet, index) => files.push([`xl/worksheets/sheet${index + 1}.xml`, sheetXml(sheet)]));
+            return zipStore(files.map(([name, data]) => ({ name, data: new TextEncoder().encode(data) })));
+        }
+
+        function zipStore(entries) {
+            const crc32 = bytes => {
+                let crc = 0xFFFFFFFF;
+                for (const byte of bytes) {
+                    crc ^= byte;
+                    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? 0xEDB88320 ^ (crc >>> 1) : crc >>> 1;
+                }
+                return (crc ^ 0xFFFFFFFF) >>> 0;
+            };
+            const encoder = new TextEncoder();
+            const parts = [];
+            const directory = [];
+            let offset = 0;
+            for (const entry of entries) {
+                const name = encoder.encode(entry.name);
+                const size = entry.data.length;
+                const crc = crc32(entry.data);
+                const local = new DataView(new ArrayBuffer(30));
+                local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
+                local.setUint32(14, crc, true); local.setUint32(18, size, true); local.setUint32(22, size, true); local.setUint16(26, name.length, true);
+                parts.push(new Uint8Array(local.buffer), name, entry.data);
+                const central = new DataView(new ArrayBuffer(46));
+                central.setUint32(0, 0x02014b50, true); central.setUint16(4, 20, true); central.setUint16(6, 0x0800, true);
+                central.setUint32(16, crc, true); central.setUint32(20, size, true); central.setUint32(24, size, true); central.setUint16(28, name.length, true); central.setUint32(42, offset, true);
+                directory.push(new Uint8Array(central.buffer), name);
+                offset += 30 + name.length + size;
+            }
+            const directorySize = directory.reduce((sum, part) => sum + part.length, 0);
+            const end = new DataView(new ArrayBuffer(22));
+            end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+            end.setUint32(12, directorySize, true); end.setUint32(16, offset, true);
+            const all = [...parts, ...directory, new Uint8Array(end.buffer)];
+            const output = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0));
+            let position = 0;
+            all.forEach(part => { output.set(part, position); position += part.length; });
+            return output;
+        }
+
+        $('studentModeButton').addEventListener('click', () => showMode('student'));
+        $('teacherModeButton').addEventListener('click', () => showMode('teacher'));
+        $('googleLoginButton').addEventListener('click', async () => {
+            try { await signInWithPopup(auth, googleProvider); }
+            catch (error) {
+                console.error('교사 로그인 실패:', error);
+                showNotice(`로그인하지 못했습니다: ${error.message || 'Google 계정 연결을 확인해주세요.'}`, true);
+            }
+        });
+        $('logoutButton').addEventListener('click', async () => {
+            try { await signOut(auth); showMode('student'); }
+            catch (error) { console.error('로그아웃 실패:', error); showNotice('로그아웃하지 못했습니다.', true); }
+        });
+
+        onAuthStateChanged(auth, async user => {
+            currentUser = user;
+            teacher = null;
+            $('teacherLoginPanel').hidden = true;
+            $('teacherDashboard').hidden = true;
+            $('logoutButton').hidden = !user;
+            if (!user) {
+                $('teacherLoginPanel').hidden = false;
+                return;
+            }
+            try {
+                const teacherSnapshot = await getDoc(doc(db, 'teachers', user.uid));
+                const record = teacherSnapshot.exists() ? teacherSnapshot.data() : {};
+                const isAdmin = user.email === ADMIN_EMAIL;
+                if (!isAdmin && record.status !== 'approved') {
+                    $('teacherLoginPanel').hidden = false;
+                    showNotice('승인된 교사 계정만 폼을 관리할 수 있습니다.', true);
+                    return;
+                }
+                teacher = { name: record.name || (isAdmin ? '관리자' : '교사'), school: record.school || (isAdmin ? '수학동동' : ''), isAdmin };
+                $('teacherIdentity').textContent = `${teacher.name} 선생님${teacher.school ? ` · ${teacher.school}` : ''}`;
+                $('teacherDashboard').hidden = false;
+                $('logoutButton').hidden = false;
+                await loadTeacherRooms();
+                showMode('teacher');
+            } catch (error) {
+                console.error('교사 권한 확인 실패:', error);
+                $('teacherLoginPanel').hidden = false;
+                showNotice('교사 권한을 확인하지 못했습니다. 계정과 Firestore 권한을 확인해주세요.', true);
+            }
+        });
+
+        showMode('student');
+    </script>
+</body>
+</html>
