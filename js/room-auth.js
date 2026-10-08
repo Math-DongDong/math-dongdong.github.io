@@ -1800,6 +1800,7 @@ export function renderRoomEntrance(container, options = {}) {
         };
 
         const hasMarker = () => markerRefFn('__probe__') !== null;
+        const fallbackNickname = () => `${generateRandomNickname()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
         /** 이 기기가 이 방에서 쓰던 이름을 그대로 씁니다 (본인 기기 · 빠른 입장) */
         const resolveRoomNickname = async () => {
@@ -1813,7 +1814,14 @@ export function renderRoomEntrance(container, options = {}) {
                 setRoomNickname(roomCode, start);
                 return start;
             }
-            const claimed = await claimRoomNickname(markerRefFn, start);
+            const claimed = await claimRoomNickname(markerRefFn, start, options.nicknameClaimTries || 40);
+            if (!claimed && options.allowUnreservedNicknameFallback) {
+                console.warn('닉네임 마커를 선점하지 못해 고유 접미사로 대체합니다. Firestore nicknames 규칙을 확인하세요.');
+                const fallback = fallbackNickname();
+                setLocalGameNickname(fallback);
+                setRoomNickname(roomCode, fallback);
+                return fallback;
+            }
             if (!claimed) return null;
             setLocalGameNickname(claimed);
             setRoomNickname(roomCode, claimed);
@@ -1830,7 +1838,10 @@ export function renderRoomEntrance(container, options = {}) {
         const claimFreshNickname = async () => {
             const start = generateRandomNickname();
             if (!hasMarker()) return start;
-            return await claimRoomNickname(markerRefFn, start);
+            const claimed = await claimRoomNickname(markerRefFn, start, options.nicknameClaimTries || 40);
+            if (claimed || !options.allowUnreservedNicknameFallback) return claimed;
+            console.warn('게스트 닉네임 마커를 선점하지 못해 고유 접미사로 대체합니다. Firestore nicknames 규칙을 확인하세요.');
+            return fallbackNickname();
         };
 
         try {
