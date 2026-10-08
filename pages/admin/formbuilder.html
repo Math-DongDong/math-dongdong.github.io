@@ -43,7 +43,10 @@
 
     <main class="mx-auto max-w-6xl px-4 py-6">
         <div id="notice" class="mb-4 rounded-xl border border-line bg-white px-4 py-3 text-sm" role="status" aria-live="polite" hidden></div>
-        <section id="studentSection" class="mx-auto max-w-2xl">
+        <div id="authLoading" class="mx-auto max-w-xl rounded-2xl border border-line bg-white p-6 text-center text-sm text-muted shadow-sm" role="status" aria-live="polite">
+            <i class="bi bi-arrow-repeat animate-spin mr-1" aria-hidden="true"></i> 계정 권한을 확인하고 있습니다.
+        </div>
+        <section id="studentSection" class="mx-auto max-w-2xl" hidden>
             <div class="mb-5">
                 <p class="mb-1 text-sm font-bold text-board">STUDENT</p>
                 <h1 class="text-2xl font-extrabold">설문에 참여하거나 응답을 수정하세요</h1>
@@ -186,6 +189,8 @@
         let isDirty = false;
 
         function showMode(mode) {
+            if (mode === 'teacher' && currentUser && !teacher) mode = 'student';
+            $('authLoading').hidden = true;
             $('studentSection').hidden = mode !== 'student';
             $('teacherSection').hidden = mode !== 'teacher';
             hideNotice();
@@ -822,7 +827,7 @@
             $('teacherDashboard').hidden = true;
             $('logoutButton').hidden = !user;
             if (!user) {
-                $('teacherLoginPanel').hidden = false;
+                showMode('student');
                 return;
             }
             try {
@@ -830,24 +835,29 @@
                 const teacherSnapshot = isAdmin ? null : await getDoc(doc(db, 'teachers', user.uid));
                 const record = teacherSnapshot?.exists() ? teacherSnapshot.data() : {};
                 if (!isAdmin && record.status !== 'approved') {
-                    $('teacherLoginPanel').hidden = false;
-                    showNotice('승인된 교사 계정만 폼을 관리할 수 있습니다.', true);
+                    showMode('student');
+                    showNotice('승인된 교사 계정이 아니므로 학생 로그인 화면으로 이동했습니다.', true);
                     return;
                 }
                 teacher = { name: record.name || (isAdmin ? '관리자' : '교사'), school: record.school || (isAdmin ? '수학동동' : ''), isAdmin };
                 $('teacherIdentity').textContent = `${teacher.name} 선생님${teacher.school ? ` · ${teacher.school}` : ''}`;
                 $('teacherDashboard').hidden = false;
                 $('logoutButton').hidden = false;
-                await loadTeacherRooms();
                 showMode('teacher');
             } catch (error) {
                 console.error('교사 권한 확인 실패:', error);
-                $('teacherLoginPanel').hidden = false;
-                showNotice('교사 권한을 확인하지 못했습니다. 계정과 Firestore 권한을 확인해주세요.', true);
+                teacher = null;
+                showMode('student');
+                showNotice('교사 권한을 확인하지 못해 학생 로그인 화면으로 이동했습니다. 계정과 Firestore 권한을 확인해주세요.', true);
+                return;
+            }
+            try {
+                await loadTeacherRooms();
+            } catch (error) {
+                console.error('교사 설문 목록 조회 실패:', error);
+                showNotice(`교사 페이지에 연결했지만 설문 목록을 불러오지 못했습니다: ${error.message || 'Firestore 권한과 네트워크를 확인해주세요.'}`, true);
             }
         });
-
-        showMode('student');
     </script>
 </body>
 </html>
