@@ -417,11 +417,6 @@
                 <span class="text-sm font-bold text-ink flex items-center gap-1.5 whitespace-nowrap">
                     <i class="bi bi-door-open"></i> 소감문 방 | 메모:
                 </span>
-                <div class="min-w-[220px] max-w-xs flex-1">
-                    <select id="roomSelect" class="field mt-0 py-2 text-sm">
-                        <option value="">방을 선택하세요</option>
-                    </select>
-                </div>
                 <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap" id="teacherRoomControls">
                     <button type="button" id="btnCreateRoom" class="btn btn-primary btn-sm whitespace-nowrap">
                         <i class="bi bi-plus-circle"></i> 새 방 만들기
@@ -429,6 +424,16 @@
                     <button type="button" id="btnDeleteRoom" class="btn btn-ghost btn-sm text-stamp border-stamp/40 whitespace-nowrap" disabled>
                         <i class="bi bi-trash"></i> 방 삭제
                     </button>
+                    <div id="adminSchoolFilter" class="d-none min-w-[180px]">
+                        <select id="adminSchoolSelect" class="field mt-0 py-2 text-sm" aria-label="학교별 방 필터">
+                            <option value="">전체 학교</option>
+                        </select>
+                    </div>
+                    <div class="min-w-[220px] max-w-xs flex-1">
+                        <select id="roomSelect" class="field mt-0 py-2 text-sm">
+                            <option value="">방을 선택하세요</option>
+                        </select>
+                    </div>
                     <button type="button" id="btnResetStudentPin" class="btn btn-ghost btn-sm whitespace-nowrap" disabled>
                         <i class="bi bi-key"></i> PIN 초기화
                     </button>
@@ -1007,6 +1012,8 @@
         let currentStudentId = '';
         let selectedReviewIds = new Set();
         let currentFilter = 'all';
+        let unsubRooms = null;
+        let adminRoomList = [];
 
         // ── 유틸리티 함수 ──
         const $ = (id) => document.getElementById(id);
@@ -1089,6 +1096,7 @@
 
             // 방 관리 컨트롤은 교사만
             $('teacherRoomControls').classList.toggle('d-none', role !== 'teacher');
+            $('adminSchoolFilter').classList.toggle('d-none', role !== 'teacher' || !window.isAdmin);
             // 방 선택 바: 교사만 표시
             $('roomSelectBar').classList.toggle('d-none', role !== 'teacher');
 
@@ -1121,7 +1129,17 @@
 
                             // 교사 인증 완료 시 방 목록 실시간 구독 시작
                             if (unsubRooms) unsubRooms();
-                            unsubRooms = roomKit.watchRooms($('roomSelect'));
+                            if (window.isAdmin) {
+                                unsubRooms = onSnapshot(collection(db, COLLECTION_NAME), (snap) => {
+                                    adminRoomList = snap.docs.map(d => ({ code: d.id, data: d.data() || {} }));
+                                    renderAdminRoomOptions();
+                                }, (err) => {
+                                    console.error('학교별 방 목록을 불러오지 못했습니다:', err);
+                                    customAlert('오류', '학교별 방 목록을 불러오지 못했습니다.');
+                                });
+                            } else {
+                                unsubRooms = roomKit.watchRooms($('roomSelect'));
+                            }
                             return;
                         }
                     }
@@ -1149,7 +1167,42 @@
         });
 
         // ── 2. 방 관리 (생성, 목록 구독, 삭제) ──
-        let unsubRooms = null;
+        function renderAdminRoomOptions() {
+            const schoolSelect = $('adminSchoolSelect');
+            const roomSelect = $('roomSelect');
+            const selectedSchool = schoolSelect.value;
+            const targetCode = roomSelect.dataset.targetCode || roomSelect.value;
+            const unspecifiedSchool = '__unspecified__';
+            const schoolFor = room => String(room.data.creatorSchool || '').trim() || unspecifiedSchool;
+            const schoolNames = [...new Set(adminRoomList.map(schoolFor))]
+                .sort((a, b) => a.localeCompare(b, 'ko'));
+
+            schoolSelect.innerHTML = '<option value="">전체 학교</option>' + schoolNames.map(school => {
+                const label = school === unspecifiedSchool ? '학교 미지정' : school;
+                return `<option value="${escapeHtml(school)}">${escapeHtml(label)}</option>`;
+            }).join('');
+            schoolSelect.value = schoolNames.includes(selectedSchool) ? selectedSchool : '';
+
+            const visibleRooms = adminRoomList
+                .filter(room => !schoolSelect.value || schoolFor(room) === schoolSelect.value)
+                .sort((a, b) => a.code.localeCompare(b.code, 'ko'));
+            roomSelect.innerHTML = '<option value="">방을 선택하세요</option>' + visibleRooms.map(room => {
+                const label = room.data.memo ? `${room.code} | ${room.data.memo}` : room.code;
+                return `<option value="${escapeHtml(room.code)}">${escapeHtml(label)}</option>`;
+            }).join('');
+
+            if (targetCode && visibleRooms.some(room => room.code === targetCode)) {
+                roomSelect.value = targetCode;
+                roomSelect.dataset.targetCode = '';
+            }
+            if (currentRoomCode && !visibleRooms.some(room => room.code === currentRoomCode)) {
+                selectRoom('');
+            }
+        }
+
+        $('adminSchoolSelect').addEventListener('change', () => {
+            renderAdminRoomOptions();
+        });
 
         $('btnCreateRoom').addEventListener('click', async () => {
             if (!window.isApprovedTeacher && !window.isAdmin) {
@@ -1169,6 +1222,17 @@
                 }
             });
             if (code) {
+                if (window.isAdmin) {
+                    const data = await roomKit.getRoomData(code);
+                    if (data) {
+                        adminRoomList = adminRoomList.filter(room => room.code !== code);
+                        adminRoomList.push({ code, data });
+                        renderAdminRoomOptions();
+                        $('adminSchoolSelect').value = String(data.creatorSchool || '').trim() || '__unspecified__';
+                        $('roomSelect').dataset.targetCode = code;
+                        renderAdminRoomOptions();
+                    }
+                }
                 $('roomSelect').dataset.targetCode = code;
                 if (![...$('roomSelect').options].some(o => o.value === code)) {
                     const opt = document.createElement('option');
