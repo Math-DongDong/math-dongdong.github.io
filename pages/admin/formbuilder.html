@@ -60,17 +60,20 @@
             </div>
             <form id="studentLoginForm" class="panel rounded-2xl border border-line bg-white p-5 shadow-sm">
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <label class="text-sm font-bold">룸 코드
-                        <input id="roomCodeInput" class="field mt-1" maxlength="6" autocomplete="off" placeholder="예: A1B2" required>
+                    <div class="sm:col-span-2">
+                        <label class="text-sm font-bold">룸 코드
+                            <input id="roomCodeInput" class="field mt-1 font-mono uppercase tracking-wider" maxlength="6" autocomplete="off" placeholder="예: A1B2" required>
+                        </label>
+                        <div id="roomModeNotice" class="mt-2 text-xs rounded-lg p-2.5 bg-page text-muted" hidden></div>
+                    </div>
+                    <label id="studentNameWrap" class="text-sm font-bold sm:col-span-2">이름 (닉네임)
+                        <input id="studentNameInput" class="field mt-1" maxlength="40" autocomplete="name" placeholder="응답에 표시될 이름" required>
                     </label>
-                    <label class="text-sm font-bold">학번
-                        <input id="studentIdInput" class="field mt-1" inputmode="numeric" maxlength="5" autocomplete="username" placeholder="4~5자리" required>
+                    <label id="studentIdWrap" class="text-sm font-bold">학번
+                        <input id="studentIdInput" class="field mt-1" inputmode="numeric" maxlength="5" autocomplete="username" placeholder="4~5자리 숫자">
                     </label>
-                    <label class="text-sm font-bold">이름
-                        <input id="studentNameInput" class="field mt-1" maxlength="40" autocomplete="name" placeholder="응답에 표시될 이름">
-                    </label>
-                    <label class="text-sm font-bold">학생 PIN
-                        <input id="studentPinInput" type="password" class="field mt-1" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="4자리 숫자" required>
+                    <label id="studentPinWrap" class="text-sm font-bold">학생 PIN
+                        <input id="studentPinInput" type="password" class="field mt-1" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="4자리 숫자">
                     </label>
                 </div>
                 <button class="btn btn-primary mt-5 w-full" id="studentLoginButton" type="submit">폼 불러오기</button>
@@ -93,12 +96,31 @@
         </section>
 
         <section id="teacherSection" hidden>
-            <div id="teacherLoginPanel" class="mx-auto max-w-xl rounded-2xl border border-line bg-white p-6 text-center shadow-sm">
+            <!-- 1. 비로그인 상태일 때 로그인 패널 -->
+            <div id="teacherLoginPanel" class="mx-auto max-w-lg rounded-2xl border border-line bg-white p-7 text-center shadow-sm" hidden>
                 <div class="mb-3 text-4xl">👩‍🏫</div>
-                <h1 class="text-2xl font-extrabold">교사 폼 관리</h1>
-                <p class="my-3 text-sm text-muted">승인된 교사 계정으로 로그인하면 설문 룸을 만들고 관리할 수 있습니다.</p>
-                <button id="googleLoginButton" class="btn btn-primary mt-2"><i class="bi bi-google"></i> Google 계정으로 로그인</button>
+                <h1 class="text-2xl font-extrabold text-board">교사 폼 관리 로그인</h1>
+                <p class="mt-2 mb-4 text-sm text-muted">승인된 교사 계정으로 로그인하면 설문 룸을 만들고 관리할 수 있습니다.</p>
+                <button id="googleLoginButton" class="btn btn-primary w-full"><i class="bi bi-google"></i> Google 계정으로 로그인</button>
+                <button id="btnBackToStudentFromLogin" class="btn btn-light mt-3 w-full text-xs">← 학생 응답 화면으로 돌아가기</button>
             </div>
+
+            <!-- 2. 교사 미승인 상태 안내 게이트 -->
+            <div id="teacherAuthGate" class="mx-auto max-w-lg rounded-2xl border border-amber-300 bg-amber-50/70 p-7 text-center shadow-sm" hidden>
+                <i class="bi bi-shield-lock text-4xl text-amber-600"></i>
+                <h2 class="text-xl font-extrabold mt-3 text-amber-900">교사 승인이 필요합니다</h2>
+                <p class="text-sm text-amber-800 mt-2">설문 양식 생성 및 관리 기능은 <b>승인된 교사 계정</b>만 사용할 수 있습니다.</p>
+                <div class="my-4 rounded-xl bg-white/80 border border-amber-200 p-3 text-xs text-muted">
+                    접속 계정: <b id="pendingUserEmail" class="text-ink"></b><br>
+                    <span class="text-amber-700 font-semibold">현재 관리자 승인 대기 중입니다.</span>
+                </div>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <button type="button" class="btn btn-light text-xs" id="btnBackToStudentFromGate">← 학생 화면으로 이동</button>
+                    <button type="button" class="btn btn-danger text-xs" id="btnReloginFromGate">로그아웃</button>
+                </div>
+            </div>
+
+            <!-- 3. 승인된 교사 대시보드 -->
             <div id="teacherDashboard" hidden>
                 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -126,7 +148,10 @@
                                     <h2 class="text-lg font-extrabold">폼 빌더</h2>
                                     <p id="builderLockNotice" class="mt-1 text-sm text-amber-800" hidden>응답 데이터가 존재하여 문항 구조를 변경할 수 없습니다. 수정을 원하면 [양식 복제]를 이용하세요.</p>
                                 </div>
-                                <span id="roomCodeBadge" class="rounded-lg bg-page px-3 py-2 font-mono text-lg font-extrabold tracking-widest"></span>
+                                <div class="flex items-center gap-2">
+                                    <span id="roomModeBadge" class="rounded-lg bg-page px-2.5 py-1 text-xs font-bold text-board"></span>
+                                    <span id="roomCodeBadge" class="rounded-lg bg-page px-3 py-2 font-mono text-lg font-extrabold tracking-widest"></span>
+                                </div>
                             </div>
                             <label class="text-sm font-bold">방 제목 / 메모
                                 <input id="roomMemoInput" class="field mt-1" maxlength="160" placeholder="예: 2026학년도 1학기 기초조사">
@@ -155,6 +180,37 @@
             </div>
         </section>
     </main>
+
+    <!-- 방 모드 선택 모달 -->
+    <div id="roomModeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" hidden>
+        <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div class="mb-4 flex items-center justify-between border-b border-line pb-3">
+                <h3 class="text-lg font-extrabold flex items-center gap-2"><span>🎯</span> 설문 방 생성 모드</h3>
+                <button type="button" id="closeRoomModeModal" class="text-muted hover:text-ink text-xl font-bold">&times;</button>
+            </div>
+            <p class="mb-4 text-xs text-muted">수업 및 배포 환경에 알맞은 학생 입장 방식을 선택해주세요.</p>
+            <div class="space-y-3">
+                <label class="flex cursor-pointer items-start gap-3 rounded-xl border-2 border-board bg-board/5 p-3.5 transition" id="labelModeQuick">
+                    <input type="radio" name="modalRoomMode" id="modeQuickRadio" value="quick" class="mt-1" checked>
+                    <div>
+                        <strong class="block text-sm font-bold text-ink">🚀 빠른 입장 모드</strong>
+                        <span class="block mt-0.5 text-xs text-muted leading-relaxed">학번·PIN 없이 <b>이름(닉네임)</b>만 입력하여 즉시 설문에 참여합니다. 학급 외 설문이나 간편 조사에 적합합니다.</span>
+                    </div>
+                </label>
+                <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3.5 hover:bg-page/50 transition" id="labelModeAuth">
+                    <input type="radio" name="modalRoomMode" id="modeAuthRadio" value="auth" class="mt-1">
+                    <div>
+                        <strong class="block text-sm font-bold text-ink">🔐 학생 인증 모드</strong>
+                        <span class="block mt-0.5 text-xs text-muted leading-relaxed">학생은 <b>학번(4~5자리)과 4자리 PIN</b>으로 인증 후 참여합니다. 이전 응답을 불러와 수정할 수 있고 중복 응답이 방지됩니다.</span>
+                    </div>
+                </label>
+            </div>
+            <div class="mt-6 flex justify-end gap-2">
+                <button type="button" id="cancelRoomModeModal" class="btn btn-light text-sm">취소</button>
+                <button type="button" id="confirmRoomModeModal" class="btn btn-primary text-sm">선택 완료</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
         import { auth, db, googleProvider } from '../../js/firebase-config.js';
@@ -195,12 +251,72 @@
         let isDirty = false;
 
         function showMode(mode) {
-            if (mode === 'teacher' && currentUser && !teacher) mode = 'student';
             $('authLoading').hidden = true;
+            $('studentModeButton').className = mode === 'student' ? 'btn bg-yellow text-ink' : 'btn bg-white/10 text-white';
+            $('teacherModeButton').className = mode === 'teacher' ? 'btn bg-yellow text-ink' : 'btn bg-white/10 text-white';
             $('studentSection').hidden = mode !== 'student';
             $('teacherSection').hidden = mode !== 'teacher';
             $('teacherHeaderInfo').hidden = mode !== 'teacher' || !teacher;
+
+            if (mode === 'teacher') {
+                if (!currentUser) {
+                    $('teacherLoginPanel').hidden = false;
+                    $('teacherAuthGate').hidden = true;
+                    $('teacherDashboard').hidden = true;
+                } else if (!teacher) {
+                    $('teacherLoginPanel').hidden = true;
+                    $('teacherAuthGate').hidden = false;
+                    $('teacherDashboard').hidden = true;
+                    $('pendingUserEmail').textContent = currentUser.email || '';
+                } else {
+                    $('teacherLoginPanel').hidden = true;
+                    $('teacherAuthGate').hidden = true;
+                    $('teacherDashboard').hidden = false;
+                }
+            }
             hideNotice();
+        }
+
+        function promptCustomRoomMode() {
+            return new Promise(resolve => {
+                const modal = $('roomModeModal');
+                const confirmBtn = $('confirmRoomModeModal');
+                const cancelBtn = $('cancelRoomModeModal');
+                const closeBtn = $('closeRoomModeModal');
+                const quickRadio = $('modeQuickRadio');
+                const authRadio = $('modeAuthRadio');
+                const labelQuick = $('labelModeQuick');
+                const labelAuth = $('labelModeAuth');
+
+                const updateStyles = () => {
+                    const isQuick = quickRadio.checked;
+                    labelQuick.className = isQuick
+                        ? 'flex cursor-pointer items-start gap-3 rounded-xl border-2 border-board bg-board/5 p-3.5 transition'
+                        : 'flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3.5 hover:bg-page/50 transition';
+                    labelAuth.className = !isQuick
+                        ? 'flex cursor-pointer items-start gap-3 rounded-xl border-2 border-board bg-board/5 p-3.5 transition'
+                        : 'flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3.5 hover:bg-page/50 transition';
+                };
+
+                quickRadio.onchange = updateStyles;
+                authRadio.onchange = updateStyles;
+                quickRadio.checked = true;
+                updateStyles();
+
+                const close = val => {
+                    modal.hidden = true;
+                    confirmBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    closeBtn.onclick = null;
+                    resolve(val);
+                };
+
+                confirmBtn.onclick = () => close(quickRadio.checked ? 'quick' : 'auth');
+                cancelBtn.onclick = () => close(null);
+                closeBtn.onclick = () => close(null);
+
+                modal.hidden = false;
+            });
         }
 
         async function loadTeacherRooms() {
@@ -209,13 +325,14 @@
             const base = collection(db, 'custom_forms');
             const roomsSnapshot = teacher.isAdmin
                 ? await getDocs(base)
-                : await getDocs(query(base, where('creatorUid', '==', currentUser.uid)));
+                : await getDocs(query(base, where('createdBy', '==', currentUser.uid)));
             teacherRooms = roomsSnapshot.docs.map(item => ({ code: item.id, data: item.data() }));
             teacherRooms.sort((a, b) => String(b.data.createdAt?.toMillis?.() || 0).localeCompare(String(a.data.createdAt?.toMillis?.() || 0)));
             for (const room of teacherRooms) {
                 const option = document.createElement('option');
                 option.value = room.code;
-                option.textContent = `${room.code} · ${room.data.memo || '제목 없는 설문'} · ${room.data.status === 'closed' ? '마감' : '진행 중'}`;
+                const modeLabel = room.data.roomMode === 'auth' ? '학생인증' : '빠른입장';
+                option.textContent = `${room.code} · ${room.data.memo || '제목 없는 설문'} (${modeLabel}) · ${room.data.status === 'closed' ? '마감' : '진행 중'}`;
                 list.append(option);
             }
             $('roomCount').textContent = `${teacherRooms.length}개 설문`;
@@ -231,11 +348,29 @@
             button.disabled = true;
             try {
                 const baseData = source?.data || {};
+                let selectedMode = baseData.roomMode;
+                if (!selectedMode) {
+                    selectedMode = await promptCustomRoomMode();
+                    if (!selectedMode) return; // 취소됨
+                }
+
+                let creatorSchool = teacher.school || '';
+                if (selectedMode === 'auth' && (!creatorSchool || creatorSchool === '관리자')) {
+                    if (teacher.isAdmin) {
+                        creatorSchool = '동동쌤';
+                    } else {
+                        showNotice('학생 인증 방을 만들려면 교사 정보수정에서 소속 학교명을 먼저 등록해야 합니다.', true);
+                        return;
+                    }
+                }
+
                 const roomData = {
-                    creatorUid: currentUser.uid,
+                    createdBy: currentUser.uid,        // ★ 보안 규칙 필수 필드
+                    creatorUid: currentUser.uid,       // 호환성 유지
                     creatorName: teacher.name,
-                    creatorSchool: teacher.school || '',
+                    creatorSchool,
                     createdAt: serverTimestamp(),
+                    roomMode: selectedMode,            // ★ 'quick' 또는 'auth'
                     memo: String(baseData.memo || ''),
                     status: 'active',
                     responseCount: 0,
@@ -261,7 +396,8 @@
                 await loadTeacherRooms();
                 $('roomSelect').value = createdCode;
                 await selectRoom(createdCode);
-                showNotice(source ? `양식이 복제되었습니다. 새 룸 코드: ${createdCode}` : `새 설문이 만들어졌습니다. 룸 코드: ${createdCode}`);
+                const modeLabel = selectedMode === 'auth' ? '학생 인증' : '빠른 입장';
+                showNotice(source ? `양식이 복제되었습니다. 새 룸 코드: ${createdCode} (${modeLabel})` : `새 설문이 만들어졌습니다. 룸 코드: ${createdCode} (${modeLabel})`);
             } catch (error) {
                 console.error('설문 룸 생성 실패:', error);
                 showNotice(`설문 룸을 만들지 못했습니다: ${error.message || '잠시 후 다시 시도해주세요.'}`, true);
@@ -283,11 +419,13 @@
                 const snapshot = await getDoc(doc(db, 'custom_forms', code));
                 if (!snapshot.exists()) throw new Error('선택한 설문 룸을 찾을 수 없습니다.');
                 currentRoomData = snapshot.data();
-                if (!teacher.isAdmin && currentRoomData.creatorUid !== currentUser.uid) throw new Error('이 설문 룸을 관리할 권한이 없습니다.');
+                const isOwner = currentRoomData.createdBy === currentUser.uid || currentRoomData.creatorUid === currentUser.uid;
+                if (!teacher.isAdmin && !isOwner) throw new Error('이 설문 룸을 관리할 권한이 없습니다.');
                 const responseSnapshot = await getDocs(collection(db, 'custom_forms', code, 'responses'));
                 const count = Math.max(Number(currentRoomData.responseCount) || 0, responseSnapshot.size);
                 currentRoomData.responseCount = count;
                 $('roomCodeBadge').textContent = code;
+                $('roomModeBadge').textContent = currentRoomData.roomMode === 'auth' ? '🔐 학생 인증' : '🚀 빠른 입장';
                 $('roomMemoInput').value = currentRoomData.memo || '';
                 $('responseCountBadge').textContent = `${count}명 응답`;
                 $('roomCount').textContent = `${count}명 응답 · ${currentRoomData.status === 'closed' ? '마감됨' : '진행 중'}`;
@@ -628,6 +766,57 @@
             setDirty();
         });
 
+        let checkRoomTimer = null;
+        async function detectRoomMode(code) {
+            const noticeEl = $('roomModeNotice');
+            if (!/^[A-Z0-9]{4,6}$/.test(code)) {
+                noticeEl.hidden = true;
+                $('studentIdWrap').hidden = false;
+                $('studentPinWrap').hidden = false;
+                return null;
+            }
+            try {
+                const snap = await getDoc(doc(db, 'custom_forms', code));
+                if (!snap.exists()) {
+                    noticeEl.innerHTML = '<span class="text-rose-600 font-bold">존재하지 않는 룸 코드입니다.</span>';
+                    noticeEl.className = 'mt-2 text-xs rounded-lg p-2.5 bg-rose-50 text-rose-800 border border-rose-200';
+                    noticeEl.hidden = false;
+                    return null;
+                }
+                const data = snap.data();
+                const isQuick = (data.roomMode || 'auth') === 'quick';
+                noticeEl.innerHTML = isQuick
+                    ? '🚀 <b>빠른 입장 설문</b>입니다. 학번·PIN 없이 <b>이름(닉네임)</b>만 입력하여 바로 참여하세요.'
+                    : '🔐 <b>학생 인증 설문</b>입니다. <b>학번과 4자리 PIN</b>을 입력하여 참여하세요.';
+                noticeEl.className = isQuick
+                    ? 'mt-2 text-xs rounded-lg p-2.5 bg-blue-50 text-blue-800 border border-blue-200'
+                    : 'mt-2 text-xs rounded-lg p-2.5 bg-emerald-50 text-emerald-800 border border-emerald-200';
+                noticeEl.hidden = false;
+
+                $('studentIdWrap').hidden = isQuick;
+                $('studentPinWrap').hidden = isQuick;
+                return data;
+            } catch (err) {
+                console.warn('룸 모드 사전 확인 실패:', err);
+                return null;
+            }
+        }
+
+        $('roomCodeInput').addEventListener('input', event => {
+            const val = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            event.target.value = val;
+            clearTimeout(checkRoomTimer);
+            if (val.length >= 4) {
+                checkRoomTimer = setTimeout(() => detectRoomMode(val), 300);
+            } else {
+                $('roomModeNotice').hidden = true;
+                $('studentIdWrap').hidden = false;
+                $('studentPinWrap').hidden = false;
+            }
+        });
+        $('studentIdInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, '').slice(0, 5); });
+        $('studentPinInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, '').slice(0, 4); });
+
         $('studentLoginForm').addEventListener('submit', async event => {
             event.preventDefault();
             hideNotice();
@@ -636,37 +825,64 @@
             const studentId = $('studentIdInput').value.trim();
             const pin = $('studentPinInput').value.trim();
             const studentName = $('studentNameInput').value.trim();
+
             if (!/^[A-Z0-9]{4,6}$/.test(roomCode)) return showNotice('룸 코드를 확인해주세요.', true);
-            if (!/^\d{4,5}$/.test(studentId)) return showNotice('학번은 4~5자리 숫자로 입력해주세요.', true);
-            if (!/^\d{4}$/.test(pin)) return showNotice('PIN은 4자리 숫자로 입력해주세요.', true);
+            if (!studentName) return showNotice('응답에 표시될 이름을 입력해주세요.', true);
+
             button.disabled = true;
             try {
                 const roomSnapshot = await getDoc(doc(db, 'custom_forms', roomCode));
-                if (!roomSnapshot.exists()) throw new Error('룸 코드를 확인할 수 없습니다.');
+                if (!roomSnapshot.exists()) throw new Error('룸 코드를 확인할 수 없습니다. 룸 코드를 다시 확인해주세요.');
                 const roomData = roomSnapshot.data();
                 if (!['active', 'closed'].includes(roomData.status)) throw new Error('설문 상태를 확인할 수 없습니다.');
-                const school = String(roomData.creatorSchool || roomData.school || '').trim();
-                if (!school) throw new Error('이 룸에는 학교 정보가 설정되어 있지 않아 학생 PIN 인증을 진행할 수 없습니다. 선생님께 문의해주세요.');
-                const studentKey = makeStudentKey(school, studentId);
-                const studentSnapshot = await getDoc(doc(db, 'student_auth', studentKey));
-                if (!studentSnapshot.exists()) throw new Error('학생 계정을 찾을 수 없습니다. 학번과 학교를 확인해주세요.');
-                const deviceFp = await deriveDeviceFingerprint(getDeviceId());
-                const validPin = await verifyPinViaGate({ db, doc, setDoc, serverTimestamp }, studentKey, deviceFp, pin);
-                if (!validPin) throw new Error('PIN 인증에 실패했습니다. PIN을 확인해주세요.');
-                const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', studentId));
-                const storedResponse = responseSnapshot.data() || {};
-                const resolvedName = storedResponse.studentName || studentName || studentSnapshot.data().studentName || studentSnapshot.data().name || studentId;
-                $('studentNameInput').value = resolvedName;
-                studentSession = { roomCode, studentId, studentName: resolvedName };
+
+                const isQuick = (roomData.roomMode || 'auth') === 'quick';
+                let effectiveStudentId = '';
+                let resolvedName = studentName;
+                let existingAnswers = {};
+                let studentResponseExists = false;
+
+                if (isQuick) {
+                    // 🚀 빠른 입장 모드: 학번/PIN 없이 이름 기반 세션
+                    effectiveStudentId = 'q_' + studentName.replace(/\s+/g, '_');
+                    const respSnap = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', effectiveStudentId));
+                    studentResponseExists = respSnap.exists();
+                    if (studentResponseExists) {
+                        existingAnswers = respSnap.data()?.answers || {};
+                    }
+                } else {
+                    // 🔐 학생 인증 모드: 학번, PIN 검증 필수
+                    if (!/^\d{4,5}$/.test(studentId)) throw new Error('학번은 4~5자리 숫자로 입력해주세요.');
+                    if (!/^\d{4}$/.test(pin)) throw new Error('PIN은 4자리 숫자로 입력해주세요.');
+                    effectiveStudentId = studentId;
+
+                    const school = String(roomData.creatorSchool || roomData.school || '').trim();
+                    if (!school) throw new Error('이 룸에는 학교 정보가 설정되어 있지 않아 학생 PIN 인증을 진행할 수 없습니다. 선생님께 문의해주세요.');
+                    const studentKey = makeStudentKey(school, studentId);
+                    const studentSnapshot = await getDoc(doc(db, 'student_auth', studentKey));
+                    if (!studentSnapshot.exists()) throw new Error('학생 계정을 찾을 수 없습니다. 학번과 학교를 확인해주세요.');
+                    const deviceFp = await deriveDeviceFingerprint(getDeviceId());
+                    const validPin = await verifyPinViaGate({ db, doc, setDoc, serverTimestamp }, studentKey, deviceFp, pin);
+                    if (!validPin) throw new Error('PIN 인증에 실패했습니다. PIN을 확인해주세요.');
+
+                    const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', studentId));
+                    studentResponseExists = responseSnapshot.exists();
+                    const storedResponse = responseSnapshot.data() || {};
+                    resolvedName = storedResponse.studentName || studentName || studentSnapshot.data().studentName || studentSnapshot.data().name || studentId;
+                    $('studentNameInput').value = resolvedName;
+                    existingAnswers = storedResponse.answers || {};
+                }
+
+                studentSession = { roomCode, studentId: effectiveStudentId, studentName: resolvedName, isQuick };
                 studentRoomData = roomData;
-                studentResponseExists = responseSnapshot.exists();
+                window.studentResponseExists = studentResponseExists;
                 $('studentFormTitle').textContent = roomData.memo || '설문';
                 $('studentFormMemo').textContent = roomData.description || '';
                 $('studentRoomStatus').textContent = roomData.status === 'closed' ? '마감됨 · 조회 전용' : '응답 가능';
                 $('studentRoomStatus').className = `rounded-full px-3 py-1 text-xs font-bold ${roomData.status === 'closed' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`;
                 $('existingResponseNotice').hidden = !studentResponseExists;
                 $('closedNotice').hidden = roomData.status !== 'closed';
-                renderStudentQuestions(Array.isArray(roomData.formSchema) ? roomData.formSchema : [], storedResponse.answers || {}, roomData.status === 'closed');
+                renderStudentQuestions(Array.isArray(roomData.formSchema) ? roomData.formSchema : [], existingAnswers, roomData.status === 'closed');
                 $('submitResponseButton').hidden = roomData.status === 'closed';
                 $('submitResponseButton').textContent = studentResponseExists ? '수정 내용 저장' : '응답 제출';
                 $('studentFormPanel').hidden = false;
@@ -680,10 +896,6 @@
                 button.disabled = false;
             }
         });
-
-        $('studentIdInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, '').slice(0, 5); });
-        $('studentPinInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, '').slice(0, 4); });
-        $('roomCodeInput').addEventListener('input', event => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
         $('dynamicForm').addEventListener('submit', async event => {
             event.preventDefault();
@@ -826,12 +1038,16 @@
             try { await signOut(auth); showMode('student'); }
             catch (error) { console.error('로그아웃 실패:', error); showNotice('로그아웃하지 못했습니다.', true); }
         });
+        $('btnBackToStudentFromLogin')?.addEventListener('click', () => showMode('student'));
+        $('btnBackToStudentFromGate')?.addEventListener('click', () => showMode('student'));
+        $('btnReloginFromGate')?.addEventListener('click', async () => {
+            try { await signOut(auth); showMode('teacher'); }
+            catch (error) { console.error('로그아웃 실패:', error); }
+        });
 
         onAuthStateChanged(auth, async user => {
             currentUser = user;
             teacher = null;
-            $('teacherLoginPanel').hidden = true;
-            $('teacherDashboard').hidden = true;
             $('logoutButton').hidden = !user;
             if (!user) {
                 showMode('student');
@@ -849,14 +1065,14 @@
                     console.warn('교사 정보 조회 실패:', e);
                 }
                 if (!isAdmin && record.status !== 'approved') {
-                    showMode('student');
-                    showNotice('승인된 교사 계정이 아니므로 학생 로그인 화면으로 이동했습니다.', true);
+                    // 미승인 상태: 게이트 화면 표시
+                    teacher = null;
+                    showMode('teacher');
                     return;
                 }
                 teacher = { name: record.name || (isAdmin ? '관리자' : '교사'), school: record.school || (isAdmin ? '동동쌤' : ''), isAdmin };
                 $('teacherIdentity').textContent = `${teacher.name} 선생님${teacher.school ? ` · ${teacher.school}` : ''}`;
                 $('teacherNameDisplay').textContent = `${teacher.name} 선생님 (${teacher.school})`;
-                $('teacherDashboard').hidden = false;
                 $('logoutButton').hidden = false;
                 showMode('teacher');
             } catch (error) {
