@@ -789,7 +789,75 @@
         };
         const hideNotice = () => { $('notice').hidden = true; };
         const asOptions = value => String(value ?? '').split(/\r?\n|,/).map(v => v.trim()).filter(Boolean).slice(0, 40);
-        const newQuestion = () => ({ id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, type: 'short', title: '', placeholder: '', required: false, validation: 'none', hasTail: false, options: [], tailCondition: '', tailTitle: '', tailPlaceholder: '' });
+        const newQuestion = () => ({
+            id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            type: 'short',
+            title: '',
+            placeholder: '',
+            required: false,
+            validation: 'none',
+            hasTail: false,
+            hasBranch: false,
+            branchOption: '',
+            options: [],
+            tailCondition: '',
+            tailTitle: '',
+            tailPlaceholder: ''
+        });
+
+        function getBranchContexts(schema) {
+            const contexts = [];
+            let activeBranch = null;
+            for (let i = 0; i < schema.length; i++) {
+                const q = schema[i];
+                if (activeBranch) {
+                    const isMerge = q.branchOption === '__merge__';
+                    contexts.push({ inBranch: true, parent: activeBranch, isMerge });
+                    if (isMerge) activeBranch = null;
+                } else {
+                    contexts.push({ inBranch: false, parent: null, isMerge: false });
+                }
+                if (q.type === 'dropdown' && q.hasBranch) {
+                    activeBranch = {
+                        id: q.id,
+                        title: q.title || `문항 ${i + 1}`,
+                        options: Array.isArray(q.options) ? q.options : []
+                    };
+                }
+            }
+            return contexts;
+        }
+
+        function getVisibleQuestions(schema, answers) {
+            const visible = [];
+            let activeSelectedOption = null;
+            let inBranchZone = false;
+
+            for (let i = 0; i < schema.length; i++) {
+                const q = schema[i];
+                if (q.type === 'dropdown' && q.hasBranch) {
+                    visible.push({ question: q, index: i });
+                    const ans = answers?.[q.id];
+                    activeSelectedOption = typeof ans === 'string' ? ans : ans?.selected || '';
+                    inBranchZone = true;
+                    continue;
+                }
+                if (inBranchZone) {
+                    if (q.branchOption === '__merge__') {
+                        inBranchZone = false;
+                        activeSelectedOption = null;
+                        visible.push({ question: q, index: i });
+                        continue;
+                    }
+                    if (activeSelectedOption && q.branchOption === activeSelectedOption) {
+                        visible.push({ question: q, index: i });
+                    }
+                    continue;
+                }
+                visible.push({ question: q, index: i });
+            }
+            return visible;
+        }
         let currentUser = null;
         let teacher = null;
         let teacherRooms = [];
@@ -1203,10 +1271,27 @@
                 container.innerHTML = '<p class="rounded-lg bg-page p-4 text-sm text-muted">아직 문항이 없습니다. [문항 추가]를 눌러 시작하세요.</p>';
                 return;
             }
-            container.innerHTML = schema.map((question, index) => `
+            const contexts = getBranchContexts(schema);
+            container.innerHTML = schema.map((question, index) => {
+                const ctx = contexts[index];
+                if (ctx.inBranch && !question.branchOption) {
+                    question.branchOption = ctx.parent.options[0] || '';
+                }
+                const headerBadge = question.type === 'dropdown' && question.hasBranch
+                    ? '<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">🔀 분기 시작</span>'
+                    : ctx.inBranch && question.branchOption === '__merge__'
+                        ? '<span class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-800">🔗 분기 합치기</span>'
+                        : ctx.inBranch && question.branchOption
+                            ? `<span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">🌿 [${escapeHtml(question.branchOption)}] 분기</span>`
+                            : '';
+
+                return `
                 <article class="builder-card rounded-xl border border-line bg-page/50 p-3" data-index="${index}">
                     <div class="mb-3 flex items-center justify-between gap-2">
-                        <strong>문항 ${index + 1}</strong>
+                        <div class="flex items-center gap-2">
+                            <strong>문항 ${index + 1}</strong>
+                            ${headerBadge}
+                        </div>
                         <div class="flex gap-1">
                             <button type="button" class="btn btn-light !px-2 !py-1 text-sm" data-action="up" aria-label="위로" ${locked || index === 0 ? 'disabled' : ''}>↑</button>
                             <button type="button" class="btn btn-light !px-2 !py-1 text-sm" data-action="down" aria-label="아래로" ${locked || index === schema.length - 1 ? 'disabled' : ''}>↓</button>
@@ -1232,23 +1317,61 @@
                             <select class="field mt-1" data-field="validation" ${locked ? 'disabled' : ''}>${Object.entries(VALIDATIONS).map(([value, label]) => `<option value="${value}" ${question.validation === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
                         </label>` : ''}
                         ${['dropdown', 'pill'].includes(question.type) ? `<label class="text-xs font-bold sm:col-span-2">선택지 (줄바꿈 또는 쉼표로 구분)
-                            <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\\n'))}</textarea>
+                            <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\n'))}</textarea>
                         </label>` : ''}
                         <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="required" ${question.required ? 'checked' : ''} ${locked ? 'disabled' : ''}> 답변 필수</label>
-                        ${['dropdown', 'pill'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택지별 꼬리 질문</label>` : ''}
-                        ${question.hasTail && ['dropdown', 'pill'].includes(question.type) ? `
+                        ${question.type === 'pill' ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택지별 꼬리 질문</label>` : ''}
+                        ${question.type === 'dropdown' ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasBranch" ${question.hasBranch ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택에 따른 분기 생성</label>` : ''}
+                        ${question.type === 'dropdown' && question.hasBranch ? `
+                            <div class="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/80 p-2.5 text-xs text-emerald-900 leading-relaxed">
+                                <div class="font-bold flex items-center gap-1.5 text-emerald-800 mb-1">
+                                    <i class="bi bi-diagram-3"></i> 선택지별 분기 시작
+                                </div>
+                                선택지(<strong>${escapeHtml((question.options || []).join(', ') || '선택지 미입력')}</strong>)에 따라 아래 문항들이 분기됩니다.<br>
+                                아래 문항들에서 어떤 선택지에 표시할지 설정하고, <strong>[분기 합치기]</strong>를 설정하면 다시 공통 질문으로 복귀합니다.
+                            </div>
+                        ` : ''}
+                        ${question.hasTail && question.type === 'pill' ? `
                             <label class="text-xs font-bold sm:col-span-2">꼬리 질문 제목
                                 <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="[{option}]에 대해 설명해주세요" ${locked ? 'disabled' : ''}>
                             </label>
                             <label class="text-xs font-bold sm:col-span-2">꼬리 질문 안내 문구
                                 <input class="field mt-1" data-field="tailPlaceholder" maxlength="160" value="${escapeHtml(question.tailPlaceholder || '')}" placeholder="자세히 적어주세요" ${locked ? 'disabled' : ''}>
                             </label>
-                            ${question.type === 'dropdown' ? `<label class="text-xs font-bold sm:col-span-2">꼬리 질문을 표시할 선택지
-                                <select class="field mt-1" data-field="tailCondition" ${locked ? 'disabled' : ''}><option value="">선택지 전체에서 표시 안 함</option>${(question.options || []).map(option => `<option value="${escapeHtml(option)}" ${question.tailCondition === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>
-                            </label>` : ''}
+                        ` : ''}
+                        ${ctx.inBranch ? `
+                            <div class="branch-zone-config sm:col-span-2 mt-1 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3">
+                                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                                        <i class="bi bi-diagram-3-fill text-indigo-600"></i> 분기 설정
+                                        <span class="font-normal text-indigo-700">([${escapeHtml(ctx.parent.title || '드롭다운')}] 선택지에 따른 분기)</span>
+                                    </span>
+                                    ${question.branchOption === '__merge__'
+                                        ? '<span class="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">🔗 분기 합치기 적용</span>'
+                                        : `<span class="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">🌿 [${escapeHtml(question.branchOption || ctx.parent.options[0] || '선택지')}] 분기 문항</span>`}
+                                </div>
+                                <div class="flex flex-wrap gap-2 text-xs">
+                                    ${(ctx.parent.options || []).map(opt => `
+                                        <label class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition ${question.branchOption === opt ? 'border-blue-500 bg-blue-100/80 font-bold text-blue-900 shadow-sm' : 'border-line bg-white text-ink hover:bg-page'}">
+                                            <input type="radio" name="branchOpt_${question.id}" data-field="branchOption" value="${escapeHtml(opt)}" ${question.branchOption === opt ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+                                            <span>🌿 [${escapeHtml(opt)}] 선택 시</span>
+                                        </label>
+                                    `).join('')}
+                                    <label class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition ${question.branchOption === '__merge__' ? 'border-purple-500 bg-purple-100 font-bold text-purple-900 shadow-sm' : 'border-purple-200 bg-white text-purple-900 hover:bg-purple-50'}">
+                                        <input type="radio" name="branchOpt_${question.id}" data-field="branchOption" value="__merge__" ${question.branchOption === '__merge__' ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+                                        <span>🔗 분기 합치기 (이 문항부터 공통 질문)</span>
+                                    </label>
+                                </div>
+                                <p class="mt-2 text-[11px] text-muted leading-tight">
+                                    ${question.branchOption === '__merge__'
+                                        ? '💡 이 문항부터 분기가 합쳐져 모든 응답자에게 공통으로 표시되며, 이후 문항도 공통으로 진행됩니다.'
+                                        : `💡 '${escapeHtml(ctx.parent.title || '드롭다운')}'에서 [${escapeHtml(question.branchOption || ctx.parent.options[0] || '선택지')}]을(를) 선택한 응답자에게만 표시됩니다.`}
+                                </p>
+                            </div>
                         ` : ''}
                     </div>
-                </article>`).join('');
+                </article>`;
+            }).join('');
         }
 
         function markSchemaDirty() { schemaDirty = true; }
@@ -1272,15 +1395,16 @@
             if (!question) return;
             const field = event.target.dataset.field;
             if (field === 'options') question.options = asOptions(event.target.value);
-            else if (field === 'required' || field === 'hasTail') question[field] = event.target.checked;
+            else if (field === 'required' || field === 'hasTail' || field === 'hasBranch') question[field] = event.target.checked;
             else if (field) question[field] = event.target.value;
             if (field === 'type') {
                 if (['dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
                 if (question.type !== 'short') question.validation = 'none';
-                if (!['dropdown', 'pill'].includes(question.type)) question.hasTail = false;
+                if (!['dropdown', 'pill'].includes(question.type)) { question.hasTail = false; question.hasBranch = false; }
+                if (question.type !== 'dropdown') question.hasBranch = false;
                 renderBuilder(currentRoomData.formSchema);
             }
-            if (field === 'options' || field === 'hasTail' || field === 'tailCondition') renderBuilder(currentRoomData.formSchema);
+            if (field === 'options' || field === 'hasTail' || field === 'tailCondition' || field === 'hasBranch' || field === 'branchOption') renderBuilder(currentRoomData.formSchema);
             markSchemaDirty();
         });
         $('builderQuestions').addEventListener('click', event => {
@@ -1299,7 +1423,13 @@
 
         $('addQuestionButton').addEventListener('click', () => {
             if (!currentRoomData || Number(currentRoomData.responseCount) > 0) return;
-            currentRoomData.formSchema.push(newQuestion());
+            const q = newQuestion();
+            const contexts = getBranchContexts(currentRoomData.formSchema);
+            const lastCtx = contexts[contexts.length - 1];
+            if (lastCtx && lastCtx.inBranch && !lastCtx.isMerge) {
+                q.branchOption = lastCtx.parent.options[0] || '';
+            }
+            currentRoomData.formSchema.push(q);
             renderBuilder(currentRoomData.formSchema);
             markSchemaDirty();
         });
@@ -1309,7 +1439,6 @@
             const schema = currentRoomData.formSchema || [];
             if (schema.some(question => !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
             if (schema.some(question => ['dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('드롭다운과 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
-            if (schema.some(question => question.hasTail && question.type === 'dropdown' && !question.tailCondition)) return showNotice('드롭다운 꼬리 질문의 표시 조건을 선택해주세요.', true);
             const button = $('saveSchemaButton');
             button.disabled = true;
             try {
@@ -1484,7 +1613,12 @@
         function renderResponses(responses) {
             const schema = currentRoomData.formSchema || [];
             $('responseCountBadge').textContent = `${Math.max(Number(currentRoomData.responseCount) || 0, responses.length)}명 응답`;
-            $('responseTableHead').innerHTML = `<tr><th class="border-b border-line p-2">학번</th><th class="border-b border-line p-2">이름</th><th class="border-b border-line p-2">수정일</th>${schema.map(question => `<th class="border-b border-line p-2">${escapeHtml(question.title)}</th>`).join('')}<th class="border-b border-line p-2">관리</th></tr>`;
+            $('responseTableHead').innerHTML = `<tr><th class="border-b border-line p-2">학번</th><th class="border-b border-line p-2">이름</th><th class="border-b border-line p-2">수정일</th>${schema.map(question => {
+                const branchTag = question.branchOption && question.branchOption !== '__merge__'
+                    ? `<div class="text-[10px] text-blue-600 font-normal">🌿[${escapeHtml(question.branchOption)}]</div>`
+                    : '';
+                return `<th class="border-b border-line p-2">${escapeHtml(question.title)}${branchTag}</th>`;
+            }).join('')}<th class="border-b border-line p-2">관리</th></tr>`;
             if (!responses.length) {
                 $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + 4}">아직 제출된 응답이 없습니다.</td></tr>`;
                 return;
@@ -1538,7 +1672,12 @@
                 const responses = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
                 const columns = [
                     { header: '학번', width: 12 }, { header: '이름', width: 18 }, { header: '최종 수정', width: 22 },
-                    ...schema.map(question => ({ header: question.title, width: 28 }))
+                    ...schema.map(question => ({
+                        header: question.branchOption && question.branchOption !== '__merge__'
+                            ? `[${question.branchOption}] ${question.title}`
+                            : question.title,
+                        width: 28
+                    }))
                 ];
                 const rows = responses.map(response => [
                     response.studentId || '', response.studentName || '',
@@ -1559,7 +1698,8 @@
         });
 
         function renderStudentQuestions(schema, answers, disabled) {
-            $('dynamicQuestions').innerHTML = schema.map((question, index) => {
+            const visibleItems = getVisibleQuestions(schema, answers);
+            $('dynamicQuestions').innerHTML = visibleItems.map(({ question }, visibleIndex) => {
                 const answer = answers?.[question.id];
                 const selected = Array.isArray(answer?.selected) ? answer.selected : [];
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
@@ -1577,7 +1717,10 @@
                     control = `<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => `<button type="button" class="pill-choice" data-pill="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${selected.includes(option)}" ${disabled ? 'disabled' : ''}>${escapeHtml(option)}</button>`).join('')}</div>`;
                     if (question.hasTail) control += (question.options || []).filter(option => selected.includes(option)).map(option => `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', option))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('');
                 }
-                return `<fieldset class="rounded-xl border border-line p-4" data-question="${escapeHtml(question.id)}"><legend class="px-1 font-bold">${index + 1}. ${escapeHtml(question.title)}${question.required ? ' <span class="text-red-600">*</span>' : ''}</legend>${control}</fieldset>`;
+                const branchBadge = question.type === 'dropdown' && question.hasBranch
+                    ? '<span class="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">선택별 분기 문항</span>'
+                    : '';
+                return `<fieldset class="rounded-xl border border-line p-4 transition-all duration-200" data-question="${escapeHtml(question.id)}"><legend class="px-1 font-bold">${visibleIndex + 1}. ${escapeHtml(question.title)}${question.required ? ' <span class="text-red-600">*</span>' : ''}${branchBadge}</legend>${control}</fieldset>`;
             }).join('');
         }
 
@@ -1593,18 +1736,19 @@
             isDirty = false;
             window.onbeforeunload = null;
         }
-        function collectAnswers(schema) {
-            const answers = {};
+        function collectAnswers(schema, baseAnswers = {}) {
+            const answers = { ...baseAnswers };
             for (const question of schema) {
                 const block = document.querySelector(`[data-question="${CSS.escape(question.id)}"]`);
+                if (!block) continue;
                 const tailAnswers = {};
                 block.querySelectorAll(`[data-tail="${CSS.escape(question.id)}"]`).forEach(input => { tailAnswers[input.dataset.option] = input.value.trim(); });
                 if (question.type === 'short' || question.type === 'long') {
                     const input = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
-                    answers[question.id] = input.value.trim();
+                    answers[question.id] = input ? input.value.trim() : '';
                 } else if (question.type === 'dropdown') {
-                    const selected = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`).value;
-                    answers[question.id] = { selected, tailAnswers };
+                    const select = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
+                    answers[question.id] = { selected: select ? select.value : '', tailAnswers };
                 } else {
                     const selected = [...block.querySelectorAll(`[data-pill="${CSS.escape(question.id)}"][aria-pressed="true"]`)].map(button => button.dataset.option);
                     answers[question.id] = { selected, tailAnswers };
@@ -1633,7 +1777,10 @@
                 const currentAnswers = collectAnswers(studentRoomData.formSchema);
                 const currentAnswer = currentAnswers[input.dataset.answer];
                 currentAnswers[input.dataset.answer] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
+                const changedId = input.dataset.answer;
                 renderStudentQuestions(studentRoomData.formSchema, currentAnswers, studentRoomData.status === 'closed');
+                const nextSelect = document.querySelector(`select[data-answer="${CSS.escape(changedId)}"]`);
+                if (nextSelect && document.activeElement !== nextSelect) nextSelect.focus();
             }
             if (input.matches('select, input, textarea')) setDirty();
         });
@@ -1756,12 +1903,15 @@
             const schema = Array.isArray(studentRoomData.formSchema) ? studentRoomData.formSchema : [];
             if (!schema.length) return showNotice('아직 작성된 문항이 없습니다. 선생님께 문의해주세요.', true);
             const answers = collectAnswers(schema);
-            for (const question of schema) {
+            const visibleItems = getVisibleQuestions(schema, answers);
+            const visibleMap = new Map(visibleItems.map(item => [item.question.id, item.question]));
+
+            for (const { question } of visibleItems) {
                 const value = answers[question.id];
                 const empty = question.type === 'pill'
-                    ? value.selected.length === 0
+                    ? !value?.selected?.length
                     : question.type === 'dropdown'
-                        ? !value.selected
+                        ? !value?.selected
                         : !String(value || '').trim();
                 if (question.required && empty) {
                     showNotice(`필수 문항에 응답해주세요: ${question.title}`, true);
@@ -1779,6 +1929,10 @@
             try {
                 const roomRef = doc(db, 'custom_forms', studentSession.roomCode);
                 const responseRef = doc(db, 'custom_forms', studentSession.roomCode, 'responses', studentSession.studentId);
+                const finalAnswers = {};
+                for (const { question } of visibleItems) {
+                    if (answers[question.id] !== undefined) finalAnswers[question.id] = answers[question.id];
+                }
                 await runTransaction(db, async transaction => {
                     const roomSnapshot = await transaction.get(roomRef);
                     if (!roomSnapshot.exists()) throw new Error('설문 룸이 삭제되었습니다.');
@@ -1798,7 +1952,7 @@
                         studentId: studentSession.studentId,
                         studentName: studentSession.studentName,
                         updatedAt: serverTimestamp(),
-                        answers
+                        answers: finalAnswers
                     };
                     transaction.set(responseRef, update, { merge: true });
                     if (!existing.exists()) {
