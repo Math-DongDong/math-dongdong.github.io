@@ -596,9 +596,17 @@
             <section id="studentFormPanel" class="w-full max-w-2xl rounded-2xl border border-line bg-white p-5 shadow-sm" hidden>
                 <div class="mb-4 border-b border-line pb-4">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h2 id="studentFormTitle" class="text-xl font-extrabold"></h2>
-                        <span id="studentRoomStatus"
-                            class="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800"></span>
+                        <div class="flex items-center gap-2">
+                            <h2 id="studentFormTitle" class="text-xl font-extrabold"></h2>
+                            <span id="studentRoomStatus"
+                                class="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800"></span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="studentInfoBadge" class="text-xs font-bold text-muted"></span>
+                            <button type="button" id="btnStudentLogout" class="btn btn-light btn-sm text-xs py-1 px-2.5">
+                                <i class="bi bi-box-arrow-right"></i> 나가기
+                            </button>
+                        </div>
                     </div>
                     <p id="studentFormMemo" class="mt-2 whitespace-pre-wrap text-sm text-muted"></p>
                     <p id="existingResponseNotice" class="mt-3 text-sm font-bold text-board" hidden>기존 응답을 불러왔습니다. 수정한 뒤
@@ -880,6 +888,11 @@
 
             if (mode === 'teacher') {
                 $('teacherDashboard').hidden = !teacher;
+            } else if (mode === 'student') {
+                if (!studentSession) {
+                    $('studentRoomEntryBox').hidden = false;
+                    $('studentFormPanel').hidden = true;
+                }
             }
             hideNotice();
         }
@@ -1688,9 +1701,13 @@
             renderStudentQuestions(Array.isArray(roomData.formSchema) ? roomData.formSchema : [], existingAnswers, roomData.status === 'closed');
             $('submitResponseButton').hidden = roomData.status === 'closed';
             $('submitResponseButton').textContent = studentResponseExists ? '수정 내용 저장' : '응답 제출';
+            $('studentRoomEntryBox').hidden = true;
             $('studentFormPanel').hidden = false;
+            if ($('studentInfoBadge')) {
+                $('studentInfoBadge').textContent = resolvedName ? `${resolvedName}` : '';
+            }
             clearDirty();
-            $('studentFormPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         renderRoomEntrance('room-entrance-container', {
@@ -1713,6 +1730,22 @@
             onJoin: async (roomCode, nickname, authInfo) => {
                 await loadStudentForm(roomCode, nickname, authInfo);
             }
+        });
+
+        $('btnStudentLogout')?.addEventListener('click', async () => {
+            if (isDirty()) {
+                const leave = await customConfirm('설문 나가기', '작성 중인 응답 내용이 있습니다. 저장하지 않고 나가시겠습니까?');
+                if (!leave) return;
+            }
+            studentSession = null;
+            studentRoomData = null;
+            studentResponseExists = false;
+            clearDirty();
+            $('dynamicQuestions').innerHTML = '';
+            $('studentFormPanel').hidden = true;
+            $('studentRoomEntryBox').hidden = false;
+            if (window.releaseStudentPresence) window.releaseStudentPresence();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
         $('dynamicForm').addEventListener('submit', async event => {
