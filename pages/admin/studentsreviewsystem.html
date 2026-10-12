@@ -807,7 +807,7 @@
                                     <thead>
                                         <tr>
                                             <th class="th w-10"><input type="checkbox" id="selectAllCheckbox" class="h-4 w-4 cursor-pointer accent-[#24493D]"></th>
-                                            <th class="th w-24">날짜</th>
+                                            <th class="th w-36">날짜 / 최종제출</th>
                                             <th class="th w-16">학번</th>
                                             <th class="th w-16 text-center">상태</th>
                                             <th class="th w-16 text-center">확인</th>
@@ -1817,11 +1817,13 @@
                 return;
             }
 
-            listArea.innerHTML = myReviews.map(r => `
+            listArea.innerHTML = myReviews.map(r => {
+                const subTime = formatDateTime(r.updatedAt || r.createdAt);
+                return `
                 <div class="p-4 sm:p-5">
                     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
                         <div>
-                            <span class="inline-block rounded-full bg-board-soft px-2.5 py-0.5 text-xs font-bold text-board mb-1">${escapeHtml(r.date)}</span>
+                            <span class="inline-block rounded-full bg-board-soft px-2.5 py-0.5 text-xs font-bold text-board mb-1">${escapeHtml(subTime || r.date)}</span>
                             <h4 class="text-base font-extrabold text-ink">${escapeHtml(r.activity)}</h4>
                         </div>
                         <button type="button" class="btn btn-sm ${r.check === 'O' ? 'btn-primary' : 'btn-ghost'} btn-student-check" data-id="${r.id}">
@@ -2004,6 +2006,23 @@
             $('teacherSummaryStats').textContent = `학생 ${sCount}명 · 활동 ${aCount}개 · 제출된 소감문 ${rCount}건 · 피드백 ${fbCount}건 · 교사시점 ${tvCount}건`;
         }
 
+        function formatDateTime(ts, fallback = '') {
+            if (!ts) return fallback;
+            try {
+                let d = null;
+                if (typeof ts.toDate === 'function') d = ts.toDate();
+                else if (typeof ts.toMillis === 'function') d = new Date(ts.toMillis());
+                else if (ts instanceof Date) d = ts;
+                else if (typeof ts === 'number') d = new Date(ts);
+                else if (typeof ts === 'string') d = new Date(ts);
+                if (!d || isNaN(d.getTime())) return fallback;
+                const pad = n => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } catch {
+                return fallback;
+            }
+        }
+
         function renderTeacherTable() {
             const tbody = $('teacherReviewTbody');
             const searchId = $('teacherSearchStudentId').value.trim();
@@ -2032,7 +2051,9 @@
                             check: rev.check || '',
                             content: rev.content || '',
                             feedback: rev.feedback || '',
-                            teacherView: rev.teacherView || ''
+                            teacherView: rev.teacherView || '',
+                            updatedAt: rev.updatedAt || null,
+                            createdAt: rev.createdAt || null
                         });
                     } else {
                         displayRows.push({
@@ -2043,7 +2064,9 @@
                             check: '',
                             content: '',
                             feedback: '',
-                            teacherView: ''
+                            teacherView: '',
+                            updatedAt: null,
+                            createdAt: null
                         });
                     }
                 });
@@ -2057,7 +2080,9 @@
                     check: r.check || '',
                     content: r.content || '',
                     feedback: r.feedback || '',
-                    teacherView: r.teacherView || ''
+                    teacherView: r.teacherView || '',
+                    updatedAt: r.updatedAt || null,
+                    createdAt: r.createdAt || null
                 }));
             }
 
@@ -2081,12 +2106,16 @@
             tbody.innerHTML = displayRows.map(r => {
                 if (r.submitted) {
                     const isSelected = selectedReviewIds.has(r.id);
+                    const finalTimeStr = formatDateTime(r.updatedAt || r.createdAt);
+                    const dateDisplay = finalTimeStr
+                        ? `<div class="font-bold text-ink">${escapeHtml(finalTimeStr)}</div>${r.date && !finalTimeStr.startsWith(r.date) ? `<div class="text-[11px] text-ink-muted/80">활동: ${escapeHtml(r.date)}</div>` : ''}`
+                        : `<span class="text-ink-muted">${escapeHtml(r.date)}</span>`;
                     return `
                         <tr class="hover:bg-page/40 transition-colors">
                             <td class="td">
                                 <input type="checkbox" class="h-4 w-4 cursor-pointer accent-[#24493D] rounded rev-checkbox" data-id="${r.id}" ${isSelected ? 'checked' : ''}>
                             </td>
-                            <td class="td text-xs text-ink-muted whitespace-nowrap">${escapeHtml(r.date)}</td>
+                            <td class="td text-xs whitespace-nowrap">${dateDisplay}</td>
                             <td class="td font-bold text-ink whitespace-nowrap">${escapeHtml(r.studentId)}</td>
                             <td class="td text-center"><span class="stamp">제출</span></td>
                             <td class="td text-center font-bold text-board">${r.check === 'O' ? '✓' : '-'}</td>
@@ -2502,7 +2531,8 @@
             const detailRows = [];
             currentTvGroups.forEach(g => {
                 g.items.forEach(r => {
-                    detailRows.push([g.sid, r.date, r.activity, r.teacherView.replace(/\s+/g, ' ').trim()]);
+                    const timeStr = formatDateTime(r.updatedAt || r.createdAt);
+                    detailRows.push([g.sid, timeStr || r.date, r.activity, r.teacherView.replace(/\s+/g, ' ').trim()]);
                 });
             });
 
@@ -2514,7 +2544,7 @@
                 },
                 {
                     name: '활동별 상세',
-                    columns: [{ header: '학번', width: 12 }, { header: '날짜', width: 14 }, { header: '창체활동명', width: 25 }, { header: '교사 시점 글', width: 80 }],
+                    columns: [{ header: '학번', width: 12 }, { header: '제출일시', width: 18 }, { header: '창체활동명', width: 25 }, { header: '교사 시점 글', width: 80 }],
                     rows: detailRows
                 }
             ];
