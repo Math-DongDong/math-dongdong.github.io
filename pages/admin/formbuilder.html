@@ -1084,7 +1084,7 @@
                 } else {
                     contexts.push({ inBranch: false, parent: null, isMerge: false });
                 }
-                if (q.type === 'dropdown' && q.hasBranch) {
+                if (['choice', 'dropdown'].includes(q.type) && q.hasBranch) {
                     activeBranch = {
                         id: q.id,
                         title: q.title || `문항 ${i + 1}`,
@@ -1102,7 +1102,7 @@
 
             for (let i = 0; i < schema.length; i++) {
                 const q = schema[i];
-                if (q.type === 'dropdown' && q.hasBranch) {
+                if (['choice', 'dropdown'].includes(q.type) && q.hasBranch) {
                     visible.push({ question: q, index: i });
                     const ans = answers?.[q.id];
                     activeSelectedOption = typeof ans === 'string' ? ans : ans?.selected || '';
@@ -1552,7 +1552,7 @@
                 if (ctx.inBranch && !question.branchOption) {
                     question.branchOption = ctx.parent.options[0] || '';
                 }
-                const headerBadge = question.type === 'dropdown' && question.hasBranch
+                const headerBadge = ['choice', 'dropdown'].includes(question.type) && question.hasBranch
                     ? '<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">🔀 분기 시작</span>'
                     : ctx.inBranch && question.branchOption === '__merge__'
                         ? '<span class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-800">🔗 분기 합치기</span>'
@@ -1578,6 +1578,7 @@
                             <select class="field mt-1" data-field="type" ${locked ? 'disabled' : ''}>
                                 <option value="short" ${question.type === 'short' ? 'selected' : ''}>단답형</option>
                                 <option value="long" ${question.type === 'long' ? 'selected' : ''}>장문형</option>
+                                <option value="choice" ${question.type === 'choice' ? 'selected' : ''}>객관식 (단일 선택)</option>
                                 <option value="dropdown" ${question.type === 'dropdown' ? 'selected' : ''}>드롭다운</option>
                                 <option value="pill" ${question.type === 'pill' ? 'selected' : ''}>알약형 다중 선택</option>
                             </select>
@@ -1598,13 +1599,13 @@
                         ${question.type === 'short' ? `<label class="text-xs font-bold">유효성 검사
                             <select class="field mt-1" data-field="validation" ${locked ? 'disabled' : ''}>${Object.entries(VALIDATIONS).map(([value, label]) => `<option value="${value}" ${question.validation === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
                         </label>` : ''}
-                        ${['dropdown', 'pill'].includes(question.type) ? `<label class="text-xs font-bold sm:col-span-2">선택지 (줄바꿈 또는 쉼표로 구분)
+                        ${['choice', 'dropdown', 'pill'].includes(question.type) ? `<label class="text-xs font-bold sm:col-span-2">선택지 (줄바꿈 또는 쉼표로 구분)
                             <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\n'))}</textarea>
                         </label>` : ''}
                         <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="required" ${question.required ? 'checked' : ''} ${locked ? 'disabled' : ''}> 답변 필수</label>
-                        ${question.type === 'pill' ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택지별 꼬리 질문</label>` : ''}
-                        ${question.type === 'dropdown' ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasBranch" ${question.hasBranch ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택에 따른 분기 생성</label>` : ''}
-                        ${question.type === 'dropdown' && question.hasBranch ? `
+                        ${['choice', 'pill'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택지별 꼬리 질문</label>` : ''}
+                        ${['choice', 'dropdown'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasBranch" ${question.hasBranch ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택에 따른 분기 생성</label>` : ''}
+                        ${['choice', 'dropdown'].includes(question.type) && question.hasBranch ? `
                             <div class="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/80 p-2.5 text-xs text-emerald-900 leading-relaxed">
                                 <div class="font-bold flex items-center gap-1.5 text-emerald-800 mb-1">
                                     <i class="bi bi-diagram-3"></i> 선택지별 분기 시작
@@ -1613,7 +1614,7 @@
                                 아래 문항들에서 어떤 선택지에 표시할지 설정하고, <strong>[분기 합치기]</strong>를 설정하면 다시 공통 질문으로 복귀합니다.
                             </div>
                         ` : ''}
-                        ${question.hasTail && question.type === 'pill' ? `
+                        ${question.hasTail && ['choice', 'pill'].includes(question.type) ? `
                             <label class="text-xs font-bold sm:col-span-2">꼬리 질문 제목
                                 <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="[{option}]에 대해 설명해주세요" ${locked ? 'disabled' : ''}>
                             </label>
@@ -1626,7 +1627,7 @@
                                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                                     <span class="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
                                         <i class="bi bi-diagram-3-fill text-indigo-600"></i> 분기 설정
-                                        <span class="font-normal text-indigo-700">([${escapeHtml(ctx.parent.title || '드롭다운')}] 선택지에 따른 분기)</span>
+                                        <span class="font-normal text-indigo-700">([${escapeHtml(ctx.parent.title || (ctx.parent.type === 'choice' ? '객관식' : '드롭다운'))}] 선택지에 따른 분기)</span>
                                     </span>
                                     ${question.branchOption === '__merge__'
                             ? '<span class="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">🔗 분기 합치기 적용</span>'
@@ -1680,10 +1681,10 @@
             else if (field === 'required' || field === 'hasTail' || field === 'hasBranch') question[field] = event.target.checked;
             else if (field) question[field] = event.target.value;
             if (field === 'type') {
-                if (['dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
+                if (['choice', 'dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
                 if (question.type !== 'short') question.validation = 'none';
-                if (!['dropdown', 'pill'].includes(question.type)) { question.hasTail = false; question.hasBranch = false; }
-                if (question.type !== 'dropdown') question.hasBranch = false;
+                if (!['choice', 'pill'].includes(question.type)) { question.hasTail = false; }
+                if (!['choice', 'dropdown'].includes(question.type)) { question.hasBranch = false; }
                 renderBuilder(currentRoomData.formSchema);
             }
             if (field === 'options' || field === 'hasTail' || field === 'tailCondition' || field === 'hasBranch' || field === 'branchOption') renderBuilder(currentRoomData.formSchema);
@@ -1749,11 +1750,22 @@
                     if (question.hasTail && selectedDropdown && (!question.tailCondition || selectedDropdown === question.tailCondition)) {
                         control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', selectedDropdown))}<textarea class="field mt-1" rows="3" data-preview-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedDropdown)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(answer?.tailAnswers?.[selectedDropdown] || '')}</textarea></label>`;
                     }
+                } else if (question.type === 'choice') {
+                    const selectedChoice = typeof answer === 'string' ? answer : answer?.selected || '';
+                    control = `<div class="mt-2 space-y-2">${(question.options || []).map(option => `
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg border border-line hover:bg-slate-50 cursor-pointer text-sm">
+                            <input type="radio" name="preview_choice_${escapeHtml(question.id)}" value="${escapeHtml(option)}" data-preview-choice="${escapeHtml(question.id)}" class="w-4 h-4 text-brand focus:ring-brand" ${selectedChoice === option ? 'checked' : ''}>
+                            <span>${escapeHtml(option)}</span>
+                        </label>
+                    `).join('')}</div>`;
+                    if (question.hasTail && selectedChoice && (!question.tailCondition || selectedChoice === question.tailCondition)) {
+                        control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', selectedChoice))}<textarea class="field mt-1" rows="3" data-preview-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedChoice)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(answer?.tailAnswers?.[selectedChoice] || '')}</textarea></label>`;
+                    }
                 } else if (question.type === 'pill') {
                     control = `<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => `<button type="button" class="pill-choice" data-preview-pill="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${selected.includes(option)}">${escapeHtml(option)}</button>`).join('')}</div>`;
                     if (question.hasTail) control += (question.options || []).filter(option => selected.includes(option)).map(option => `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', option))}<textarea class="field mt-1" rows="3" data-preview-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('');
                 }
-                const branchBadge = question.type === 'dropdown' && question.hasBranch
+                const branchBadge = ['choice', 'dropdown'].includes(question.type) && question.hasBranch
                     ? '<span class="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">선택별 분기 문항</span>'
                     : '';
                 const descHtml = question.description ? `<p class="mt-1 mb-2 text-sm text-muted leading-relaxed">${formatRichText(question.description)}</p>` : '';
@@ -1775,6 +1787,9 @@
                 } else if (question.type === 'dropdown') {
                     const select = block.querySelector(`[data-preview-answer="${CSS.escape(question.id)}"]`);
                     answers[question.id] = { selected: select ? select.value : '', tailAnswers };
+                } else if (question.type === 'choice') {
+                    const radio = block.querySelector(`input[data-preview-choice="${CSS.escape(question.id)}"]:checked`);
+                    answers[question.id] = { selected: radio ? radio.value : '', tailAnswers };
                 } else {
                     const selected = [...block.querySelectorAll(`[data-preview-pill="${CSS.escape(question.id)}"][aria-pressed="true"]`)].map(btn => btn.dataset.option);
                     answers[question.id] = { selected, tailAnswers };
@@ -1793,6 +1808,12 @@
                 renderPreviewQuestions(schema, previewAnswers);
                 const nextSelect = $('previewQuestions').querySelector(`select[data-preview-answer="${CSS.escape(changedId)}"]`);
                 if (nextSelect && document.activeElement !== nextSelect) nextSelect.focus();
+            } else if (input.matches('input[data-preview-choice]')) {
+                const schema = currentRoomData?.formSchema || [];
+                previewAnswers = collectPreviewAnswers(schema);
+                const changedId = input.dataset.previewChoice;
+                previewAnswers[changedId] = { selected: input.value, tailAnswers: previewAnswers[changedId]?.tailAnswers || {} };
+                renderPreviewQuestions(schema, previewAnswers);
             }
         });
 
@@ -1839,7 +1860,7 @@
             if (!currentRoom || !currentRoomData || Number(currentRoomData.responseCount) > 0) return;
             const schema = currentRoomData.formSchema || [];
             if (schema.some(question => !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
-            if (schema.some(question => ['dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('드롭다운과 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
+            if (schema.some(question => ['choice', 'dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('객관식, 드롭다운, 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
             const button = $('saveSchemaButton');
             button.disabled = true;
             try {
@@ -2177,11 +2198,22 @@
                     if (question.hasTail && selectedDropdown && (!question.tailCondition || selectedDropdown === question.tailCondition)) {
                         control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', selectedDropdown))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedDropdown)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[selectedDropdown] || '')}</textarea></label>`;
                     }
+                } else if (question.type === 'choice') {
+                    const selectedChoice = typeof answer === 'string' ? answer : answer?.selected || '';
+                    control = `<div class="mt-2 space-y-2">${(question.options || []).map(option => `
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg border border-line hover:bg-slate-50 cursor-pointer text-sm ${disabled ? 'opacity-70 pointer-events-none' : ''}">
+                            <input type="radio" name="choice_${escapeHtml(question.id)}" value="${escapeHtml(option)}" data-choice="${escapeHtml(question.id)}" class="w-4 h-4 text-brand focus:ring-brand" ${selectedChoice === option ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                            <span>${escapeHtml(option)}</span>
+                        </label>
+                    `).join('')}</div>`;
+                    if (question.hasTail && selectedChoice && (!question.tailCondition || selectedChoice === question.tailCondition)) {
+                        control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', selectedChoice))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedChoice)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[selectedChoice] || '')}</textarea></label>`;
+                    }
                 } else if (question.type === 'pill') {
                     control = `<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => `<button type="button" class="pill-choice" data-pill="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${selected.includes(option)}" ${disabled ? 'disabled' : ''}>${escapeHtml(option)}</button>`).join('')}</div>`;
                     if (question.hasTail) control += (question.options || []).filter(option => selected.includes(option)).map(option => `<label class="mt-3 block text-sm font-semibold">${escapeHtml((question.tailTitle || '추가 설명').replaceAll('{option}', option))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('');
                 }
-                const branchBadge = question.type === 'dropdown' && question.hasBranch
+                const branchBadge = ['choice', 'dropdown'].includes(question.type) && question.hasBranch
                     ? '<span class="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">선택별 분기 문항</span>'
                     : '';
                 const descHtml = question.description ? `<p class="mt-1 mb-2 text-sm text-muted leading-relaxed">${formatRichText(question.description)}</p>` : '';
@@ -2214,6 +2246,9 @@
                 } else if (question.type === 'dropdown') {
                     const select = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
                     answers[question.id] = { selected: select ? select.value : '', tailAnswers };
+                } else if (question.type === 'choice') {
+                    const radio = block.querySelector(`input[data-choice="${CSS.escape(question.id)}"]:checked`);
+                    answers[question.id] = { selected: radio ? radio.value : '', tailAnswers };
                 } else {
                     const selected = [...block.querySelectorAll(`[data-pill="${CSS.escape(question.id)}"][aria-pressed="true"]`)].map(button => button.dataset.option);
                     answers[question.id] = { selected, tailAnswers };
@@ -2245,6 +2280,11 @@
                 renderStudentQuestions(studentRoomData.formSchema, currentAnswers, studentRoomData.status === 'closed');
                 const nextSelect = document.querySelector(`select[data-answer="${CSS.escape(changedId)}"]`);
                 if (nextSelect && document.activeElement !== nextSelect) nextSelect.focus();
+            } else if (input.matches('input[data-choice]')) {
+                const currentAnswers = collectAnswers(studentRoomData.formSchema);
+                const currentAnswer = currentAnswers[input.dataset.choice];
+                currentAnswers[input.dataset.choice] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
+                renderStudentQuestions(studentRoomData.formSchema, currentAnswers, studentRoomData.status === 'closed');
             }
             if (input.matches('select, input, textarea')) setDirty();
         });
@@ -2382,7 +2422,7 @@
                 const value = answers[question.id];
                 const empty = question.type === 'pill'
                     ? !value?.selected?.length
-                    : question.type === 'dropdown'
+                    : ['choice', 'dropdown'].includes(question.type)
                         ? !value?.selected
                         : !String(value || '').trim();
                 if (question.required && empty) {
