@@ -1621,6 +1621,11 @@
                                 <option value="dropdown" ${question.type === 'dropdown' ? 'selected' : ''}>드롭다운</option>
                                 <option value="pill" ${question.type === 'pill' ? 'selected' : ''}>알약형 다중 선택</option>
                             </select>
+                            ${question.type === 'short' ? `
+                                <select class="field mt-0 py-1 px-2 text-xs font-semibold w-auto min-w-[110px] rounded-lg bg-white border border-line" data-field="validation" aria-label="문항 ${index + 1} 유효성 검사" ${locked ? 'disabled' : ''}>
+                                    ${Object.entries(VALIDATIONS).map(([value, label]) => `<option value="${value}" ${question.validation === value ? 'selected' : ''}>${label}</option>`).join('')}
+                                </select>
+                            ` : ''}
                             ${headerBadge}
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
@@ -1642,9 +1647,6 @@
                         </div>
                         ${['short', 'long'].includes(question.type) ? `<label class="text-xs font-bold">안내 문구
                             <input class="field mt-1" data-field="placeholder" maxlength="160" value="${escapeHtml(question.placeholder || '')}" placeholder="선택 입력" ${locked ? 'disabled' : ''}>
-                        </label>` : ''}
-                        ${question.type === 'short' ? `<label class="text-xs font-bold sm:col-span-2">유효성 검사
-                            <select class="field mt-1" data-field="validation" ${locked ? 'disabled' : ''}>${Object.entries(VALIDATIONS).map(([value, label]) => `<option value="${value}" ${question.validation === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
                         </label>` : ''}
                         ${['choice', 'dropdown', 'pill'].includes(question.type) ? `<label class="text-xs font-bold sm:col-span-2">선택지 (줄바꿈 또는 쉼표로 구분)
                             <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\n'))}</textarea>
@@ -2511,6 +2513,39 @@
                     showNotice(`필수 문항에 응답해주세요: ${question.title}`, true);
                     document.querySelector(`[data-question="${CSS.escape(question.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     return;
+                }
+                if (question.required && question.hasTail) {
+                    let tailEmpty = false;
+                    let targetOption = '';
+                    if (question.type === 'short') {
+                        tailEmpty = !String(value?.tail || '').trim();
+                    } else if (question.type === 'choice' || question.type === 'dropdown') {
+                        const sel = value?.selected;
+                        if (sel && (!question.tailCondition || sel === question.tailCondition)) {
+                            tailEmpty = !String(value?.tailAnswers?.[sel] || '').trim();
+                            targetOption = sel;
+                        }
+                    } else if (question.type === 'pill') {
+                        const selectedList = Array.isArray(value?.selected) ? value.selected : [];
+                        for (const opt of selectedList) {
+                            if (!String(value?.tailAnswers?.[opt] || '').trim()) {
+                                tailEmpty = true;
+                                targetOption = opt;
+                                break;
+                            }
+                        }
+                    }
+                    if (tailEmpty) {
+                        const tailName = question.tailTitle ? question.tailTitle.replaceAll('{option}', targetOption) : '꼬리 질문';
+                        showNotice(`필수 꼬리 질문을 작성해주세요: ${question.title} (${tailName})`, true);
+                        const block = document.querySelector(`[data-question="${CSS.escape(question.id)}"]`);
+                        const tailEl = targetOption
+                            ? block?.querySelector(`[data-tail="${CSS.escape(question.id)}"][data-option="${CSS.escape(targetOption)}"]`)
+                            : block?.querySelector(`[data-tail="${CSS.escape(question.id)}"]`);
+                        (tailEl || block)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        tailEl?.focus();
+                        return;
+                    }
                 }
                 const text = typeof value === 'string' ? value : (value?.value || '');
                 if (!text) continue;
