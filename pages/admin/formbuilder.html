@@ -1652,7 +1652,7 @@
                             <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\n'))}</textarea>
                         </label>` : ''}
                         <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="required" ${question.required ? 'checked' : ''} ${locked ? 'disabled' : ''}> 답변 필수</label>
-                        ${['choice', 'pill'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택지별 꼬리 질문</label>` : ''}
+                        ${['short', 'choice', 'pill'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> ${question.type === 'short' ? '꼬리 질문 추가' : '선택지별 꼬리 질문'}</label>` : ''}
                         ${['choice', 'dropdown'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasBranch" ${question.hasBranch ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택에 따른 분기 생성</label>` : ''}
                         ${['choice', 'dropdown'].includes(question.type) && question.hasBranch ? `
                             <div class="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/80 p-2.5 text-xs text-emerald-900 leading-relaxed">
@@ -1663,9 +1663,9 @@
                                 아래 문항들에서 어떤 선택지에 표시할지 설정하고, <strong>[분기 합치기]</strong>를 설정하면 다시 공통 질문으로 복귀합니다.
                             </div>
                         ` : ''}
-                        ${question.hasTail && ['choice', 'pill'].includes(question.type) ? `
+                        ${question.hasTail && ['short', 'choice', 'pill'].includes(question.type) ? `
                             <label class="text-xs font-bold sm:col-span-2">꼬리 질문 제목
-                                <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="[{option}]에 대해 설명해주세요" ${locked ? 'disabled' : ''}>
+                                <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="${question.type === 'short' ? '추가 질문이나 이유를 작성해주세요' : '[{option}]에 대해 설명해주세요'}" ${locked ? 'disabled' : ''}>
                             </label>
                             <label class="text-xs font-bold sm:col-span-2">꼬리 질문 안내 문구
                                 <input class="field mt-1" data-field="tailPlaceholder" maxlength="160" value="${escapeHtml(question.tailPlaceholder || '')}" placeholder="자세히 적어주세요" ${locked ? 'disabled' : ''}>
@@ -1732,7 +1732,7 @@
             if (field === 'type') {
                 if (['choice', 'dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
                 if (question.type !== 'short') question.validation = 'none';
-                if (!['choice', 'pill'].includes(question.type)) { question.hasTail = false; }
+                if (!['short', 'choice', 'pill'].includes(question.type)) { question.hasTail = false; }
                 if (!['choice', 'dropdown'].includes(question.type)) { question.hasBranch = false; }
                 if (!['short', 'long'].includes(question.type)) { question.placeholder = ''; }
                 renderBuilder(currentRoomData.formSchema);
@@ -1792,7 +1792,12 @@
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
                 let control = '';
                 if (question.type === 'short') {
-                    control = `<input class="field mt-2" data-preview-answer="${escapeHtml(question.id)}" value="${escapeHtml(typeof answer === 'string' ? answer : '')}" placeholder="${escapeHtml(question.placeholder || '답변을 입력하세요')}">`;
+                    const mainVal = typeof answer === 'string' ? answer : (answer?.value || '');
+                    control = `<input class="field mt-2" data-preview-answer="${escapeHtml(question.id)}" value="${escapeHtml(mainVal)}" placeholder="${escapeHtml(question.placeholder || '답변을 입력하세요')}">`;
+                    if (question.hasTail) {
+                        const tailVal = typeof answer === 'object' ? (answer?.tail || '') : '';
+                        control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml(question.tailTitle || '추가 설명')}<textarea class="field mt-1" rows="3" data-preview-tail="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(tailVal)}</textarea></label>`;
+                    }
                 } else if (question.type === 'long') {
                     control = `<textarea class="field mt-2" rows="3" data-preview-answer="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.placeholder || '자세한 내용을 입력하세요')}">${escapeHtml(typeof answer === 'string' ? answer : '')}</textarea>`;
                 } else if (question.type === 'dropdown') {
@@ -1802,10 +1807,10 @@
                     }
                 } else if (question.type === 'choice') {
                     const selectedChoice = typeof answer === 'string' ? answer : answer?.selected || '';
-                    control = `<div class="mt-2 space-y-2">${(question.options || []).map(option => `
-                        <label class="flex items-center gap-2.5 p-2 rounded-lg border border-line hover:bg-slate-50 cursor-pointer text-sm">
+                    control = `<div class="mt-2 space-y-1.5">${(question.options || []).map(option => `
+                        <label class="flex items-center gap-2.5 py-1.5 px-1 cursor-pointer text-sm hover:text-brand">
                             <input type="radio" name="preview_choice_${escapeHtml(question.id)}" value="${escapeHtml(option)}" data-preview-choice="${escapeHtml(question.id)}" class="w-4 h-4 text-brand focus:ring-brand" ${selectedChoice === option ? 'checked' : ''}>
-                            <span>${escapeHtml(option)}</span>
+                            <span class="select-none">${escapeHtml(option)}</span>
                         </label>
                     `).join('')}</div>`;
                     if (question.hasTail && selectedChoice && (!question.tailCondition || selectedChoice === question.tailCondition)) {
@@ -1831,10 +1836,13 @@
                 if (!block) continue;
                 const tailAnswers = {};
                 block.querySelectorAll(`[data-preview-tail="${CSS.escape(question.id)}"]`).forEach(input => { tailAnswers[input.dataset.option] = input.value.trim(); });
-                if (question.type === 'short' || question.type === 'long') {
+                if (question.type === 'short') {
                     const input = block.querySelector(`[data-preview-answer="${CSS.escape(question.id)}"]`);
-                    answers[question.id] = input ? input.value.trim() : '';
-                } else if (question.type === 'dropdown') {
+                    const tailInput = block.querySelector(`[data-preview-tail="${CSS.escape(question.id)}"]`);
+                    answers[question.id] = question.hasTail
+                        ? { value: input ? input.value.trim() : '', tail: tailInput ? tailInput.value.trim() : '' }
+                        : (input ? input.value.trim() : '');
+                } else if (question.type === 'long') {
                     const select = block.querySelector(`[data-preview-answer="${CSS.escape(question.id)}"]`);
                     answers[question.id] = { selected: select ? select.value : '', tailAnswers };
                 } else if (question.type === 'choice') {
@@ -2140,6 +2148,12 @@
         function formatAnswer(answer) {
             if (answer == null) return '';
             if (typeof answer !== 'object') return String(answer);
+            if ('value' in answer || 'tail' in answer) {
+                const val = answer.value || '';
+                const tail = answer.tail || '';
+                if (val && tail) return `${val} (${tail})`;
+                return val || tail || '';
+            }
             const selected = Array.isArray(answer.selected) ? answer.selected : [answer.selected].filter(Boolean);
             const tails = answer.tailAnswers || {};
             return selected.map(option => tails[option] ? `${option}: ${tails[option]}` : option).join('\n');
@@ -2240,7 +2254,12 @@
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
                 let control = '';
                 if (question.type === 'short') {
-                    control = `<input class="field mt-2" data-answer="${escapeHtml(question.id)}" data-validation="${escapeHtml(question.validation || 'none')}" value="${escapeHtml(typeof answer === 'string' ? answer : '')}" placeholder="${escapeHtml(question.placeholder || '')}" ${disabled ? 'disabled' : ''}>`;
+                    const mainVal = typeof answer === 'string' ? answer : (answer?.value || '');
+                    control = `<input class="field mt-2" data-answer="${escapeHtml(question.id)}" data-validation="${escapeHtml(question.validation || 'none')}" value="${escapeHtml(mainVal)}" placeholder="${escapeHtml(question.placeholder || '')}" ${disabled ? 'disabled' : ''}>`;
+                    if (question.hasTail) {
+                        const tailVal = typeof answer === 'object' ? (answer?.tail || '') : '';
+                        control += `<label class="mt-3 block text-sm font-semibold">${escapeHtml(question.tailTitle || '추가 설명')}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(tailVal)}</textarea></label>`;
+                    }
                 } else if (question.type === 'long') {
                     control = `<textarea class="field mt-2" rows="4" data-answer="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.placeholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(typeof answer === 'string' ? answer : '')}</textarea>`;
                 } else if (question.type === 'dropdown') {
@@ -2250,10 +2269,10 @@
                     }
                 } else if (question.type === 'choice') {
                     const selectedChoice = typeof answer === 'string' ? answer : answer?.selected || '';
-                    control = `<div class="mt-2 space-y-2">${(question.options || []).map(option => `
-                        <label class="flex items-center gap-2.5 p-2 rounded-lg border border-line hover:bg-slate-50 cursor-pointer text-sm ${disabled ? 'opacity-70 pointer-events-none' : ''}">
+                    control = `<div class="mt-2 space-y-1.5">${(question.options || []).map(option => `
+                        <label class="flex items-center gap-2.5 py-1.5 px-1 cursor-pointer text-sm hover:text-brand ${disabled ? 'opacity-70 pointer-events-none' : ''}">
                             <input type="radio" name="choice_${escapeHtml(question.id)}" value="${escapeHtml(option)}" data-choice="${escapeHtml(question.id)}" class="w-4 h-4 text-brand focus:ring-brand" ${selectedChoice === option ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-                            <span>${escapeHtml(option)}</span>
+                            <span class="select-none">${escapeHtml(option)}</span>
                         </label>
                     `).join('')}</div>`;
                     if (question.hasTail && selectedChoice && (!question.tailCondition || selectedChoice === question.tailCondition)) {
@@ -2290,10 +2309,13 @@
                 if (!block) continue;
                 const tailAnswers = {};
                 block.querySelectorAll(`[data-tail="${CSS.escape(question.id)}"]`).forEach(input => { tailAnswers[input.dataset.option] = input.value.trim(); });
-                if (question.type === 'short' || question.type === 'long') {
+                if (question.type === 'short') {
                     const input = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
-                    answers[question.id] = input ? input.value.trim() : '';
-                } else if (question.type === 'dropdown') {
+                    const tailInput = block.querySelector(`[data-tail="${CSS.escape(question.id)}"]`);
+                    answers[question.id] = question.hasTail
+                        ? { value: input ? input.value.trim() : '', tail: tailInput ? tailInput.value.trim() : '' }
+                        : (input ? input.value.trim() : '');
+                } else if (question.type === 'long') {
                     const select = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
                     answers[question.id] = { selected: select ? select.value : '', tailAnswers };
                 } else if (question.type === 'choice') {
@@ -2484,13 +2506,15 @@
                     ? !value?.selected?.length
                     : ['choice', 'dropdown'].includes(question.type)
                         ? !value?.selected
-                        : !String(value || '').trim();
+                        : question.type === 'short' && question.hasTail
+                            ? !String(value?.value || '').trim()
+                            : !String(value || '').trim();
                 if (question.required && empty) {
                     showNotice(`필수 문항에 응답해주세요: ${question.title}`, true);
                     document.querySelector(`[data-question="${CSS.escape(question.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     return;
                 }
-                const text = typeof value === 'string' ? value : '';
+                const text = typeof value === 'string' ? value : (value?.value || '');
                 if (!text) continue;
                 if (question.validation === 'phone' && !/^010-\d{4}-\d{4}$/.test(text)) return showNotice(`${question.title}: 010-0000-0000 형식으로 입력해주세요.`, true);
                 if (question.validation === 'email' && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(text)) return showNotice(`${question.title}: 이메일 주소를 확인해주세요.`, true);
