@@ -12,6 +12,7 @@
     <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script>
         tailwind.config = {
             theme: { extend: { fontFamily: { sans: ['Pretendard', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'sans-serif'] }, colors: { board: '#24493D', page: '#E9EFEC', line: '#D5DEDA', ink: '#1D2B26', muted: '#5F706A', yellow: '#F0CF5C' } } }
@@ -2275,27 +2276,28 @@
                 const snapshot = await getDocs(collection(db, 'custom_forms', currentRoom, 'responses'));
                 const schema = currentRoomData.formSchema || [];
                 const responses = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
-                const columns = [
-                    { header: '학번', width: 14 }, { header: '수정일', width: 22 },
-                    ...schema.map(question => ({
-                        header: question.branchOption && question.branchOption !== '__merge__'
+                const headers = [
+                    '학번', '수정일',
+                    ...schema.map(question => (
+                        question.branchOption && question.branchOption !== '__merge__'
                             ? `[${question.branchOption}] ${stripTags(question.title)}`
-                            : stripTags(question.title),
-                        width: 28
-                    }))
+                            : stripTags(question.title)
+                    ))
                 ];
                 const rows = responses.map(response => [
                     response.studentId || '',
                     response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '',
                     ...schema.map(question => formatAnswer(response.answers?.[question.id]))
                 ]);
-                const blob = new Blob([buildXlsx([{ name: '응답', columns, rows }])], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement('a');
-                anchor.href = url;
-                anchor.download = `설문_${currentRoom}_응답.xlsx`;
-                anchor.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                ws['!cols'] = [
+                    { wch: 14 }, { wch: 22 },
+                    ...schema.map(() => ({ wch: 28 }))
+                ];
+                XLSX.utils.book_append_sheet(wb, ws, '응답');
+                XLSX.writeFile(wb, `설문_${currentRoom}_응답.xlsx`);
             } catch (error) {
                 console.error('응답 다운로드 실패:', error);
                 showNotice(`응답 파일을 만들지 못했습니다: ${error.message || '응답 권한을 확인해주세요.'}`, true);
@@ -2661,67 +2663,6 @@
             }
         });
 
-        function buildXlsx(sheets) {
-            const xml = value => String(value ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-            const colName = index => {
-                let name = '';
-                for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(65 + (n - 1) % 26) + name;
-                return name;
-            };
-            const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
-            const base = 'http://schemas.openxmlformats.org';
-            const rel = `${base}/officeDocument/2006/relationships`;
-            const main = `${base}/spreadsheetml/2006/main`;
-            const cell = (value, ref, header) => `<c r="${ref}" t="inlineStr" s="${header ? 1 : 2}"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
-            const sheetXml = sheet => head + `<worksheet xmlns="${main}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${sheet.columns.map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${column.width || 12}" customWidth="1"/>`).join('')}</cols><sheetData><row r="1">${sheet.columns.map((column, index) => cell(column.header, `${colName(index)}1`, true)).join('')}</row>${sheet.rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, index) => cell(value, `${colName(index)}${rowIndex + 2}`, false)).join('')}</row>`).join('')}</sheetData></worksheet>`;
-            const files = [
-                ['[Content_Types].xml', head + `<Types xmlns="${base}/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((sheet, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
-                ['_rels/.rels', head + `<Relationships xmlns="${base}/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
-                ['xl/workbook.xml', head + `<workbook xmlns="${main}" xmlns:r="${rel}"><sheets>${sheets.map((sheet, index) => `<sheet name="${xml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join('')}</sheets></workbook>`],
-                ['xl/_rels/workbook.xml.rels', head + `<Relationships xmlns="${base}/package/2006/relationships">${sheets.map((sheet, index) => `<Relationship Id="rId${index + 1}" Type="${rel}/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="${rel}/styles" Target="styles.xml"/></Relationships>`],
-                ['xl/styles.xml', head + `<styleSheet xmlns="${main}"><fonts count="2"><font><sz val="11"/><name val="맑은 고딕"/></font><font><b/><sz val="11"/><name val="맑은 고딕"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE1EBE6"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`]
-            ];
-            sheets.forEach((sheet, index) => files.push([`xl/worksheets/sheet${index + 1}.xml`, sheetXml(sheet)]));
-            return zipStore(files.map(([name, data]) => ({ name, data: new TextEncoder().encode(data) })));
-        }
-
-        function zipStore(entries) {
-            const crc32 = bytes => {
-                let crc = 0xFFFFFFFF;
-                for (const byte of bytes) {
-                    crc ^= byte;
-                    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? 0xEDB88320 ^ (crc >>> 1) : crc >>> 1;
-                }
-                return (crc ^ 0xFFFFFFFF) >>> 0;
-            };
-            const encoder = new TextEncoder();
-            const parts = [];
-            const directory = [];
-            let offset = 0;
-            for (const entry of entries) {
-                const name = encoder.encode(entry.name);
-                const size = entry.data.length;
-                const crc = crc32(entry.data);
-                const local = new DataView(new ArrayBuffer(30));
-                local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
-                local.setUint32(14, crc, true); local.setUint32(18, size, true); local.setUint32(22, size, true); local.setUint16(26, name.length, true);
-                parts.push(new Uint8Array(local.buffer), name, entry.data);
-                const central = new DataView(new ArrayBuffer(46));
-                central.setUint32(0, 0x02014b50, true); central.setUint16(4, 20, true); central.setUint16(6, 0x0800, true);
-                central.setUint32(16, crc, true); central.setUint32(20, size, true); central.setUint32(24, size, true); central.setUint16(28, name.length, true); central.setUint32(42, offset, true);
-                directory.push(new Uint8Array(central.buffer), name);
-                offset += 30 + name.length + size;
-            }
-            const directorySize = directory.reduce((sum, part) => sum + part.length, 0);
-            const end = new DataView(new ArrayBuffer(22));
-            end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
-            end.setUint32(12, directorySize, true); end.setUint32(16, offset, true);
-            const all = [...parts, ...directory, new Uint8Array(end.buffer)];
-            const output = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0));
-            let position = 0;
-            all.forEach(part => { output.set(part, position); position += part.length; });
-            return output;
-        }
 
         $('btnTeacherLogoutHeader')?.addEventListener('click', async () => {
             try { await signOut(auth); }
