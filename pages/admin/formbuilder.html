@@ -978,6 +978,10 @@
             <button type="button" class="btn-fmt-float w-4 h-4 rounded-full bg-[#2563eb] hover:scale-125 border border-white/30 transition shadow-sm" data-fmt="color" data-color="#2563eb" title="파랑"></button>
             <button type="button" class="btn-fmt-float w-4 h-4 rounded-full bg-[#059669] hover:scale-125 border border-white/30 transition shadow-sm" data-fmt="color" data-color="#059669" title="초록"></button>
         </div>
+        <div class="h-4 w-px bg-white/20 mx-0.5"></div>
+        <button type="button" class="btn-fmt-float px-1.5 py-1 rounded hover:bg-white/20 transition flex items-center justify-center text-xs text-white/80 hover:text-white" data-fmt="clear" title="서식 지우기 (Ctrl+\)">
+            <i class="bi bi-eraser text-xs"></i>
+        </button>
     </div>
 
     <script type="module">
@@ -1073,7 +1077,7 @@
             tb.classList.remove('hidden');
 
             const rect = input.getBoundingClientRect();
-            const tbWidth = tb.offsetWidth || 230;
+            const tbWidth = tb.offsetWidth || 260;
             const tbHeight = tb.offsetHeight || 38;
 
             let top = rect.top - tbHeight - 8;
@@ -1096,28 +1100,67 @@
             activeFormattedInput = null;
         }
 
+        function stripFormatting(text) {
+            return String(text || '')
+                .replace(/<[^>]*>/g, '')
+                .replace(/\[color=[^\]]+\]/gi, '')
+                .replace(/\[\/color\]/gi, '')
+                .replace(/\*\*/g, '')
+                .replace(/__/g, '');
+        }
+
         function applyFormatToInput(inputEl, formatType, color = '#e11d48') {
             if (!inputEl) return;
-            const start = inputEl.selectionStart ?? 0;
-            const end = inputEl.selectionEnd ?? 0;
+            let start = inputEl.selectionStart ?? 0;
+            let end = inputEl.selectionEnd ?? 0;
             if (start === end) return;
             const value = inputEl.value;
-            const selected = value.slice(start, end);
+            let selected = value.slice(start, end);
             if (!selected.trim()) return;
 
-            let wrapped = '';
+            let replacement = '';
             if (formatType === 'bold') {
-                wrapped = `<b>${selected}</b>`;
+                replacement = `<b>${selected}</b>`;
             } else if (formatType === 'underline') {
-                wrapped = `<u>${selected}</u>`;
+                replacement = `<u>${selected}</u>`;
             } else if (formatType === 'color') {
-                wrapped = `<span style="color:${color}">${selected}</span>`;
+                replacement = `<span style="color:${color}">${selected}</span>`;
+            } else if (formatType === 'clear') {
+                let textBefore = value.slice(0, start);
+                let textAfter = value.slice(end);
+                const wrapperPairs = [
+                    { open: /<b>$/i, close: /^<\/b>/i },
+                    { open: /<strong>$/i, close: /^<\/strong>/i },
+                    { open: /<u>$/i, close: /^<\/u>/i },
+                    { open: /<span(?:\s+style="[^"]*")?>$/i, close: /^<\/span>/i },
+                    { open: /\*\*$/, close: /^\*\*/ },
+                    { open: /__$/, close: /^__/ },
+                    { open: /\[color=[^\]]+\]$/i, close: /^\[\/color\]/i }
+                ];
+                let expanded = true;
+                while (expanded) {
+                    expanded = false;
+                    for (const pair of wrapperPairs) {
+                        const mOpen = textBefore.match(pair.open);
+                        const mClose = textAfter.match(pair.close);
+                        if (mOpen && mClose) {
+                            start -= mOpen[0].length;
+                            end += mClose[0].length;
+                            textBefore = value.slice(0, start);
+                            textAfter = value.slice(end);
+                            expanded = true;
+                            break;
+                        }
+                    }
+                }
+                selected = value.slice(start, end);
+                replacement = stripFormatting(selected);
             }
 
-            inputEl.value = value.slice(0, start) + wrapped + value.slice(end);
+            inputEl.value = value.slice(0, start) + replacement + value.slice(end);
             inputEl.dispatchEvent(new Event('input', { bubbles: true }));
             inputEl.focus();
-            const newEnd = start + wrapped.length;
+            const newEnd = start + replacement.length;
             inputEl.setSelectionRange(start, newEnd);
         }
 
@@ -2004,6 +2047,10 @@
                 } else if (event.key === 'u' || event.key === 'U') {
                     event.preventDefault();
                     applyFormatToInput(event.target, 'underline');
+                    hideFloatingToolbar();
+                } else if (event.key === '\\') {
+                    event.preventDefault();
+                    applyFormatToInput(event.target, 'clear');
                     hideFloatingToolbar();
                 }
             }
