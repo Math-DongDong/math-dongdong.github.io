@@ -2209,20 +2209,29 @@
         function renderResponses(responses) {
             const schema = currentRoomData.formSchema || [];
             $('responseCountBadge').textContent = `${Math.max(Number(currentRoomData.responseCount) || 0, responses.length)}명 응답`;
-            $('responseTableHead').innerHTML = `<tr><th class="border-b border-line p-2">학번</th><th class="border-b border-line p-2">이름</th><th class="border-b border-line p-2">수정일</th>${schema.map(question => {
+            $('responseTableHead').innerHTML = `<tr><th class="border-b border-line p-2">학번</th><th class="border-b border-line p-2">수정일</th>${schema.map(question => {
                 const branchTag = question.branchOption && question.branchOption !== '__merge__'
                     ? `<div class="text-[10px] text-blue-600 font-normal">🌿[${escapeHtml(question.branchOption)}]</div>`
                     : '';
                 return `<th class="border-b border-line p-2">${escapeHtml(stripTags(question.title))}${branchTag}</th>`;
             }).join('')}<th class="border-b border-line p-2">관리</th></tr>`;
             if (!responses.length) {
-                $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + 4}">아직 제출된 응답이 없습니다.</td></tr>`;
+                $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + 3}">아직 제출된 응답이 없습니다.</td></tr>`;
                 return;
             }
             responses.sort((a, b) => String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }));
             $('responseTableBody').innerHTML = responses.map(response => {
-                const updatedAt = response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '';
-                return `<tr><td class="border-b border-line/60 p-2">${escapeHtml(response.studentId)}</td><td class="border-b border-line/60 p-2">${escapeHtml(response.studentName)}</td><td class="border-b border-line/60 p-2 whitespace-nowrap">${escapeHtml(updatedAt)}</td>${schema.map(question => `<td class="max-w-xs whitespace-pre-wrap break-words border-b border-line/60 p-2">${escapeHtml(formatAnswer(response.answers?.[question.id]))}</td>`).join('')}<td class="border-b border-line/60 p-2"><button type="button" class="btn btn-light text-xs text-red-700" data-delete-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(response.studentName || response.studentId)} 응답 삭제"><i class="bi bi-trash"></i> 삭제</button></td></tr>`;
+                let dateStr = '';
+                let timeStr = '';
+                if (response.updatedAt?.toDate) {
+                    const d = response.updatedAt.toDate();
+                    dateStr = d.toLocaleDateString('ko-KR');
+                    timeStr = d.toLocaleTimeString('ko-KR');
+                }
+                const formattedDate = dateStr
+                    ? `${escapeHtml(dateStr)}<br><span class="text-xs text-muted">${escapeHtml(timeStr)}</span>`
+                    : '';
+                return `<tr><td class="border-b border-line/60 p-2 font-medium">${escapeHtml(response.studentId)}</td><td class="border-b border-line/60 p-2 whitespace-nowrap leading-tight text-xs">${formattedDate}</td>${schema.map(question => `<td class="max-w-xs whitespace-pre-wrap break-words border-b border-line/60 p-2">${escapeHtml(formatAnswer(response.answers?.[question.id]))}</td>`).join('')}<td class="border-b border-line/60 p-2"><button type="button" class="btn btn-light text-xs text-red-700" data-delete-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(response.studentId)} 응답 삭제"><i class="bi bi-trash"></i> 삭제</button></td></tr>`;
             }).join('');
 
             $('responseTableBody').querySelectorAll('[data-delete-response]').forEach(button => {
@@ -2230,7 +2239,7 @@
                     const responseId = button.dataset.deleteResponse;
                     const response = responses.find(item => item.id === responseId);
                     if (!response || !currentRoom) return;
-                    const ok = await customConfirm('응답 삭제', `${escapeHtml(response.studentName || response.studentId)} 학생의 응답을 삭제할까요?`);
+                    const ok = await customConfirm('응답 삭제', `${escapeHtml(response.studentId)} 학생의 응답을 삭제할까요?`);
                     if (!ok) return;
                     try {
                         const roomRef = doc(db, 'custom_forms', currentRoom);
@@ -2267,7 +2276,7 @@
                 const schema = currentRoomData.formSchema || [];
                 const responses = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
                 const columns = [
-                    { header: '학번', width: 12 }, { header: '이름', width: 18 }, { header: '최종 수정', width: 22 },
+                    { header: '학번', width: 14 }, { header: '수정일', width: 22 },
                     ...schema.map(question => ({
                         header: question.branchOption && question.branchOption !== '__merge__'
                             ? `[${question.branchOption}] ${stripTags(question.title)}`
@@ -2276,7 +2285,7 @@
                     }))
                 ];
                 const rows = responses.map(response => [
-                    response.studentId || '', response.studentName || '',
+                    response.studentId || '',
                     response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '',
                     ...schema.map(question => formatAnswer(response.answers?.[question.id]))
                 ]);
