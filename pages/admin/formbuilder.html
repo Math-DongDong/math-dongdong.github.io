@@ -152,6 +152,31 @@
             font-weight: 700;
         }
 
+        .admin-workspace-tabs {
+            display: flex;
+            gap: .25rem;
+            border-bottom: 1px solid #D5DEDA;
+        }
+
+        .admin-workspace-tab {
+            border: 0;
+            border-bottom: 3px solid transparent;
+            background: transparent;
+            color: #5F706A;
+            padding: .75rem 1rem;
+            font-weight: 700;
+        }
+
+        .admin-workspace-tab[aria-selected="true"] {
+            color: #24493D;
+            border-bottom-color: #24493D;
+        }
+
+        .admin-workspace-tab:focus-visible {
+            outline: 3px solid rgba(36, 73, 61, .22);
+            outline-offset: 2px;
+        }
+
         @media (min-width: 768px) {
             .teacher-room-toolbar {
                 display: flex;
@@ -807,8 +832,15 @@
                 </div>
                 <div id="guestApprovalBox" class="mb-4 rounded-xl border border-yellow-300 bg-yellow-50 p-3" hidden>
                 </div>
-                <div class="space-y-5">
-                    <section id="builderPanel" class="rounded-2xl border border-line bg-white p-4 shadow-sm" hidden>
+                <div id="adminWorkspace" hidden>
+                    <div class="admin-workspace-tabs mb-4" role="tablist" aria-label="설문 관리 영역">
+                        <button id="builderTab" class="admin-workspace-tab" type="button" role="tab"
+                            aria-controls="builderPanel" aria-selected="true">폼 빌더</button>
+                        <button id="responsesTab" class="admin-workspace-tab" type="button" role="tab"
+                            aria-controls="responsesPanel" aria-selected="false" tabindex="-1">학생 응답</button>
+                    </div>
+                    <section id="builderPanel" role="tabpanel" aria-labelledby="builderTab"
+                        class="rounded-2xl border border-line bg-white p-4 shadow-sm">
                         <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
                             <div>
                                 <h2 class="text-lg font-extrabold">폼 빌더</h2>
@@ -846,7 +878,8 @@
                         </div>
                         <button id="saveSchemaButton" class="btn btn-primary mt-3 w-full py-2.5 font-bold">양식 저장</button>
                     </section>
-                    <section id="responsesPanel" class="rounded-2xl border border-line bg-white p-4 shadow-sm" hidden>
+                    <section id="responsesPanel" role="tabpanel" aria-labelledby="responsesTab"
+                        class="rounded-2xl border border-line bg-white p-4 shadow-sm" hidden>
                         <div class="mb-3 flex items-center justify-between gap-3">
                             <h2 class="text-lg font-extrabold">학생 응답</h2>
                             <span id="responseCountBadge"
@@ -1007,6 +1040,28 @@
             return customAlert(isError ? '오류' : '안내', safeMessage);
         };
         const hideNotice = () => { $('notice').hidden = true; };
+        function setAdminWorkspaceTab(tabName, moveFocus = false) {
+            const isBuilder = tabName === 'builder';
+            $('builderTab').setAttribute('aria-selected', String(isBuilder));
+            $('responsesTab').setAttribute('aria-selected', String(!isBuilder));
+            $('builderTab').tabIndex = isBuilder ? 0 : -1;
+            $('responsesTab').tabIndex = isBuilder ? -1 : 0;
+            $('builderPanel').hidden = !isBuilder;
+            $('responsesPanel').hidden = isBuilder;
+            if (moveFocus) $(isBuilder ? 'builderTab' : 'responsesTab').focus();
+        }
+
+        document.querySelectorAll('.admin-workspace-tab').forEach(tab => {
+            tab.addEventListener('click', () => setAdminWorkspaceTab(tab.id === 'builderTab' ? 'builder' : 'responses'));
+            tab.addEventListener('keydown', event => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const next = event.key === 'Home' || event.key === 'ArrowLeft'
+                    ? 'builder'
+                    : 'responses';
+                setAdminWorkspaceTab(event.key === 'End' ? 'responses' : next, true);
+            });
+        });
         const asOptions = value => String(value ?? '').split(/\r?\n|,/).map(v => v.trim()).filter(Boolean).slice(0, 40);
         const newQuestion = () => ({
             id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1540,8 +1595,7 @@
             clearTimeout(scheduledCloseTimer);
             currentRoom = code || null;
             currentRoomData = null;
-            $('builderPanel').hidden = true;
-            $('responsesPanel').hidden = true;
+            $('adminWorkspace').hidden = true;
             $('toggleStatusButton').disabled = !code;
             $('cloneRoomButton').disabled = !code;
             $('downloadXlsxButton').disabled = !code;
@@ -1580,8 +1634,8 @@
                 $('roomDescriptionInput').disabled = count > 0;
                 schemaDirty = false;
                 renderBuilder(Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : []);
-                $('builderPanel').hidden = false;
-                $('responsesPanel').hidden = false;
+                $('adminWorkspace').hidden = false;
+                setAdminWorkspaceTab('builder');
                 renderResponses(responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
                 if (currentRoomData.status === 'active' && currentRoomData.scheduledCloseAt) {
                     armScheduledClose(code, currentRoomData.scheduledCloseAt);
