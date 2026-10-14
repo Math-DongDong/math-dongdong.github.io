@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════
  *  · 학교·담당 선생님은 방을 만든 선생님을 따릅니다.
  *    (방 문서 creatorSchool/creatorName → 없으면 teacher_directory/{createdBy})
- *  · 학생이 입력하는 것은 학번(숫자 4~5자리, 예: 1230)과 4자리 PIN뿐입니다.
+ *  · 학생이 입력하는 것은 1~3으로 시작하는 학번(숫자 4~5자리, 예: 1230)과 4자리 PIN뿐입니다.
  *  · PIN은 v3 방식 그대로입니다. 평문은 어디에도 저장하지 않고, PBKDF2 증명값을
  *    보안 규칙(gate)에 제출해 맞는지만 확인합니다. 본인 기기는 증명값만 기억합니다.
  *  · 학번 도용은 ①PIN ②동시 접속 차단 ③기기 3대 한도 ④게스트 교사 승인 으로 막습니다.
@@ -364,8 +364,8 @@ async function writePinProof(studentKey, proof) {
     updateDoc(doc(db, "student_auth", studentKey), { pinSetAt: serverTimestamp() }).catch(() => { });
 }
 
-/** 학번 형식: 숫자 4~5자리 (예: 1230 = 1학년 2반 30번, 11205 = 1학년 12반 5번) */
-export const STUDENT_ID_PATTERN = /^\d{4,5}$/;
+/** 학번 형식: 1~3으로 시작하는 숫자 4~5자리 */
+export const STUDENT_ID_PATTERN = /^[1-3]\d{3,4}$/;
 export const STUDENT_ID_MAX_LEN = 5;          // ★ 자릿수를 바꾸면 위 정규식과 함께 고치세요
 
 /** 담당 선생님 목록에 이름 하나를 더합니다 (중복 제외, 최대 10명) */
@@ -994,10 +994,10 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
                                 </li>
                             </ul>
                             <label class="student-auth-field-label" for="inputAuthStudentId">
-                                학번 <span class="text-muted fw-normal">(숫자 4~5자리)</span>
+                                학번 <span class="text-muted fw-normal">(1~3으로 시작하는 숫자 4~5자리)</span>
                             </label>
                             <input type="text" class="form-control form-control-lg student-auth-input" id="inputAuthStudentId"
-                                placeholder="예: 1230" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="${STUDENT_ID_MAX_LEN}" autocomplete="off">
+                                placeholder="예: 1230" inputmode="numeric" pattern="[1-3][0-9]{3,4}" minlength="4" maxlength="${STUDENT_ID_MAX_LEN}" autocomplete="off">
                             <div class="student-auth-help">학년·반·번호를 붙여 씁니다. 예) 1학년 2반 30번 → <b>1230</b>, 1학년 12반 5번 → <b>11205</b></div>
                             <label class="student-auth-field-label student-auth-pin-label" for="inputAuthPin">4자리 숫자 PIN</label>
                             <input type="password" class="form-control form-control-lg student-auth-input" id="inputAuthPin"
@@ -1037,7 +1037,10 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
         document.getElementById('authTeacherText').textContent = roomTeacher ? `${roomTeacher} 선생님` : '-';
 
         idInput.value = isGuest ? '' : String(initialStudentId || '').replace(/\D/g, '').slice(0, STUDENT_ID_MAX_LEN);
-        idInput.oninput = () => { idInput.value = idInput.value.replace(/\D/g, '').slice(0, STUDENT_ID_MAX_LEN); };
+        idInput.oninput = () => {
+            const digits = idInput.value.replace(/\D/g, '').slice(0, STUDENT_ID_MAX_LEN);
+            idInput.value = digits && !/^[1-3]/.test(digits) ? '' : digits;
+        };
         pinInput.value = '';
         pinInput.oninput = () => { pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, 4); };
         errEl.classList.add('d-none');
@@ -1053,7 +1056,7 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
         const onConfirm = () => {
             const studentId = idInput.value.trim();
             const pin = pinInput.value.trim();
-            if (!STUDENT_ID_PATTERN.test(studentId)) return fail("학번은 숫자 4~5자리로 입력해주세요. (예: 1230)", idInput);
+            if (!STUDENT_ID_PATTERN.test(studentId)) return fail("학번은 1~3으로 시작하는 숫자 4~5자리로 입력해주세요. (예: 1230)", idInput);
             if (!/^\d{4}$/.test(pin)) return fail("PIN은 숫자 4자리로 입력해주세요.", pinInput);
             result = { school: roomSchool, studentId, pin, teachers: roomTeacher ? [roomTeacher] : [] };
             bsModal.hide();
@@ -1555,8 +1558,8 @@ export async function showPinResetModal() {
                         <div class="modal-body py-3">
                             <p class="text-muted small mb-3">내 학교 학생의 학번을 입력하면 PIN이 초기화됩니다. 학생은 다음 접속 시 새 4자리 PIN을 설정합니다.</p>
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-secondary" for="pinResetStudentIdInput">학번 (숫자만)</label>
-                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 1230" inputmode="numeric" pattern="[0-9]*" maxlength="5" autocomplete="off">
+                                <label class="form-label small fw-bold text-secondary" for="pinResetStudentIdInput">학번 (1~3으로 시작)</label>
+                                <input type="text" class="form-control bg-light" id="pinResetStudentIdInput" placeholder="예: 1230" inputmode="numeric" pattern="[1-3][0-9]{3,4}" maxlength="5" autocomplete="off">
                             </div>
                             <div class="alert alert-light border small text-muted mb-0">
                                 여러 명을 한 번에 처리하거나 기기 등록을 초기화하려면 상단 메뉴의 <b>학생 관리</b> 페이지를 이용하세요.
@@ -1580,7 +1583,8 @@ export async function showPinResetModal() {
         errEl.style.display = 'none';
         studentIdInput.value = '';
         studentIdInput.oninput = () => {
-            studentIdInput.value = studentIdInput.value.replace(/[^0-9]/g, '').slice(0, STUDENT_ID_MAX_LEN);
+            const digits = studentIdInput.value.replace(/\D/g, '').slice(0, STUDENT_ID_MAX_LEN);
+            studentIdInput.value = digits && !/^[1-3]/.test(digits) ? '' : digits;
         };
 
         const bsModal = bsModalFor(modalEl);
@@ -1589,7 +1593,7 @@ export async function showPinResetModal() {
         const onConfirm = async () => {
             const studentId = studentIdInput.value.trim();
 
-            if (!STUDENT_ID_PATTERN.test(studentId)) { errEl.textContent = "학번은 숫자 4~5자리로 입력해주세요. (예: 1230)"; errEl.style.display = 'block'; studentIdInput.focus(); return; }
+            if (!STUDENT_ID_PATTERN.test(studentId)) { errEl.textContent = "학번은 1~3으로 시작하는 숫자 4~5자리로 입력해주세요. (예: 1230)"; errEl.style.display = 'block'; studentIdInput.focus(); return; }
 
             confirmBtn.disabled = true;
             confirmBtn.textContent = "처리 중...";
@@ -1894,7 +1898,7 @@ export function renderRoomEntrance(container, options = {}) {
             }
 
             // ── 여기부터는 학생 인증 모드 (v4.1: 학번 + PIN) ─────────
-            //  학교·선생님은 방이 정합니다. 학생은 학번 4~5자리와 4자리 PIN만 입력합니다.
+            //  학교·선생님은 방이 정합니다. 학생은 1~3으로 시작하는 학번과 4자리 PIN만 입력합니다.
             //  PIN 해시는 crypto.subtle로 만듭니다. https 또는 localhost 필요.
             if (!isCryptoAvailable()) {
                 await customAlert("보안 연결 필요",
