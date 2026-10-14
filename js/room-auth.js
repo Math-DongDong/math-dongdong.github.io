@@ -349,7 +349,7 @@ async function writePinProof(studentKey, proof) {
 }
 
 /** 학번 형식: 숫자 4~5자리 (예: 1230 = 1학년 2반 30번, 11205 = 1학년 12반 5번) */
-export const STUDENT_ID_PATTERN = /^\d{4,5}$/;
+export const STUDENT_ID_PATTERN = /^[1-3]\d{3,4}$/;
 export const STUDENT_ID_MAX_LEN = 5;          // ★ 자릿수를 바꾸면 위 정규식과 함께 고치세요
 
 /** 담당 선생님 목록에 이름 하나를 더합니다 (중복 제외, 최대 10명) */
@@ -1037,7 +1037,7 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
         const onConfirm = () => {
             const studentId = idInput.value.trim();
             const pin = pinInput.value.trim();
-            if (!STUDENT_ID_PATTERN.test(studentId)) return fail("학번은 숫자 4~5자리로 입력해주세요. (예: 1230)", idInput);
+            if (!STUDENT_ID_PATTERN.test(studentId)) return fail("학번은 1~3으로 시작하는 숫자 4~5자리로 입력해주세요. (예: 1230)", idInput);
             if (!/^\d{4}$/.test(pin)) return fail("PIN은 숫자 4자리로 입력해주세요.", pinInput);
             result = { school: roomSchool, studentId, pin, teachers: roomTeacher ? [roomTeacher] : [] };
             bsModal.hide();
@@ -1227,6 +1227,10 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
         let answer = null;
 
         const onOk = () => {
+            if (!STUDENT_ID_PATTERN.test(String(studentId).trim())) {
+                customAlert("학번 확인", "1~3으로 시작하는 학번을 입력해주세요.");
+                return;
+            }
             answer = 'ok';
             if (document.activeElement && modalEl.contains(document.activeElement)) document.activeElement.blur();
             bsModal.hide();
