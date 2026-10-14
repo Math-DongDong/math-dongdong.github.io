@@ -626,6 +626,8 @@
         let currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 };
         let currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
         let gameStartTime = 0;
+        let checkpointRecordRef = null;
+        let checkpointSavePromise = null;
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -660,6 +662,7 @@
                 currentStage = 1; currentProblem = 1; score = 0; lives = 5;
                 currentTotalShots = 0; currentHitShots = 0;
                 currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                checkpointRecordRef = null; checkpointSavePromise = null;
                 gameStartTime = Date.now();
 
                 generateProblem();
@@ -1064,13 +1067,15 @@
             // ★ records에는 학번·학교를 넣지 않습니다 — 게임오버 랭킹이 로그인 없이 읽습니다.
             // ★ isCheckpoint: 중간 저장이라는 표시. 대시보드의 '플레이 횟수'에서 제외합니다.
             //   (이 표시가 없으면 Stage 5를 깬 학생만 플레이 횟수가 1회 더 세집니다)
-            await addDoc(recordsCollectionRef(currentRoomCode), {
+            checkpointRecordRef = doc(recordsCollectionRef(currentRoomCode));
+            checkpointSavePromise = setDoc(checkpointRecordRef, {
                 nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem,
                 isCompleted: true, isCheckpoint: true,
                 totalShots: currentTotalShots, hitShots: currentHitShots,
                 stageHits: currentStageHits, stageFails: currentStageFails,
                 playTimeSec, playedAt: serverTimestamp()
             });
+            await checkpointSavePromise;
 
             const alertBox = document.createElement('div');
             alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:10px 20px;border-radius:8px;font-weight:bold;z-index:9999;box-shadow:0 4px 6px rgba(0,0,0,0.1);";
@@ -1097,13 +1102,19 @@
             const playTimeSec = Math.floor((Date.now() - gameStartTime) / 1000);
 
             try {
-                await addDoc(recordsCollectionRef(currentRoomCode), {
+                const finalRecord = {
                     nickname: myName, score, maxStage: currentStage, maxProblem: currentProblem,
-                    isCompleted: isClear,
+                    isCompleted: isClear, isCheckpoint: false,
                     totalShots: currentTotalShots, hitShots: currentHitShots,
                     stageHits: currentStageHits, stageFails: currentStageFails,
                     playTimeSec, playedAt: serverTimestamp()
-                });
+                };
+                if (checkpointSavePromise) await checkpointSavePromise;
+                if (checkpointRecordRef) {
+                    await updateDoc(checkpointRecordRef, finalRecord);
+                } else {
+                    await addDoc(recordsCollectionRef(currentRoomCode), finalRecord);
+                }
 
                 // 학번·학교는 여기(students)에만 둡니다. 대시보드가 닉네임으로 이어 붙입니다.
                 await setDoc(doc(studentsCollectionRef(currentRoomCode), myName), {
@@ -1189,6 +1200,7 @@
             currentStage = 1; currentProblem = 1; score = 0; lives = 5;
             currentTotalShots = 0; currentHitShots = 0;
             currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            checkpointRecordRef = null; checkpointSavePromise = null;
             gameStartTime = Date.now();
             generateProblem();
             updateUI();
