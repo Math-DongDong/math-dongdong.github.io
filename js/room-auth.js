@@ -61,6 +61,22 @@ export function safeNumber(value, fallback = 0) {
     return Number.isFinite(n) ? n : fallback;
 }
 
+export async function stableStudentRoomNickname(student, roomCode) {
+    const proof = String(student?.proof || '');
+    if (!student?.studentId || !/^[a-f0-9]{64}$/i.test(proof)) return '';
+
+    const key = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(proof),
+        { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const message = `mathdongdong|room-nickname|v1|${location.pathname}|${roomCode}`;
+    const digest = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message)));
+    const hex = [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const adjectiveIndex = parseInt(hex.slice(8, 12), 16) % ADJECTIVES.length;
+    const animalIndex = parseInt(hex.slice(12, 16), 16) % ANIMALS.length;
+    return `${ADJECTIVES[adjectiveIndex]} ${ANIMALS[animalIndex]} ${hex.slice(0, 8).toUpperCase()}`;
+}
+
 /** Firebase Realtime Database 키에 쓸 수 없는 문자 (g 플래그 필수) */
 export const INVALID_KEY_PATTERN = /[.#$\[\]\/]/g;
 
@@ -1986,7 +2002,7 @@ export function renderRoomEntrance(container, options = {}) {
 
                 // (3) 이 방에서 쓸 새 이름 선점 (기기 기억 무시)
                 const guestNick = typeof authenticatedRoomKey === 'function'
-                    ? await getAuthenticatedRoomKey({ ...guestInput, isGuest: true })
+                    ? await getAuthenticatedRoomKey({ ...guestInput, proof: guestProof, isGuest: true })
                     : await claimFreshNickname();
                 if (!guestNick) {
                     await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
@@ -2202,7 +2218,7 @@ export function renderRoomEntrance(container, options = {}) {
             // ── 이 방에서 쓸 이름 ────────────────────────────────
             //  학번과 닉네임을 연결하는 기록은 어디에도 남기지 않습니다.
             const nickname = typeof authenticatedRoomKey === 'function'
-                ? await getAuthenticatedRoomKey({ school, studentId, isGuest: false })
+                ? await getAuthenticatedRoomKey({ school, studentId, proof, isGuest: false })
                 : await resolveRoomNickname();
             if (!nickname) {
                 await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
