@@ -1644,18 +1644,22 @@ export async function resetStudentPin(studentKey) {
  */
 export async function purgeStudent(studentKey) {
     const studentRef = doc(db, "student_auth", studentKey);
+    const studentSnapshot = await getDoc(studentRef);
+    const deviceIds = studentSnapshot.exists()
+        ? [...new Set((studentSnapshot.data()?.devices || [])
+            .map(device => String(device?.id || '').trim())
+            .filter(Boolean))]
+        : [];
 
-    for (const subcollectionName of ["gate", "private"]) {
-        const snapshot = await getDocs(collection(studentRef, subcollectionName));
-        for (let start = 0; start < snapshot.docs.length; start += 500) {
-            const batch = writeBatch(db);
-            snapshot.docs.slice(start, start + 500).forEach((studentDoc) => {
-                batch.delete(studentDoc.ref);
-            });
-            await batch.commit();
-        }
+    for (let start = 0; start < deviceIds.length; start += 500) {
+        const batch = writeBatch(db);
+        deviceIds.slice(start, start + 500).forEach((deviceId) => {
+            batch.delete(doc(studentRef, "gate", deviceId));
+        });
+        await batch.commit();
     }
 
+    await deleteDoc(doc(studentRef, "private", "auth"));
     await deleteDoc(studentRef);
 }
 
