@@ -30,6 +30,7 @@ import {
     deleteDoc,
     collection,
     getDocs,
+    writeBatch,
     onSnapshot,
     serverTimestamp,
     query,
@@ -1638,12 +1639,24 @@ export async function resetStudentPin(studentKey) {
  * 학생 완전 삭제 (교사 전용)
  *
  * ★ Firestore는 문서를 지워도 하위 컬렉션이 남습니다.
- *   private/auth를 남겨 두면 그 학번은 재등록이 영원히 막힙니다.
+ *   gate 또는 private/auth를 남겨 두면 해당 학생의 인증 정보가 남습니다.
  *   (새 PIN 기록이 '이미 해시가 있음'으로 거부되기 때문)
  */
 export async function purgeStudent(studentKey) {
-    await deleteDoc(doc(db, "student_auth", studentKey, "private", "auth")).catch(() => { });
-    await deleteDoc(doc(db, "student_auth", studentKey));
+    const studentRef = doc(db, "student_auth", studentKey);
+
+    for (const subcollectionName of ["gate", "private"]) {
+        const snapshot = await getDocs(collection(studentRef, subcollectionName));
+        for (let start = 0; start < snapshot.docs.length; start += 500) {
+            const batch = writeBatch(db);
+            snapshot.docs.slice(start, start + 500).forEach((studentDoc) => {
+                batch.delete(studentDoc.ref);
+            });
+            await batch.commit();
+        }
+    }
+
+    await deleteDoc(studentRef);
 }
 
 // =====================================================================
