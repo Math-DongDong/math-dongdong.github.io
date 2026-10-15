@@ -926,17 +926,26 @@
         </form>
     </div>
 
-    <div id="responseEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" hidden>
-        <form id="responseEditForm" class="app-modal-panel w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div class="mb-4 flex items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-lg font-extrabold">학생 응답 수정</h2>
-                    <p id="responseEditStudent" class="mt-1 text-sm text-muted"></p>
+    <div id="responseEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-5 backdrop-blur-sm" hidden>
+        <form id="responseEditForm" class="app-modal-panel flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line p-0 shadow-2xl">
+            <div class="flex items-center justify-between gap-3 border-b border-line bg-page/60 px-5 py-3.5">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">✏️</span>
+                    <div>
+                        <h2 class="text-base font-extrabold leading-tight">학생 응답 수정</h2>
+                        <p id="responseEditStudent" class="text-[11px] text-muted"></p>
+                    </div>
                 </div>
-                <button type="button" id="closeResponseEdit" class="text-xl font-bold text-muted" aria-label="닫기">&times;</button>
+                <button type="button" id="closeResponseEdit" class="p-1 text-2xl font-bold leading-none text-muted hover:text-ink" aria-label="닫기">&times;</button>
             </div>
-            <div id="responseEditQuestions" class="space-y-4"></div>
-            <div class="mt-5 flex justify-end gap-2">
+            <div class="flex-1 space-y-5 overflow-y-auto p-5">
+                <div class="border-b border-line pb-4">
+                    <h3 id="responseEditTitle" class="text-xl font-extrabold"></h3>
+                    <p id="responseEditDescription" class="mt-2 text-sm leading-relaxed text-muted"></p>
+                </div>
+                <div id="responseEditQuestions" class="space-y-6"></div>
+            </div>
+            <div class="flex justify-end gap-2 border-t border-line bg-page/30 px-5 py-3">
                 <button type="button" id="cancelResponseEdit" class="btn btn-light text-sm">취소</button>
                 <button type="submit" id="saveResponseEdit" class="btn btn-primary text-sm">수정 내용 저장</button>
             </div>
@@ -2348,43 +2357,16 @@
             });
         }
 
-        function renderResponseEditQuestions(schema, answers = {}) {
-            $('responseEditQuestions').innerHTML = schema.map((question, index) => {
-                const answer = answers[question.id];
-                const title = escapeHtml(stripTags(question.title || `문항 ${index + 1}`));
-                let control = '';
-                if (question.type === 'short') {
-                    const value = typeof answer === 'string' ? answer : answer?.value || '';
-                    control = `<input class="field mt-2" data-edit-answer="${escapeHtml(question.id)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(question.placeholder || '')}">`;
-                    if (question.hasTail) {
-                        control += `<label class="mt-2 block text-xs font-semibold text-muted">${escapeHtml(stripTags(question.tailTitle || '추가 설명'))}<textarea class="field mt-1" rows="2" data-edit-short-tail="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(answer?.tail || '')}</textarea></label>`;
-                    }
-                } else if (question.type === 'long') {
-                    const value = typeof answer === 'string' ? answer : answer?.selected || answer?.value || '';
-                    control = `<textarea class="field mt-2" rows="4" data-edit-answer="${escapeHtml(question.id)}" placeholder="${escapeHtml(question.placeholder || '')}">${escapeHtml(value)}</textarea>`;
-                } else if (question.type === 'dropdown') {
-                    const selected = typeof answer === 'string' ? answer : answer?.selected || '';
-                    control = `<select class="field mt-2" data-edit-answer="${escapeHtml(question.id)}"><option value="">${escapeHtml(question.placeholder || '선택해주세요')}</option>${(question.options || []).map(option => `<option value="${escapeHtml(option)}" ${selected === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>`;
-                } else if (question.type === 'choice') {
-                    const selected = typeof answer === 'string' ? answer : answer?.selected || '';
-                    control = `<div class="mt-2 space-y-1">${(question.options || []).map(option => `<label class="flex items-center gap-2 text-sm"><input type="radio" name="edit_${escapeHtml(question.id)}" data-edit-choice="${escapeHtml(question.id)}" value="${escapeHtml(option)}" ${selected === option ? 'checked' : ''}><span>${escapeHtml(option)}</span></label>`).join('')}</div>`;
-                } else if (question.type === 'pill') {
-                    const selected = Array.isArray(answer?.selected) ? answer.selected : [];
-                    control = `<div class="mt-2 flex flex-wrap gap-3">${(question.options || []).map(option => `<label class="flex items-center gap-1.5 text-sm"><input type="checkbox" data-edit-pill="${escapeHtml(question.id)}" value="${escapeHtml(option)}" ${selected.includes(option) ? 'checked' : ''}><span>${escapeHtml(option)}</span></label>`).join('')}</div>`;
-                }
-
-                if (question.hasTail && ['dropdown', 'choice', 'pill'].includes(question.type)) {
-                    control += `<div class="mt-3 grid gap-2 sm:grid-cols-2">${(question.options || []).map(option => `<label class="block text-xs font-semibold text-muted">${escapeHtml(option)} 추가 설명<textarea class="field mt-1" rows="2" data-edit-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}">${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('')}</div>`;
-                }
-                return `<section class="rounded-lg border border-line p-3"><h3 class="text-sm font-bold">${index + 1}. ${title}${question.required ? ' <span class="text-red-600">*</span>' : ''}</h3>${question.description ? `<p class="mt-1 text-xs text-muted">${escapeHtml(stripTags(question.description))}</p>` : ''}${control}</section>`;
-            }).join('');
-        }
+        let responseEditOriginalAnswers = {};
 
         function openResponseEdit(response) {
             if (!currentRoom || !currentRoomData) return;
             $('responseEditModal').dataset.responseId = response.id;
             $('responseEditStudent').textContent = `학번 ${response.studentId || '-'} · 닉네임 ${response.studentName || '-'}`;
-            renderResponseEditQuestions(currentRoomData.formSchema || [], response.answers || {});
+            $('responseEditTitle').innerHTML = formatRichText(currentRoomData.memo || '설문');
+            $('responseEditDescription').innerHTML = formatRichText(currentRoomData.description || '');
+            responseEditOriginalAnswers = { ...(response.answers || {}) };
+            renderStudentQuestions(currentRoomData.formSchema || [], responseEditOriginalAnswers, false, 'responseEditQuestions');
             $('responseEditModal').hidden = false;
         }
 
@@ -2392,46 +2374,11 @@
             $('responseEditModal').hidden = true;
             $('responseEditModal').dataset.responseId = '';
             $('responseEditQuestions').innerHTML = '';
+            responseEditOriginalAnswers = {};
         }
 
         function collectEditedResponseAnswers(schema) {
-            const answers = {};
-            for (const question of schema) {
-                const questionId = CSS.escape(question.id);
-                const block = $('responseEditQuestions');
-                const tailAnswers = {};
-                block.querySelectorAll(`[data-edit-tail="${questionId}"]`).forEach(input => {
-                    tailAnswers[input.dataset.option] = input.value.trim();
-                });
-
-                if (question.type === 'short') {
-                    const value = block.querySelector(`[data-edit-answer="${questionId}"]`)?.value.trim() || '';
-                    answers[question.id] = question.hasTail
-                        ? { value, tail: block.querySelector(`[data-edit-short-tail="${questionId}"]`)?.value.trim() || '' }
-                        : value;
-                } else if (question.type === 'long') {
-                    answers[question.id] = {
-                        selected: block.querySelector(`[data-edit-answer="${questionId}"]`)?.value.trim() || '',
-                        tailAnswers: {}
-                    };
-                } else if (question.type === 'dropdown') {
-                    answers[question.id] = {
-                        selected: block.querySelector(`[data-edit-answer="${questionId}"]`)?.value || '',
-                        tailAnswers
-                    };
-                } else if (question.type === 'choice') {
-                    answers[question.id] = {
-                        selected: block.querySelector(`[data-edit-choice="${questionId}"]:checked`)?.value || '',
-                        tailAnswers
-                    };
-                } else if (question.type === 'pill') {
-                    answers[question.id] = {
-                        selected: [...block.querySelectorAll(`[data-edit-pill="${questionId}"]:checked`)].map(input => input.value),
-                        tailAnswers
-                    };
-                }
-            }
-            return answers;
+            return collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
         }
 
         $('closeResponseEdit').addEventListener('click', closeResponseEdit);
@@ -2499,9 +2446,10 @@
             }
         });
 
-        function renderStudentQuestions(schema, answers, disabled) {
+        function renderStudentQuestions(schema, answers, disabled, containerId = 'dynamicQuestions') {
+            const container = $(containerId);
             const visibleItems = getVisibleQuestions(schema, answers);
-            $('dynamicQuestions').innerHTML = visibleItems.map(({ question }, visibleIndex) => {
+            container.innerHTML = visibleItems.map(({ question }, visibleIndex) => {
                 const answer = answers?.[question.id];
                 const selected = Array.isArray(answer?.selected) ? answer.selected : [];
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
@@ -2555,10 +2503,11 @@
             isDirty = false;
             window.onbeforeunload = null;
         }
-        function collectAnswers(schema, baseAnswers = {}) {
+        function collectAnswers(schema, baseAnswers = {}, containerId = 'dynamicQuestions') {
             const answers = { ...baseAnswers };
+            const container = $(containerId);
             for (const question of schema) {
-                const block = document.querySelector(`[data-question="${CSS.escape(question.id)}"]`);
+                const block = container.querySelector(`[data-question="${CSS.escape(question.id)}"]`);
                 if (!block) continue;
                 const tailAnswers = {};
                 block.querySelectorAll(`[data-tail="${CSS.escape(question.id)}"]`).forEach(input => { tailAnswers[input.dataset.option] = input.value.trim(); });
@@ -2588,6 +2537,41 @@
             if (digits.length < 8) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
             return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
         }
+
+        $('responseEditQuestions').addEventListener('input', event => {
+            const input = event.target;
+            if (!input.matches('input, textarea, select')) return;
+            if (input.dataset.validation === 'number') input.value = input.value.replace(/[^0-9]/g, '');
+            if (input.dataset.validation === 'phone') input.value = formatPhone(input.value);
+        });
+        $('responseEditQuestions').addEventListener('change', event => {
+            const input = event.target;
+            if (!currentRoomData) return;
+            const schema = currentRoomData.formSchema || [];
+            const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
+            const changedId = input.dataset.answer || input.dataset.choice;
+            if (!changedId || !['select', 'input'].includes(input.tagName.toLowerCase())) return;
+            const currentAnswer = currentAnswers[changedId];
+            currentAnswers[changedId] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
+            responseEditOriginalAnswers = currentAnswers;
+            renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+        });
+        $('responseEditQuestions').addEventListener('click', event => {
+            const button = event.target.closest('button[data-pill]');
+            if (!button || !currentRoomData) return;
+            const schema = currentRoomData.formSchema || [];
+            const question = schema.find(item => item.id === button.dataset.pill);
+            if (!question) return;
+            const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
+            const answer = currentAnswers[question.id] || { selected: [], tailAnswers: {} };
+            const selected = new Set(Array.isArray(answer.selected) ? answer.selected : []);
+            if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
+            else selected.add(button.dataset.option);
+            currentAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers || {} };
+            responseEditOriginalAnswers = currentAnswers;
+            renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+        });
+
         $('dynamicQuestions').addEventListener('input', event => {
             const input = event.target;
             if (!input.matches('input, textarea, select')) return;
