@@ -190,17 +190,22 @@
                 <img src="${rootPath}assets/images/mainPage/동동이.jpg" alt="동동이 로고" width="30" height="30" class="d-inline-block align-middle me-2 rounded-circle border">
                 ${navData.brand}
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="메뉴 토글">
-                <span class="navbar-toggler-icon"></span>
-            </button>
+            <div class="d-flex align-items-center d-lg-none ms-auto gap-2">
+                <button class="btn btn-outline-secondary btn-sm rounded-circle p-0 d-flex align-items-center justify-content-center" id="btnFullscreenMobile" title="전체화면 모드" style="width:36px;height:36px;">
+                    <i class="bi bi-arrows-fullscreen" id="fullscreenIconMobile"></i>
+                </button>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="메뉴 토글">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+            </div>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-lg-3">
                     ${menuHtml}
                 </ul>
-                <div id="navbar-right-area" class="ms-auto d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                <div class="ms-auto d-flex align-items-center gap-2">
                     <div id="teacher-auth-container" class="d-flex align-items-center"></div>
-                    <button class="btn btn-outline-secondary btn-sm fw-bold shadow-sm" id="btnFullscreenToggle" title="전체화면 모드">
-                        <i class="bi bi-arrows-fullscreen me-1"></i><span id="fullscreenBtnText">전체화면 모드</span>
+                    <button class="btn btn-outline-secondary btn-sm fw-bold shadow-sm d-none d-lg-inline-flex align-items-center" id="btnFullscreenDesktop" title="전체화면 모드">
+                        <i class="bi bi-arrows-fullscreen me-1" id="fullscreenIconDesktop"></i><span id="fullscreenBtnText">전체화면 모드</span>
                     </button>
                 </div>
             </div>
@@ -266,34 +271,40 @@
             document.body.appendChild(authScript);
         }
 
-        // 전체화면 토글 버튼 초기화
-        const fullscreenBtn = document.getElementById('btnFullscreenToggle');
-        const fullscreenText = document.getElementById('fullscreenBtnText');
-        if (fullscreenBtn) {
-            fullscreenBtn.addEventListener('click', () => {
-                if (!document.fullscreenElement) {
-                    // 네비바 접기 (모바일에서 열려있는 경우)
-                    const navCollapse = document.getElementById('navbarNav');
-                    if (navCollapse && navCollapse.classList.contains('show')) {
-                        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(navCollapse);
-                        bsCollapse.hide();
-                    }
-                    document.documentElement.requestFullscreen().catch(() => {});
-                } else {
-                    document.exitFullscreen().catch(() => {});
-                }
-            });
+        // 전체화면 토글 버튼 초기화 (모바일 아이콘 + 데스크탑 텍스트 버튼)
+        const fsMobile = document.getElementById('btnFullscreenMobile');
+        const fsDesktop = document.getElementById('btnFullscreenDesktop');
+        const fsText = document.getElementById('fullscreenBtnText');
+        const fsIconMobile = document.getElementById('fullscreenIconMobile');
+        const fsIconDesktop = document.getElementById('fullscreenIconDesktop');
 
-            function updateFullscreenBtn() {
-                const isFs = !!document.fullscreenElement;
-                if (fullscreenText) fullscreenText.textContent = isFs ? '전체화면 종료' : '전체화면 모드';
-                const icon = fullscreenBtn.querySelector('i');
-                if (icon) {
-                    icon.className = isFs ? 'bi bi-fullscreen-exit me-1' : 'bi bi-arrows-fullscreen me-1';
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                // 네비바 접기 (모바일에서 열려있는 경우)
+                const navCollapse = document.getElementById('navbarNav');
+                if (navCollapse && navCollapse.classList.contains('show')) {
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(navCollapse);
+                    bsCollapse.hide();
                 }
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
             }
-            document.addEventListener('fullscreenchange', updateFullscreenBtn);
         }
+
+        function updateFullscreenUI() {
+            const isFs = !!document.fullscreenElement;
+            const iconClass = isFs ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+            if (fsText) fsText.textContent = isFs ? '전체화면 종료' : '전체화면 모드';
+            if (fsIconMobile) fsIconMobile.className = iconClass;
+            if (fsIconDesktop) fsIconDesktop.className = iconClass + ' me-1';
+            if (fsMobile) fsMobile.title = isFs ? '전체화면 종료' : '전체화면 모드';
+            if (fsDesktop) fsDesktop.title = isFs ? '전체화면 종료' : '전체화면 모드';
+        }
+
+        if (fsMobile) fsMobile.addEventListener('click', toggleFullscreen);
+        if (fsDesktop) fsDesktop.addEventListener('click', toggleFullscreen);
+        document.addEventListener('fullscreenchange', updateFullscreenUI);
     }
 
     if (document.readyState === 'loading') {
