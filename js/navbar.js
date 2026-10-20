@@ -197,7 +197,12 @@
                 <ul class="navbar-nav ms-lg-3">
                     ${menuHtml}
                 </ul>
-                <div id="teacher-auth-container" class="ms-auto d-flex align-items-center"></div>
+                <div id="navbar-right-area" class="ms-auto d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                    <div id="teacher-auth-container" class="d-flex align-items-center"></div>
+                    <button class="btn btn-outline-secondary btn-sm fw-bold shadow-sm" id="btnFullscreenToggle" title="전체화면 모드">
+                        <i class="bi bi-arrows-fullscreen me-1"></i><span id="fullscreenBtnText">전체화면 모드</span>
+                    </button>
+                </div>
             </div>
         </div>
     </nav>
@@ -259,6 +264,29 @@
             authScript.dataset.auth = 'teacher-auth';
             authScript.src = `${rootPath}js/teacher-auth.js`;
             document.body.appendChild(authScript);
+        }
+
+        // 전체화면 토글 버튼 초기화
+        const fullscreenBtn = document.getElementById('btnFullscreenToggle');
+        const fullscreenText = document.getElementById('fullscreenBtnText');
+        if (fullscreenBtn) {
+            fullscreenBtn.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                } else {
+                    document.exitFullscreen().catch(() => {});
+                }
+            });
+
+            function updateFullscreenBtn() {
+                const isFs = !!document.fullscreenElement;
+                if (fullscreenText) fullscreenText.textContent = isFs ? '전체화면 종료' : '전체화면 모드';
+                const icon = fullscreenBtn.querySelector('i');
+                if (icon) {
+                    icon.className = isFs ? 'bi bi-fullscreen-exit me-1' : 'bi bi-arrows-fullscreen me-1';
+                }
+            }
+            document.addEventListener('fullscreenchange', updateFullscreenBtn);
         }
     }
 
