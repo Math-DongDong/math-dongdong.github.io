@@ -272,6 +272,12 @@
         if (fullscreenBtn) {
             fullscreenBtn.addEventListener('click', () => {
                 if (!document.fullscreenElement) {
+                    // 네비바 접기 (모바일에서 열려있는 경우)
+                    const navCollapse = document.getElementById('navbarNav');
+                    if (navCollapse && navCollapse.classList.contains('show')) {
+                        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(navCollapse);
+                        bsCollapse.hide();
+                    }
                     document.documentElement.requestFullscreen().catch(() => {});
                 } else {
                     document.exitFullscreen().catch(() => {});
