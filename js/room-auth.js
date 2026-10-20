@@ -30,6 +30,7 @@ import {
     deleteDoc,
     collection,
     getDocs,
+    writeBatch,
     onSnapshot,
     serverTimestamp,
     query,
@@ -345,11 +346,11 @@ async function writePinProof(studentKey, proof) {
     await setDoc(doc(db, "student_auth", studentKey, "private", "auth"),
         { ...buildPinRecordFromProof(proof), updatedAt: serverTimestamp() }, { merge: true });
     // 대시보드에서 'PIN 설정됨'을 표시하기 위한 플래그 (해시가 아니라 상태만)
-    updateDoc(doc(db, "student_auth", studentKey), { pinSetAt: serverTimestamp() }).catch(() => { });
+    await updateDoc(doc(db, "student_auth", studentKey), { pinSetAt: serverTimestamp() });
 }
 
 /** 학번 형식: 숫자 4~5자리 (예: 1230 = 1학년 2반 30번, 11205 = 1학년 12반 5번) */
-export const STUDENT_ID_PATTERN = /^\d{4,5}$/;
+export const STUDENT_ID_PATTERN = /^[1-3]\d{3,4}$/;
 export const STUDENT_ID_MAX_LEN = 5;          // ★ 자릿수를 바꾸면 위 정규식과 함께 고치세요
 
 /** 담당 선생님 목록에 이름 하나를 더합니다 (중복 제외, 최대 10명) */
@@ -1037,7 +1038,7 @@ export function promptStudentAuthModal({ isGuest = false, school = '', teacherNa
         const onConfirm = () => {
             const studentId = idInput.value.trim();
             const pin = pinInput.value.trim();
-            if (!STUDENT_ID_PATTERN.test(studentId)) return fail("학번은 숫자 4~5자리로 입력해주세요. (예: 1230)", idInput);
+            if (!STUDENT_ID_PATTERN.test(studentId)) return fail("학번은 1~3으로 시작하는 숫자 4~5자리로 입력해주세요. (예: 1230)", idInput);
             if (!/^\d{4}$/.test(pin)) return fail("PIN은 숫자 4자리로 입력해주세요.", pinInput);
             result = { school: roomSchool, studentId, pin, teachers: roomTeacher ? [roomTeacher] : [] };
             bsModal.hide();
@@ -1227,6 +1228,10 @@ export function promptStudentConfirmModal({ school = '', studentId = '', teacher
         let answer = null;
 
         const onOk = () => {
+            if (!STUDENT_ID_PATTERN.test(String(studentId).trim())) {
+                customAlert("학번 확인", "1~3으로 시작하는 학번을 입력해주세요.");
+                return;
+            }
             answer = 'ok';
             if (document.activeElement && modalEl.contains(document.activeElement)) document.activeElement.blur();
             bsModal.hide();
@@ -1634,12 +1639,28 @@ export async function resetStudentPin(studentKey) {
  * 학생 완전 삭제 (교사 전용)
  *
  * ★ Firestore는 문서를 지워도 하위 컬렉션이 남습니다.
- *   private/auth를 남겨 두면 그 학번은 재등록이 영원히 막힙니다.
+ *   gate 또는 private/auth를 남겨 두면 해당 학생의 인증 정보가 남습니다.
  *   (새 PIN 기록이 '이미 해시가 있음'으로 거부되기 때문)
  */
 export async function purgeStudent(studentKey) {
-    await deleteDoc(doc(db, "student_auth", studentKey, "private", "auth")).catch(() => { });
-    await deleteDoc(doc(db, "student_auth", studentKey));
+    const studentRef = doc(db, "student_auth", studentKey);
+    const studentSnapshot = await getDoc(studentRef);
+    const deviceIds = studentSnapshot.exists()
+        ? [...new Set((studentSnapshot.data()?.devices || [])
+            .map(device => String(device?.id || '').trim())
+            .filter(Boolean))]
+        : [];
+
+    for (let start = 0; start < deviceIds.length; start += 500) {
+        const batch = writeBatch(db);
+        deviceIds.slice(start, start + 500).forEach((deviceId) => {
+            batch.delete(doc(studentRef, "gate", deviceId));
+        });
+        await batch.commit();
+    }
+
+    await deleteDoc(doc(studentRef, "private", "auth"));
+    await deleteDoc(studentRef);
 }
 
 // =====================================================================
@@ -1911,9 +1932,10 @@ export function renderRoomEntrance(container, options = {}) {
             };
 
             /** PIN 확인 — 'ok' | 'wrong' | 'reset'(초기화된 학번 → 이 PIN이 새로 등록됨) */
-            const checkPin = async (studentKey, proof) => {
+            const checkPin = async (studentKey, proof, { allowPinSetup = true } = {}) => {
                 const ok = await verifyProofViaGate(cryptoDeps, studentKey, deviceFp, proof);
                 if (ok) return 'ok';
+                if (!allowPinSetup) return 'wrong';
                 // 게이트가 거부한 이유는 두 가지입니다: PIN 불일치 / 해시 없음(초기화됨).
                 // 새 해시 기록을 조용히 시도해 구분합니다 — 초기화된 학번에서만 성공합니다.
                 try {
@@ -1962,7 +1984,9 @@ export function renderRoomEntrance(container, options = {}) {
                 // (2) PIN 확인 — 등록된 학번이면 반드시 일치해야 합니다. 새 학번이면 이 PIN으로 등록합니다.
                 //     학생 관리에 쌓이도록 이 방 선생님을 담당 선생님에 더합니다 (게스트는 기기 등록 안 함).
                 if (sData) {
-                    const verdict = await checkPin(guestKey, guestProof);
+                    const verdict = await checkPin(guestKey, guestProof, {
+                        allowPinSetup: !sData.pinSetAt
+                    });
                     if (verdict === 'wrong') {
                         await customAlert("인증 실패",
                             "PIN 번호가 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
@@ -2100,7 +2124,9 @@ export function renderRoomEntrance(container, options = {}) {
                 if (!sData) {
                     needInput = true;                       // 선생님이 학생을 삭제 → 다시 등록
                 } else {
-                    const verdict = await checkPin(savedKey, proof);
+                    const verdict = await checkPin(savedKey, proof, {
+                        allowPinSetup: !sData.pinSetAt
+                    });
                     if (verdict === 'wrong') {
                         needInput = true;                   // 다른 기기에서 PIN을 바꿈 → 다시 입력
                     } else {
@@ -2135,7 +2161,9 @@ export function renderRoomEntrance(container, options = {}) {
                 // (2) 이미 등록된 학번이면 PIN이 맞아야 합니다 (초기화된 학번이면 이 PIN이 새로 등록됩니다)
                 const nextProof = await derivePinProof(input.pin, next.key);
                 if (next.data) {
-                    const verdict = await checkPin(next.key, nextProof);
+                    const verdict = await checkPin(next.key, nextProof, {
+                        allowPinSetup: !next.data.pinSetAt
+                    });
                     if (verdict === 'wrong') {
                         await customAlert("인증 실패",
                             "등록된 PIN 번호와 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +

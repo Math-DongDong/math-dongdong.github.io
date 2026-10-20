@@ -1,7 +1,24 @@
-# 배포 순서 (v4.1)
+# 배포 순서 (v4.2)
 
-v3에서 v4.1로 올리는 순서입니다. **코드를 먼저 올리고, Firestore 규칙은 그다음**입니다.
+아래 본문은 v3 → v4.1 최초 전환 절차를 포함하고, 상단의 v4.2 갱신 항목은 현재 코드 배포에 추가로 적용합니다.
+코드와 보안 규칙의 권한이 맞아야 학생 관리 삭제가 끝까지 동작합니다.
+
+## v4.2 추가 갱신
+
+- 학생 인증 학번은 `^[1-3]\d{3,4}$`입니다. 길이만 4~5자리로 검사하지 마세요.
+- 새 설문·소감문 템플릿은 `assets/template/firebase/설문-소감문-통합형.html`입니다. 응답은 `custom_forms/{방}/responses/{학번}`을 사용해 같은 학생의 재제출을 기존 응답 수정으로 처리합니다.
+- 좀비헌터 완료 체크포인트가 있는 플레이는 이후 게임오버에서 `isCompleted: false`로 되돌리지 않습니다.
+- 학생 삭제는 학생 문서에 기록된 기기 지문으로 `gate/{기기ID}`를 직접 지정해 배치 삭제하고 `private/auth`도 직접 삭제합니다. Firestore 규칙은 교사에게 담당 학생의 `gate` 문서 delete 및 `private/auth` 문서 delete를 허용해야 합니다. `gate`와 `private/auth`의 read/list는 허용하지 마세요.
+- 기존 기기 초기화로 부모 문서에서 지워진 지문에 해당하는 고아 `gate` 문서는 클라이언트 삭제 대상에서 찾을 수 없습니다. 전체 정리가 필요하면 관리자 콘솔 또는 서버 측 정리 작업을 사용하세요. PIN 증명값을 보기 위해 교사 list/read 권한을 추가하지 마세요.
+- 통합 설문 템플릿에서 교사 검토를 저장하려면 `custom_forms/{room}/responses/{studentId}`의 `feedback`, `feedbackUpdatedAt`, `teacherView`, `teacherViewUpdatedAt` 필드 갱신을 교사 규칙에 허용하세요.
+- Gemini 초안 생성에 쓰는 API 키는 선택적으로 이 기기의 localStorage에 저장됩니다. 학생 답변을 Gemini API로 전송하는 데 동의하는 내용만 입력하세요.
+
+공통 모듈 주소는 `room-auth.js?v=4.2`, `game-kit.js?v=4.2`, `dashboard-header.js?v=4.2`로 맞춥니다.
 순서가 바뀌면 예전 학생 관리 화면이 새 규칙에 막힙니다.
+
+## 과거 최초 전환 안내 (v3 → v4.1)
+
+아래 절차는 최초 v4.1 전환을 위한 참고 사항입니다. 현재 v4.2의 추가 규칙 권한은 위 항목을 우선 적용하세요.
 
 수업이 없는 날 한 번에 진행하세요. 30분 정도 걸립니다.
 
@@ -13,8 +30,9 @@ v3에서 v4.1로 올리는 순서입니다. **코드를 먼저 올리고, Firest
 - 학생용 기기 1대(휴대폰)를 준비하세요. 각 단계 뒤 실제로 입장해 봐야 합니다.
 - 관리자 uid가 `81v0uN5YhFOFXtxn9xisGh5CTka2` 인지 확인하세요.
   (Firebase 콘솔 → Authentication → Users → 관리자 계정의 사용자 UID)
-  다르다면 `rules/firestore-규칙.txt`, `rules/rtdb-*` 4개, `pages/admin/account_manager.html` 의 값을 모두 바꿉니다.
-- **선생님 계정마다 학교명이 있는지** 확인하세요. v4.1에서는 학생의 학교가 방을 만든 선생님을 따르므로,
+  다르면 게시된 Firestore/RTDB 규칙과 `pages/admin/account_manager.html`의 관리자 UID를 함께 확인합니다.
+  이 저장소에는 규칙 원본 파일이 없으므로 Firebase Console의 현재 규칙을 먼저 백업하세요.
+- **선생님 계정마다 학교명이 있는지** 확인하세요. v4.2에서도 학생의 학교가 방을 만든 선생님을 따르므로,
   학교명이 비었거나 `관리자`인 계정은 인증 방을 만들 수 없습니다.
 
 ---
@@ -29,21 +47,24 @@ js/teacher-auth.js
   (student-crypto.js · qr-modal.js · firebase-config.js 는 바꾸지 않았습니다)
 
 pages/admin/student_manager.html
+pages/admin/formbuilder.html
+pages/admin/studentsreviewsystem.html
 
-pages/games/…/plus_minus.html
-pages/games/…/multiply_divide.html
-pages/games/…/zombiehunter.html
-pages/games/…/relativefrequency.html
-pages/games/…/gridgomoku.html
-pages/games/…/blottogame.html
-pages/games/…/sentimentanalysis.html
+pages/middleschool/**/plus_minus.html
+pages/middleschool/**/multiply_divide.html
+pages/middleschool/**/zombiehunter.html
+pages/middleschool/**/relativefrequency.html
+pages/middleschool/**/gridgomoku.html
+pages/middleschool/**/blottogame.html
+pages/middleschool/**/sentimentanalysis.html
 
-templates/유형A-개인기록형.html · 유형B-빠른입장형.html · 유형C-실시간대전형.html · 유형D-익명대전형.html
+assets/template/firebase/유형A-개인기록형.html · 유형B-빠른입장형.html · 유형C-실시간대전형.html · 유형D-익명대전형.html
+assets/template/firebase/설문-소감문-통합형.html
 가이드북.md · DEPLOY.md · PATCHES.md
 ```
 
-**js 파일과 게임 7개는 반드시 한꺼번에** 올리세요. 모듈 주소가 모두 `?v=4.1`로 맞춰져 있어,
-일부만 올리면 한 페이지에서 v3와 v4.1 모듈이 섞입니다.
+**js 파일과 게임 페이지는 함께 배포**하세요. 모듈 주소를 `?v=4.2`로 통일하고 일부만 올려
+한 페이지에서 서로 다른 모듈 버전이 섞이지 않게 합니다.
 
 **확인:** 아무 게임이나 빠른 입장 방을 만들어 학생 기기로 들어가 봅니다.
 
@@ -51,8 +72,9 @@ templates/유형A-개인기록형.html · 유형B-빠른입장형.html · 유형
 
 ## 2. Firestore 규칙 게시
 
-`rules/firestore-규칙.txt` 를 열어 **전체 선택 → 복사**한 뒤,
-Firebase 콘솔 → Firestore Database → [규칙] 탭의 내용을 **전부 지우고** 붙여넣고 게시합니다.
+Firebase Console → Firestore Database → [규칙]에서 현재 규칙을 먼저 백업한 뒤 변경합니다.
+이 저장소에는 `rules/firestore-규칙.txt`가 없으므로 예전 규칙 파일을 찾아 붙여넣지 마세요.
+기존 `student_auth` 및 `custom_forms` 규칙을 보존하면서 v4.2 권한만 추가해야 합니다.
 
 게시 전에 [규칙] 탭의 **플레이그라운드**로 두 가지만 확인해 보세요.
 
@@ -60,9 +82,13 @@ Firebase 콘솔 → Firestore Database → [규칙] 탭의 내용을 **전부 �
 |---|---|
 | 선생님 uid로 다른 학교 `student_auth` 목록 조회 | 거부 |
 | 로그인 없이 `student_auth/{학교_학번}` 한 개 읽기 | 허용 |
+| 담당 교사가 등록된 기기 경로의 `gate` 문서 삭제 | 허용 |
+| 담당 교사가 학생의 `private/auth` 문서 삭제 | 허용 |
+| 교사가 `private/auth`의 PIN 해시 읽기 | 거부 |
+| 교사가 설문 응답의 `feedback`·`teacherView` 필드 갱신 | 허용 |
 
 **RTDB 규칙 4개(가위바위보·오목·블로토·감성 분석)는 바꾸지 않습니다.**
-v4.1 코드가 쓰는 경로와 필드가 v3 규칙에 모두 허용되어 있습니다.
+기존 RTDB 경로를 그대로 사용하는 경우 규칙은 바꾸지 않아도 됩니다. 변경한 RTDB 경로가 있다면 해당 인스턴스 규칙을 별도로 확인하세요.
 
 ---
 
@@ -80,7 +106,7 @@ v4.1 코드가 쓰는 경로와 필드가 v3 규칙에 모두 허용되어 있�
 | 빠른 입장 방 | 방 코드만으로 즉시 시작 (게스트 체크와 무관) |
 | 새 방 만들기 & 메모 | 메모 입력(선택) 후 드롭다운에 `[코드] \| [메모]` 로 표시 |
 | 인증 방 만들기 (학교명 없는 계정) | 막히고 정보수정 안내 |
-| 인증 방 첫 입장 | 학번(4~5자리)·PIN만 입력, 학교·선생님은 자동 표시 |
+| 인증 방 첫 입장 | `1~3`으로 시작하는 학번(4~5자리)·PIN만 입력, 학교·선생님은 자동 표시 |
 | 인증 방 두 번째 입장 | "내 정보가 맞나요?" 확인만 |
 | 등록된 학번에 틀린 PIN | "인증 실패" |
 | 게스트 체크 후 인증 방 | 학번·PIN 입력 → 선생님 승인 대기 → 승인 시 입장 |
@@ -127,7 +153,7 @@ v4.1 코드가 쓰는 경로와 필드가 v3 규칙에 모두 허용되어 있�
 | 좌표평면 오목 | D | ✅ | — | — | — | — |
 | 블로토 | D | ✅ | — | — | — | — |
 
-**학생 인증 모드**는 처음 한 번만 **학번(4~5자리)과 4자리 PIN**을 입력받습니다. 학교·담당 선생님은
+**학생 인증 모드**는 처음 한 번만 **1~3으로 시작하는 학번(4~5자리)과 4자리 PIN**을 입력받습니다. 학교·담당 선생님은
 방을 만든 선생님을 따르고, 그 뒤부터는 기기에 저장된 증명값(PIN 아님)으로 조용히 확인만 하고 들어갑니다.
 들어온 학생은 선생님의 **학생 관리**에 자동으로 쌓입니다.
 
