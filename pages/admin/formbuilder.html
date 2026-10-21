@@ -2769,7 +2769,7 @@
                         }
                     }
 
-                    // 단어 및 응답 구문 빈도 집계 (워드클라우드용)
+                    // 단답형 빈출 응답 구문 집계
                     const wordFreq = {};
                     validResponses.forEach(r => {
                         const raw = r.ans.text.trim();
@@ -2787,111 +2787,57 @@
 
                     const topTexts = sortedWordList.slice(0, 5);
 
-                    // 워드클라우드 HTML 생성
-                    let cloudHtml = '';
-                    if (!sortedWordList.length) {
-                        cloudHtml = '<p class="text-xs text-muted text-center py-4">생성할 워드클라우드 데이터가 없습니다.</p>';
-                    } else {
-                        const maxW = sortedWordList[0].count;
-                        const minW = sortedWordList[sortedWordList.length - 1].count;
-                        const cloudPalettes = [
-                            { bg: '#E9EFEC', text: '#24493D', border: '#D5DEDA' },
-                            { bg: '#EEF2FF', text: '#3730A3', border: '#C7D2FE' },
-                            { bg: '#ECFDF5', text: '#065F46', border: '#A7F3D0' },
-                            { bg: '#FEF3C7', text: '#92400E', border: '#FDE68A' },
-                            { bg: '#F3E8FF', text: '#6B21A8', border: '#E9D5FF' },
-                            { bg: '#FFF1F2', text: '#9F1239', border: '#FECDD3' }
-                        ];
-
-                        cloudHtml = sortedWordList.slice(0, 40).map((item, wIdx) => {
-                            const pal = cloudPalettes[wIdx % cloudPalettes.length];
-                            const size = maxW === minW ? 14 : Math.round(12 + ((item.count - minW) / Math.max(1, maxW - minW)) * 16);
-                            const weight = item.count > 1 ? 'font-black' : 'font-semibold';
-                            return `
-                                <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${weight} border transition-all duration-200 hover:scale-110 cursor-pointer shadow-xs"
-                                      style="font-size: ${size}px; background-color: ${pal.bg}; color: ${pal.text}; border-color: ${pal.border};"
-                                      title="${escapeHtml(item.word)}: ${item.count}회 응답 (클릭 시 검색)"
-                                      data-cloud-keyword="${escapeHtml(item.word)}" data-qid="${escapeHtml(q.id)}">
-                                    ${escapeHtml(item.word)}
-                                    <span class="text-[10px] font-normal opacity-70">(${item.count})</span>
-                                </span>
-                            `;
-                        }).join('');
-                    }
-
                     bodyHtml += `
-                        ${topTexts.length && topTexts[0].count > 1 ? `
+                        ${topTexts.length ? `
                             <div class="mb-3">
-                                <span class="text-xs font-bold text-muted block mb-1.5"><i class="bi bi-trophy"></i> 빈출 응답 Top ${topTexts.length}</span>
+                                <span class="text-xs font-bold text-muted block mb-1.5"><i class="bi bi-trophy"></i> 빈출 응답 Top ${topTexts.length} <span class="font-normal text-[11px] text-muted">(클릭 시 필터링)</span></span>
                                 <div class="flex flex-wrap gap-1.5">
                                     ${topTexts.map((item, rank) => `
-                                        <span class="inline-flex items-center gap-1 rounded-lg bg-page px-2.5 py-1 text-xs font-semibold text-board border border-line">
+                                        <button type="button" 
+                                            class="inline-flex items-center gap-1 rounded-lg bg-page px-2.5 py-1 text-xs font-semibold text-board border border-line hover:border-board hover:bg-page/80 active:scale-95 transition-all cursor-pointer shadow-2xs"
+                                            data-filter-badge="${escapeHtml(item.word)}" 
+                                            data-filter-target="short_filter_input_${escapeHtml(q.id)}"
+                                            title="'${escapeHtml(item.word)}' (으)로 응답 필터링">
                                             <span class="font-bold text-emerald-700">${rank + 1}위</span> ${escapeHtml(item.word)} <strong class="text-ink">(${item.count}회)</strong>
-                                        </span>
+                                        </button>
                                     `).join('')}
                                 </div>
                             </div>
                         ` : ''}
 
                         <div class="mt-4 pt-3 border-t border-line/60">
-                            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <div class="inline-flex rounded-lg border border-line bg-page p-0.5 text-xs font-bold" role="group">
-                                    <button type="button" class="px-3 py-1 rounded-md transition-all bg-white text-board shadow-xs" data-short-view-btn="list" data-qid="${escapeHtml(q.id)}">
-                                        <i class="bi bi-table"></i> 응답 목록 (${validCount}건)
-                                    </button>
-                                    <button type="button" class="px-3 py-1 rounded-md transition-all text-muted hover:text-board" data-short-view-btn="cloud" data-qid="${escapeHtml(q.id)}">
-                                        <i class="bi bi-cloud"></i> 워드클라우드
-                                    </button>
-                                </div>
-                                <input type="text" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 응답 검색..." data-filter-input="short_tbody_${escapeHtml(q.id)}">
+                            <div class="mb-3 flex items-center justify-between gap-2">
+                                <span class="text-xs font-bold text-muted">전체 응답 목록 (${validCount}건)</span>
+                                <input type="text" id="short_filter_input_${escapeHtml(q.id)}" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 응답 검색..." data-filter-input="short_tbody_${escapeHtml(q.id)}">
                             </div>
 
-                            <!-- 1. 목록형 테이블 뷰 -->
-                            <div id="short_view_list_${escapeHtml(q.id)}">
-                                <div class="max-h-64 overflow-y-auto rounded-xl border border-line bg-white">
-                                    <table class="min-w-full border-collapse text-left text-xs">
-                                        <thead class="sticky top-0 bg-page/90 backdrop-blur-xs border-b border-line text-muted font-bold z-10">
-                                            <tr>
-                                                <th class="p-2.5 w-24 whitespace-nowrap">학번</th>
-                                                <th class="p-2.5">응답 내용</th>
-                                                ${q.hasTail ? '<th class="p-2.5">꼬리 질문</th>' : ''}
+                            <div class="max-h-64 overflow-y-auto rounded-xl border border-line bg-white">
+                                <table class="min-w-full border-collapse text-left text-xs">
+                                    <thead class="sticky top-0 bg-page/90 backdrop-blur-xs border-b border-line text-muted font-bold z-10">
+                                        <tr>
+                                            <th class="p-2.5 w-24 whitespace-nowrap">학번</th>
+                                            <th class="p-2.5">응답 내용</th>
+                                            ${q.hasTail ? '<th class="p-2.5">꼬리 질문</th>' : ''}
+                                        </tr>
+                                    </thead>
+                                    <tbody id="short_tbody_${escapeHtml(q.id)}" class="divide-y divide-line/60">
+                                        ${validResponses.map(r => `
+                                            <tr class="filterable-row hover:bg-page/30 transition-colors" data-text="${escapeHtml((r.studentId + ' ' + r.ans.text + ' ' + (r.ans.tail || '')).toLowerCase())}">
+                                                <td class="p-2.5 font-bold text-board whitespace-nowrap align-top">[${escapeHtml(r.studentId)}]</td>
+                                                <td class="p-2.5 text-ink font-medium leading-relaxed align-top">${escapeHtml(r.ans.text)}</td>
+                                                ${q.hasTail ? `<td class="p-2.5 text-muted align-top">${r.ans.tail ? escapeHtml(r.ans.tail) : '-'}</td>` : ''}
                                             </tr>
-                                        </thead>
-                                        <tbody id="short_tbody_${escapeHtml(q.id)}" class="divide-y divide-line/60">
-                                            ${validResponses.map(r => `
-                                                <tr class="filterable-row hover:bg-page/30 transition-colors" data-text="${escapeHtml((r.studentId + ' ' + r.ans.text + ' ' + (r.ans.tail || '')).toLowerCase())}">
-                                                    <td class="p-2.5 font-bold text-board whitespace-nowrap align-top">[${escapeHtml(r.studentId)}]</td>
-                                                    <td class="p-2.5 text-ink font-medium leading-relaxed align-top">${escapeHtml(r.ans.text)}</td>
-                                                    ${q.hasTail ? `<td class="p-2.5 text-muted align-top">${r.ans.tail ? escapeHtml(r.ans.tail) : '-'}</td>` : ''}
-                                                </tr>
-                                            `).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <!-- 2. 워드클라우드 뷰 -->
-                            <div id="short_view_cloud_${escapeHtml(q.id)}" hidden>
-                                <div class="rounded-xl border border-line/70 bg-page/30 p-5 min-h-[140px] flex flex-wrap items-center justify-center gap-2.5">
-                                    ${cloudHtml}
-                                </div>
-                                <p class="mt-2 text-[11px] text-muted text-center">💡 키워드를 클릭하면 해당 단어가 포함된 응답 목록으로 바로 이동합니다.</p>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     `;
                 } else if (q.type === 'long') {
-                    // 장문형 통계: 글자 수, 키워드 추출, 표 형태 응답 목록
-                    let totalChars = 0;
-                    let minLen = Infinity;
-                    let maxLen = 0;
+                    // 장문형 통계: 키워드 추출, 표 형태 응답 목록
                     const wordFreq = {};
 
                     validResponses.forEach(r => {
-                        const len = r.ans.text.length;
-                        totalChars += len;
-                        if (len < minLen) minLen = len;
-                        if (len > maxLen) maxLen = len;
-
                         // 형태소/단어 빈도 (2글자 이상)
                         const words = r.ans.text.replace(/[^가-힣a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
                         words.forEach(w => {
@@ -2899,7 +2845,6 @@
                         });
                     });
 
-                    const avgChars = validCount > 0 ? Math.round(totalChars / validCount) : 0;
                     const topKeywords = Object.entries(wordFreq)
                         .filter(([w, c]) => c >= 2)
                         .map(([word, count]) => ({ word, count }))
@@ -2907,29 +2852,18 @@
                         .slice(0, 8);
 
                     bodyHtml = `
-                        <div class="grid grid-cols-3 gap-2.5 mb-4">
-                            <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
-                                <span class="text-xs font-bold text-muted block mb-1">평균 글자 수</span>
-                                <span class="text-xl font-black text-board">${avgChars}</span><span class="text-xs text-muted ml-0.5">자</span>
-                            </div>
-                            <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
-                                <span class="text-xs font-bold text-muted block mb-1">최대 분량</span>
-                                <span class="text-xl font-black text-board">${maxLen}</span><span class="text-xs text-muted ml-0.5">자</span>
-                            </div>
-                            <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
-                                <span class="text-xs font-bold text-muted block mb-1">최소 분량</span>
-                                <span class="text-xl font-black text-board">${minLen === Infinity ? 0 : minLen}</span><span class="text-xs text-muted ml-0.5">자</span>
-                            </div>
-                        </div>
-
                         ${topKeywords.length ? `
                             <div class="mb-4 rounded-xl border border-line/70 bg-page/40 p-3">
-                                <span class="text-xs font-bold text-muted block mb-2"><i class="bi bi-hash"></i> 주요 빈출 키워드 (2회 이상 언급)</span>
+                                <span class="text-xs font-bold text-muted block mb-2"><i class="bi bi-hash"></i> 주요 빈출 키워드 (2회 이상 언급) <span class="font-normal text-[11px] text-muted">(클릭 시 필터링)</span></span>
                                 <div class="flex flex-wrap gap-1.5">
                                     ${topKeywords.map(k => `
-                                        <span class="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-board border border-line">
+                                        <button type="button"
+                                            class="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-board border border-line hover:border-board hover:bg-page/80 active:scale-95 transition-all cursor-pointer shadow-2xs"
+                                            data-filter-badge="${escapeHtml(k.word)}"
+                                            data-filter-target="long_filter_input_${escapeHtml(q.id)}"
+                                            title="'${escapeHtml(k.word)}' 키워드로 필터링">
                                             #${escapeHtml(k.word)} <span class="text-[11px] text-muted font-normal">(${k.count})</span>
-                                        </span>
+                                        </button>
                                     `).join('')}
                                 </div>
                             </div>
@@ -2938,7 +2872,7 @@
                         <div class="mt-4 pt-3 border-t border-line/60">
                             <div class="mb-3 flex items-center justify-between gap-2">
                                 <span class="text-xs font-bold text-muted">전체 서술 응답 목록 (${validCount}건)</span>
-                                <input type="text" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 내용 검색..." data-filter-input="long_tbody_${escapeHtml(q.id)}">
+                                <input type="text" id="long_filter_input_${escapeHtml(q.id)}" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 내용 검색..." data-filter-input="long_tbody_${escapeHtml(q.id)}">
                             </div>
                             <div class="max-h-80 overflow-y-auto rounded-xl border border-line bg-white">
                                 <table class="min-w-full border-collapse text-left text-xs">
@@ -3009,48 +2943,36 @@
                         const rowText = row.dataset.text || '';
                         row.hidden = query ? !rowText.includes(query) : false;
                     });
-                });
-            });
 
-            // 이벤트 바인딩: 단답형 뷰 토글 (목록형 vs 워드클라우드)
-            $('statsQuestionsContainer').querySelectorAll('[data-short-view-btn]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const qid = btn.dataset.qid;
-                    const targetView = btn.dataset.shortViewBtn;
-                    const listContainer = document.getElementById(`short_view_list_${qid}`);
-                    const cloudContainer = document.getElementById(`short_view_cloud_${qid}`);
-                    if (!listContainer || !cloudContainer) return;
-
-                    const isList = targetView === 'list';
-                    listContainer.hidden = !isList;
-                    cloudContainer.hidden = isList;
-
-                    const group = btn.closest('[role="group"]');
-                    if (group) {
-                        group.querySelectorAll('[data-short-view-btn]').forEach(b => {
-                            const active = b.dataset.shortViewBtn === targetView;
-                            b.classList.toggle('bg-white', active);
-                            b.classList.toggle('text-board', active);
-                            b.classList.toggle('shadow-xs', active);
-                            b.classList.toggle('text-muted', !active);
+                    // 연관 뱃지 활성화 상태 동기화
+                    if (input.id) {
+                        $('statsQuestionsContainer').querySelectorAll(`[data-filter-target="${input.id}"]`).forEach(badge => {
+                            const badgeWord = (badge.dataset.filterBadge || '').trim().toLowerCase();
+                            const isActive = !!query && badgeWord === query;
+                            badge.classList.toggle('!bg-board', isActive);
+                            badge.classList.toggle('!text-white', isActive);
+                            badge.classList.toggle('!border-board', isActive);
                         });
                     }
                 });
             });
 
-            // 이벤트 바인딩: 워드클라우드 키워드 클릭 시 목록 필터로 전환
-            $('statsQuestionsContainer').querySelectorAll('[data-cloud-keyword]').forEach(tag => {
-                tag.addEventListener('click', () => {
-                    const qid = tag.dataset.qid;
-                    const word = tag.dataset.cloudKeyword;
-                    const input = document.querySelector(`[data-filter-input="short_tbody_${qid}"]`);
-                    const listBtn = document.querySelector(`[data-short-view-btn="list"][data-qid="${qid}"]`);
-                    if (listBtn) listBtn.click();
-                    if (input) {
+            // 이벤트 바인딩: 빈출 응답 Top 5 및 키워드 뱃지 클릭 필터 연동
+            $('statsQuestionsContainer').querySelectorAll('[data-filter-badge]').forEach(badge => {
+                badge.addEventListener('click', () => {
+                    const word = badge.dataset.filterBadge || '';
+                    const targetId = badge.dataset.filterTarget;
+                    const input = document.getElementById(targetId);
+                    if (!input) return;
+
+                    // 이미 해당 키워드로 필터링 중인 경우 다시 클릭하면 초기화
+                    if (input.value.trim().toLowerCase() === word.trim().toLowerCase()) {
+                        input.value = '';
+                    } else {
                         input.value = word;
-                        input.dispatchEvent(new Event('input'));
-                        input.focus();
                     }
+                    input.dispatchEvent(new Event('input'));
+                    input.focus();
                 });
             });
         }
