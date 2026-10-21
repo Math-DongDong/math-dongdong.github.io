@@ -19,7 +19,7 @@ body{background-color:#ffffff}
 .tcard:hover{border-color:#94a3b8}.tcard.sel{border-color:#2563eb;background:#eff6ff;box-shadow:0 0 0 3px #bfdbfe}
 .tcard.gone{visibility:hidden}.tcard svg{width:100%;height:auto;display:block}
 .tcard .tag{font-size:.65rem;color:#64748b;text-align:center;margin-top:-4px}
-.vtx{cursor:pointer}#livePanel .col-studentid{display:none}#livePanel.show-sid .col-studentid{display:inline}.panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px}
+.vtx{cursor:pointer}.panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px}
 #timer-bar{height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden}#timer-fill{height:100%;background:#f59e0b;transition:width 1s linear}
 #msg{min-height:1.6em}.q-text{font-size:1.15rem;font-weight:700;line-height:1.7}
 </style>
@@ -86,8 +86,6 @@ body{background-color:#ffffff}
 <div id="pendingGuestsContainer" class="mb-3"></div>
 <div class="d-flex justify-content-end mb-2"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer">
 <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId" style="cursor:pointer">학번 표시</label></div></div>
-<div class="border rounded-3 p-2 mb-3"><div class="d-flex justify-content-between align-items-center mb-1"><span class="fw-bold small">🟢 실시간 현황 (최근 1분)</span>
-<label class="small text-muted">연속 오답 <input id="alertN" type="number" min="2" max="9" value="3" style="width:3.2rem"> 회 이상 경고</label></div><div id="livePanel"></div></div>
 <div class="table-responsive" id="adminTableWrap"><table class="table table-hover align-middle mb-0 text-center" style="font-size:.9rem"><thead class="table-light"><tr>
 <th>순위</th><th class="col-studentid">학번</th><th>닉네임</th><th>최고 점수</th><th>정답률</th><th>SSS</th><th>SAS</th><th>AA</th><th>대응변</th><th>대응각</th><th>연결</th><th>플레이</th></tr></thead>
 <tbody id="adminTableBody"><tr><td colspan="12" class="py-4 text-muted">방을 선택해주세요.</td></tr></tbody></table></div>
@@ -216,13 +214,7 @@ let G = null, timerId = null;
 const newSt = () => ({ sssOk: 0, sssTot: 0, sasOk: 0, sasTot: 0, aaOk: 0, aaTot: 0, trapOk: 0, trapTot: 0, cSssTwo: 0, cSasAng: 0, cSsa: 0, cAaOne: 0, eSideOk: 0, eSideTot: 0, eAngOk: 0, eAngTot: 0, eMis: 0, eCalc: 0, vOk: 0, vTot: 0 });
 const msg = (t, cl = 'text-dark') => { $('msg').className = 'text-center fw-bold small mb-2 ' + cl; $('msg').textContent = t; };
 const show = (id, on) => $(id).classList.toggle('d-none', !on);
-let lastLive = 0;
-function pushLive(force) {   // students 문서에 진행 현황 기록 (10초에 1회, 연속 오답이 바뀌면 즉시)
-  if (!G || !currentRoomCode) return; const now = Date.now(); if (!force && now - lastLive < 10000) return; lastLive = now;
-  setDoc(doc(room.students(currentRoomCode), playerNickname), { nickname: playerNickname, liveLevel: G.level, liveSolved: G.solved, liveAttempts: G.attempts, liveWrongStreak: G.wstreak, liveAt: serverTimestamp() }, { merge: true })
-    .catch(e => console.warn('live 기록 실패(보안 규칙 확인):', e));
-}
-function updateUI() { pushLive(G.wstreak !== G.lw); G.lw = G.wstreak;
+function updateUI() {
   $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
   $('level-badge').textContent = `R${G.round} · Lv.${G.level}`; $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
 }
@@ -348,11 +340,40 @@ async function endGame() {
   const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
   showSection('gameover-section'); $('final-score').textContent = G.score; $('final-accuracy').textContent = acc + '%';
   $('final-detail').textContent = `도달 레벨 Lv.${G.maxLevel} · 대응 연결 한 번에 ${S.vOk}/${S.vTot}`;
+  if (!currentRoomCode) {
+    $('save-status').textContent = "";
+    return;
+  }
   try {
-    await addDoc(room.records(currentRoomCode), { nickname: playerNickname, score: G.score, accuracy: acc, totalSolved: G.solved, totalAttempts: G.attempts, level: G.maxLevel, seed: G.seed, ...S, playedAt: serverTimestamp() });
-    const patch = { nickname: playerNickname, lastScore: G.score, updatedAt: serverTimestamp(), liveWrongStreak: 0 }; if (mySchool) patch.school = mySchool; if (myStudentId) patch.studentId = myStudentId;
-    await setDoc(doc(room.students(currentRoomCode), playerNickname), patch, { merge: true }); $('save-status').textContent = "✅ 기록이 저장되었습니다!";
-  } catch (e) { console.error('기록 저장 실패:', e); $('save-status').textContent = "⚠️ 기록 저장에 실패했습니다."; $('save-status').classList.replace('text-success', 'text-danger'); }
+    const recordData = {
+      nickname: playerNickname,
+      score: G.score,
+      accuracy: acc,
+      totalSolved: G.solved,
+      totalAttempts: G.attempts,
+      level: G.maxLevel,
+      sssOk: S.sssOk, sssTot: S.sssTot,
+      sasOk: S.sasOk, sasTot: S.sasTot,
+      aaOk: S.aaOk, aaTot: S.aaTot,
+      eSideOk: S.eSideOk, eSideTot: S.eSideTot,
+      eAngOk: S.eAngOk, eAngTot: S.eAngTot,
+      vOk: S.vOk, vTot: S.vTot,
+      cSssTwo: S.cSssTwo, cSasAng: S.cSasAng, cSsa: S.cSsa, cAaOne: S.cAaOne,
+      eMis: S.eMis, eCalc: S.eCalc,
+      playedAt: serverTimestamp()
+    };
+    await addDoc(room.records(currentRoomCode), recordData);
+
+    const patch = { nickname: playerNickname, lastScore: G.score, updatedAt: serverTimestamp() };
+    if (mySchool) patch.school = mySchool;
+    if (myStudentId) patch.studentId = myStudentId;
+    await setDoc(doc(room.students(currentRoomCode), playerNickname), patch, { merge: true });
+    $('save-status').textContent = "✅ 기록이 저장되었습니다!";
+  } catch (e) {
+    console.error('기록 저장 실패:', e);
+    $('save-status').textContent = "⚠️ 기록 저장에 실패했습니다.";
+    $('save-status').classList.replace('text-success', 'text-danger');
+  }
   await loadGameOverRankings();
 }
 async function loadGameOverRankings() {
@@ -385,18 +406,8 @@ $('roomSelect').addEventListener('change', e => {
 $('btn-create-room').addEventListener('click', async () => { const code = await room.createRoom(); if (!code) return; $('roomSelect').value = code; $('roomSelect').dispatchEvent(new Event('change')); });
 $('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
 bindDeleteRoomButton($('btn-delete-room'), { getCode: () => currentAdminRoom, canDelete: c => room.canDelete(c), doDelete: c => room.deleteRoom(c), onDone: async () => { $('roomSelect').value = ''; $('roomSelect').dispatchEvent(new Event('change')); } });
-bindStudentIdToggle($('toggleStudentId'), [$('adminTableWrap'), $('livePanel')]);
+bindStudentIdToggle($('toggleStudentId'), [$('adminTableWrap')]);
 
-function renderLive() {
-  const el = $('livePanel'); if (!currentAdminRoom) { el.innerHTML = '<span class="text-muted small">방을 선택하면 실시간 현황이 보입니다.</span>'; return; }
-  const th = Math.max(2, safeNumber($('alertN').value) || 3), now = Date.now(), sid = buildSidMap(roomStudents);
-  const rows = roomStudents.filter(s => { const ms = s.liveAt?.toMillis?.() || 0; return ms && now - ms < 60000; })
-    .map(s => ({ nick: String(s.nickname || ''), lv: safeNumber(s.liveLevel), so: safeNumber(s.liveSolved), at: safeNumber(s.liveAttempts), ws: safeNumber(s.liveWrongStreak) }))
-    .filter(x => x.nick).sort((a, b) => (b.ws >= th) - (a.ws >= th) || b.ws - a.ws);
-  el.innerHTML = rows.length ? rows.map(x => `<span class="badge ${x.ws >= th ? 'bg-danger' : 'bg-success'} p-2 me-1 mb-1 text-start">${x.ws >= th ? '⚠️ ' : ''}${escapeHtml(x.nick)}<span class="col-studentid"> (${escapeHtml(sid[x.nick] || '-')})</span> · Lv.${x.lv} · ${x.so}/${x.at} (${pct(x.so, x.at) ?? 0}%) · 연속 오답 ${x.ws}</span>`).join('')
-    : '<span class="text-muted small">최근 1분 안에 플레이 중인 학생이 없습니다.</span>';
-}
-$('alertN').addEventListener('input', renderLive); setInterval(renderLive, 15000);
 const ERR = [['cSssTwo', '두 변만 비례→SSS'], ['cSasAng', '끼인각 다름→SAS'], ['cSsa', 'SSA→SAS'], ['cAaOne', '한 각만 같음→AA'], ['eMis', '확장 대응 오류'], ['eCalc', '확장 계산 오류']];
 function openDetail(nick) {
   const rs = roomRecords.filter(r => String(r.nickname || '') === nick).sort((a, b) => (a.playedAt?.toMillis?.() || 0) - (b.playedAt?.toMillis?.() || 0));
@@ -411,7 +422,7 @@ function openDetail(nick) {
 $('adminTableBody').addEventListener('click', e => { const row = e.target.closest('.row-student'); if (row) openDetail(row.dataset.nick); });
 const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'aaOk', 'aaTot', 'eSideOk', 'eSideTot', 'eAngOk', 'eAngTot', 'vOk', 'vTot'];
 const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null, pc = v => v === null ? '-' : v + '%';
-function render() { renderLive();
+function render() {
   renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
   if (!currentAdminRoom) { $('adminTableBody').innerHTML = '<tr><td colspan="12" class="py-4 text-muted">방을 선택해주세요.</td></tr>'; return; }
   const sidByNick = buildSidMap(roomStudents), stats = {};
@@ -441,7 +452,7 @@ function buildLogData() {
       return { "학번": sidByNick[n] || '', "닉네임": n, "회차": seq[n], "일시": ft(r.playedAt), "점수": safeNumber(r.score), "도달 레벨": safeNumber(r.level), "맞힌 문제": safeNumber(r.totalSolved), "시도 수": at, "정답률(%)": at > 0 ? Math.round(safeNumber(r.totalSolved) / at * 100) : 0,
         "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "AA 맞/시도": `${safeNumber(r.aaOk)}/${safeNumber(r.aaTot)}`,
         "대응변 맞/시도": `${safeNumber(r.eSideOk)}/${safeNumber(r.eSideTot)}`, "대응각 맞/시도": `${safeNumber(r.eAngOk)}/${safeNumber(r.eAngTot)}`, "연결 첫시도": `${safeNumber(r.vOk)}/${safeNumber(r.vTot)}`,
-        "오판(두 변만 비례→SSS)": safeNumber(r.cSssTwo), "오판(끼인각 다름→SAS)": safeNumber(r.cSasAng), "오판(한 각만 같음→AA)": safeNumber(r.cAaOne), "확장 대응 오류": safeNumber(r.eMis), "확장 계산 오류": safeNumber(r.eCalc), "시드": safeNumber(r.seed) }; });
+        "오판(두 변만 비례→SSS)": safeNumber(r.cSssTwo), "오판(끼인각 다름→SAS)": safeNumber(r.cSasAng), "오판(한 각만 같음→AA)": safeNumber(r.cAaOne), "확장 대응 오류": safeNumber(r.eMis), "확장 계산 오류": safeNumber(r.eCalc) }; });
 }
 $('btn-export-excel').addEventListener('click', () => {
   if (!excelData.length) return customAlert("알림", "다운로드할 데이터가 없습니다.");
