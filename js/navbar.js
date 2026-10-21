@@ -25,6 +25,13 @@
                     ]
                 },
                 {
+                    "title": "중2 수학",
+                    "items": [
+                        { "name": "삼각형의 닮음", "path": "pages/middleschool/2/similarity.html" }
+                    ]
+                },
+
+                {
                     "title": "체험수학",
                     "items": [
                         { "name": "보로노이 시뮬레이터", "path": "pages/middleschool/etc/voronoi.html" },
@@ -286,9 +293,9 @@
                     const bsCollapse = bootstrap.Collapse.getOrCreateInstance(navCollapse);
                     bsCollapse.hide();
                 }
-                document.documentElement.requestFullscreen().catch(() => {});
+                document.documentElement.requestFullscreen().catch(() => { });
             } else {
-                document.exitFullscreen().catch(() => {});
+                document.exitFullscreen().catch(() => { });
             }
         }
 
