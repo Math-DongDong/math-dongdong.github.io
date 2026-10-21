@@ -666,6 +666,7 @@
                         data-bs-dismiss="modal" aria-label="Close">×</button>
                 </div>
                 <div class="py-4 text-sm leading-relaxed text-ink" id="sysModalBody"></div>
+                <input type="text" id="sysModalInput" class="field mt-0 mb-4 d-none" autocomplete="off">
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" class="btn btn-ghost btn-sm d-none" id="sysModalCancel">취소</button>
                     <button type="button" class="btn btn-primary btn-sm px-5" id="sysModalConfirm">확인</button>
@@ -1361,21 +1362,32 @@
 
         let sysModalQueue = Promise.resolve();
 
-        function sysModalOpen(title, message, isConfirmMode) {
+        function sysModalOpen(title, message, isConfirmMode, isPromptMode = false, defaultValue = '') {
             const run = () => new Promise((resolve) => {
                 const modalEl = $('sysModal');
                 $('sysModalTitle').textContent = title;
                 $('sysModalBody').innerHTML = message;
 
+                const inputEl = $('sysModalInput');
+                if (inputEl) {
+                    if (isPromptMode) {
+                        inputEl.classList.remove('d-none');
+                        inputEl.value = defaultValue || '';
+                    } else {
+                        inputEl.classList.add('d-none');
+                        inputEl.value = '';
+                    }
+                }
+
                 const confirmBtn = $('sysModalConfirm');
                 const cancelBtn = $('sysModalCancel');
 
-                if (isConfirmMode) cancelBtn.classList.remove('d-none');
+                if (isConfirmMode || isPromptMode) cancelBtn.classList.remove('d-none');
                 else cancelBtn.classList.add('d-none');
 
                 const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
                 let settled = false;
-                let result = isConfirmMode ? false : true;
+                let result = isPromptMode ? null : (isConfirmMode ? false : true);
 
                 const blurFocus = () => {
                     if (document.activeElement && modalEl.contains(document.activeElement)) {
@@ -1386,27 +1398,44 @@
                 const onConfirm = () => {
                     if (settled) return;
                     settled = true;
-                    result = true;
+                    result = isPromptMode ? (inputEl ? inputEl.value : '') : true;
                     blurFocus();
                     modal.hide();
                 };
                 const onCancel = () => {
                     if (settled) return;
                     settled = true;
-                    result = false;
+                    result = isPromptMode ? null : false;
                     blurFocus();
                     modal.hide();
+                };
+                const onKeydown = (e) => {
+                    if (isPromptMode && e.key === 'Enter') {
+                        e.preventDefault();
+                        onConfirm();
+                    }
+                };
+                const onShown = () => {
+                    if (isPromptMode && inputEl) {
+                        inputEl.focus();
+                        inputEl.select();
+                    }
                 };
                 const onHidden = () => {
                     confirmBtn.removeEventListener('click', onConfirm);
                     cancelBtn.removeEventListener('click', onCancel);
+                    if (inputEl) inputEl.removeEventListener('keydown', onKeydown);
+                    modalEl.removeEventListener('shown.bs.modal', onShown);
                     modalEl.removeEventListener('hidden.bs.modal', onHidden);
-                    if (!settled) { settled = true; result = isConfirmMode ? false : true; }
+                    if (inputEl) inputEl.classList.add('d-none');
+                    if (!settled) { settled = true; result = isPromptMode ? null : (isConfirmMode ? false : true); }
                     setTimeout(() => resolve(result), 0);
                 };
 
                 confirmBtn.addEventListener('click', onConfirm);
                 cancelBtn.addEventListener('click', onCancel);
+                if (inputEl && isPromptMode) inputEl.addEventListener('keydown', onKeydown);
+                modalEl.addEventListener('shown.bs.modal', onShown);
                 modalEl.addEventListener('hidden.bs.modal', onHidden);
                 modal.show();
             });
@@ -1416,11 +1445,15 @@
         }
 
         function customAlert(title, message) {
-            return sysModalOpen(title, message, false);
+            return sysModalOpen(title, message, false, false);
         }
 
         function customConfirm(title, message) {
-            return sysModalOpen(title, message, true);
+            return sysModalOpen(title, message, true, false);
+        }
+
+        function customPrompt(title, message, defaultValue = '') {
+            return sysModalOpen(title, message, false, true, defaultValue);
         }
 
         // ── 0. Firebase Auth 기반 자동 모드 전환 ──
@@ -2122,6 +2155,9 @@
                             <span class="text-xs font-bold text-ink">${escapeHtml(a.date)}</span>
                             <div class="flex items-center gap-1">
                                 <span class="inline-block rounded-full bg-board-soft px-2 py-0.5 text-[11px] font-bold text-board">${subCount} / ${totalRoster}명</span>
+                                <button type="button" class="text-ink-muted hover:text-board p-0.5 btn-edit-activity" data-date="${escapeHtml(a.date)}" title="활동명 수정">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
                                 <button type="button" class="text-stamp hover:text-stamp-deep p-0.5 btn-delete-activity" data-date="${escapeHtml(a.date)}" title="활동 삭제">
                                     <i class="bi bi-trash"></i>
                                 </button>
@@ -2137,8 +2173,44 @@
 
             box.querySelectorAll('.act-card').forEach(c => {
                 c.addEventListener('click', (e) => {
-                    if (e.target.closest('.btn-delete-activity')) return;
+                    if (e.target.closest('.btn-delete-activity') || e.target.closest('.btn-edit-activity')) return;
                     filterByActivity(c.dataset.date);
+                });
+            });
+
+            box.querySelectorAll('.btn-edit-activity').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const d = btn.dataset.date;
+                    const act = activityList.find(a => a.date === d);
+                    if (!act) return;
+
+                    const newName = await customPrompt("활동명 수정", `[${escapeHtml(d)}] 활동의 새로운 이름을 입력하세요:`, act.activity);
+                    if (newName === null) return;
+
+                    const trimmed = newName.trim();
+                    if (!trimmed) {
+                        return customAlert("알림", "활동명을 입력해주세요.");
+                    }
+                    if (trimmed === act.activity) return;
+
+                    try {
+                        const updated = activityList.map(a => a.date === d ? { ...a, activity: trimmed } : a);
+                        await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { activities: updated });
+
+                        const reviewsToUpdate = allReviews.filter(r => r.date === d);
+                        if (reviewsToUpdate.length) {
+                            await Promise.all(reviewsToUpdate.map(r =>
+                                updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", r.id), { activity: trimmed })
+                            ));
+                        }
+
+                        renderAll();
+                        customAlert("완료", "활동명이 수정되었습니다.");
+                    } catch (err) {
+                        console.error("활동명 수정 오류:", err);
+                        customAlert("오류", "활동명 수정 중 오류가 발생했습니다.");
+                    }
                 });
             });
 
@@ -2631,7 +2703,7 @@
 
         async function callGeminiApi(apiKey, model, promptTemplate, record) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
-            const userContent = `[교사의 프롬프트 요청]\n${promptTemplate}\n\n[활동 정보]\n날짜: ${record.date}\n활동명: ${record.activity}\n\n[학생 소감문]\n${record.content}`;
+            const userContent = `[교사의 프롬프트 요청]\n${promptTemplate}\n\n[활동 정보]\n활동명: ${record.activity}\n\n[학생 소감문]\n${record.content}`;
 
             const response = await fetch(url, {
                 method: 'POST',
