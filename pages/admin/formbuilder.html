@@ -1066,8 +1066,11 @@
             return customAlert(isError ? '오류' : '안내', safeMessage);
         };
         const hideNotice = () => { $('notice').hidden = true; };
+        let currentAdminWorkspaceTab = 'builder';
+
         function setAdminWorkspaceTab(tabName, moveFocus = false) {
-            const isBuilder = tabName === 'builder';
+            currentAdminWorkspaceTab = tabName === 'responses' ? 'responses' : 'builder';
+            const isBuilder = currentAdminWorkspaceTab === 'builder';
             $('builderTab').setAttribute('aria-selected', String(isBuilder));
             $('responsesTab').setAttribute('aria-selected', String(!isBuilder));
             $('builderTab').tabIndex = isBuilder ? 0 : -1;
@@ -1616,10 +1619,12 @@
             }
         });
 
-        async function selectRoom(code, keepTab = false) {
+        async function selectRoom(code, targetTab = null) {
             if (unsubRoomStudents) { unsubRoomStudents(); unsubRoomStudents = null; }
             clearTimeout(scheduledCloseTimer);
-            const previousTab = !$('responsesPanel')?.hidden ? 'responses' : 'builder';
+            const chosenTab = typeof targetTab === 'string'
+                ? targetTab
+                : (targetTab === true ? currentAdminWorkspaceTab : (targetTab === false ? 'builder' : (currentAdminWorkspaceTab || 'builder')));
             currentRoom = code || null;
             currentRoomData = null;
             $('adminWorkspace').hidden = true;
@@ -1662,7 +1667,7 @@
                 schemaDirty = false;
                 renderBuilder(Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : []);
                 $('adminWorkspace').hidden = false;
-                setAdminWorkspaceTab(keepTab ? previousTab : 'builder');
+                setAdminWorkspaceTab(chosenTab);
                 renderResponses(responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
                 if (currentRoomData.status === 'active' && currentRoomData.scheduledCloseAt) {
                     armScheduledClose(code, currentRoomData.scheduledCloseAt);
@@ -2346,7 +2351,8 @@
                                 updatedAt: serverTimestamp()
                             });
                         });
-                        await selectRoom(currentRoom, true);
+                        await selectRoom(currentRoom, 'responses');
+                        setAdminWorkspaceTab('responses');
                         showNotice('학생 응답을 삭제했습니다.');
                     } catch (error) {
                         console.error('학생 응답 삭제 실패:', error);
@@ -2356,7 +2362,7 @@
             });
         }
 
-        let responseEditOriginalAnswers = {};
+        let responseEditLiveAnswers = {};
 
         function openResponseEdit(response) {
             if (!currentRoom || !currentRoomData) return;
@@ -2364,8 +2370,8 @@
             $('responseEditStudent').textContent = `학번 ${response.studentId || '-'} · 닉네임 ${response.studentName || '-'}`;
             $('responseEditTitle').innerHTML = formatRichText(currentRoomData.memo || '설문');
             $('responseEditDescription').innerHTML = formatRichText(currentRoomData.description || '');
-            responseEditOriginalAnswers = { ...(response.answers || {}) };
-            renderStudentQuestions(currentRoomData.formSchema || [], responseEditOriginalAnswers, false, 'responseEditQuestions');
+            responseEditLiveAnswers = JSON.parse(JSON.stringify(response.answers || {}));
+            renderStudentQuestions(currentRoomData.formSchema || [], responseEditLiveAnswers, false, 'responseEditQuestions');
             $('responseEditModal').hidden = false;
         }
 
@@ -2373,11 +2379,11 @@
             $('responseEditModal').hidden = true;
             $('responseEditModal').dataset.responseId = '';
             $('responseEditQuestions').innerHTML = '';
-            responseEditOriginalAnswers = {};
+            responseEditLiveAnswers = {};
         }
 
         function collectEditedResponseAnswers(schema) {
-            return collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
+            return collectAnswers(schema, responseEditLiveAnswers, 'responseEditQuestions');
         }
 
         $('closeResponseEdit').addEventListener('click', closeResponseEdit);
@@ -2394,19 +2400,16 @@
             button.disabled = true;
             try {
                 const responseRef = doc(db, 'custom_forms', currentRoom, 'responses', responseId);
-                const rawAnswers = collectEditedResponseAnswers(currentRoomData.formSchema || []);
-                const visibleItems = getVisibleQuestions(currentRoomData.formSchema || [], rawAnswers);
-                const answers = {};
-                for (const { question } of visibleItems) {
-                    if (rawAnswers[question.id] !== undefined) answers[question.id] = rawAnswers[question.id];
-                }
+                const schema = currentRoomData.formSchema || [];
+                const answers = collectEditedResponseAnswers(schema);
                 await runTransaction(db, async transaction => {
                     const snapshot = await transaction.get(responseRef);
                     if (!snapshot.exists()) throw new Error('응답 문서를 찾을 수 없습니다.');
                     transaction.update(responseRef, { answers, updatedAt: serverTimestamp() });
                 });
                 closeResponseEdit();
-                await selectRoom(currentRoom, true);
+                await selectRoom(currentRoom, 'responses');
+                setAdminWorkspaceTab('responses');
                 showNotice('학생 응답을 수정했습니다.');
             } catch (error) {
                 console.error('학생 응답 수정 실패:', error);
@@ -2518,12 +2521,16 @@
                 if (question.type === 'short') {
                     const input = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
                     const tailInput = block.querySelector(`[data-tail="${CSS.escape(question.id)}"]`);
-                    answers[question.id] = question.hasTail
-                        ? { value: input ? input.value.trim() : '', tail: tailInput ? tailInput.value.trim() : '' }
-                        : (input ? input.value.trim() : '');
+                    if (question.hasTail) {
+                        const val = input ? input.value.trim() : (typeof baseAnswers[question.id] === 'object' ? (baseAnswers[question.id]?.value ?? '') : (baseAnswers[question.id] ?? ''));
+                        const tail = tailInput ? tailInput.value.trim() : (typeof baseAnswers[question.id] === 'object' ? (baseAnswers[question.id]?.tail ?? '') : '');
+                        answers[question.id] = { value: val, tail: tail };
+                    } else {
+                        answers[question.id] = input ? input.value.trim() : (typeof baseAnswers[question.id] === 'string' ? baseAnswers[question.id] : (baseAnswers[question.id]?.value ?? baseAnswers[question.id]?.selected ?? ''));
+                    }
                 } else if (question.type === 'long') {
                     const textarea = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
-                    answers[question.id] = textarea ? textarea.value.trim() : '';
+                    answers[question.id] = textarea ? textarea.value.trim() : (typeof baseAnswers[question.id] === 'string' ? baseAnswers[question.id] : (baseAnswers[question.id]?.selected ?? baseAnswers[question.id]?.value ?? ''));
                 } else if (question.type === 'dropdown') {
                     const select = block.querySelector(`select[data-answer="${CSS.escape(question.id)}"]`);
                     answers[question.id] = { selected: select ? select.value : '', tailAnswers };
@@ -2545,46 +2552,104 @@
             return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
         }
 
+        function syncResponseEditField(el) {
+            if (!el || !currentRoomData) return;
+            const schema = currentRoomData.formSchema || [];
+            const answerId = el.dataset.answer;
+            const tailId = el.dataset.tail;
+            const choiceId = el.dataset.choice;
+            if (answerId) {
+                const q = schema.find(item => item.id === answerId);
+                if (q) {
+                    if (q.type === 'short') {
+                        if (q.hasTail) {
+                            const prev = typeof responseEditLiveAnswers[answerId] === 'object' && responseEditLiveAnswers[answerId] !== null
+                                ? responseEditLiveAnswers[answerId]
+                                : { value: '', tail: '' };
+                            responseEditLiveAnswers[answerId] = { ...prev, value: el.value };
+                        } else {
+                            responseEditLiveAnswers[answerId] = el.value;
+                        }
+                    } else if (q.type === 'long') {
+                        responseEditLiveAnswers[answerId] = el.value;
+                    } else if (q.type === 'dropdown') {
+                        const prev = typeof responseEditLiveAnswers[answerId] === 'object' && responseEditLiveAnswers[answerId] !== null
+                            ? responseEditLiveAnswers[answerId]
+                            : { selected: '', tailAnswers: {} };
+                        responseEditLiveAnswers[answerId] = { ...prev, selected: el.value };
+                    }
+                }
+            } else if (choiceId) {
+                const prev = typeof responseEditLiveAnswers[choiceId] === 'object' && responseEditLiveAnswers[choiceId] !== null
+                    ? responseEditLiveAnswers[choiceId]
+                    : { selected: '', tailAnswers: {} };
+                responseEditLiveAnswers[choiceId] = { ...prev, selected: el.value };
+            } else if (tailId) {
+                const q = schema.find(item => item.id === tailId);
+                if (q) {
+                    if (q.type === 'short') {
+                        const prev = typeof responseEditLiveAnswers[tailId] === 'object' && responseEditLiveAnswers[tailId] !== null
+                            ? responseEditLiveAnswers[tailId]
+                            : { value: '', tail: '' };
+                        responseEditLiveAnswers[tailId] = { ...prev, tail: el.value };
+                    } else {
+                        const prev = typeof responseEditLiveAnswers[tailId] === 'object' && responseEditLiveAnswers[tailId] !== null
+                            ? responseEditLiveAnswers[tailId]
+                            : { selected: q.type === 'pill' ? [] : '', tailAnswers: {} };
+                        const tailAnswers = { ...(prev.tailAnswers || {}) };
+                        if (el.dataset.option) {
+                            tailAnswers[el.dataset.option] = el.value;
+                        }
+                        responseEditLiveAnswers[tailId] = { ...prev, tailAnswers };
+                    }
+                }
+            }
+        }
+
         $('responseEditQuestions').addEventListener('input', event => {
             const input = event.target;
             if (!input.matches('input, textarea, select')) return;
             if (input.dataset.validation === 'number') input.value = input.value.replace(/[^0-9]/g, '');
             if (input.dataset.validation === 'phone') input.value = formatPhone(input.value);
+            syncResponseEditField(input);
         });
+
         $('responseEditQuestions').addEventListener('change', event => {
             const input = event.target;
             if (!currentRoomData) return;
+            syncResponseEditField(input);
             const schema = currentRoomData.formSchema || [];
             if (input.matches('select[data-answer]')) {
-                const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
-                const currentAnswer = currentAnswers[input.dataset.answer];
-                currentAnswers[input.dataset.answer] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
-                responseEditOriginalAnswers = currentAnswers;
-                renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
-                const nextSelect = $('responseEditQuestions').querySelector(`select[data-answer="${CSS.escape(input.dataset.answer)}"]`);
-                if (nextSelect && document.activeElement !== nextSelect) nextSelect.focus();
+                const q = schema.find(item => item.id === input.dataset.answer);
+                if (q && (q.hasBranch || q.hasTail)) {
+                    renderStudentQuestions(schema, responseEditLiveAnswers, false, 'responseEditQuestions');
+                    const nextSelect = $('responseEditQuestions').querySelector(`select[data-answer="${CSS.escape(input.dataset.answer)}"]`);
+                    if (nextSelect && document.activeElement !== nextSelect) nextSelect.focus();
+                }
             } else if (input.matches('input[data-choice]')) {
-                const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
-                const currentAnswer = currentAnswers[input.dataset.choice];
-                currentAnswers[input.dataset.choice] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
-                responseEditOriginalAnswers = currentAnswers;
-                renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+                const q = schema.find(item => item.id === input.dataset.choice);
+                if (q && (q.hasBranch || q.hasTail)) {
+                    renderStudentQuestions(schema, responseEditLiveAnswers, false, 'responseEditQuestions');
+                }
             }
         });
+
         $('responseEditQuestions').addEventListener('click', event => {
             const button = event.target.closest('button[data-pill]');
             if (!button || !currentRoomData) return;
             const schema = currentRoomData.formSchema || [];
             const question = schema.find(item => item.id === button.dataset.pill);
             if (!question) return;
-            const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
-            const answer = currentAnswers[question.id] || { selected: [], tailAnswers: {} };
+            const answer = responseEditLiveAnswers[question.id] || { selected: [], tailAnswers: {} };
             const selected = new Set(Array.isArray(answer.selected) ? answer.selected : []);
             if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
             else selected.add(button.dataset.option);
-            currentAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers || {} };
-            responseEditOriginalAnswers = currentAnswers;
-            renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+            responseEditLiveAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers || {} };
+            if (question.hasTail) {
+                renderStudentQuestions(schema, responseEditLiveAnswers, false, 'responseEditQuestions');
+            } else {
+                button.setAttribute('aria-pressed', String(selected.has(button.dataset.option)));
+            }
         });
 
         $('dynamicQuestions').addEventListener('input', event => {
