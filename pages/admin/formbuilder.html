@@ -1616,9 +1616,10 @@
             }
         });
 
-        async function selectRoom(code) {
+        async function selectRoom(code, keepTab = false) {
             if (unsubRoomStudents) { unsubRoomStudents(); unsubRoomStudents = null; }
             clearTimeout(scheduledCloseTimer);
+            const previousTab = !$('responsesPanel')?.hidden ? 'responses' : 'builder';
             currentRoom = code || null;
             currentRoomData = null;
             $('adminWorkspace').hidden = true;
@@ -1661,7 +1662,7 @@
                 schemaDirty = false;
                 renderBuilder(Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : []);
                 $('adminWorkspace').hidden = false;
-                setAdminWorkspaceTab('builder');
+                setAdminWorkspaceTab(keepTab ? previousTab : 'builder');
                 renderResponses(responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
                 if (currentRoomData.status === 'active' && currentRoomData.scheduledCloseAt) {
                     armScheduledClose(code, currentRoomData.scheduledCloseAt);
@@ -2345,7 +2346,7 @@
                                 updatedAt: serverTimestamp()
                             });
                         });
-                        await selectRoom(currentRoom);
+                        await selectRoom(currentRoom, true);
                         showNotice('학생 응답을 삭제했습니다.');
                     } catch (error) {
                         console.error('학생 응답 삭제 실패:', error);
@@ -2393,14 +2394,19 @@
             button.disabled = true;
             try {
                 const responseRef = doc(db, 'custom_forms', currentRoom, 'responses', responseId);
-                const answers = collectEditedResponseAnswers(currentRoomData.formSchema || []);
+                const rawAnswers = collectEditedResponseAnswers(currentRoomData.formSchema || []);
+                const visibleItems = getVisibleQuestions(currentRoomData.formSchema || [], rawAnswers);
+                const answers = {};
+                for (const { question } of visibleItems) {
+                    if (rawAnswers[question.id] !== undefined) answers[question.id] = rawAnswers[question.id];
+                }
                 await runTransaction(db, async transaction => {
                     const snapshot = await transaction.get(responseRef);
                     if (!snapshot.exists()) throw new Error('응답 문서를 찾을 수 없습니다.');
                     transaction.update(responseRef, { answers, updatedAt: serverTimestamp() });
                 });
                 closeResponseEdit();
-                await selectRoom(currentRoom);
+                await selectRoom(currentRoom, true);
                 showNotice('학생 응답을 수정했습니다.');
             } catch (error) {
                 console.error('학생 응답 수정 실패:', error);
@@ -2453,7 +2459,7 @@
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
                 let control = '';
                 if (question.type === 'short') {
-                    const mainVal = typeof answer === 'string' ? answer : (answer?.value || '');
+                    const mainVal = typeof answer === 'string' ? answer : (answer?.value || answer?.selected || '');
                     control = `<input class="field mt-2" data-answer="${escapeHtml(question.id)}" data-validation="${escapeHtml(question.validation || 'none')}" value="${escapeHtml(mainVal)}" placeholder="${escapeHtml(question.placeholder || '')}" ${disabled ? 'disabled' : ''}>`;
                     if (question.hasTail) {
                         const tailVal = typeof answer === 'object' ? (answer?.tail || '') : '';
@@ -2516,7 +2522,10 @@
                         ? { value: input ? input.value.trim() : '', tail: tailInput ? tailInput.value.trim() : '' }
                         : (input ? input.value.trim() : '');
                 } else if (question.type === 'long') {
-                    const select = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
+                    const textarea = block.querySelector(`[data-answer="${CSS.escape(question.id)}"]`);
+                    answers[question.id] = textarea ? textarea.value.trim() : '';
+                } else if (question.type === 'dropdown') {
+                    const select = block.querySelector(`select[data-answer="${CSS.escape(question.id)}"]`);
                     answers[question.id] = { selected: select ? select.value : '', tailAnswers };
                 } else if (question.type === 'choice') {
                     const radio = block.querySelector(`input[data-choice="${CSS.escape(question.id)}"]:checked`);
@@ -2546,13 +2555,21 @@
             const input = event.target;
             if (!currentRoomData) return;
             const schema = currentRoomData.formSchema || [];
-            const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
-            const changedId = input.dataset.answer || input.dataset.choice;
-            if (!changedId || !['select', 'input'].includes(input.tagName.toLowerCase())) return;
-            const currentAnswer = currentAnswers[changedId];
-            currentAnswers[changedId] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
-            responseEditOriginalAnswers = currentAnswers;
-            renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+            if (input.matches('select[data-answer]')) {
+                const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
+                const currentAnswer = currentAnswers[input.dataset.answer];
+                currentAnswers[input.dataset.answer] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
+                responseEditOriginalAnswers = currentAnswers;
+                renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+                const nextSelect = $('responseEditQuestions').querySelector(`select[data-answer="${CSS.escape(input.dataset.answer)}"]`);
+                if (nextSelect && document.activeElement !== nextSelect) nextSelect.focus();
+            } else if (input.matches('input[data-choice]')) {
+                const currentAnswers = collectAnswers(schema, responseEditOriginalAnswers, 'responseEditQuestions');
+                const currentAnswer = currentAnswers[input.dataset.choice];
+                currentAnswers[input.dataset.choice] = { selected: input.value, tailAnswers: currentAnswer?.tailAnswers || {} };
+                responseEditOriginalAnswers = currentAnswers;
+                renderStudentQuestions(schema, currentAnswers, false, 'responseEditQuestions');
+            }
         });
         $('responseEditQuestions').addEventListener('click', event => {
             const button = event.target.closest('button[data-pill]');
@@ -2601,10 +2618,10 @@
             const question = studentRoomData.formSchema.find(item => item.id === button.dataset.pill);
             const nextAnswers = collectAnswers(studentRoomData.formSchema);
             const answer = nextAnswers[question.id];
-            const selected = new Set(answer.selected);
+            const selected = new Set(Array.isArray(answer?.selected) ? answer.selected : []);
             if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
             else selected.add(button.dataset.option);
-            nextAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers };
+            nextAnswers[question.id] = { selected: [...selected], tailAnswers: answer?.tailAnswers || {} };
             renderStudentQuestions(studentRoomData.formSchema, nextAnswers, false);
             setDirty();
         });
@@ -2743,7 +2760,7 @@
                         ? !value?.selected
                         : question.type === 'short' && question.hasTail
                             ? !String(value?.value || '').trim()
-                            : !String(value || '').trim();
+                            : !String(typeof value === 'object' ? (value?.selected || value?.value || '') : (value || '')).trim();
                 if (question.required && empty) {
                     showNotice(`필수 문항에 응답해주세요: ${question.title}`, true);
                     document.querySelector(`[data-question="${CSS.escape(question.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
