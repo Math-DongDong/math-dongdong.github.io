@@ -156,6 +156,8 @@
             display: flex;
             gap: .25rem;
             border-bottom: 1px solid #D5DEDA;
+            overflow-x: auto;
+            white-space: nowrap;
         }
 
         .admin-workspace-tab {
@@ -838,6 +840,8 @@
                             aria-controls="builderPanel" aria-selected="true">폼 빌더</button>
                         <button id="responsesTab" class="admin-workspace-tab" type="button" role="tab"
                             aria-controls="responsesPanel" aria-selected="false" tabindex="-1">학생 응답</button>
+                        <button id="statsTab" class="admin-workspace-tab" type="button" role="tab"
+                            aria-controls="statsPanel" aria-selected="false" tabindex="-1"><i class="bi bi-bar-chart-line"></i> 문항별 통계</button>
                     </div>
                     <section id="builderPanel" role="tabpanel" aria-labelledby="builderTab"
                         class="rounded-2xl border border-line bg-white p-4 shadow-sm">
@@ -891,6 +895,34 @@
                                 <tbody id="responseTableBody"></tbody>
                             </table>
                         </div>
+                    </section>
+                    <section id="statsPanel" role="tabpanel" aria-labelledby="statsTab"
+                        class="rounded-2xl border border-line bg-white p-4 shadow-sm" hidden>
+                        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+                            <div>
+                                <h2 class="text-lg font-extrabold flex items-center gap-2">
+                                    <i class="bi bi-bar-chart-line text-board"></i> 문항별 통계 및 분석
+                                </h2>
+                                <p class="mt-1 text-xs text-muted">문항별 응답 비율, 선택지 분석, 주관식 답변 및 주요 키워드를 확인합니다.</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button id="copyStatsSummaryBtn" class="btn btn-light text-xs py-1.5 px-3 font-semibold" type="button" title="통계 요약 텍스트 복사">
+                                    <i class="bi bi-clipboard"></i> 통계 요약 복사
+                                </button>
+                                <span id="statsTotalBadge" class="rounded-full bg-page px-3 py-1 text-sm font-bold text-board"></span>
+                            </div>
+                        </div>
+
+                        <div id="statsOverviewGrid" class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4"></div>
+
+                        <div id="statsNavContainer" class="mb-5 rounded-xl border border-line/70 bg-page/40 p-3" hidden>
+                            <div class="mb-2 text-xs font-bold text-muted flex items-center gap-1">
+                                <i class="bi bi-compass"></i> 문항 바로가기
+                            </div>
+                            <div id="statsNavChips" class="flex flex-wrap gap-1.5"></div>
+                        </div>
+
+                        <div id="statsQuestionsContainer" class="space-y-6"></div>
                     </section>
                 </div>
             </div>
@@ -1069,26 +1101,48 @@
         let currentAdminWorkspaceTab = 'builder';
 
         function setAdminWorkspaceTab(tabName, moveFocus = false) {
-            currentAdminWorkspaceTab = tabName === 'responses' ? 'responses' : 'builder';
+            currentAdminWorkspaceTab = ['responses', 'stats'].includes(tabName) ? tabName : 'builder';
             const isBuilder = currentAdminWorkspaceTab === 'builder';
-            $('builderTab').setAttribute('aria-selected', String(isBuilder));
-            $('responsesTab').setAttribute('aria-selected', String(!isBuilder));
-            $('builderTab').tabIndex = isBuilder ? 0 : -1;
-            $('responsesTab').tabIndex = isBuilder ? -1 : 0;
-            $('builderPanel').hidden = !isBuilder;
-            $('responsesPanel').hidden = isBuilder;
-            if (moveFocus) $(isBuilder ? 'builderTab' : 'responsesTab').focus();
+            const isResponses = currentAdminWorkspaceTab === 'responses';
+            const isStats = currentAdminWorkspaceTab === 'stats';
+
+            $('builderTab')?.setAttribute('aria-selected', String(isBuilder));
+            $('responsesTab')?.setAttribute('aria-selected', String(isResponses));
+            $('statsTab')?.setAttribute('aria-selected', String(isStats));
+
+            if ($('builderTab')) $('builderTab').tabIndex = isBuilder ? 0 : -1;
+            if ($('responsesTab')) $('responsesTab').tabIndex = isResponses ? 0 : -1;
+            if ($('statsTab')) $('statsTab').tabIndex = isStats ? 0 : -1;
+
+            if ($('builderPanel')) $('builderPanel').hidden = !isBuilder;
+            if ($('responsesPanel')) $('responsesPanel').hidden = !isResponses;
+            if ($('statsPanel')) $('statsPanel').hidden = !isStats;
+
+            if (moveFocus) {
+                const targetId = isBuilder ? 'builderTab' : isResponses ? 'responsesTab' : 'statsTab';
+                $(targetId)?.focus();
+            }
+            if (isStats && typeof renderStatistics === 'function') {
+                renderStatistics(currentResponses);
+            }
         }
 
+        const workspaceTabs = ['builder', 'responses', 'stats'];
         document.querySelectorAll('.admin-workspace-tab').forEach(tab => {
-            tab.addEventListener('click', () => setAdminWorkspaceTab(tab.id === 'builderTab' ? 'builder' : 'responses'));
+            tab.addEventListener('click', () => {
+                const target = tab.id.replace('Tab', '');
+                setAdminWorkspaceTab(target);
+            });
             tab.addEventListener('keydown', event => {
                 if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
                 event.preventDefault();
-                const next = event.key === 'Home' || event.key === 'ArrowLeft'
-                    ? 'builder'
-                    : 'responses';
-                setAdminWorkspaceTab(event.key === 'End' ? 'responses' : next, true);
+                const curIdx = workspaceTabs.indexOf(currentAdminWorkspaceTab);
+                let nextIdx = curIdx;
+                if (event.key === 'Home') nextIdx = 0;
+                else if (event.key === 'End') nextIdx = workspaceTabs.length - 1;
+                else if (event.key === 'ArrowRight') nextIdx = (curIdx + 1) % workspaceTabs.length;
+                else if (event.key === 'ArrowLeft') nextIdx = (curIdx - 1 + workspaceTabs.length) % workspaceTabs.length;
+                setAdminWorkspaceTab(workspaceTabs[nextIdx], true);
             });
         });
         const asOptions = value => String(value ?? '').split(/\r?\n|,/).map(v => v.trim()).filter(Boolean).slice(0, 40);
@@ -1307,6 +1361,7 @@
         let teacherRooms = [];
         let currentRoom = null;
         let currentRoomData = null;
+        let currentResponses = [];
         let unsubRoomStudents = null;
         let schemaDirty = false;
         let studentSession = null;
@@ -1627,6 +1682,7 @@
                 : (targetTab === true ? currentAdminWorkspaceTab : (targetTab === false ? 'builder' : (currentAdminWorkspaceTab || 'builder')));
             currentRoom = code || null;
             currentRoomData = null;
+            currentResponses = [];
             $('adminWorkspace').hidden = true;
             $('toggleStatusButton').disabled = !code;
             $('cloneRoomButton').disabled = !code;
@@ -1666,9 +1722,12 @@
                 $('roomDescriptionInput').disabled = count > 0;
                 schemaDirty = false;
                 renderBuilder(Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : []);
+                const loadedResponses = responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+                currentResponses = loadedResponses;
                 $('adminWorkspace').hidden = false;
                 setAdminWorkspaceTab(chosenTab);
-                renderResponses(responseSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+                renderResponses(loadedResponses);
+                renderStatistics(loadedResponses);
                 if (currentRoomData.status === 'active' && currentRoomData.scheduledCloseAt) {
                     armScheduledClose(code, currentRoomData.scheduledCloseAt);
                 }
@@ -2359,6 +2418,627 @@
                         showNotice(`응답을 삭제하지 못했습니다: ${error.message || '권한과 네트워크를 확인해주세요.'}`, true);
                     }
                 });
+            });
+        }
+
+        function extractAnswer(q, rawAnswer) {
+            if (rawAnswer == null) return { hasAnswer: false, selected: [], text: '', tailAnswers: {}, tail: '' };
+            if (q.type === 'short') {
+                if (typeof rawAnswer === 'object') {
+                    const val = String(rawAnswer.value ?? '').trim();
+                    const t = String(rawAnswer.tail ?? '').trim();
+                    return { hasAnswer: Boolean(val || t), text: val, tail: t, selected: [], tailAnswers: {} };
+                }
+                const str = String(rawAnswer).trim();
+                return { hasAnswer: Boolean(str), text: str, tail: '', selected: [], tailAnswers: {} };
+            }
+            if (q.type === 'long') {
+                const str = (typeof rawAnswer === 'object' ? String(rawAnswer.value ?? rawAnswer.selected ?? '') : String(rawAnswer)).trim();
+                return { hasAnswer: Boolean(str), text: str, tail: '', selected: [], tailAnswers: {} };
+            }
+            if (q.type === 'pill') {
+                let sel = [];
+                let tails = {};
+                if (typeof rawAnswer === 'object') {
+                    if (Array.isArray(rawAnswer.selected)) sel = rawAnswer.selected;
+                    else if (rawAnswer.selected) sel = [rawAnswer.selected];
+                    else if (Array.isArray(rawAnswer)) sel = rawAnswer;
+                    tails = rawAnswer.tailAnswers || {};
+                } else if (typeof rawAnswer === 'string' && rawAnswer.trim()) {
+                    sel = [rawAnswer.trim()];
+                }
+                sel = sel.map(s => String(s).trim()).filter(Boolean);
+                return { hasAnswer: sel.length > 0, selected: sel, tailAnswers: tails, text: '', tail: '' };
+            }
+            // choice, dropdown
+            let sel = '';
+            let tails = {};
+            if (typeof rawAnswer === 'object') {
+                sel = String(rawAnswer.selected ?? rawAnswer.value ?? '').trim();
+                tails = rawAnswer.tailAnswers || {};
+                if (rawAnswer.tail && !tails[sel]) tails[sel] = String(rawAnswer.tail).trim();
+            } else if (typeof rawAnswer === 'string') {
+                sel = rawAnswer.trim();
+            }
+            return { hasAnswer: Boolean(sel), selected: sel ? [sel] : [], tailAnswers: tails, text: sel, tail: '' };
+        }
+
+        function renderStatistics(responses = currentResponses || []) {
+            if (!$('statsPanel') || !currentRoomData) return;
+            const schema = Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : [];
+            const totalResponses = responses.length;
+            const totalCount = Math.max(Number(currentRoomData.responseCount) || 0, totalResponses);
+
+            $('statsTotalBadge').textContent = `${totalCount}명 응답`;
+
+            // 응답이 없는 경우
+            if (!totalResponses) {
+                $('statsOverviewGrid').innerHTML = `
+                    <div class="rounded-xl border border-line bg-page/30 p-3.5 text-center">
+                        <span class="text-xs text-muted font-bold block mb-1">총 응답자</span>
+                        <span class="text-xl font-black text-board">0</span><span class="text-xs text-muted ml-0.5">명</span>
+                    </div>
+                    <div class="rounded-xl border border-line bg-page/30 p-3.5 text-center">
+                        <span class="text-xs text-muted font-bold block mb-1">등록 문항</span>
+                        <span class="text-xl font-black text-board">${schema.length}</span><span class="text-xs text-muted ml-0.5">개</span>
+                    </div>
+                    <div class="rounded-xl border border-line bg-page/30 p-3.5 text-center">
+                        <span class="text-xs text-muted font-bold block mb-1">최근 응답</span>
+                        <span class="text-xs text-muted block mt-1">-</span>
+                    </div>
+                    <div class="rounded-xl border border-line bg-page/30 p-3.5 text-center">
+                        <span class="text-xs text-muted font-bold block mb-1">설문 상태</span>
+                        <span class="text-sm font-extrabold ${currentRoomData.status === 'closed' ? 'text-red-700' : 'text-emerald-700'}">${currentRoomData.status === 'closed' ? '마감됨' : '진행 중'}</span>
+                    </div>
+                `;
+                $('statsNavContainer').hidden = true;
+                $('statsQuestionsContainer').innerHTML = `
+                    <div class="rounded-2xl border border-dashed border-line bg-page/20 p-10 text-center">
+                        <i class="bi bi-bar-chart-line text-4xl text-muted"></i>
+                        <p class="mt-3 text-base font-bold text-board">아직 제출된 응답이 없습니다.</p>
+                        <p class="mt-1 text-xs text-muted">학생들이 설문을 제출하면 문항별 통계와 시각화 차트가 이곳에 실시간으로 표시됩니다.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 최근 응답 일시 계산
+            let latestDateStr = '-';
+            const sortedByDate = [...responses].filter(r => r.updatedAt).sort((a, b) => {
+                const ta = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0);
+                const tb = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0);
+                return tb - ta;
+            });
+            if (sortedByDate[0]?.updatedAt) {
+                const d = sortedByDate[0].updatedAt.toDate ? sortedByDate[0].updatedAt.toDate() : new Date(sortedByDate[0].updatedAt);
+                latestDateStr = `${d.toLocaleDateString('ko-KR')} ${d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
+            }
+
+            // 개요 카드 렌더링
+            $('statsOverviewGrid').innerHTML = `
+                <div class="rounded-xl border border-line bg-page/40 p-3.5">
+                    <span class="text-xs text-muted font-bold block mb-1"><i class="bi bi-people"></i> 총 응답자</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-2xl font-black text-board">${totalResponses}</span>
+                        <span class="text-xs text-muted">명</span>
+                    </div>
+                </div>
+                <div class="rounded-xl border border-line bg-page/40 p-3.5">
+                    <span class="text-xs text-muted font-bold block mb-1"><i class="bi bi-ui-checks-grid"></i> 등록 문항</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-2xl font-black text-board">${schema.length}</span>
+                        <span class="text-xs text-muted">개</span>
+                    </div>
+                </div>
+                <div class="rounded-xl border border-line bg-page/40 p-3.5">
+                    <span class="text-xs text-muted font-bold block mb-1"><i class="bi bi-clock-history"></i> 최근 응답</span>
+                    <span class="text-xs font-bold text-board leading-tight block mt-1">${escapeHtml(latestDateStr)}</span>
+                </div>
+                <div class="rounded-xl border border-line bg-page/40 p-3.5">
+                    <span class="text-xs text-muted font-bold block mb-1"><i class="bi bi-shield-check"></i> 설문 상태</span>
+                    <span class="text-sm font-extrabold ${currentRoomData.status === 'closed' ? 'text-red-700' : 'text-emerald-700'}">${currentRoomData.status === 'closed' ? '마감됨' : '진행 중'}</span>
+                </div>
+            `;
+
+            // 문항 빠른 이동 칩
+            $('statsNavContainer').hidden = schema.length === 0;
+            $('statsNavChips').innerHTML = schema.map((q, idx) => {
+                const plainTitle = stripTags(q.title) || `문항 ${idx + 1}`;
+                const truncated = plainTitle.length > 14 ? plainTitle.slice(0, 14) + '...' : plainTitle;
+                return `
+                    <button type="button" class="btn btn-light text-xs py-1 px-2.5 font-medium hover:border-board hover:bg-page transition-all" data-stat-jump="stat-card-${escapeHtml(q.id)}">
+                        <span class="font-extrabold text-board mr-1">Q${idx + 1}</span>${escapeHtml(truncated)}
+                    </button>
+                `;
+            }).join('');
+
+            $('statsNavChips').querySelectorAll('[data-stat-jump]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const el = document.getElementById(btn.dataset.statJump);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            });
+
+            // 각 문항별 통계 렌더링
+            $('statsQuestionsContainer').innerHTML = schema.map((q, idx) => {
+                const typeLabels = {
+                    choice: '객관식 (단일 선택)',
+                    dropdown: '드롭다운',
+                    pill: '알약형 다중 선택',
+                    short: `단답형${q.validation && q.validation !== 'none' ? ` (${VALIDATIONS[q.validation] || q.validation})` : ''}`,
+                    long: '장문 서술형'
+                };
+                const typeBadgeText = typeLabels[q.type] || q.type;
+
+                // 응답 추출 및 카운트
+                const parsedAnswers = responses.map(r => ({
+                    studentId: r.studentId || '-',
+                    studentName: r.studentName || '',
+                    ans: extractAnswer(q, r.answers?.[q.id])
+                }));
+
+                const validResponses = parsedAnswers.filter(item => item.ans.hasAnswer);
+                const validCount = validResponses.length;
+                const validRate = totalResponses > 0 ? ((validCount / totalResponses) * 100).toFixed(1) : '0.0';
+
+                const branchTag = q.branchOption && q.branchOption !== '__merge__'
+                    ? `<span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">🌿 [${escapeHtml(q.branchOption)}] 분기 문항</span>`
+                    : '';
+
+                let bodyHtml = '';
+
+                if (['choice', 'dropdown'].includes(q.type)) {
+                    const options = Array.isArray(q.options) && q.options.length ? q.options : [];
+                    const optCounts = {};
+                    const optTails = {};
+                    options.forEach(opt => {
+                        optCounts[opt] = 0;
+                        optTails[opt] = [];
+                    });
+
+                    validResponses.forEach(item => {
+                        const sel = item.ans.selected[0];
+                        if (sel && optCounts[sel] !== undefined) {
+                            optCounts[sel]++;
+                            if (item.ans.tailAnswers?.[sel]) {
+                                optTails[sel].push({ studentId: item.studentId, studentName: item.studentName, text: item.ans.tailAnswers[sel] });
+                            }
+                        } else if (sel) {
+                            optCounts[sel] = (optCounts[sel] || 0) + 1;
+                            optTails[sel] = optTails[sel] || [];
+                            if (item.ans.tailAnswers?.[sel]) {
+                                optTails[sel].push({ studentId: item.studentId, studentName: item.studentName, text: item.ans.tailAnswers[sel] });
+                            }
+                        }
+                    });
+
+                    const allOptionKeys = Array.from(new Set([...options, ...Object.keys(optCounts)]));
+                    let maxCount = 0;
+                    allOptionKeys.forEach(opt => {
+                        if (optCounts[opt] > maxCount) maxCount = optCounts[opt];
+                    });
+
+                    bodyHtml = `
+                        <div class="space-y-3.5">
+                            ${allOptionKeys.map((opt, optIdx) => {
+                                const count = optCounts[opt] || 0;
+                                const percent = validCount > 0 ? ((count / validCount) * 100).toFixed(1) : '0.0';
+                                const isTop = count > 0 && count === maxCount;
+                                const tails = optTails[opt] || [];
+                                const tailBoxId = `tails_${q.id}_${optIdx}`;
+
+                                return `
+                                    <div class="rounded-xl border ${isTop ? 'border-emerald-300 bg-emerald-50/30' : 'border-line/70 bg-white'} p-3 transition-colors">
+                                        <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+                                            <div class="flex items-center gap-1.5 font-bold text-ink">
+                                                <span>${escapeHtml(opt)}</span>
+                                                ${isTop ? '<span class="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded-md">👑 최다</span>' : ''}
+                                            </div>
+                                            <div class="font-bold text-board whitespace-nowrap">
+                                                <span>${count}명</span>
+                                                <span class="text-xs text-muted font-normal ml-1">(${percent}%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="w-full bg-page rounded-full h-3 overflow-hidden relative">
+                                            <div class="h-full rounded-full transition-all duration-500 ${isTop ? 'bg-emerald-600' : 'bg-board'}" style="width: ${percent}%;"></div>
+                                        </div>
+                                        ${tails.length ? `
+                                            <div class="mt-2.5 pt-2 border-t border-line/50">
+                                                <button type="button" class="btn btn-light text-[11px] py-1 px-2.5 font-semibold text-muted hover:text-board" data-toggle-tails="${tailBoxId}">
+                                                    <i class="bi bi-chat-left-text"></i> 꼬리 질문 답변 (${tails.length}건) 보기/접기
+                                                </button>
+                                                <div id="${tailBoxId}" class="mt-2 space-y-1 rounded-lg border border-line bg-page/40 p-2 text-xs" hidden>
+                                                    ${tails.map(t => `
+                                                        <div class="flex items-start gap-1.5 leading-relaxed py-0.5 border-b border-line/40 last:border-b-0">
+                                                            <span class="font-bold text-board whitespace-nowrap">[${escapeHtml(t.studentId)}${t.studentName ? ` ${escapeHtml(t.studentName)}` : ''}]:</span>
+                                                            <span class="text-ink break-words">${escapeHtml(t.text)}</span>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `;
+                } else if (q.type === 'pill') {
+                    const options = Array.isArray(q.options) && q.options.length ? q.options : [];
+                    const optCounts = {};
+                    const optTails = {};
+                    options.forEach(opt => {
+                        optCounts[opt] = 0;
+                        optTails[opt] = [];
+                    });
+
+                    // 조합 계산
+                    const comboCounts = {};
+
+                    validResponses.forEach(item => {
+                        const selArray = item.ans.selected;
+                        selArray.forEach(sel => {
+                            optCounts[sel] = (optCounts[sel] || 0) + 1;
+                            if (item.ans.tailAnswers?.[sel]) {
+                                optTails[sel] = optTails[sel] || [];
+                                optTails[sel].push({ studentId: item.studentId, studentName: item.studentName, text: item.ans.tailAnswers[sel] });
+                            }
+                        });
+
+                        if (selArray.length > 0) {
+                            const sortedCombo = [...selArray].sort().join(' + ');
+                            comboCounts[sortedCombo] = (comboCounts[sortedCombo] || 0) + 1;
+                        }
+                    });
+
+                    const allOptionKeys = Array.from(new Set([...options, ...Object.keys(optCounts)]));
+                    let maxCount = 0;
+                    allOptionKeys.forEach(opt => {
+                        if (optCounts[opt] > maxCount) maxCount = optCounts[opt];
+                    });
+
+                    // Top 3 조합
+                    const sortedCombos = Object.entries(comboCounts)
+                        .map(([combo, count]) => ({ combo, count, percent: validCount > 0 ? ((count / validCount) * 100).toFixed(1) : '0.0' }))
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 3);
+
+                    bodyHtml = `
+                        <div class="mb-3 text-xs text-muted flex items-center gap-1">
+                            <i class="bi bi-info-circle"></i> 복수 선택 문항으로 각 항목 선택률의 합계가 100%를 초과할 수 있습니다.
+                        </div>
+                        <div class="space-y-3.5">
+                            ${allOptionKeys.map((opt, optIdx) => {
+                                const count = optCounts[opt] || 0;
+                                const percent = validCount > 0 ? ((count / validCount) * 100).toFixed(1) : '0.0';
+                                const isTop = count > 0 && count === maxCount;
+                                const tails = optTails[opt] || [];
+                                const tailBoxId = `tails_${q.id}_${optIdx}`;
+
+                                return `
+                                    <div class="rounded-xl border ${isTop ? 'border-indigo-300 bg-indigo-50/30' : 'border-line/70 bg-white'} p-3 transition-colors">
+                                        <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+                                            <div class="flex items-center gap-1.5 font-bold text-ink">
+                                                <span>${escapeHtml(opt)}</span>
+                                                ${isTop ? '<span class="inline-flex items-center text-[11px] font-bold text-indigo-800 bg-indigo-100 px-1.5 py-0.2 rounded-md">👑 최다</span>' : ''}
+                                            </div>
+                                            <div class="font-bold text-board whitespace-nowrap">
+                                                <span>${count}명</span>
+                                                <span class="text-xs text-muted font-normal ml-1">(${percent}%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="w-full bg-page rounded-full h-3 overflow-hidden relative">
+                                            <div class="h-full rounded-full transition-all duration-500 ${isTop ? 'bg-indigo-600' : 'bg-slate-700'}" style="width: ${percent}%;"></div>
+                                        </div>
+                                        ${tails.length ? `
+                                            <div class="mt-2.5 pt-2 border-t border-line/50">
+                                                <button type="button" class="btn btn-light text-[11px] py-1 px-2.5 font-semibold text-muted hover:text-board" data-toggle-tails="${tailBoxId}">
+                                                    <i class="bi bi-chat-left-text"></i> 꼬리 질문 답변 (${tails.length}건) 보기/접기
+                                                </button>
+                                                <div id="${tailBoxId}" class="mt-2 space-y-1 rounded-lg border border-line bg-page/40 p-2 text-xs" hidden>
+                                                    ${tails.map(t => `
+                                                        <div class="flex items-start gap-1.5 leading-relaxed py-0.5 border-b border-line/40 last:border-b-0">
+                                                            <span class="font-bold text-board whitespace-nowrap">[${escapeHtml(t.studentId)}${t.studentName ? ` ${escapeHtml(t.studentName)}` : ''}]:</span>
+                                                            <span class="text-ink break-words">${escapeHtml(t.text)}</span>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        ${sortedCombos.length > 1 ? `
+                            <div class="mt-4 rounded-xl border border-line/80 bg-page/40 p-3.5">
+                                <h4 class="text-xs font-bold text-board mb-2 flex items-center gap-1.5">
+                                    <i class="bi bi-stars text-amber-600"></i> 최다 동시 선택 조합 (Top ${sortedCombos.length})
+                                </h4>
+                                <div class="space-y-1.5">
+                                    ${sortedCombos.map((item, cIdx) => `
+                                        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white border border-line text-xs">
+                                            <span class="font-medium text-ink"><strong class="text-board">${cIdx + 1}위:</strong> ${escapeHtml(item.combo)}</span>
+                                            <span class="font-bold text-board whitespace-nowrap">${item.count}명 (${item.percent}%)</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    `;
+                } else if (q.type === 'short') {
+                    if (q.validation === 'number') {
+                        // 숫자 통계
+                        const numericList = validResponses
+                            .map(r => Number(r.ans.text))
+                            .filter(n => !isNaN(n));
+
+                        if (numericList.length > 0) {
+                            const sum = numericList.reduce((acc, cur) => acc + cur, 0);
+                            const avg = (sum / numericList.length).toFixed(2);
+                            const maxVal = Math.max(...numericList);
+                            const minVal = Math.min(...numericList);
+                            const sorted = [...numericList].sort((a, b) => a - b);
+                            const mid = Math.floor(sorted.length / 2);
+                            const median = sorted.length % 2 !== 0 ? sorted[mid] : ((sorted[mid - 1] + sorted[mid]) / 2).toFixed(1);
+
+                            bodyHtml = `
+                                <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4 mb-4">
+                                    <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                        <span class="text-xs font-bold text-muted block mb-1">평균값</span>
+                                        <span class="text-xl font-black text-board">${avg}</span>
+                                    </div>
+                                    <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                        <span class="text-xs font-bold text-muted block mb-1">최댓값</span>
+                                        <span class="text-xl font-black text-board">${maxVal}</span>
+                                    </div>
+                                    <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                        <span class="text-xs font-bold text-muted block mb-1">최솟값</span>
+                                        <span class="text-xl font-black text-board">${minVal}</span>
+                                    </div>
+                                    <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                        <span class="text-xs font-bold text-muted block mb-1">중앙값</span>
+                                        <span class="text-xl font-black text-board">${median}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    // 빈출 텍스트 집계
+                    const textFreq = {};
+                    validResponses.forEach(r => {
+                        const txt = r.ans.text.trim();
+                        if (txt) textFreq[txt] = (textFreq[txt] || 0) + 1;
+                    });
+
+                    const topTexts = Object.entries(textFreq)
+                        .map(([text, count]) => ({ text, count }))
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 5);
+
+                    bodyHtml += `
+                        ${topTexts.length && topTexts[0].count > 1 ? `
+                            <div class="mb-3">
+                                <span class="text-xs font-bold text-muted block mb-1.5"><i class="bi bi-trophy"></i> 빈출 응답 Top ${topTexts.length}</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${topTexts.map((item, rank) => `
+                                        <span class="inline-flex items-center gap-1 rounded-lg bg-page px-2.5 py-1 text-xs font-semibold text-board border border-line">
+                                            <span class="font-bold text-emerald-700">${rank + 1}위</span> ${escapeHtml(item.text)} <strong class="text-ink">(${item.count}회)</strong>
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div class="mt-3">
+                            <div class="mb-2 flex items-center justify-between gap-2">
+                                <span class="text-xs font-bold text-muted">전체 응답 목록 (${validCount}건)</span>
+                                <input type="text" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 응답 검색..." data-filter-input="short_list_${escapeHtml(q.id)}">
+                            </div>
+                            <div id="short_list_${escapeHtml(q.id)}" class="max-h-60 overflow-y-auto rounded-xl border border-line bg-page/20 divide-y divide-line/60 text-xs">
+                                ${validResponses.map(r => `
+                                    <div class="p-2.5 flex flex-wrap items-baseline justify-between gap-2 filterable-row" data-text="${escapeHtml((r.studentId + ' ' + r.studentName + ' ' + r.ans.text + ' ' + (r.ans.tail || '')).toLowerCase())}">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-board">[${escapeHtml(r.studentId)}${r.studentName ? ` ${escapeHtml(r.studentName)}` : ''}]</span>
+                                            <span class="text-ink font-medium">${escapeHtml(r.ans.text)}</span>
+                                        </div>
+                                        ${r.ans.tail ? `<span class="text-[11px] text-muted italic bg-white px-2 py-0.5 rounded border border-line">꼬리: ${escapeHtml(r.ans.tail)}</span>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else if (q.type === 'long') {
+                    // 장문형 통계: 글자 수, 키워드 추출, 개별 카드
+                    let totalChars = 0;
+                    let minLen = Infinity;
+                    let maxLen = 0;
+                    const wordFreq = {};
+
+                    validResponses.forEach(r => {
+                        const len = r.ans.text.length;
+                        totalChars += len;
+                        if (len < minLen) minLen = len;
+                        if (len > maxLen) maxLen = len;
+
+                        // 형태소/단어 빈도 (2글자 이상)
+                        const words = r.ans.text.replace(/[^가-힣a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+                        words.forEach(w => {
+                            wordFreq[w] = (wordFreq[w] || 0) + 1;
+                        });
+                    });
+
+                    const avgChars = validCount > 0 ? Math.round(totalChars / validCount) : 0;
+                    const topKeywords = Object.entries(wordFreq)
+                        .filter(([w, c]) => c >= 2)
+                        .map(([word, count]) => ({ word, count }))
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 8);
+
+                    bodyHtml = `
+                        <div class="grid grid-cols-3 gap-2.5 mb-4">
+                            <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                <span class="text-xs font-bold text-muted block mb-1">평균 글자 수</span>
+                                <span class="text-xl font-black text-board">${avgChars}</span><span class="text-xs text-muted ml-0.5">자</span>
+                            </div>
+                            <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                <span class="text-xs font-bold text-muted block mb-1">최대 분량</span>
+                                <span class="text-xl font-black text-board">${maxLen}</span><span class="text-xs text-muted ml-0.5">자</span>
+                            </div>
+                            <div class="rounded-xl border border-line bg-page/50 p-3 text-center">
+                                <span class="text-xs font-bold text-muted block mb-1">최소 분량</span>
+                                <span class="text-xl font-black text-board">${minLen === Infinity ? 0 : minLen}</span><span class="text-xs text-muted ml-0.5">자</span>
+                            </div>
+                        </div>
+
+                        ${topKeywords.length ? `
+                            <div class="mb-4 rounded-xl border border-line/70 bg-page/40 p-3">
+                                <span class="text-xs font-bold text-muted block mb-2"><i class="bi bi-hash"></i> 주요 빈출 키워드 (2회 이상 언급)</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${topKeywords.map(k => `
+                                        <span class="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-board border border-line">
+                                            #${escapeHtml(k.word)} <span class="text-[11px] text-muted font-normal">(${k.count})</span>
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div>
+                            <div class="mb-2 flex items-center justify-between gap-2">
+                                <span class="text-xs font-bold text-muted">학생 서술 응답 (${validCount}명)</span>
+                                <input type="text" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번, 이름 또는 내용 검색..." data-filter-input="long_cards_${escapeHtml(q.id)}">
+                            </div>
+                            <div id="long_cards_${escapeHtml(q.id)}" class="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                                ${validResponses.map(r => `
+                                    <div class="rounded-xl border border-line bg-white p-3 filterable-row" data-text="${escapeHtml((r.studentId + ' ' + r.studentName + ' ' + r.ans.text).toLowerCase())}">
+                                        <div class="mb-1.5 flex items-center justify-between text-xs">
+                                            <span class="font-bold text-board">[${escapeHtml(r.studentId)}${r.studentName ? ` ${escapeHtml(r.studentName)}` : ''}]</span>
+                                            <span class="text-[11px] text-muted">${r.ans.text.length}자</span>
+                                        </div>
+                                        <p class="text-xs leading-relaxed text-ink whitespace-pre-wrap">${escapeHtml(r.ans.text)}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <article id="stat-card-${escapeHtml(q.id)}" class="rounded-2xl border border-line bg-white p-4 sm:p-5 shadow-sm scroll-mt-6">
+                        <header class="mb-4 border-b border-line pb-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-lg bg-board px-2.5 py-1 text-xs font-black text-white">Q${idx + 1}</span>
+                                    <span class="rounded-lg bg-page px-2 py-0.5 text-xs font-bold text-muted">${escapeHtml(typeBadgeText)}</span>
+                                    ${branchTag}
+                                </div>
+                                <div class="text-xs font-bold text-muted">
+                                    <span>응답 ${validCount}명</span>
+                                    <span class="font-normal">(${validRate}%)</span>
+                                    ${validCount < totalResponses ? `<span class="text-[11px] text-amber-700 ml-1">(미응답 ${totalResponses - validCount}명)</span>` : ''}
+                                </div>
+                            </div>
+                            <h3 class="mt-2 text-base font-extrabold text-ink leading-snug">${escapeHtml(stripTags(q.title) || `문항 ${idx + 1}`)}</h3>
+                            ${q.description ? `<p class="mt-1 text-xs text-muted leading-relaxed">${escapeHtml(q.description)}</p>` : ''}
+                        </header>
+                        <div>
+                            ${bodyHtml}
+                        </div>
+                    </article>
+                `;
+            }).join('');
+
+            // 이벤트 바인딩: 꼬리 질문 토글
+            $('statsQuestionsContainer').querySelectorAll('[data-toggle-tails]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetId = btn.dataset.toggleTails;
+                    const box = document.getElementById(targetId);
+                    if (box) box.hidden = !box.hidden;
+                });
+            });
+
+            // 이벤트 바인딩: 실시간 검색 필터
+            $('statsQuestionsContainer').querySelectorAll('[data-filter-input]').forEach(input => {
+                input.addEventListener('input', () => {
+                    const containerId = input.dataset.filterInput;
+                    const container = document.getElementById(containerId);
+                    if (!container) return;
+                    const query = input.value.trim().toLowerCase();
+                    container.querySelectorAll('.filterable-row').forEach(row => {
+                        const rowText = row.dataset.text || '';
+                        row.hidden = query ? !rowText.includes(query) : false;
+                    });
+                });
+            });
+
+            // 이벤트 바인딩: 통계 요약 복사
+            const copyBtn = $('copyStatsSummaryBtn');
+            if (copyBtn && !copyBtn.dataset.bound) {
+                copyBtn.dataset.bound = 'true';
+                copyBtn.addEventListener('click', () => {
+                    copyStatisticsSummary(responses);
+                });
+            }
+        }
+
+        function copyStatisticsSummary(responses = currentResponses || []) {
+            if (!currentRoomData) return;
+            const schema = Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : [];
+            const total = responses.length;
+
+            let text = `[설문 통계 요약 보고서]\n`;
+            text += `설문 제목: ${stripTags(currentRoomData.memo || '설문')}\n`;
+            if (currentRoomData.description) text += `설문 설명: ${stripTags(currentRoomData.description)}\n`;
+            text += `총 응답 인원: ${total}명\n`;
+            text += `생성 일시: ${new Date().toLocaleString('ko-KR')}\n\n`;
+            text += `========================================\n\n`;
+
+            schema.forEach((q, idx) => {
+                const plainTitle = stripTags(q.title) || `문항 ${idx + 1}`;
+                const validList = responses.map(r => extractAnswer(q, r.answers?.[q.id])).filter(a => a.hasAnswer);
+                const validCount = validList.length;
+                const validRate = total > 0 ? ((validCount / total) * 100).toFixed(1) : '0.0';
+
+                text += `Q${idx + 1}. ${plainTitle} (${validCount}명 응답, ${validRate}%)\n`;
+
+                if (['choice', 'dropdown', 'pill'].includes(q.type)) {
+                    const counts = {};
+                    (q.options || []).forEach(o => { counts[o] = 0; });
+                    validList.forEach(a => {
+                        a.selected.forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+                    });
+                    Object.entries(counts).forEach(([opt, cnt]) => {
+                        const pct = validCount > 0 ? ((cnt / validCount) * 100).toFixed(1) : '0.0';
+                        text += `  - ${opt}: ${cnt}명 (${pct}%)\n`;
+                    });
+                } else if (q.type === 'short') {
+                    if (q.validation === 'number') {
+                        const nums = validList.map(a => Number(a.text)).filter(n => !isNaN(n));
+                        if (nums.length) {
+                            const avg = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2);
+                            text += `  - 숫자 통계: 평균 ${avg}, 최대 ${Math.max(...nums)}, 최소 ${Math.min(...nums)}\n`;
+                        }
+                    } else {
+                        const freq = {};
+                        validList.forEach(a => { const t = a.text.trim(); if (t) freq[t] = (freq[t] || 0) + 1; });
+                        const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3);
+                        if (top.length) {
+                            text += `  - 주요 답변: ${top.map(([t, c]) => `${t}(${c}회)`).join(', ')}\n`;
+                        }
+                    }
+                } else if (q.type === 'long') {
+                    const avgLen = validCount > 0 ? Math.round(validList.reduce((acc, cur) => acc + cur.text.length, 0) / validCount) : 0;
+                    text += `  - 서술형 응답 ${validCount}건 (평균 ${avgLen}자)\n`;
+                }
+                text += `\n`;
+            });
+
+            navigator.clipboard.writeText(text).then(() => {
+                showNotice('통계 요약 텍스트가 클립보드에 복사되었습니다.\n보고서나 문서에 바로 붙여넣기(Ctrl+V)하세요.');
+            }).catch(err => {
+                console.error('클립보드 복사 실패:', err);
+                showNotice('클립보드 복사에 실패했습니다.', true);
             });
         }
 
