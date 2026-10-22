@@ -22,8 +22,10 @@ body{background-color:#ffffff}
 .vtx{cursor:pointer}.panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px}
 #msg{min-height:1.6em}.q-text{font-size:1.15rem;font-weight:700;line-height:1.7}
 .game-top-header{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;border-radius:14px;padding:0.9rem 1.4rem;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 12px rgba(79,70,229,0.15);margin-bottom:1rem}
-.slot-box{display:inline-flex;align-items:center;justify-content:center;width:48px;height:52px;border:2px dashed #6366f1;background:#f5f3ff;color:#4f46e5;border-radius:10px;font-weight:800;font-size:1.5rem;transition:all .15s ease}
+.slot-box{display:inline-flex;align-items:center;justify-content:center;width:48px;height:52px;border:2px dashed #6366f1;background:#f5f3ff;color:#4f46e5;border-radius:10px;font-weight:800;font-size:1.5rem;transition:all .15s ease;cursor:pointer;user-select:none}
 .slot-box.filled{border-style:solid;background:#e0e7ff;color:#3730a3}
+.slot-box.filled:hover{transform:translateY(-2px);border-color:#4338ca;box-shadow:0 2px 6px rgba(79,70,229,0.2)}
+#compareCardsArea svg, #connCardsArea svg{width:100%;max-height:180px;display:block;margin:0 auto}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </head>
@@ -54,7 +56,7 @@ body{background-color:#ffffff}
 
 <!-- 대응 꼭짓점 순서 & 보너스 퀴즈 모달 -->
 <div class="modal fade" id="connModal" tabindex="-1" data-bs-backdrop="static" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content rounded-4 border-0 shadow">
-<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold">🔗 대응하는 꼭짓점 순서 맞히기</h5></div>
+<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold" id="connModalTitle">🔗 대응하는 꼭짓점 순서 맞히기</h5></div>
 <div class="modal-body text-center pt-2 pb-4">
 <div class="row g-3 justify-content-center mb-3" id="connCardsArea"></div>
 <div id="connMainSection">
@@ -259,137 +261,349 @@ function drawCard(c, o = {}) {
   P = P.map(p => [60 + (p[0] - mnx - w / 2) * sc, 50 + (p[1] - mny - h / 2) * sc]);
   const g = [P[0].map((_, i) => (P[0][i] + P[1][i] + P[2][i]) / 3)][0], out = (p, k) => { const dx = p[0] - g[0], dy = p[1] - g[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * k, p[1] + dy / l * k]; };
   const mid = (i, j) => [(P[i][0] + P[j][0]) / 2, (P[i][1] + P[j][1]) / 2],
-        T = (p, t, f = 9.5, cl = '#0f172a', halo = true) => `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3).toFixed(1)}" font-size="${f}" text-anchor="middle" fill="${cl}" font-weight="700"${halo ? ' paint-order="stroke fill" stroke="#ffffff" stroke-width="2.5px" stroke-linejoin="round"' : ''}>${t}</text>`;
-  let s = `<svg viewBox="0 0 120 100"><polygon points="${P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#f0f7ff" stroke="#94a3b8" stroke-width="1.2"/>`;
-  P.forEach((p, i) => { if (!o.conn) s += T(out(p, 11), c.L[i], 9.5, '#1e293b'); });
-  if (c.type === 'SSS') c.s.forEach((v, i) => { s += T(out(mid((i + 1) % 3, (i + 2) % 3), 9), v, 9.5, '#dc2626'); });
-  if (c.type === 'AA') c.ang.forEach((v, i) => { if (c.show[i]) { s += T([g[0] + (P[i][0] - g[0]) * .55, g[1] + (P[i][1] - g[1]) * .55], v + '°', 8.5, '#dc2626'); } });
-  if (c.type === 'SA') { const av = c.ssa ? (c.k + 1) % 3 : c.k; s += T(out(mid(c.k, (c.k + 1) % 3), 9), c.p, 9.5, '#dc2626') + T(out(mid(c.k, (c.k + 2) % 3), 9), c.q, 9.5, '#dc2626') + T([g[0] + (P[av][0] - g[0]) * .55, g[1] + (P[av][1] - g[1]) * .55], c.th + '°', 8.5, '#dc2626'); }
+        T = (p, t, f = 10, cl = '#0f172a', halo = true) => `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3.5).toFixed(1)}" font-size="${f}" text-anchor="middle" fill="${cl}" font-weight="800"${halo ? ' paint-order="stroke fill" stroke="#ffffff" stroke-width="3px" stroke-linejoin="round"' : ''}>${t}</text>`;
+  let s = `<svg viewBox="0 0 120 100"><polygon points="${P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.3"/>`;
+  P.forEach((p, i) => { if (!o.conn) s += T(out(p, 11), c.L[i], 10, '#1e293b'); });
+  if (o.custom) {
+    if (o.custom.sides) o.custom.sides.forEach(sd => { s += T(out(mid(sd.u, sd.v), 10), sd.text, 10.5, sd.color || '#dc2626'); });
+    if (o.custom.angles) o.custom.angles.forEach(ag => { s += T([g[0] + (P[ag.u][0] - g[0]) * .55, g[1] + (P[ag.u][1] - g[1]) * .55], ag.text, 9.5, ag.color || '#dc2626'); });
+  } else {
+    if (c.type === 'SSS') c.s.forEach((v, i) => { s += T(out(mid((i + 1) % 3, (i + 2) % 3), 9.5), v, 10, '#dc2626'); });
+    if (c.type === 'AA') c.ang.forEach((v, i) => { if (c.show[i]) { s += T([g[0] + (P[i][0] - g[0]) * .55, g[1] + (P[i][1] - g[1]) * .55], v + '°', 9, '#dc2626'); } });
+    if (c.type === 'SA') { const av = c.ssa ? (c.k + 1) % 3 : c.k; s += T(out(mid(c.k, (c.k + 1) % 3), 9.5), c.p, 10, '#dc2626') + T(out(mid(c.k, (c.k + 2) % 3), 9.5), c.q, 10, '#dc2626') + T([g[0] + (P[av][0] - g[0]) * .55, g[1] + (P[av][1] - g[1]) * .55], c.th + '°', 9, '#dc2626'); }
+  }
   if (o.conn) P.forEach((p, i) => { const pi = o.pairs.findIndex(q => q[o.side === 'a' ? 0 : 1] === i), bad = o.bad && o.bad.includes(o.side + i), sel = o.sel && o.sel.s === o.side && o.sel.v === i;
     s += `<circle class="vtx" data-s="${o.side}" data-v="${i}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="9" fill="${pi >= 0 ? COL[pi] : '#fff'}" stroke="${bad ? '#dc2626' : sel ? '#2563eb' : '#334155'}" stroke-width="${sel || bad ? 3 : 1.5}"/>`
-      + T([p[0], p[1]], pi >= 0 ? c.L[i] + SYM[pi] : c.L[i], 7.5, pi >= 0 ? '#fff' : '#0f172a', false); });
+      + T([p[0], p[1]], pi >= 0 ? c.L[i] + SYM[pi] : c.L[i], 8, pi >= 0 ? '#fff' : '#0f172a', false); });
   return s + '</svg>';
 }
 
 // ======================= 게임 상태·진행 =======================
-let G = null, timerId = null;
+let G = null, CN = null;
 const newSt = () => ({ sssOk: 0, sssTot: 0, sasOk: 0, sasTot: 0, aaOk: 0, aaTot: 0, trapOk: 0, trapTot: 0, cSssTwo: 0, cSasAng: 0, cSsa: 0, cAaOne: 0, eSideOk: 0, eSideTot: 0, eAngOk: 0, eAngTot: 0, eMis: 0, eCalc: 0, vOk: 0, vTot: 0 });
 const msg = (t, cl = 'text-dark') => { $('msg').className = 'text-center fw-bold small mb-2 ' + cl; $('msg').textContent = t; };
 const show = (id, on) => $(id).classList.toggle('d-none', !on);
 function updateUI() {
+  const remPairs = G ? G.cards.filter(c => c.pid != null && !c.gone).length / 2 : 0;
   $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
-  $('level-badge').textContent = `R${G.round} · Lv.${G.level}`; $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
+  $('level-badge').innerHTML = `Round ${G.round} · Lv.${G.level} <span class="ms-2 opacity-100">🎯 남은 쌍 <span class="text-warning">${remPairs}</span>/5</span>`;
+  $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
 }
 function initGame() { G = { level: 1, maxLevel: 1, round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
 function startRound() {
-  G.cards = genBoard(G.level, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.t = 90; G.phase = 'board';
-  show('board-wrap', 1); show('conn', 0); show('ext', 0); show('judge', 0); msg(''); $('hint').textContent = '같은 종류의 카드 두 장을 골라 판정하세요. 함정 카드가 2장 섞여 있어요.'; updateUI(); renderBoard();
-  clearInterval(timerId); timerId = setInterval(() => { G.t--; $('timer-fill').style.width = (G.t / 90 * 100) + '%'; if (G.t <= 0) endRound(); }, 1000); $('timer-fill').style.width = '100%';
+  G.cards = genBoard(G.level, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board';
+  show('board-wrap', 1); msg(''); $('hint').textContent = '닮은 삼각형 카드 2장을 선택해 보세요. (함정 카드 2장 포함)'; updateUI(); renderBoard();
 }
 function renderBoard() {
   $('board').innerHTML = G.cards.map(c => `<div class="col"><div class="tcard ${G.sel.includes(c.id) ? 'sel' : ''} ${c.gone ? 'gone' : ''}" data-id="${c.id}">${drawCard(c)}<div class="tag">${c.type === 'SSS' ? '변 3개' : c.type === 'AA' ? '각 2개' : '변 2개+각'}</div></div></div>`).join('');
-  show('judge', G.sel.length === 2);
 }
 $('board').addEventListener('click', e => {
   const el = e.target.closest('.tcard'); if (!el || G.phase !== 'board') return; const id = +el.dataset.id; if (G.cards[id].gone) return;
   G.sel = G.sel.includes(id) ? G.sel.filter(i => i !== id) : [...G.sel, id];
-  if (G.sel.length === 2 && G.cards[G.sel[0]].type !== G.cards[G.sel[1]].type) { msg('같은 종류(변 3개 / 변 2개+각 / 각 2개) 카드끼리만 비교해요.', 'text-warning'); G.sel = [id]; }
-  if (G.sel.length > 2) G.sel = [id]; renderBoard();
+  if (G.sel.length > 2) G.sel = [id];
+  renderBoard();
+  if (G.sel.length === 2) openCompareModal();
 });
-$('judge-btns').addEventListener('click', e => { const c = e.target.dataset.c; if (!c) return; if (c === 'CANCEL') { G.sel = []; renderBoard(); return; } submit(c); });
+
+// ---- 카드 확대 비교 모달 ----
+function openCompareModal() {
+  const [a, b] = G.sel.map(i => G.cards[i]);
+  $('compareCardsArea').innerHTML = `
+    <div class="col-6">
+      <div class="card p-2 shadow-sm text-center border-2 border-primary">
+        ${drawCard(a)}
+        <div class="fw-bold mt-2 text-primary fs-5">△${a.L.join('')}</div>
+        <div class="small text-muted">${a.type === 'SSS' ? '세 변의 길이' : a.type === 'AA' ? '두 각의 크기' : '두 변과 그 사이의 각'}</div>
+      </div>
+    </div>
+    <div class="col-6">
+      <div class="card p-2 shadow-sm text-center border-2 border-primary">
+        ${drawCard(b)}
+        <div class="fw-bold mt-2 text-primary fs-5">△${b.L.join('')}</div>
+        <div class="small text-muted">${b.type === 'SSS' ? '세 변의 길이' : b.type === 'AA' ? '두 각의 크기' : '두 변과 그 사이의 각'}</div>
+      </div>
+    </div>
+  `;
+  bootstrap.Modal.getOrCreateInstance($('compareModal')).show();
+}
+$('btn-compare-close').addEventListener('click', () => { G.sel = []; renderBoard(); });
+$('judge-btns').addEventListener('click', e => {
+  const c = e.target.dataset.c; if (!c) return;
+  bootstrap.Modal.getInstance($('compareModal'))?.hide();
+  if (c === 'CANCEL') { G.sel = []; renderBoard(); return; }
+  submit(c);
+});
+
 const mult = () => Math.min(2, 1 + .1 * G.combo);
 function gain(p, inc) { G.score += Math.round(p * mult()); if (inc) G.combo++; G.wstreak = 0; G.solved++; G.attempts++; G.rOk++; G.rAtt++; }
 function wrong() { G.wstreak++; G.lives--; G.combo = 0; G.attempts++; G.rAtt++; }
 function afterAction() {
   updateUI(); renderBoard();
-  if (G.lives <= 0) { setTimeout(endGame, 900); return; }
+  if (G.lives <= 0) { setTimeout(endGame, 600); return; }
   if (G.cards.filter(c => c.pid != null && !c.gone).length === 0) endRound();
 }
+
 function submit(c) {
-  const [a, b] = G.sel.map(i => G.cards[i]), j = judge(a, b), dec = a.role === 'decoy' || b.role === 'decoy', ty = { SSS: 'sss', SA: 'sas', AA: 'aa' }[a.type]; G.sel = [];
-  if (j === 'NONE') {
+  const [a, b] = G.sel.map(i => G.cards[i]), j = judge(a, b), dec = a.role === 'decoy' || b.role === 'decoy', ty = { SSS: 'sss', SA: 'sas', AA: 'aa' }[a.type];
+  if (j === 'NONE' || j === 'INVALID') {
     wrong();
     if (dec) { G.st.trapTot++; if ((a.role === 'decoy' ? a : b).kind) G.st[(a.role === 'decoy' ? a : b).kind]++; }
-    else G.st[ty + 'Tot']++;
-    msg('이 두 삼각형은 닮음 조건을 만족하지 않아요! 하트 -1', 'text-danger');
+    else if (ty) G.st[ty + 'Tot']++;
+    msg('이 두 삼각형은 닮음 조건을 만족하지 않아요! (하트 -1)', 'text-danger');
+    G.sel = [];
+    afterAction();
   } else {
     const jt = { SSS: 'sss', SAS: 'sas', AA: 'aa' }[j];
-    if (c === j) { G.st[jt + 'Tot']++; G.st[jt + 'Ok']++; startConn(a, b); return; }
+    if (c === j) {
+      G.st[jt + 'Tot']++; G.st[jt + 'Ok']++;
+      G.sel = [];
+      openConnModal(a, b);
+      return;
+    }
     G.st[jt + 'Tot']++;
-    G.score += 30; G.attempts++; G.rAtt++; a.gone = b.gone = true; msg(`닮은 쌍은 맞았어요. 올바른 근거는 ${j}입니다. (+30)`, 'text-warning');
+    G.score += 30; G.attempts++; G.rAtt++; a.gone = b.gone = true;
+    msg(`닮은 쌍은 맞았지만 닮음 조건이 틀렸어요! 올바른 근거는 ${j} 닮음입니다. (+30점)`, 'text-warning');
+    G.sel = [];
+    afterAction();
   }
-  afterAction();
 }
 
-// ---- 대응 꼭짓점 연결 ----
-let CN = null;
-function startConn(a, b) { CN = { a, b, pairs: [], sel: null, tries: 0, bad: [], done: false }; G.phase = 'conn'; show('board-wrap', 0); show('conn', 1); renderConn(); }
-function renderConn() {
-  $('conn-cards').innerHTML = ['a', 'b'].map(s => `<div class="col-6"><div class="tcard" style="cursor:default">${drawCard(CN[s], { conn: 1, side: s, pairs: CN.pairs, sel: CN.sel, bad: CN.bad })}</div></div>`).join('');
-  $('conn-btns').innerHTML = CN.done ? '<button class="btn btn-primary" data-a="next">다음</button>'
-    : `<button class="btn btn-light" data-a="undo" ${CN.pairs.length ? '' : 'disabled'}>되돌리기</button><button class="btn btn-success" data-a="ok" ${CN.pairs.length === 3 ? '' : 'disabled'}>확인</button>`;
-}
-$('conn-cards').addEventListener('click', e => {
-  const v = e.target.closest('.vtx'); if (!v || CN.done) return; const s = v.dataset.s, i = +v.dataset.v; CN.bad = [];
-  if (CN.pairs.some(p => p[s === 'a' ? 0 : 1] === i)) return;
-  if (!CN.sel || CN.sel.s === s) CN.sel = { s, v: i }; else { CN.pairs.push(s === 'a' ? [i, CN.sel.v] : [CN.sel.v, i]); CN.sel = null; }
-  renderConn();
-});
-$('conn-btns').addEventListener('click', e => {
-  const k = e.target.dataset.a; if (!k) return;
-  if (k === 'undo') { CN.pairs.pop(); CN.sel = null; CN.bad = []; renderConn(); }
-  if (k === 'ok') {
-    const m = match(CN.a, CN.b), bad = CN.pairs.filter(([i, j]) => m[i] !== j);
-    if (!bad.length) return finishConn(CN.tries === 0);
-    CN.tries++; if (CN.tries >= 2) { CN.pairs = m.map((j, i) => [i, j]); msg('정답 대응을 색으로 보여줄게요.', 'text-warning'); return finishConn(false); }
-    CN.bad = bad.flatMap(([i, j]) => ['a' + i, 'b' + j]); CN.pairs = CN.pairs.filter(p => !bad.includes(p)); msg('틀린 연결(빨간색)을 다시 입력하세요.', 'text-danger'); renderConn();
-  }
-  if (k === 'next') { show('conn', 0); show('board-wrap', 1); G.phase = 'board'; afterAction(); }
-});
-function finishConn(first) {
-  G.st.vTot++; if (first) G.st.vOk++; gain(first ? 100 : 60, first); CN.a.gone = CN.b.gone = true; CN.done = true; CN.bad = [];
-  msg(first ? '✅ 정답! 대응하는 꼭짓점이 같은 색이에요. +100' : '닮음은 맞았어요. 대응 연결은 아쉬웠어요. +60', first ? 'text-success' : 'text-warning'); updateUI(); renderConn();
+// ---- 꼭짓점 기호 대응 순서 & 보너스 문제 ----
+function openConnModal(a, b) {
+  const m = match(a, b);
+  const correctOrder = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
+  CN = { a, b, m, correctOrder, input: [], bonus: null };
+
+  $('connCardsArea').innerHTML = `
+    <div class="col-6">
+      <div class="card p-2 shadow-sm text-center border-2 border-primary">
+        ${drawCard(a)}
+        <div class="fw-bold mt-1 text-primary fs-5">△${a.L.join('')}</div>
+      </div>
+    </div>
+    <div class="col-6">
+      <div class="card p-2 shadow-sm text-center border-2 border-secondary">
+        ${drawCard(b)}
+        <div class="fw-bold mt-1 text-secondary fs-5">△${b.L.join('')}</div>
+      </div>
+    </div>
+  `;
+
+  $('connTri1Name').textContent = a.L.join('');
+  $('connModalTitle').textContent = '🔗 대응하는 꼭짓점 순서 맞히기';
+  $('connFeedback').innerHTML = '';
+  $('connBonusSection').classList.add('d-none');
+  $('connMainSection').classList.remove('d-none');
+  renderConnSlots();
+  bootstrap.Modal.getOrCreateInstance($('connModal')).show();
 }
 
-// ---- 라운드 종료·확장 문제 ----
-function endRound() {
-  clearInterval(timerId); if (G.over || G.phase === 'ext') return; G.score += Math.max(0, G.t) * 2;
-  const acc = G.rAtt ? G.rOk / G.rAtt : 0; if (acc >= .8 && G.level < 3) G.level++; else if (acc < .5 && G.level > 1) G.level--; G.maxLevel = Math.max(G.maxLevel, G.level);
-  G.sel = []; show('judge', 0); show('board-wrap', 0); show('conn', 0); updateUI();
-  if (G.round >= 3) startExt(); else nextRound();
+function renderConnSlots() {
+  for (let i = 0; i < 3; i++) {
+    const el = $('slot' + i);
+    const val = CN.input[i];
+    el.textContent = val || '?';
+    el.classList.toggle('filled', !!val);
+    el.title = val ? '클릭하면 지워집니다' : '';
+  }
+  $('connLetterBtns').innerHTML = CN.b.L.map(letter => {
+    const isUsed = CN.input.includes(letter);
+    return `<button class="btn ${isUsed ? 'btn-primary' : 'btn-outline-primary'} btn-lg fw-bold px-4 letter-choice-btn" data-letter="${letter}">${letter}</button>`;
+  }).join('');
+  $('btn-conn-confirm').disabled = CN.input.length !== 3;
 }
-function nextRound() { if (G.round >= 5) return endGame(); G.round++; startRound(); }
-function mkExt() {
-  R = mulberry32(G.seed * 7 + G.round); const c = CFG[G.level]; let [n, d] = pick(c.sc); if (G.level === 3 && R() < .5) [n, d] = [d, n];
-  const T1 = G.level === 1 ? ['A', 'B', 'C'] : shuf(['A', 'B', 'C']), T2 = G.level === 1 ? ['D', 'E', 'F'] : shuf(['P', 'Q', 'R']), head = `△${T1.join('')} ∽ △${T2.join('')}에서 `;
-  let q, ans, opts, ex, kind = (G.round % 2) ? 'Side' : 'Ang';
-  if (kind === 'Side') {
-    const b1 = rint(2, 8); let b2 = rint(2, 8); while (b2 === b1) b2 = rint(2, 8); const s1 = b1 * d, s2 = b2 * d, t1 = b1 * n, t2 = b2 * n;
-    q = head + `${T1[0] + T1[1]} = ${s1}, ${T2[0] + T2[1]} = ${t1}, ${T1[1] + T1[2]} = ${s2}일 때 ${T2[1] + T2[2]}의 길이는?`; ans = t2;
-    ex = `닮음비 ${s1} : ${t1}이므로 ${T2[1] + T2[2]} = ${s2} × ${t1}/${s1} = ${t2}`;
-    opts = [{ v: t2 }, { v: s2 * s1 / t1, k: 'eCalc' }, { v: s2 + (t1 - s1), k: 'eCalc' }, { v: t1, k: 'eMis' }];
+
+$('connLetterBtns').addEventListener('click', e => {
+  const btn = e.target.closest('.letter-choice-btn');
+  if (!btn || !CN || CN.bonus) return;
+  const letter = btn.dataset.letter;
+  if (CN.input.includes(letter)) {
+    CN.input = CN.input.filter(x => x !== letter);
+  } else if (CN.input.length < 3) {
+    CN.input.push(letter);
+  }
+  renderConnSlots();
+});
+
+$('connSlots').addEventListener('click', e => {
+  const slot = e.target.closest('.slot-box');
+  if (!slot || !CN || CN.bonus) return;
+  const idx = +slot.id.replace('slot', '');
+  if (CN.input[idx]) {
+    CN.input.splice(idx, 1);
+    renderConnSlots();
+  }
+});
+
+$('btn-conn-reset').addEventListener('click', () => { CN.input = []; renderConnSlots(); });
+$('btn-conn-confirm').addEventListener('click', () => { if (CN.input.length === 3) checkConnAnswer(); });
+
+function checkConnAnswer() {
+  const isMatch = CN.input.every((val, idx) => val === CN.correctOrder[idx]);
+  G.st.vTot++;
+  if (isMatch) {
+    G.st.vOk++; gain(100, true); CN.a.gone = CN.b.gone = true; updateUI();
+    if (Math.random() < 0.45) {
+      $('connMainSection').classList.add('d-none');
+      setupBonusSection(CN.a, CN.b, CN.m);
+    } else {
+      $('connFeedback').innerHTML = `
+        <div class="alert alert-success fw-bold py-2 mb-3">
+          🎉 정답! △${CN.a.L.join('')} ∽ △${CN.correctOrder.join('')} 대응 관계를 정확히 맞혔습니다! (+100점)
+        </div>
+        <button class="btn btn-primary px-4 fw-bold" id="btn-conn-next">다음 카드 찾기</button>
+      `;
+      $('btn-conn-next').onclick = () => { bootstrap.Modal.getInstance($('connModal')).hide(); afterAction(); };
+    }
   } else {
-    let x, y, z; for (let t = 0; t < 200; t++) { x = pick(c.ang); y = pick(c.ang); z = 180 - x - y; if (z >= 20 && z <= 120 && Math.min(Math.abs(x - y), Math.abs(x - z), Math.abs(y - z)) >= 5) break; }
-    q = head + `∠${T1[0]} = ${x}°, ∠${T1[1]} = ${y}°일 때 ∠${T2[2]}의 크기는?`; ans = z;
-    ex = `∠${T1[2]} = 180° − ${x}° − ${y}° = ${z}°이고, ∠${T2[2]}는 ∠${T1[2]}의 대응각이라 같아요.`;
-    opts = [{ v: z }, { v: 180 - x, k: 'eCalc' }, { v: 180 - y, k: 'eCalc' }, { v: x, k: 'eMis' }, { v: y, k: 'eMis' }];
+    wrong(); CN.a.gone = CN.b.gone = true; updateUI();
+    $('connFeedback').innerHTML = `
+      <div class="alert alert-danger fw-bold py-2 mb-3">
+        ❌ 대응하는 꼭짓점 순서가 틀렸어요! 올바른 순서는 <b>△${CN.a.L.join('')} ∽ △${CN.correctOrder.join('')}</b> 입니다. (하트 -1)
+      </div>
+      <button class="btn btn-secondary px-4 fw-bold" id="btn-conn-next">계속하기</button>
+    `;
+    $('btn-conn-next').onclick = () => { bootstrap.Modal.getInstance($('connModal')).hide(); afterAction(); };
   }
-  const seen = new Set([ans]), os = [opts[0]]; opts.slice(1).forEach(o => { if (Number.isInteger(o.v) && o.v > 0 && !seen.has(o.v) && os.length < 4) { seen.add(o.v); os.push(o); } });
+}
+
+// ---- 보너스 퀴즈 출제 & 판정 ----
+function mkBonus(a, b, m) {
+  const T1 = a.L, T2 = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
+  const kind = Math.random() < 0.5 ? 'Side' : 'Ang';
+  let q, ans, opts, ex, customA = {}, customB = {}, badgeA = '', badgeB = '';
+
+  if (kind === 'Side') {
+    const scList = [[2,1],[3,1],[3,2],[4,3],[5,2]];
+    const [n, d] = scList[Math.floor(Math.random() * scList.length)];
+    const b1 = rint(2, 5), b2 = rint(2, 5);
+    const s1 = b1 * d, t1 = b1 * n, s2 = b2 * d, t2 = b2 * n;
+    const sideA_1 = T1[0] + T1[1], sideB_1 = T2[0] + T2[1];
+    const sideA_2 = T1[1] + T1[2], sideB_2 = T2[1] + T2[2];
+    
+    customA = { sides: [{ u: 0, v: 1, text: `${s1}`, color: '#2563eb' }, { u: 1, v: 2, text: `${s2}`, color: '#16a34a' }] };
+    customB = { sides: [{ u: m[0], v: m[1], text: `${t1}`, color: '#2563eb' }, { u: m[1], v: m[2], text: '?', color: '#dc2626' }] };
+    badgeA = `추가 변 ${sideA_2}=${s2}`;
+    badgeB = `대응변 ${sideB_2}=?`;
+
+    q = `두 삼각형의 닮음비가 ${sideA_1} : ${sideB_1} = ${s1} : ${t1} (${d} : ${n})입니다.<br>`
+      + `왼쪽 삼각형에 새로 주어진 변 <b>${sideA_2} = ${s2}</b>일 때, 오른쪽 삼각형의 물음표(<b>?</b>)로 표시된 대응변 <b>${sideB_2}</b>의 길이는?`;
+    ans = t2;
+    ex = `닮음비가 ${sideA_1} : ${sideB_1} = ${s1} : ${t1} (${d} : ${n})이므로, 대응변 ${sideB_2} = ${s2} × ${n}/${d} = ${t2}입니다.`;
+    opts = [{ v: t2 }, { v: Math.round(s2 * s1 / t1) || (t2 + 2), k: 'eCalc' }, { v: s2 + (t1 - s1), k: 'eCalc' }, { v: t1, k: 'eMis' }];
+  } else {
+    let x = pick([30, 35, 40, 45, 50, 55, 60, 65, 70]), y = pick([30, 40, 50, 60, 70]);
+    if (x + y >= 155) y = 150 - x;
+    if (x === y) y += 10;
+    const z = 180 - x - y;
+    
+    customA = { angles: [{ u: 0, text: `${x}°`, color: '#2563eb' }, { u: 1, text: `${y}°`, color: '#16a34a' }] };
+    customB = { angles: [{ u: m[2], text: '?', color: '#dc2626' }] };
+    badgeA = `주어진 각 ∠${T1[0]}, ∠${T1[1]}`;
+    badgeB = `대응각 ∠${T2[2]}=?`;
+
+    q = `△${T1.join('')} ∽ △${T2.join('')}에서 ∠${T1[0]} = ${x}°, ∠${T1[1]} = ${y}°입니다.<br>`
+      + `오른쪽 삼각형에서 물음표(<b>?</b>)로 표시된 대응각 <b>∠${T2[2]}</b>의 크기는 몇 도일까요?`;
+    ans = z;
+    ex = `△${T1.join('')}에서 ∠${T1[2]} = 180° − (${x}° + ${y}°) = ${z}°입니다. 닮은 두 삼각형에서 대응각의 크기는 서로 같으므로 대응각 ∠${T2[2]} = ${z}°입니다.`;
+    opts = [{ v: z }, { v: 180 - x, k: 'eCalc' }, { v: 180 - y, k: 'eCalc' }, { v: x, k: 'eMis' }];
+  }
+  const seen = new Set([ans]), os = [opts[0]];
+  opts.slice(1).forEach(o => { if (Number.isInteger(o.v) && o.v > 0 && !seen.has(o.v) && os.length < 4) { seen.add(o.v); os.push(o); } });
   for (let k = 1; os.length < 4; k++) [ans + k, ans - k].forEach(v => { if (v > 0 && !seen.has(v) && os.length < 4) { seen.add(v); os.push({ v, k: 'eCalc' }); } });
-  return { kind, q, ans, ex, opts: shuf(os) };
+  return { kind, q, ans, ex, opts: shuf(os), done: false, customA, customB, badgeA, badgeB };
 }
-function startExt() {
-  G.phase = 'ext'; const E = G.ext = mkExt(); show('ext', 1); $('ext-q').textContent = E.q; $('ext-fb').innerHTML = '';
-  $('ext-opts').innerHTML = E.opts.map((o, i) => `<div class="col-6"><button class="btn btn-outline-primary w-100 fw-bold" data-i="${i}">${o.v}${E.kind === 'Ang' ? '°' : ''}</button></div>`).join('');
-  G.et = 30; clearInterval(timerId); $('timer-fill').style.width = '100%'; timerId = setInterval(() => { G.et--; $('timer-fill').style.width = (G.et / 30 * 100) + '%'; if (G.et <= 0) answerExt(-1); }, 1000);
+
+function setupBonusSection(a, b, m) {
+  const bonus = mkBonus(a, b, m);
+  CN.bonus = bonus;
+  $('connModalTitle').textContent = '🎁 보너스 퀴즈: 대응변과 대응각의 크기 구하기';
+
+  $('connCardsArea').innerHTML = `
+    <div class="col-6">
+      <div class="card p-2 shadow-sm text-center border-2 border-primary">
+        ${drawCard(a, { custom: bonus.customA })}
+        <div class="fw-bold mt-1 text-primary">△${a.L.join('')}</div>
+        <div><span class="badge bg-primary-subtle text-primary border border-primary-subtle small">${bonus.badgeA}</span></div>
+      </div>
+    </div>
+    <div class="col-6">
+      <div class="card p-2 shadow-sm text-center border-2 border-danger">
+        ${drawCard(b, { custom: bonus.customB })}
+        <div class="fw-bold mt-1 text-danger">△${b.L.join('')}</div>
+        <div><span class="badge bg-danger-subtle text-danger border border-danger-subtle small">${bonus.badgeB}</span></div>
+      </div>
+    </div>
+  `;
+
+  $('connBonusSection').classList.remove('d-none');
+  $('bonusQText').innerHTML = `<div class="mb-2"><span class="badge bg-warning text-dark me-2 fs-6">🎁 보너스 퀴즈! (+100점)</span><span class="text-success small fw-bold">대응 꼭짓점 정답 보너스!</span></div>${bonus.q}`;
+  $('bonusOpts').innerHTML = bonus.opts.map((o, idx) => `
+    <div class="col-6">
+      <button class="btn btn-outline-primary w-100 py-3 fs-5 fw-bold bonus-opt-btn" data-idx="${idx}">${o.v}${bonus.kind === 'Ang' ? '°' : ''}</button>
+    </div>
+  `).join('');
+  $('bonusFeedback').innerHTML = '';
 }
-$('ext-opts').addEventListener('click', e => { const i = e.target.dataset.i; if (i !== undefined && !G.ext.done) answerExt(+i); });
-function answerExt(i) {
-  clearInterval(timerId); const E = G.ext; E.done = true; const o = E.opts[i]; G.st['e' + E.kind + 'Tot']++;
-  if (o && o.v === E.ans) { G.st['e' + E.kind + 'Ok']++; G.score += Math.round(150 * mult()); G.combo++; G.wstreak = 0; $('ext-fb').innerHTML = '<div class="text-success fw-bold">✅ 정답! +150</div>'; }
-  else { G.combo = 0; G.wstreak++; if (o && o.k) G.st[o.k]++; $('ext-fb').innerHTML = `<div class="text-danger fw-bold">${o ? '아쉬워요.' : '시간 초과!'} 정답은 ${E.ans}${E.kind === 'Ang' ? '°' : ''}</div>`; }
-  $('ext-fb').innerHTML += `<div class="small mt-1">${E.ex}</div><button class="btn btn-primary mt-2" id="ext-next">다음 라운드</button>`; updateUI();
-  $('ext-next').onclick = () => { G.phase = 'board'; nextRound(); };
+
+$('bonusOpts').addEventListener('click', e => {
+  const btn = e.target.closest('.bonus-opt-btn');
+  if (!btn || !CN.bonus || CN.bonus.done) return;
+  answerBonus(+btn.dataset.idx);
+});
+
+function answerBonus(idx) {
+  CN.bonus.done = true;
+  const o = CN.bonus.opts[idx];
+  const isCorrect = o && o.v === CN.bonus.ans;
+  G.st['e' + CN.bonus.kind + 'Tot']++;
+  if (isCorrect) {
+    G.st['e' + CN.bonus.kind + 'Ok']++;
+    G.score += 100;
+    updateUI();
+    $('bonusFeedback').innerHTML = `
+      <div class="alert alert-success fw-bold py-2 mt-3">
+        🎉 보너스 정답! +100점을 획득했습니다!
+        <div class="small fw-normal text-muted mt-1">${CN.bonus.ex}</div>
+      </div>
+      <button class="btn btn-primary px-4 fw-bold mt-2" id="btn-bonus-done">완료하고 돌아가기</button>
+    `;
+  } else {
+    if (o && o.k) G.st[o.k]++;
+    $('bonusFeedback').innerHTML = `
+      <div class="alert alert-warning fw-bold py-2 mt-3">
+        아쉽네요! 정답은 <b>${CN.bonus.ans}${CN.bonus.kind === 'Ang' ? '°' : ''}</b> 입니다. (보너스 문제는 하트가 차감되지 않습니다)
+        <div class="small fw-normal text-muted mt-1">${CN.bonus.ex}</div>
+      </div>
+      <button class="btn btn-secondary px-4 fw-bold mt-2" id="btn-bonus-done">확인</button>
+    `;
+  }
+  $('btn-bonus-done').onclick = () => {
+    bootstrap.Modal.getInstance($('connModal')).hide();
+    afterAction();
+  };
+}
+
+// ---- 라운드 종료 ----
+function endRound() {
+  if (G.over) return;
+  const acc = G.rAtt ? G.rOk / G.rAtt : 0;
+  if (acc >= .8 && G.level < 3) G.level++; else if (acc < .5 && G.level > 1) G.level--;
+  G.maxLevel = Math.max(G.maxLevel, G.level);
+  G.sel = [];
+  updateUI();
+  if (G.round >= 5) {
+    endGame();
+    return;
+  }
+  msg(`🎉 Round ${G.round} 클리어! 다음 라운드로 이동합니다!`, 'text-success');
+  setTimeout(() => {
+    if (!G.over) nextRound();
+  }, 900);
+}
+function nextRound() {
+  G.round++;
+  startRound();
 }
 
 $('btn-end-play').addEventListener('click', () => endGame());
@@ -397,7 +611,7 @@ $('btn-restart').addEventListener('click', () => { showSection('game-section'); 
 
 // ======================= 기록 저장 =======================
 async function endGame() {
-  if (!G || G.over) return; G.over = true; clearInterval(timerId);
+  if (!G || G.over) return; G.over = true;
   const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
   showSection('gameover-section'); $('final-score').textContent = G.score; $('final-accuracy').textContent = acc + '%';
   $('final-detail').textContent = `도달 레벨 Lv.${G.maxLevel} · 대응 연결 한 번에 ${S.vOk}/${S.vTot}`;
