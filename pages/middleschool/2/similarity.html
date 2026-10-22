@@ -620,6 +620,8 @@ $('btn-restart').addEventListener('click', () => { showSection('game-section'); 
 // ======================= 기록 저장 =======================
 async function endGame() {
   if (!G || G.over) return; G.over = true;
+  bootstrap.Modal.getInstance($('compareModal'))?.hide();
+  bootstrap.Modal.getInstance($('connModal'))?.hide();
   const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
   showSection('gameover-section'); $('final-score').textContent = G.score; $('final-accuracy').textContent = acc + '%';
   $('final-detail').textContent = `도달 라운드: Round ${G.round} · 대응 연결 한 번에 ${S.vOk}/${S.vTot}`;
@@ -627,40 +629,47 @@ async function endGame() {
     $('save-status').textContent = "";
     return;
   }
+  $('save-status').className = 'text-primary fw-bold small mb-3';
+  $('save-status').textContent = '💾 기록 저장 중...';
   try {
     const recordData = {
       nickname: playerNickname,
-      score: G.score,
+      score: safeNumber(G.score),
       accuracy: acc,
-      totalSolved: G.solved,
-      totalAttempts: G.attempts,
-      round: G.round,
-      level: G.round,
-      sssOk: S.sssOk, sssTot: S.sssTot,
-      sasOk: S.sasOk, sasTot: S.sasTot,
-      aaOk: S.aaOk, aaTot: S.aaTot,
-      eSideOk: S.eSideOk, eSideTot: S.eSideTot,
-      eAngOk: S.eAngOk, eAngTot: S.eAngTot,
-      vOk: S.vOk, vTot: S.vTot,
-      cSssTwo: S.cSssTwo, cSasAng: S.cSasAng, cSsa: S.cSsa, cAaOne: S.cAaOne,
-      eMis: S.eMis, eCalc: S.eCalc,
+      totalSolved: safeNumber(G.solved),
+      totalAttempts: safeNumber(G.attempts),
+      round: safeNumber(G.round),
+      sssOk: safeNumber(S.sssOk),
+      sssTot: safeNumber(S.sssTot),
+      sasOk: safeNumber(S.sasOk),
+      sasTot: safeNumber(S.sasTot),
+      aaOk: safeNumber(S.aaOk),
+      aaTot: safeNumber(S.aaTot),
+      vOk: safeNumber(S.vOk),
+      vTot: safeNumber(S.vTot),
+      cSssTwo: safeNumber(S.cSssTwo),
+      cSasAng: safeNumber(S.cSasAng),
+      cSsa: safeNumber(S.cSsa),
+      cAaOne: safeNumber(S.cAaOne),
       playedAt: serverTimestamp()
     };
     await addDoc(room.records(currentRoomCode), recordData);
 
-    const patch = { nickname: playerNickname, lastScore: G.score, updatedAt: serverTimestamp() };
+    const patch = { nickname: playerNickname, lastScore: safeNumber(G.score), updatedAt: serverTimestamp() };
     if (mySchool) patch.school = mySchool;
     if (myStudentId) patch.studentId = myStudentId;
     await setDoc(doc(room.students(currentRoomCode), playerNickname), patch, { merge: true });
+    $('save-status').className = 'text-success fw-bold small mb-3';
     $('save-status').textContent = "✅ 기록이 저장되었습니다!";
   } catch (e) {
     console.error('기록 저장 실패:', e);
+    $('save-status').className = 'text-danger fw-bold small mb-3';
     $('save-status').textContent = "⚠️ 기록 저장에 실패했습니다.";
-    $('save-status').classList.replace('text-success', 'text-danger');
   }
   await loadGameOverRankings();
 }
 async function loadGameOverRankings() {
+  if (!currentRoomCode) return;
   try {
     const snap = await getDocs(room.records(currentRoomCode)), best = {};
     snap.forEach(d => { const r = d.data(), nick = String(r.nickname || ''); if (!nick) return; const it = { nickname: nick, score: safeNumber(r.score) }; if (!best[nick] || it.score > best[nick].score) best[nick] = it; });
@@ -879,7 +888,7 @@ function buildLogData() {
     .map(r => { const n = String(r.nickname); seq[n] = (seq[n] || 0) + 1; const at = safeNumber(r.totalAttempts);
       return { "학번": sidByNick[n] || '', "닉네임": n, "회차": seq[n], "일시": ft(r.playedAt), "점수": safeNumber(r.score), "도달 라운드": safeNumber(r.round || r.level), "맞힌 문제": safeNumber(r.totalSolved), "시도 수": at, "정답률(%)": at > 0 ? Math.round(safeNumber(r.totalSolved) / at * 100) : 0,
         "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "AA 맞/시도": `${safeNumber(r.aaOk)}/${safeNumber(r.aaTot)}`,
-        "오판(두 변만 비례→SSS)": safeNumber(r.cSssTwo), "오판(끼인각 다름→SAS)": safeNumber(r.cSasAng), "오판(한 각만 같음→AA)": safeNumber(r.cAaOne) }; });
+        "오판(두 변만 비례→SSS)": safeNumber(r.cSssTwo), "오판(끼인각 다름→SAS)": safeNumber(r.cSasAng), "오판(SSA→SAS)": safeNumber(r.cSsa), "오판(한 각만 같음→AA)": safeNumber(r.cAaOne) }; });
 }
 $('btn-export-excel').addEventListener('click', () => {
   if (!excelData.length) return customAlert("알림", "다운로드할 데이터가 없습니다.");
