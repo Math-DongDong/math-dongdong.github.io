@@ -333,8 +333,6 @@
             <div class="dash-stat-box h-100">
               <div class="d-flex justify-content-between align-items-center mb-3">
                 <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-pie-chart-fill me-1"></i> 닮음조건별 학급 정답률</h6>
-                <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
-                  id="statConditionBadge">방 선택 필요</span>
               </div>
               <div id="dashConditionStats">
                 <div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>
@@ -344,9 +342,7 @@
           <div class="col-lg-4 col-md-12">
             <div class="dash-stat-box h-100">
               <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="fw-bold mb-0 text-warning-emphasis"><i class="bi bi-gift-fill me-1"></i> 보너스 퀴즈 정답률</h6>
-                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                  id="statBonusBadge">방 선택 필요</span>
+                <h6 class="fw-bold mb-0 text-warning-emphasis"><i class="bi bi-gift-fill me-1"></i> 대응점 연결·보너스 퀴즈 정답률</h6>
               </div>
               <div id="dashBonusStats">
                 <div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>
@@ -524,9 +520,8 @@
     const msg = (t, cl = 'text-dark') => { $('msg').className = 'text-center fw-bold small mb-2 ' + cl; $('msg').textContent = t; };
     const show = (id, on) => $(id).classList.toggle('d-none', !on);
     function updateUI() {
-      const remPairs = G ? G.cards.filter(c => c.pid != null && !c.gone).length / 2 : 0;
       $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
-      $('level-badge').innerHTML = `Round ${G.round} <span class="ms-2 opacity-100">🎯 남은 쌍 <span class="text-warning">${remPairs}</span>/5</span>`;
+      $('level-badge').textContent = `Round ${G.round}`;
       $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
     }
     function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
@@ -796,30 +791,25 @@
       const o = CN.bonus.opts[idx];
       const isCorrect = o && o.v === CN.bonus.ans;
       G.st['e' + CN.bonus.kind + 'Tot']++;
+      const closeBonus = () => {
+        bootstrap.Modal.getInstance($('connModal')).hide();
+        afterAction();
+      };
       if (isCorrect) {
         G.st['e' + CN.bonus.kind + 'Ok']++;
         G.score += 100;
         updateUI();
-        $('bonusFeedback').innerHTML = `
-      <div class="alert alert-success fw-bold py-2 mt-3">
-        🎉 보너스 정답! +100점을 획득했습니다!
-        <div class="small fw-normal text-muted mt-1">${CN.bonus.ex}</div>
-      </div>
-      <button class="btn btn-primary px-4 fw-bold mt-2" id="btn-bonus-done">완료하고 돌아가기</button>
-    `;
-      } else {
-        $('bonusFeedback').innerHTML = `
+        closeBonus();
+        return;
+      }
+      $('bonusFeedback').innerHTML = `
       <div class="alert alert-warning fw-bold py-2 mt-3">
         아쉽네요! 정답은 <b>${CN.bonus.ans}${CN.bonus.kind === 'Ang' ? '°' : ''}</b> 입니다. (보너스 문제는 하트가 차감되지 않습니다)
         <div class="small fw-normal text-muted mt-1">${CN.bonus.ex}</div>
       </div>
       <button class="btn btn-secondary px-4 fw-bold mt-2" id="btn-bonus-done">확인</button>
     `;
-      }
-      $('btn-bonus-done').onclick = () => {
-        bootstrap.Modal.getInstance($('connModal')).hide();
-        afterAction();
-      };
+      $('btn-bonus-done').onclick = closeBonus;
     }
 
     // ---- 라운드 종료 ----
@@ -967,11 +957,12 @@
       <td>${p(n(r, 'sasOk'), n(r, 'sasTot'))}</td>
       <td>${p(n(r, 'aaOk'), n(r, 'aaTot'))}</td>
       <td>${p(n(r, 'vOk'), n(r, 'vTot'))}</td>
-      <td>${p(n(r, 'eSideOk') + n(r, 'eAngOk'), n(r, 'eSideTot') + n(r, 'eAngTot'))}</td>
+      <td>${p(n(r, 'eSideOk'), n(r, 'eSideTot'))}</td>
+      <td>${p(n(r, 'eAngOk'), n(r, 'eAngTot'))}</td>
     </tr>`;
       }).join('');
 
-      const tableBody = trs.length ? trs : '<tr><td colspan="9"class="py-3 text-muted">기록이 없습니다.</td></tr>';
+      const tableBody = trs.length ? trs : '<tr><td colspan="10" class="py-3 text-muted">기록이 없습니다.</td></tr>';
 
       $('detailBody').innerHTML = `
     <h6 class="fw-bold mb-3"><i class="bi bi-pie-chart-fill text-primary me-1"></i> 닮음조건별 누적 성적</h6>
@@ -989,7 +980,8 @@
             <th>SAS</th>
             <th>AA</th>
             <th>대응점 연결</th>
-            <th>보너스 퀴즈</th>
+            <th>보너스 대응변</th>
+            <th>보너스 대응각</th>
           </tr>
         </thead>
         <tbody>${tableBody}</tbody>
@@ -1005,8 +997,6 @@
       renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
       if (!currentAdminRoom) {
         $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-        $('statConditionBadge').textContent = '방 선택 필요';
-        $('statBonusBadge').textContent = '방 선택 필요';
         $('dashAvgScore').textContent = '-';
         $('dashAvgAcc').textContent = '-';
         $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
@@ -1030,8 +1020,7 @@
         okAng += safeNumber(r.eAngOk); totAng += safeNumber(r.eAngTot);
       });
 
-      const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa), pV = pct(okV, totV);
-      $('statConditionBadge').textContent = `총 ${totalPlays}회 플레이`;
+      const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa);
       if (!totalPlays) {
         $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
       } else {
@@ -1056,32 +1045,23 @@
           <span class="text-success">${okAa}/${totAa} (${pc(pAa)})</span>
         </div>
         <div class="progress" style="height:7px"><div class="progress-bar bg-success" style="width:${pAa ?? 0}%"></div></div>
-      </div>
-      <div class="mb-2">
-        <div class="d-flex justify-content-between small fw-bold mb-1">
-          <span><span class="badge bg-info text-dark me-1">대응</span>대응점 연결 정답률</span>
-          <span class="text-info-emphasis">${okV}/${totV} (${pc(pV)})</span>
-        </div>
-        <div class="progress" style="height:7px"><div class="progress-bar bg-info" style="width:${pV ?? 0}%"></div></div>
       </div>`;
       }
 
-      const totBonus = totSide + totAng, okBonus = okSide + okAng;
-      $('statBonusBadge').textContent = `총 ${totBonus}문제 풀이`;
-      if (!totBonus) {
-        $('dashBonusStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 보너스 퀴즈 기록이 없습니다.</div>';
+      if (!totV && !totSide && !totAng) {
+        $('dashBonusStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
       } else {
         const bonusRows = [
-          { label: '전체', ok: okBonus, tot: totBonus, bar: 'bg-warning', text: 'text-warning-emphasis' },
-          { label: '대응변의 길이', ok: okSide, tot: totSide, bar: 'bg-primary', text: 'text-primary' },
-          { label: '대응각의 크기', ok: okAng, tot: totAng, bar: 'bg-success', text: 'text-success' }
+          { badge: 'bg-info text-dark', tag: '대응', label: '대응점 연결', ok: okV, tot: totV, bar: 'bg-info', text: 'text-info-emphasis' },
+          { badge: 'bg-primary', tag: '보너스', label: '대응변의 길이', ok: okSide, tot: totSide, bar: 'bg-primary', text: 'text-primary' },
+          { badge: 'bg-success', tag: '보너스', label: '대응각의 크기', ok: okAng, tot: totAng, bar: 'bg-success', text: 'text-success' }
         ];
         $('dashBonusStats').innerHTML = bonusRows.map(b => {
           const rate = pct(b.ok, b.tot);
           return `
         <div class="mb-2">
           <div class="d-flex justify-content-between small fw-bold mb-1">
-            <span>${b.label}</span>
+            <span><span class="badge ${b.badge} me-1">${b.tag}</span>${b.label}</span>
             <span class="${b.text}">${b.ok}/${b.tot} (${pc(rate)})</span>
           </div>
           <div class="progress" style="height:7px"><div class="progress-bar ${b.bar}" style="width:${rate ?? 0}%"></div></div>
