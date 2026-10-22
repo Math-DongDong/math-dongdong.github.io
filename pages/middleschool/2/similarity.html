@@ -51,7 +51,6 @@ body{background-color:#ffffff}
 <button class="btn btn-primary px-4 py-2 fw-bold" data-c="SSS">SSS 닮음</button>
 <button class="btn btn-primary px-4 py-2 fw-bold" data-c="SAS">SAS 닮음</button>
 <button class="btn btn-primary px-4 py-2 fw-bold" data-c="AA">AA 닮음</button>
-<button class="btn btn-outline-secondary px-3 py-2" data-c="CANCEL">취소</button>
 </div></div></div></div></div></div>
 
 <!-- 대응 꼭짓점 순서 & 보너스 퀴즈 모달 -->
@@ -158,8 +157,8 @@ body{background-color:#ffffff}
 <div class="d-flex justify-content-end mb-2"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer">
 <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId" style="cursor:pointer">학번 표시</label></div></div>
 <div class="table-responsive" id="adminTableWrap"><table class="table table-hover align-middle mb-0 text-center" style="font-size:.9rem"><thead class="table-light"><tr>
-<th>순위</th><th class="col-studentid">학번</th><th>닉네임</th><th>최고 점수</th><th>정답률</th><th>SSS</th><th>SAS</th><th>AA</th><th>플레이</th></tr></thead>
-<tbody id="adminTableBody"><tr><td colspan="9" class="py-4 text-muted">방을 선택해주세요.</td></tr></tbody></table></div>
+<th>순위</th><th class="col-studentid">학번</th><th>닉네임</th><th>종합 성취수준</th><th>최고 점수</th><th>정답률</th><th>SSS</th><th>SAS</th><th>AA</th><th>대응점 연결</th><th>플레이</th></tr></thead>
+<tbody id="adminTableBody"><tr><td colspan="11"class="py-4 text-muted">방을 선택해주세요.</td></tr></tbody></table></div>
 </div></div></div>
 
 <script type="module">
@@ -341,7 +340,6 @@ $('btn-compare-close').addEventListener('click', () => { G.sel = []; renderBoard
 $('judge-btns').addEventListener('click', e => {
   const c = e.target.dataset.c; if (!c) return;
   bootstrap.Modal.getInstance($('compareModal'))?.hide();
-  if (c === 'CANCEL') { G.sel = []; renderBoard(); return; }
   submit(c);
 });
 
@@ -702,6 +700,7 @@ bindDeleteRoomButton($('btn-delete-room'), { getCode: () => currentAdminRoom, ca
 bindStudentIdToggle($('toggleStudentId'), [$('adminTableWrap')]);
 
 const ERR = [['cSssTwo', '두 변만 비례→SSS'], ['cSasAng', '끼인각 다름→SAS'], ['cSsa', 'SSA→SAS'], ['cAaOne', '한 각만 같음→AA']];
+const getTier = maxRound => maxRound >= 3 ? { label: '상 (우수)', badge: 'bg-success' } : maxRound === 2 ? { label: '중 (보통)', badge: 'bg-warning text-dark' } : { label: '하 (보충)', badge: 'bg-danger' };
 function openDetail(nick) {
   const rs = roomRecords.filter(r => String(r.nickname || '') === nick).sort((a, b) => (b.playedAt?.toMillis?.() || 0) - (a.playedAt?.toMillis?.() || 0));
   const p = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '-', n = (r, k) => safeNumber(r[k]);
@@ -710,16 +709,17 @@ function openDetail(nick) {
   const conds = [
     { key: 'sss', name: 'SSS 닮음', badge: 'bg-primary', ok: rs.reduce((s, r) => s + n(r, 'sssOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sssTot'), 0) },
     { key: 'sas', name: 'SAS 닮음', badge: 'bg-warning text-dark', ok: rs.reduce((s, r) => s + n(r, 'sasOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sasTot'), 0) },
-    { key: 'aa', name: 'AA 닮음', badge: 'bg-success', ok: rs.reduce((s, r) => s + n(r, 'aaOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'aaTot'), 0) }
+    { key: 'aa', name: 'AA 닮음', badge: 'bg-success', ok: rs.reduce((s, r) => s + n(r, 'aaOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'aaTot'), 0) },
+    { key: 'v', label: '대응', name: '대응점 연결', badge: 'bg-info text-dark', ok: rs.reduce((s, r) => s + n(r, 'vOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'vTot'), 0) }
   ];
 
   const cardsHtml = conds.map(c => {
     const rate = c.tot > 0 ? Math.round(c.ok / c.tot * 100) + '%' : '-';
     const fail = c.tot - c.ok;
     return `
-      <div class="col-4">
+      <div class="col-6 col-md-3">
         <div class="card h-100 text-center shadow-sm border-0 rounded-3 p-3 bg-light">
-          <div class="small fw-bold mb-1"><span class="badge ${c.badge} me-1">${c.key.toUpperCase()}</span>${c.name}</div>
+          <div class="small fw-bold mb-1"><span class="badge ${c.badge} me-1">${c.label || c.key.toUpperCase()}</span>${c.name}</div>
           <h4 class="fw-bold text-dark mb-1">${rate}</h4>
           <div class="small text-muted">${c.ok}맞 / ${fail}틀</div>
         </div>
@@ -738,11 +738,11 @@ function openDetail(nick) {
       <td>${p(n(r, 'sssOk'), n(r, 'sssTot'))}</td>
       <td>${p(n(r, 'sasOk'), n(r, 'sasTot'))}</td>
       <td>${p(n(r, 'aaOk'), n(r, 'aaTot'))}</td>
+      <td>${p(n(r, 'vOk'), n(r, 'vTot'))}</td>
     </tr>`;
   }).join('');
 
-  const tableBody = trs.length ? trs : '<tr><td colspan="7" class="py-3 text-muted">기록이 없습니다.</td></tr>';
-  const errs = ERR.map(([k, t]) => `${t} <b>${rs.reduce((s, r) => s + n(r, k), 0)}</b>회`).join(' · ');
+  const tableBody = trs.length ? trs : '<tr><td colspan="8" class="py-3 text-muted">기록이 없습니다.</td></tr>';
 
   $('detailBody').innerHTML = `
     <h6 class="fw-bold mb-3"><i class="bi bi-pie-chart-fill text-primary me-1"></i> 닮음조건별 누적 성적</h6>
@@ -759,22 +759,22 @@ function openDetail(nick) {
             <th>SSS</th>
             <th>SAS</th>
             <th>AA</th>
+            <th>대응점 연결</th>
           </tr>
         </thead>
         <tbody>${tableBody}</tbody>
       </table>
     </div>
-    <div class="small mt-3 pt-2 border-top"><b><i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> 자주 하는 오판</b><br>${errs}</div>
   `;
   bootstrap.Modal.getOrCreateInstance($('detailModal')).show();
 }
 $('adminTableBody').addEventListener('click', e => { const row = e.target.closest('.row-student'); if (row) openDetail(row.dataset.nick); });
-const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'aaOk', 'aaTot'];
+const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'aaOk', 'aaTot', 'vOk', 'vTot'];
 const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null, pc = v => v === null ? '-' : v + '%';
 function render() {
   renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
   if (!currentAdminRoom) {
-    $('adminTableBody').innerHTML = '<tr><td colspan="9" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+    $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
     $('statConditionBadge').textContent = '방 선택 필요';
     $('statErrorBadge').textContent = '방 선택 필요';
     $('dashAvgScore').textContent = '-';
@@ -784,18 +784,19 @@ function render() {
     return;
   }
   const sidByNick = buildSidMap(roomStudents), stats = {};
-  let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAa = 0, okAa = 0;
+  let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAa = 0, okAa = 0, totV = 0, okV = 0;
   const errMap = { cSssTwo: 0, cSasAng: 0, cSsa: 0, cAaOne: 0 };
   let totalErrors = 0, totalPlays = roomRecords.length;
 
   roomRecords.forEach(r => {
     const nick = String(r.nickname || ''); if (!nick) return;
-    const s = stats[nick] || (stats[nick] = { plays: 0, best: 0, solved: 0, attempts: 0, k: Object.fromEntries(KEYS.map(x => [x, 0])) });
-    s.plays++; s.best = Math.max(s.best, safeNumber(r.score)); s.solved += safeNumber(r.totalSolved); s.attempts += safeNumber(r.totalAttempts); KEYS.forEach(x => s.k[x] += safeNumber(r[x]));
+    const s = stats[nick] || (stats[nick] = { plays: 0, best: 0, maxRound: 0, solved: 0, attempts: 0, k: Object.fromEntries(KEYS.map(x => [x, 0])) });
+    s.plays++; s.best = Math.max(s.best, safeNumber(r.score)); s.maxRound = Math.max(s.maxRound, safeNumber(r.round || r.level)); s.solved += safeNumber(r.totalSolved); s.attempts += safeNumber(r.totalAttempts); KEYS.forEach(x => s.k[x] += safeNumber(r[x]));
 
     okSss += safeNumber(r.sssOk); totSss += safeNumber(r.sssTot);
     okSas += safeNumber(r.sasOk); totSas += safeNumber(r.sasTot);
     okAa += safeNumber(r.aaOk); totAa += safeNumber(r.aaTot);
+    okV += safeNumber(r.vOk); totV += safeNumber(r.vTot);
 
     Object.keys(errMap).forEach(k => {
       const cnt = safeNumber(r[k]);
@@ -804,7 +805,7 @@ function render() {
     });
   });
 
-  const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa);
+  const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa), pV = pct(okV, totV);
   $('statConditionBadge').textContent = `총 ${totalPlays}회 플레이`;
   if (!totalPlays) {
     $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
@@ -830,6 +831,13 @@ function render() {
           <span class="text-success">${okAa}/${totAa} (${pc(pAa)})</span>
         </div>
         <div class="progress" style="height:7px"><div class="progress-bar bg-success" style="width:${pAa ?? 0}%"></div></div>
+      </div>
+      <div class="mb-2">
+        <div class="d-flex justify-content-between small fw-bold mb-1">
+          <span><span class="badge bg-info text-dark me-1">대응</span>대응점 연결 정답률</span>
+          <span class="text-info-emphasis">${okV}/${totV} (${pc(pV)})</span>
+        </div>
+        <div class="progress" style="height:7px"><div class="progress-bar bg-info" style="width:${pV ?? 0}%"></div></div>
       </div>`;
   }
 
@@ -854,7 +862,7 @@ function render() {
 
   const names = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
   if (!names.length) {
-    $('adminTableBody').innerHTML = '<tr><td colspan="9" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+    $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
     $('dashAvgScore').textContent = '-';
     $('dashAvgAcc').textContent = '-';
     return;
@@ -873,11 +881,12 @@ function render() {
   excelData = [];
   $('adminTableBody').innerHTML = names.map((nick, idx) => {
     const s = stats[nick], k = s.k, acc = pct(s.solved, s.attempts) ?? 0, sid = sidByNick[nick] || '';
-    const v = { sss: pct(k.sssOk, k.sssTot), sas: pct(k.sasOk, k.sasTot), aa: pct(k.aaOk, k.aaTot) };
-    excelData.push({ "학번": sid, "순위": idx + 1, "닉네임": nick, "최고 점수": s.best, "정답률(%)": acc, "SSS(%)": v.sss ?? '', "SAS(%)": v.sas ?? '', "AA(%)": v.aa ?? '', "플레이 횟수": s.plays });
+    const v = { sss: pct(k.sssOk, k.sssTot), sas: pct(k.sasOk, k.sasTot), aa: pct(k.aaOk, k.aaTot), conn: pct(k.vOk, k.vTot) };
+    const tier = getTier(s.maxRound);
+    excelData.push({ "학번": sid, "순위": idx + 1, "닉네임": nick, "종합 성취수준": tier.label, "최고 도달 라운드": s.maxRound, "최고 점수": s.best, "정답률(%)": acc, "SSS(%)": v.sss ?? '', "SAS(%)": v.sas ?? '', "AA(%)": v.aa ?? '', "대응점 연결(%)": v.conn ?? '', "플레이 횟수": s.plays });
     const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1;
-    return `<tr class="row-student" data-nick="${escapeHtml(nick)}" style="cursor:pointer"><td class="fw-bold">${medal}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td class="fw-bold text-primary">${s.best}점</td><td>${acc}%</td>`
-      + [v.sss, v.sas, v.aa].map(x => `<td>${pc(x)}</td>`).join('') + `<td><span class="badge bg-secondary">${s.plays}회</span></td></tr>`;
+    return `<tr class="row-student" data-nick="${escapeHtml(nick)}" style="cursor:pointer"><td class="fw-bold">${medal}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tier.badge} fs-6">${tier.label}</span></td><td class="fw-bold text-primary">${s.best}점</td><td>${acc}%</td>`
+      + [v.sss, v.sas, v.aa, v.conn].map(x => `<td>${pc(x)}</td>`).join('') + `<td><span class="badge bg-secondary">${s.plays}회</span></td></tr>`;
   }).join('');
 }
 function buildLogData() {
@@ -887,7 +896,7 @@ function buildLogData() {
   return roomRecords.filter(r => String(r.nickname || '') !== '').sort((a, b) => { const x = sk(String(a.nickname)), y = sk(String(b.nickname)); return x !== y ? x.localeCompare(y) : (a.playedAt?.toMillis?.() || 0) - (b.playedAt?.toMillis?.() || 0); })
     .map(r => { const n = String(r.nickname); seq[n] = (seq[n] || 0) + 1; const at = safeNumber(r.totalAttempts);
       return { "학번": sidByNick[n] || '', "닉네임": n, "회차": seq[n], "일시": ft(r.playedAt), "점수": safeNumber(r.score), "도달 라운드": safeNumber(r.round || r.level), "맞힌 문제": safeNumber(r.totalSolved), "시도 수": at, "정답률(%)": at > 0 ? Math.round(safeNumber(r.totalSolved) / at * 100) : 0,
-        "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "AA 맞/시도": `${safeNumber(r.aaOk)}/${safeNumber(r.aaTot)}`,
+        "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "AA 맞/시도": `${safeNumber(r.aaOk)}/${safeNumber(r.aaTot)}`, "대응점 연결 맞/시도": `${safeNumber(r.vOk)}/${safeNumber(r.vTot)}`,
         "오판(두 변만 비례→SSS)": safeNumber(r.cSssTwo), "오판(끼인각 다름→SAS)": safeNumber(r.cSasAng), "오판(SSA→SAS)": safeNumber(r.cSsa), "오판(한 각만 같음→AA)": safeNumber(r.cAaOne) }; });
 }
 $('btn-export-excel').addEventListener('click', () => {
