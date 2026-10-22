@@ -56,7 +56,7 @@ body{background-color:#ffffff}
 <div id="judge" class="panel mt-3 text-center d-none"><div class="fw-bold mb-2">두 삼각형의 닮음 조건은?</div>
 <div class="d-flex flex-wrap gap-2 justify-content-center" id="judge-btns">
 <button class="btn btn-primary" data-c="SSS">SSS 닮음</button><button class="btn btn-primary" data-c="SAS">SAS 닮음</button>
-<button class="btn btn-primary" data-c="AA">AA 닮음</button><button class="btn btn-outline-danger" data-c="NONE">닮음 조건 불충족</button>
+<button class="btn btn-primary" data-c="AA">AA 닮음</button>
 <button class="btn btn-light" data-c="CANCEL">취소</button></div></div></div>
 
 <div id="conn" class="panel d-none text-center"><div class="fw-bold mb-1">대응하는 꼭짓점끼리 차례로 누르세요 (한 카드 → 다른 카드)</div>
@@ -84,6 +84,26 @@ body{background-color:#ffffff}
 <div id="dash-header-placeholder"></div>
 <script src="../../../js/dashboard-header.js?v=4.2" data-title="삼각형 닮음 카드게임 대시보드"></script>
 <div id="pendingGuestsContainer" class="mb-3"></div>
+<div id="dashStatsContainer" class="row g-3 mb-4">
+<div class="col-lg-6">
+<div class="dash-stat-box h-100">
+<div class="d-flex justify-content-between align-items-center mb-3">
+<h6 class="fw-bold mb-0 text-primary"><i class="bi bi-pie-chart-fill me-1"></i> 닮음조건별 학급 정답률</h6>
+<span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="statConditionBadge">방 선택 필요</span>
+</div>
+<div id="dashConditionStats"><div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div></div>
+</div>
+</div>
+<div class="col-lg-6">
+<div class="dash-stat-box h-100">
+<div class="d-flex justify-content-between align-items-center mb-3">
+<h6 class="fw-bold mb-0 text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> 자주 틀리는 오류 분석</h6>
+<span class="badge bg-danger-subtle text-danger border border-danger-subtle" id="statErrorBadge">방 선택 필요</span>
+</div>
+<div id="dashErrorStats"><div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div></div>
+</div>
+</div>
+</div>
 <div class="d-flex justify-content-end mb-2"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer">
 <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId" style="cursor:pointer">학번 표시</label></div></div>
 <div class="table-responsive" id="adminTableWrap"><table class="table table-hover align-middle mb-0 text-center" style="font-size:.9rem"><thead class="table-light"><tr>
@@ -197,15 +217,16 @@ function drawCard(c, o = {}) {
   const xs = P.map(p => p[0]), ys = P.map(p => p[1]), mnx = Math.min(...xs), mny = Math.min(...ys), w = Math.max(...xs) - mnx, h = Math.max(...ys) - mny, sc = Math.min(68 / w, 52 / h);
   P = P.map(p => [60 + (p[0] - mnx - w / 2) * sc, 50 + (p[1] - mny - h / 2) * sc]);
   const g = [P[0].map((_, i) => (P[0][i] + P[1][i] + P[2][i]) / 3)][0], out = (p, k) => { const dx = p[0] - g[0], dy = p[1] - g[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * k, p[1] + dy / l * k]; };
-  const mid = (i, j) => [(P[i][0] + P[j][0]) / 2, (P[i][1] + P[j][1]) / 2], T = (p, t, f = 9, cl = '#0f172a') => `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3).toFixed(1)}" font-size="${f}" text-anchor="middle" fill="${cl}" font-weight="700">${t}</text>`;
-  let s = `<svg viewBox="0 0 120 100"><polygon points="${P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#e0f2fe" stroke="#0369a1" stroke-width="1.6"/>`;
-  P.forEach((p, i) => { if (!o.conn) s += T(out(p, 11), c.L[i], 9, '#475569'); });
-  if (c.type === 'SSS') c.s.forEach((v, i) => { s += T(out(mid((i + 1) % 3, (i + 2) % 3), 9), v, 9, '#b91c1c'); });
-  if (c.type === 'AA') c.ang.forEach((v, i) => { if (c.show[i]) { const q = out(P[i], -13); s += T([g[0] + (P[i][0] - g[0]) * .55, g[1] + (P[i][1] - g[1]) * .55], v + '°', 8, '#b91c1c'); } });
-  if (c.type === 'SA') { const av = c.ssa ? (c.k + 1) % 3 : c.k; s += T(out(mid(c.k, (c.k + 1) % 3), 9), c.p, 9, '#b91c1c') + T(out(mid(c.k, (c.k + 2) % 3), 9), c.q, 9, '#b91c1c') + T([g[0] + (P[av][0] - g[0]) * .55, g[1] + (P[av][1] - g[1]) * .55], c.th + '°', 8, '#b91c1c'); }
+  const mid = (i, j) => [(P[i][0] + P[j][0]) / 2, (P[i][1] + P[j][1]) / 2],
+        T = (p, t, f = 9.5, cl = '#0f172a', halo = true) => `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3).toFixed(1)}" font-size="${f}" text-anchor="middle" fill="${cl}" font-weight="700"${halo ? ' paint-order="stroke fill" stroke="#ffffff" stroke-width="2.5px" stroke-linejoin="round"' : ''}>${t}</text>`;
+  let s = `<svg viewBox="0 0 120 100"><polygon points="${P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#f0f7ff" stroke="#94a3b8" stroke-width="1.2"/>`;
+  P.forEach((p, i) => { if (!o.conn) s += T(out(p, 11), c.L[i], 9.5, '#1e293b'); });
+  if (c.type === 'SSS') c.s.forEach((v, i) => { s += T(out(mid((i + 1) % 3, (i + 2) % 3), 9), v, 9.5, '#dc2626'); });
+  if (c.type === 'AA') c.ang.forEach((v, i) => { if (c.show[i]) { s += T([g[0] + (P[i][0] - g[0]) * .55, g[1] + (P[i][1] - g[1]) * .55], v + '°', 8.5, '#dc2626'); } });
+  if (c.type === 'SA') { const av = c.ssa ? (c.k + 1) % 3 : c.k; s += T(out(mid(c.k, (c.k + 1) % 3), 9), c.p, 9.5, '#dc2626') + T(out(mid(c.k, (c.k + 2) % 3), 9), c.q, 9.5, '#dc2626') + T([g[0] + (P[av][0] - g[0]) * .55, g[1] + (P[av][1] - g[1]) * .55], c.th + '°', 8.5, '#dc2626'); }
   if (o.conn) P.forEach((p, i) => { const pi = o.pairs.findIndex(q => q[o.side === 'a' ? 0 : 1] === i), bad = o.bad && o.bad.includes(o.side + i), sel = o.sel && o.sel.s === o.side && o.sel.v === i;
     s += `<circle class="vtx" data-s="${o.side}" data-v="${i}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="9" fill="${pi >= 0 ? COL[pi] : '#fff'}" stroke="${bad ? '#dc2626' : sel ? '#2563eb' : '#334155'}" stroke-width="${sel || bad ? 3 : 1.5}"/>`
-      + T([p[0], p[1]], pi >= 0 ? c.L[i] + SYM[pi] : c.L[i], 7, pi >= 0 ? '#fff' : '#0f172a'); });
+      + T([p[0], p[1]], pi >= 0 ? c.L[i] + SYM[pi] : c.L[i], 7.5, pi >= 0 ? '#fff' : '#0f172a', false); });
   return s + '</svg>';
 }
 
@@ -246,16 +267,15 @@ function afterAction() {
 function submit(c) {
   const [a, b] = G.sel.map(i => G.cards[i]), j = judge(a, b), dec = a.role === 'decoy' || b.role === 'decoy', ty = { SSS: 'sss', SA: 'sas', AA: 'aa' }[a.type]; G.sel = [];
   if (j === 'NONE') {
-    if (c === 'NONE') {
-      if (!dec) { msg('맞아요! 하지만 함정 카드가 든 쌍이 아니어서 점수는 없어요.', 'text-secondary'); renderBoard(); return; }
-      gain(50, true); G.st.trapOk++; G.st.trapTot++; (a.role === 'decoy' ? a : b).gone = true; msg('🎯 함정 간파! +50', 'text-success');
-    } else { wrong(); if (dec) { G.st.trapTot++; G.st[(a.role === 'decoy' ? a : b).kind]++; } else G.st[ty + 'Tot']++; msg('이 두 삼각형은 닮음 조건을 만족하지 않아요. 하트 -1', 'text-danger'); }
+    wrong();
+    if (dec) { G.st.trapTot++; if ((a.role === 'decoy' ? a : b).kind) G.st[(a.role === 'decoy' ? a : b).kind]++; }
+    else G.st[ty + 'Tot']++;
+    msg('이 두 삼각형은 닮음 조건을 만족하지 않아요! 하트 -1', 'text-danger');
   } else {
     const jt = { SSS: 'sss', SAS: 'sas', AA: 'aa' }[j];
     if (c === j) { G.st[jt + 'Tot']++; G.st[jt + 'Ok']++; startConn(a, b); return; }
     G.st[jt + 'Tot']++;
-    if (c === 'NONE') { wrong(); msg(`닮은 쌍이에요! 근거는 ${j}입니다. 하트 -1`, 'text-danger'); }
-    else { G.score += 30; G.attempts++; G.rAtt++; a.gone = b.gone = true; msg(`닮은 쌍은 맞았어요. 올바른 근거는 ${j}입니다. (+30)`, 'text-warning'); }
+    G.score += 30; G.attempts++; G.rAtt++; a.gone = b.gone = true; msg(`닮은 쌍은 맞았어요. 올바른 근거는 ${j}입니다. (+30)`, 'text-warning');
   }
   afterAction();
 }
@@ -424,13 +444,102 @@ const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'aaOk', 'aaTot', 'eSideOk', 
 const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null, pc = v => v === null ? '-' : v + '%';
 function render() {
   renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
-  if (!currentAdminRoom) { $('adminTableBody').innerHTML = '<tr><td colspan="12" class="py-4 text-muted">방을 선택해주세요.</td></tr>'; return; }
+  if (!currentAdminRoom) {
+    $('adminTableBody').innerHTML = '<tr><td colspan="12" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+    $('statConditionBadge').textContent = '방 선택 필요';
+    $('statErrorBadge').textContent = '방 선택 필요';
+    $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
+    $('dashErrorStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
+    return;
+  }
   const sidByNick = buildSidMap(roomStudents), stats = {};
+  let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAa = 0, okAa = 0;
+  let totSide = 0, okSide = 0, totAng = 0, okAng = 0, totV = 0, okV = 0;
+  const errMap = { cSssTwo: 0, cSasAng: 0, cSsa: 0, cAaOne: 0, eMis: 0, eCalc: 0 };
+  let totalErrors = 0, totalPlays = roomRecords.length;
+
   roomRecords.forEach(r => {
     const nick = String(r.nickname || ''); if (!nick) return;
     const s = stats[nick] || (stats[nick] = { plays: 0, best: 0, solved: 0, attempts: 0, k: Object.fromEntries(KEYS.map(x => [x, 0])) });
     s.plays++; s.best = Math.max(s.best, safeNumber(r.score)); s.solved += safeNumber(r.totalSolved); s.attempts += safeNumber(r.totalAttempts); KEYS.forEach(x => s.k[x] += safeNumber(r[x]));
+
+    okSss += safeNumber(r.sssOk); totSss += safeNumber(r.sssTot);
+    okSas += safeNumber(r.sasOk); totSas += safeNumber(r.sasTot);
+    okAa += safeNumber(r.aaOk); totAa += safeNumber(r.aaTot);
+    okSide += safeNumber(r.eSideOk); totSide += safeNumber(r.eSideTot);
+    okAng += safeNumber(r.eAngOk); totAng += safeNumber(r.eAngTot);
+    okV += safeNumber(r.vOk); totV += safeNumber(r.vTot);
+
+    Object.keys(errMap).forEach(k => {
+      const cnt = safeNumber(r[k]);
+      errMap[k] += cnt;
+      totalErrors += cnt;
+    });
   });
+
+  const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa);
+  const pSide = pct(okSide, totSide), pAng = pct(okAng, totAng), pV = pct(okV, totV);
+  $('statConditionBadge').textContent = `총 ${totalPlays}회 플레이`;
+  if (!totalPlays) {
+    $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
+  } else {
+    $('dashConditionStats').innerHTML = `
+      <div class="mb-2">
+        <div class="d-flex justify-content-between small fw-bold mb-1">
+          <span><span class="badge bg-primary me-1">SSS</span>SSS 닮음 정답률</span>
+          <span class="text-primary">${okSss}/${totSss} (${pc(pSss)})</span>
+        </div>
+        <div class="progress" style="height:7px"><div class="progress-bar bg-primary" style="width:${pSss ?? 0}%"></div></div>
+      </div>
+      <div class="mb-2">
+        <div class="d-flex justify-content-between small fw-bold mb-1">
+          <span><span class="badge bg-warning text-dark me-1">SAS</span>SAS 닮음 정답률</span>
+          <span class="text-warning-emphasis">${okSas}/${totSas} (${pc(pSas)})</span>
+        </div>
+        <div class="progress" style="height:7px"><div class="progress-bar bg-warning" style="width:${pSas ?? 0}%"></div></div>
+      </div>
+      <div class="mb-2">
+        <div class="d-flex justify-content-between small fw-bold mb-1">
+          <span><span class="badge bg-success me-1">AA</span>AA 닮음 정답률</span>
+          <span class="text-success">${okAa}/${totAa} (${pc(pAa)})</span>
+        </div>
+        <div class="progress" style="height:7px"><div class="progress-bar bg-success" style="width:${pAa ?? 0}%"></div></div>
+      </div>
+      <div class="row g-2 pt-2 mt-1 border-top text-center">
+        <div class="col-4">
+          <div class="text-muted" style="font-size:.72rem">대응변 길이 계산</div>
+          <div class="fw-bold small text-dark">${pc(pSide)} <span class="text-muted fw-normal" style="font-size:.68rem">(${okSide}/${totSide})</span></div>
+        </div>
+        <div class="col-4">
+          <div class="text-muted" style="font-size:.72rem">대응각 크기 계산</div>
+          <div class="fw-bold small text-dark">${pc(pAng)} <span class="text-muted fw-normal" style="font-size:.68rem">(${okAng}/${totAng})</span></div>
+        </div>
+        <div class="col-4">
+          <div class="text-muted" style="font-size:.72rem">꼭짓점 연결(첫 시도)</div>
+          <div class="fw-bold small text-dark">${pc(pV)} <span class="text-muted fw-normal" style="font-size:.68rem">(${okV}/${totV})</span></div>
+        </div>
+      </div>`;
+  }
+
+  $('statErrorBadge').textContent = `총 ${totalErrors}건 오답`;
+  if (totalErrors === 0) {
+    $('dashErrorStats').innerHTML = '<div class="text-muted text-center py-4 small">기록된 오답 데이터가 없습니다.</div>';
+  } else {
+    const errSorted = ERR.map(([k, label]) => ({ key: k, label, count: errMap[k] || 0 })).sort((a, b) => b.count - a.count);
+    $('dashErrorStats').innerHTML = errSorted.map((item, idx) => {
+      const errPct = totalErrors > 0 ? Math.round(item.count / totalErrors * 100) : 0;
+      const badgeCls = idx === 0 && item.count > 0 ? 'bg-danger' : 'bg-secondary';
+      return `
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="fw-bold"><span class="badge ${badgeCls} me-1" style="font-size:.7rem">${idx + 1}</span>${item.label}</span>
+            <span class="fw-bold text-danger">${item.count}회 <small class="text-muted">(${errPct}%)</small></span>
+          </div>
+          <div class="progress" style="height:6px"><div class="progress-bar bg-danger" style="width:${errPct}%"></div></div>
+        </div>`;
+    }).join('');
+  }
+
   const names = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
   if (!names.length) { $('adminTableBody').innerHTML = '<tr><td colspan="12" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>'; return; }
   excelData = [];
