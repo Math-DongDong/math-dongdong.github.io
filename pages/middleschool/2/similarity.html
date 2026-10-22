@@ -1,324 +1,554 @@
 <!DOCTYPE html>
 <!-- 삼각형 닮음 카드게임 v0.2 — 유형 A(개인 기록형) 템플릿 + PRD 반영. 컬렉션: similar_triangle_records -->
 <html lang="ko">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>삼각형 닮음 카드게임 - 중2 수학</title>
-<link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-<link rel="stylesheet" href="../../../css/navbar.css">
-<link rel="stylesheet" href="../../../css/dashboard.css">
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<style>
-body{background-color:#ffffff}
-.login-card{max-width:480px;margin:0 auto}.game-wrapper{max-width:800px;margin:0 auto}
-.col-studentid{display:none}#adminTableWrap.show-sid .col-studentid{display:table-cell}
-.tcard{background:#fff;border:2px solid #cbd5e1;border-radius:14px;cursor:pointer;padding:2px;transition:.12s;user-select:none}
-.tcard:hover{border-color:#94a3b8}.tcard.sel{border-color:#2563eb;background:#eff6ff;box-shadow:0 0 0 3px #bfdbfe}
-.tcard.gone{visibility:hidden}.tcard svg{width:100%;height:auto;display:block}
-.tcard .tag{font-size:.65rem;color:#64748b;text-align:center;margin-top:-4px}
-.vtx{cursor:pointer}.panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px}
-#msg{min-height:1.6em}.q-text{font-size:1.15rem;font-weight:700;line-height:1.7}
-.game-top-header{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;border-radius:14px;padding:0.9rem 1.4rem;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 12px rgba(79,70,229,0.15);margin-bottom:1rem}
-.slot-box{display:inline-flex;align-items:center;justify-content:center;width:48px;height:52px;border:2px dashed #6366f1;background:#f5f3ff;color:#4f46e5;border-radius:10px;font-weight:800;font-size:1.5rem;transition:all .15s ease;cursor:pointer;user-select:none}
-.slot-box.filled{border-style:solid;background:#e0e7ff;color:#3730a3}
-.slot-box.filled:hover{transform:translateY(-2px);border-color:#4338ca;box-shadow:0 2px 6px rgba(79,70,229,0.2)}
-#compareCardsArea svg, #connCardsArea svg{width:100%;max-height:180px;display:block;margin:0 auto}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-</head>
-<body>
-<div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content rounded-4 border-0 shadow">
-<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold" id="customModalTitle">알림</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-<div class="modal-body pb-0" id="customModalBody"></div>
-<div class="modal-footer border-0 pt-3"><button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button><button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button></div>
-</div></div></div>
-<div class="modal fade" id="detailModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content rounded-4 border-0 shadow">
-<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold" id="detailTitle"></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-<div class="modal-body" id="detailBody"></div></div></div></div>
-
-<!-- 카드 비교 및 닮음조건 판정 모달 -->
-<div class="modal fade" id="compareModal" tabindex="-1" data-bs-backdrop="static" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content rounded-4 border-0 shadow">
-<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold">📐 삼각형 닮음 조건 판정</h5><button type="button" class="btn-close" id="btn-compare-close" data-bs-dismiss="modal"></button></div>
-<div class="modal-body text-center pt-2 pb-4">
-<p class="text-muted small mb-3">선택한 두 삼각형의 변의 길이와 각의 크기를 비교하고 알맞은 닮음 조건을 고르세요.</p>
-<div class="row g-3 justify-content-center mb-4" id="compareCardsArea"></div>
-<div class="panel bg-light p-3 rounded-4">
-<div class="fw-bold mb-3 fs-6">두 삼각형의 닮음 조건은?</div>
-<div class="d-flex flex-wrap gap-2 justify-content-center" id="judge-btns">
-<button class="btn btn-primary px-4 py-2 fw-bold" data-c="SSS">SSS 닮음</button>
-<button class="btn btn-primary px-4 py-2 fw-bold" data-c="SAS">SAS 닮음</button>
-<button class="btn btn-primary px-4 py-2 fw-bold" data-c="AA">AA 닮음</button>
-</div></div></div></div></div></div>
-
-<!-- 대응 꼭짓점 순서 & 보너스 퀴즈 모달 -->
-<div class="modal fade" id="connModal" tabindex="-1" data-bs-backdrop="static" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content rounded-4 border-0 shadow">
-<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold" id="connModalTitle">🔗 대응하는 꼭짓점 순서 맞히기</h5></div>
-<div class="modal-body text-center pt-2 pb-4">
-<div class="row g-3 justify-content-center mb-3" id="connCardsArea"></div>
-<div id="connMainSection">
-<div class="small text-muted mb-2">삼각형의 기호 표현에 맞게 대응하는 꼭짓점 알파벳을 순서대로 선택하세요.</div>
-<div class="d-flex align-items-center justify-content-center gap-2 fs-3 fw-bold my-3 flex-wrap">
-<span>△<span id="connTri1Name" class="text-primary">ABC</span></span>
-<span class="text-secondary mx-2">∽</span>
-<span>△</span>
-<div class="d-flex gap-2" id="connSlots">
-<span class="slot-box" id="slot0">?</span>
-<span class="slot-box" id="slot1">?</span>
-<span class="slot-box" id="slot2">?</span>
-</div></div>
-<div class="d-flex justify-content-center gap-2 mb-3" id="connLetterBtns"></div>
-<div class="d-flex justify-content-center gap-2" id="connActionBtns">
-<button class="btn btn-outline-secondary px-3" id="btn-conn-reset">지우기</button>
-<button class="btn btn-success px-4 fw-bold" id="btn-conn-confirm" disabled>확인</button>
-</div>
-<div class="mt-3" id="connFeedback"></div></div>
-<div id="connBonusSection" class="d-none text-start p-3 bg-light rounded-4 mt-2">
-<div class="q-text mb-3 fw-bold" id="bonusQText"></div>
-<div class="row g-2" id="bonusOpts"></div>
-<div id="bonusFeedback"></div>
-</div></div></div></div></div>
-
-<div id="navbar-placeholder"></div><script src="../../../js/navbar.js"></script>
-
-<div id="login-section" class="section-container active-section"><div class="container py-4"><div class="login-card">
-<div class="text-center mb-4"><h1 class="fw-bold fs-3">📐 삼각형 닮음 카드게임</h1>
-<p class="text-muted">닮은 삼각형 쌍을 찾고, 닮음 조건과 대응 꼭짓점까지 맞혀 보세요!</p></div>
-<div id="room-entrance-container"></div></div></div></div>
-
-<div id="game-section" class="section-container"><div class="container py-3"><div class="game-wrapper">
-<div class="game-top-header">
-<div>
-<div class="small opacity-75 fw-bold" id="level-badge">Round 1</div>
-<div class="fw-bold fs-5 mt-1" id="lives-display">❤️❤️❤️❤️❤️</div>
-</div>
-<div class="text-end">
-<div class="d-flex align-items-center justify-content-end gap-3">
-<button id="btn-end-play" class="btn btn-outline-light btn-sm fw-bold px-2 py-1" style="border-width: 2px;">플레이 종료</button>
-<div class="text-end">
-<div class="small opacity-75" style="line-height: 1;">Score <small id="combo" class="text-warning"></small></div>
-<div class="fw-bold fs-4" id="score" style="line-height: 1.2;">0</div>
-</div></div></div></div>
-<div id="msg" class="text-center fw-bold small mb-2"></div>
-
-<div id="board-wrap">
-<div id="hint" class="small text-muted text-center mb-2">닮은 삼각형 카드 2장을 선택해 보세요. (함정 카드 2장 포함)</div>
-<div class="row row-cols-3 row-cols-md-4 g-2" id="board"></div>
-</div>
-</div></div></div>
-
-<div id="gameover-section" class="section-container"><div class="container py-4"><div class="login-card">
-<div class="card border-0 shadow-sm rounded-4 p-4 text-center mb-4"><div class="display-4 mb-3">📐</div>
-<h2 class="fw-bold text-danger mb-2">게임 종료!</h2>
-<div class="bg-light rounded-4 p-3 mb-4"><p class="fs-5 mb-1">최종 점수: <span id="final-score" class="fw-bold text-primary fs-3">0</span>점</p>
-<p class="fs-6 mb-1">정답률: <span id="final-accuracy" class="fw-bold text-info">0%</span></p>
-<p class="small text-muted mb-0" id="final-detail"></p></div>
-<div id="save-status" class="text-success fw-bold small mb-3"></div>
-<div class="bg-light border rounded-4 p-3 mb-4 text-start"><div class="d-flex justify-content-between align-items-center mb-2">
-<h6 class="fw-bold mb-0">📊 내 순위와 주변 실력</h6><span class="badge bg-primary px-3 py-1" id="myRankBadge">-위</span></div>
-<div class="small text-muted mb-2" id="rankSummaryText">순위를 계산 중입니다.</div>
-<table class="table table-sm table-borderless align-middle mb-0" style="font-size:.9rem"><thead><tr class="text-muted small"><th class="text-center" style="width:15%">순위</th><th style="width:55%">닉네임</th><th class="text-center" style="width:30%">점수</th></tr></thead><tbody id="rankNearbyTable"></tbody></table></div>
-<button id="btn-restart" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button></div></div></div></div>
-
-<div id="dashboard-section" class="section-container"><div class="container py-4"><div class="admin-card mb-4">
-<div id="dash-header-placeholder"></div>
-<script src="../../../js/dashboard-header.js?v=4.2" data-title="삼각형 닮음 카드게임 대시보드"></script>
-<div id="pendingGuestsContainer" class="mb-3"></div>
-<div id="dashStatsContainer" class="row g-3 mb-4">
-<div class="col-lg-3 col-md-4">
-<div class="dash-stat-box h-100 d-flex flex-column justify-content-center text-center p-3">
-<div class="text-muted small fw-bold mb-2">학급 평균 점수</div>
-<div class="fs-2 fw-bold text-success" id="dashAvgScore">-</div>
-<div class="text-muted small fw-bold mb-2 mt-4">학급 평균 명중률</div>
-<div class="fs-3 fw-bold text-primary" id="dashAvgAcc">-</div>
-</div>
-</div>
-<div class="col-lg-5 col-md-8">
-<div class="dash-stat-box h-100">
-<div class="d-flex justify-content-between align-items-center mb-3">
-<h6 class="fw-bold mb-0 text-primary"><i class="bi bi-pie-chart-fill me-1"></i> 닮음조건별 학급 정답률</h6>
-<span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="statConditionBadge">방 선택 필요</span>
-</div>
-<div id="dashConditionStats"><div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div></div>
-</div>
-</div>
-<div class="col-lg-4 col-md-12">
-<div class="dash-stat-box h-100">
-<div class="d-flex justify-content-between align-items-center mb-3">
-<h6 class="fw-bold mb-0 text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> 자주 틀리는 오류 분석</h6>
-<span class="badge bg-danger-subtle text-danger border border-danger-subtle" id="statErrorBadge">방 선택 필요</span>
-</div>
-<div id="dashErrorStats"><div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div></div>
-</div>
-</div>
-</div>
-<div class="d-flex justify-content-end mb-2"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="toggleStudentId" style="cursor:pointer">
-<label class="form-check-label small fw-bold text-secondary" for="toggleStudentId" style="cursor:pointer">학번 표시</label></div></div>
-<div class="table-responsive" id="adminTableWrap"><table class="table table-hover align-middle mb-0 text-center" style="font-size:.9rem"><thead class="table-light"><tr>
-<th>순위</th><th class="col-studentid">학번</th><th>닉네임</th><th>종합 성취수준</th><th>최고 점수</th><th>정답률</th><th>SSS</th><th>SAS</th><th>AA</th><th>대응점 연결</th><th>플레이</th></tr></thead>
-<tbody id="adminTableBody"><tr><td colspan="11"class="py-4 text-muted">방을 선택해주세요.</td></tr></tbody></table></div>
-</div></div></div>
-
-<script type="module">
-import { db } from "../../../js/firebase-config.js";
-import { renderRoomEntrance, customAlert, showPinResetModal } from "../../../js/room-auth.js?v=4.2";
-import { firestoreRoom, renderGuestApproval, bindDeleteRoomButton, bindStudentIdToggle, buildSidMap, escapeHtml, safeNumber } from "../../../js/game-kit.js?v=4.2";
-import { doc, setDoc, addDoc, getDocs, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
-
-const room = firestoreRoom("similar_triangle_records");
-let currentRoomCode = "", playerNickname = "", mySchool = "", myStudentId = "";
-const $ = id => document.getElementById(id);
-function showSection(id) { document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section')); $(id).classList.add('active-section'); }
-
-// ======================= 규칙 기반 생성기 + 판정 (PRD 6장) =======================
-const CFG = {
-  1: { ang: [30,40,50,60,70,80], sc: [[2,1],[3,1],[4,1]], tp: ['SSS','SSS','SA','SA','AA'], sd: [3,8], th: [40,50,60,70,80] },
-  2: { ang: [30,40,50,60,70,80,90], sc: [[2,1],[3,1],[3,2],[4,3]], tp: ['SSS','SSS','SA','SA','AA'], sd: [3,9], th: [40,50,60,70,80,90,100] },
-  3: { ang: [25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100], sc: [[2,1],[3,1],[3,2],[4,3],[5,2]], tp: ['SSS','SA','AA','SSS','SA'], sd: [3,10], th: [35,40,45,50,55,60,65,70,75,80,85,90,100,110] },
-  4: { ang: [25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110], sc: [[2,1],[3,1],[3,2],[4,3],[5,2],[5,3]], tp: null, sd: [3,11], th: [35,40,45,50,55,60,65,70,75,80,85,90,100,110,120] },
-  5: { ang: [25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110], sc: [[2,1],[3,1],[3,2],[4,3],[5,2],[5,3],[5,4]], tp: null, sd: [3,12], th: [35,40,45,50,55,60,65,70,75,80,85,90,100,110,120] }
-};
-const TN = { SSS: 'SSS', SA: 'SAS', AA: 'AA' };
-function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-let R = Math.random;
-const pick = a => a[R() * a.length | 0];
-const shuf = a => a.map(v => [R(), v]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
-const rint = (lo, hi) => lo + (R() * (hi - lo + 1) | 0);
-const rk = v => v.map(x => v.filter(y => y < x).length);
-const LET = 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split('');
-
-function judge(a, b) {            // 닮음 판정: 정수 교차곱만 사용
-  if (a.type !== b.type) return 'INVALID';
-  if (a.type === 'SSS') { const x = [...a.s].sort((p, q) => p - q), y = [...b.s].sort((p, q) => p - q); return x[0] * y[1] === x[1] * y[0] && x[0] * y[2] === x[2] * y[0] ? 'SSS' : 'NONE'; }
-  if (a.type === 'SA') return a.ssa || b.ssa ? 'NONE' : a.th === b.th && (a.p * b.q === a.q * b.p || a.p * b.p === a.q * b.q) ? 'SAS' : 'NONE';
-  return [...a.ang].sort((p, q) => p - q).join() === [...b.ang].sort((p, q) => p - q).join() ? 'AA' : 'NONE';
-}
-function match(a, b) {            // 정답 대응: a의 꼭짓점 i → b의 꼭짓점 m[i]
-  if (a.type === 'SSS') { const ra = rk(a.s), rb = rk(b.s); return ra.map(r => rb.indexOf(r)); }
-  if (a.type === 'AA') return a.ang.map(x => b.ang.indexOf(x));
-  const same = a.p * b.q === a.q * b.p, m = []; m[a.k] = b.k;
-  m[(a.k + 1) % 3] = same ? (b.k + 1) % 3 : (b.k + 2) % 3; m[(a.k + 2) % 3] = same ? (b.k + 2) % 3 : (b.k + 1) % 3; return m;
-}
-function pts(c) {
-  if (c.type === 'SSS') { const s = c.s, x = (s[1] ** 2 + s[2] ** 2 - s[0] ** 2) / (2 * s[2]); return [[0, 0], [s[2], 0], [x, Math.sqrt(Math.max(0, s[1] ** 2 - x * x))]]; }
-  if (c.type === 'AA') { const r = c.ang.map(x => x * Math.PI / 180), l = Math.sin(r[1]) / Math.sin(r[2]); return [[0, 0], [1, 0], [l * Math.cos(r[0]), l * Math.sin(r[0])]]; }
-  const P = [], t = c.th * Math.PI / 180; P[c.k] = [0, 0]; P[(c.k + 1) % 3] = [c.p, 0];
-  const w = c.ssa ? Math.PI - t - Math.asin(c.p * Math.sin(t) / c.q) : t; P[(c.k + 2) % 3] = [c.q * Math.cos(w), c.q * Math.sin(w)]; return P;
-}
-function uniq(c) {                // 세 변·세 각이 모두 달라야 대응이 하나로 정해진다
-  const P = pts(c), d = (i, j) => Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]), s = [d(1, 2), d(2, 0), d(0, 1)];
-  const an = s.map((_, i) => Math.acos((s[(i + 1) % 3] ** 2 + s[(i + 2) % 3] ** 2 - s[i] ** 2) / (2 * s[(i + 1) % 3] * s[(i + 2) % 3])) * 180 / Math.PI);
-  const m = (v, f) => { let q = 1e9; for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) q = Math.min(q, f(v[i], v[j])); return q; };
-  return m(s, (a, b) => Math.abs(a - b) / Math.max(a, b)) > .08 && m(an, (a, b) => Math.abs(a - b)) > 4;
-}
-const deco = () => ({ L: shuf(LET).slice(0, 3), rot: R() * 360, mir: R() < .5 });
-function maskFor(ang, vals) { const m = [false, false, false]; if (vals) ang.forEach((x, i) => { if (vals.includes(x)) m[i] = true; }); else shuf([0, 1, 2]).slice(0, 2).forEach(i => m[i] = true); return m; }
-
-function makePair(type, rnd) {
-  const c = CFG[rnd] || CFG[Math.min(5, Math.max(1, rnd))], [n, d] = pick(c.sc);
-  if (type === 'AA') {
-    let x, y, z; for (let t = 0; t < 200; t++) { x = pick(c.ang); y = pick(c.ang); z = 180 - x - y; if (z >= 20 && z <= 120 && Math.min(Math.abs(x - y), Math.abs(x - z), Math.abs(y - z)) >= 5) break; }
-    const A = { type, ang: shuf([x, y, z]), ...deco() }; A.show = maskFor(A.ang);
-    const B = { type, ang: shuf([x, y, z]), ...deco() }; B.show = rnd < 3 ? maskFor(B.ang, A.ang.filter((_, i) => A.show[i])) : maskFor(B.ang);
-    return [A, B];
-  }
-  if (type === 'SSS') {
-    let a, b, e; for (let t = 0; t < 200; t++) { a = rint(...c.sd); b = rint(...c.sd); e = rint(...c.sd); if (a + b > e && a + e > b && b + e > a && a !== b && b !== e && a !== e) break; }
-    return [{ type, s: shuf([a, b, e]).map(v => v * d), ...deco() }, { type, s: shuf([a, b, e]).map(v => v * n), ...deco() }];
-  }
-  const p = rint(...c.sd); let q = rint(...c.sd); while (q === p) q = rint(...c.sd); const th = pick(c.th), sw = R() < .5;
-  return [{ type, k: R() * 3 | 0, th, p: p * d, q: q * d, ...deco() }, { type, k: R() * 3 | 0, th, p: (sw ? q : p) * n, q: (sw ? p : q) * n, ...deco() }];
-}
-function makeDecoy(T, rnd) {
-  if (T.type === 'AA') {
-    const [x, y] = T.ang, y2 = y + pick(rnd < 3 ? [-10, 10] : [-5, 5, -10, 10]), z2 = 180 - x - y2; if (z2 < 15 || y2 < 15) return null;
-    const ang = shuf([x, y2, z2]); return { type: 'AA', ang, show: maskFor(ang, rnd < 3 ? [x, y2] : null), ...deco(), role: 'decoy', kind: 'cAaOne' };
-  }
-  if (T.type === 'SSS') {
-    const s = [...T.s], i = R() * 3 | 0; s[i] += pick([-2, -1, 1, 2]); const [a, b, c] = s; if (s[i] < 2 || !(a + b > c && a + c > b && b + c > a)) return null;
-    return { type: 'SSS', s, ...deco(), role: 'decoy', kind: 'cSssTwo' };
-  }
-  if (rnd >= 3 && R() < .5) { const sn = T.p * Math.sin(T.th * Math.PI / 180) / T.q; if (sn >= .95 || T.th + Math.asin(sn) * 180 / Math.PI >= 170) return null; return { type: 'SA', k: R() * 3 | 0, th: T.th, p: T.p, q: T.q, ssa: true, ...deco(), role: 'decoy', kind: 'cSsa' }; }
-  const th = T.th + pick(rnd < 3 ? [-10, 10] : [-5, 5, -10, 10]); if (th < 25 || th > 150) return null;
-  return { type: 'SA', k: R() * 3 | 0, th, p: T.p, q: T.q, ...deco(), role: 'decoy', kind: 'cSasAng' };
-}
-function genBoard(rnd, seed) {
-  const cfg = CFG[rnd] || CFG[Math.min(5, Math.max(1, rnd))];
-  for (let t = 0; t < 80; t++) {
-    R = mulberry32(seed * 131 + t);
-    const types = cfg.tp ? shuf([...cfg.tp]) : shuf(['SSS', 'SA', 'AA', pick(['SSS', 'SA', 'AA']), pick(['SSS', 'SA', 'AA'])]);
-    const cards = [], twins = [];
-    types.forEach((ty, i) => { const [A, B] = makePair(ty, rnd); A.pid = B.pid = i; cards.push(A, B); twins.push(B); });
-    let ok = true; shuf(twins).slice(0, 2).forEach(T => { const D = makeDecoy(T, rnd); if (!D) ok = false; else { D.pid = null; cards.push(D); } });
-    if (!ok || cards.length !== 12 || !cards.every(uniq)) continue;
-    for (let i = 0; i < 12 && ok; i++) for (let j = i + 1; j < 12; j++) {          // 66쌍 전수 검증
-      const jd = judge(cards[i], cards[j]), sim = jd !== 'INVALID' && jd !== 'NONE', want = cards[i].pid != null && cards[i].pid === cards[j].pid;
-      if (sim !== want) { ok = false; break; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>삼각형 닮음 카드게임 - 중2 수학</title>
+  <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="../../../css/navbar.css">
+  <link rel="stylesheet" href="../../../css/dashboard.css">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      background-color: #ffffff
     }
-    if (ok) return shuf(cards).map((c, i) => ({ ...c, id: i }));
-  }
-  return genBoard(Math.max(1, rnd - 1), seed + 7);
-}
 
-// ======================= 카드 그리기 =======================
-const COL = ['#2563eb', '#f59e0b', '#16a34a'], SYM = ['●', '▲', '■'];
-function drawCard(c, o = {}) {
-  let P = pts(c).map(p => c.mir ? [-p[0], p[1]] : p), cs = Math.cos(c.rot * Math.PI / 180), sn = Math.sin(c.rot * Math.PI / 180);
-  P = P.map(p => [p[0] * cs - p[1] * sn, -(p[0] * sn + p[1] * cs)]);
-  const xs = P.map(p => p[0]), ys = P.map(p => p[1]), mnx = Math.min(...xs), mny = Math.min(...ys), w = Math.max(...xs) - mnx, h = Math.max(...ys) - mny, sc = Math.min(68 / w, 52 / h);
-  P = P.map(p => [60 + (p[0] - mnx - w / 2) * sc, 50 + (p[1] - mny - h / 2) * sc]);
-  const g = [P[0].map((_, i) => (P[0][i] + P[1][i] + P[2][i]) / 3)][0], out = (p, k) => { const dx = p[0] - g[0], dy = p[1] - g[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * k, p[1] + dy / l * k]; };
-  const mid = (i, j) => [(P[i][0] + P[j][0]) / 2, (P[i][1] + P[j][1]) / 2],
+    .login-card {
+      max-width: 480px;
+      margin: 0 auto
+    }
+
+    .game-wrapper {
+      max-width: 800px;
+      margin: 0 auto
+    }
+
+    .col-studentid {
+      display: none
+    }
+
+    #adminTableWrap.show-sid .col-studentid {
+      display: table-cell
+    }
+
+    .tcard {
+      background: #fff;
+      border: 2px solid #cbd5e1;
+      border-radius: 14px;
+      cursor: pointer;
+      padding: 2px;
+      transition: .12s;
+      user-select: none
+    }
+
+    .tcard:hover {
+      border-color: #94a3b8
+    }
+
+    .tcard.sel {
+      border-color: #2563eb;
+      background: #eff6ff;
+      box-shadow: 0 0 0 3px #bfdbfe
+    }
+
+    .tcard.gone {
+      visibility: hidden
+    }
+
+    .tcard svg {
+      width: 100%;
+      height: auto;
+      display: block
+    }
+
+    .tcard .tag {
+      font-size: .65rem;
+      color: #64748b;
+      text-align: center;
+      margin-top: -4px
+    }
+
+    .vtx {
+      cursor: pointer
+    }
+
+    .panel {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 12px
+    }
+
+    #msg {
+      min-height: 1.6em
+    }
+
+    .q-text {
+      font-size: 1.15rem;
+      font-weight: 700;
+      line-height: 1.7
+    }
+
+    .game-top-header {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+      border-radius: 14px;
+      padding: 0.9rem 1.4rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15);
+      margin-bottom: 1rem
+    }
+
+    .slot-box {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 52px;
+      border: 2px dashed #6366f1;
+      background: #f5f3ff;
+      color: #4f46e5;
+      border-radius: 10px;
+      font-weight: 800;
+      font-size: 1.5rem;
+      transition: all .15s ease;
+      cursor: pointer;
+      user-select: none
+    }
+
+    .slot-box.filled {
+      border-style: solid;
+      background: #e0e7ff;
+      color: #3730a3
+    }
+
+    .slot-box.filled:hover {
+      transform: translateY(-2px);
+      border-color: #4338ca;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2)
+    }
+
+    #compareCardsArea svg,
+    #connCardsArea svg {
+      width: 100%;
+      max-height: 180px;
+      display: block;
+      margin: 0 auto
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+  <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5><button type="button" class="btn-close"
+            data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body pb-0" id="customModalBody"></div>
+        <div class="modal-footer border-0 pt-3"><button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
+            id="customModalCancel">취소</button><button type="button" class="btn btn-primary rounded-3 px-4"
+            id="customModalConfirm">확인</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold" id="detailTitle"></h5><button type="button" class="btn-close"
+            data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="detailBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 카드 비교 및 닮음조건 판정 모달 -->
+  <div class="modal fade" id="compareModal" tabindex="-1" data-bs-backdrop="static" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold">📐 삼각형 닮음 조건 판정</h5><button type="button" class="btn-close"
+            id="btn-compare-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-center pt-2 pb-4">
+          <p class="text-muted small mb-3">선택한 두 삼각형의 변의 길이와 각의 크기를 비교하고 알맞은 닮음 조건을 고르세요.</p>
+          <div class="row g-3 justify-content-center mb-4" id="compareCardsArea"></div>
+          <div class="panel bg-light p-3 rounded-4">
+            <div class="fw-bold mb-3 fs-6">두 삼각형의 닮음 조건은?</div>
+            <div class="d-flex flex-wrap gap-2 justify-content-center" id="judge-btns">
+              <button class="btn btn-primary px-4 py-2 fw-bold" data-c="SSS">SSS 닮음</button>
+              <button class="btn btn-primary px-4 py-2 fw-bold" data-c="SAS">SAS 닮음</button>
+              <button class="btn btn-primary px-4 py-2 fw-bold" data-c="AA">AA 닮음</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 대응 꼭짓점 순서 & 보너스 퀴즈 모달 -->
+  <div class="modal fade" id="connModal" tabindex="-1" data-bs-backdrop="static" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold" id="connModalTitle">🔗 대응하는 꼭짓점 순서 맞히기</h5>
+        </div>
+        <div class="modal-body text-center pt-2 pb-4">
+          <div class="row g-3 justify-content-center mb-3" id="connCardsArea"></div>
+          <div id="connMainSection">
+            <div class="small text-muted mb-2">삼각형의 기호 표현에 맞게 대응하는 꼭짓점 알파벳을 순서대로 선택하세요.</div>
+            <div class="d-flex align-items-center justify-content-center gap-2 fs-3 fw-bold my-3 flex-wrap">
+              <span>△<span id="connTri1Name" class="text-primary">ABC</span></span>
+              <span class="text-secondary mx-2">∽</span>
+              <span>△</span>
+              <div class="d-flex gap-2" id="connSlots">
+                <span class="slot-box" id="slot0">?</span>
+                <span class="slot-box" id="slot1">?</span>
+                <span class="slot-box" id="slot2">?</span>
+              </div>
+            </div>
+            <div class="d-flex justify-content-center gap-2 mb-3" id="connLetterBtns"></div>
+            <div class="d-flex justify-content-center gap-2" id="connActionBtns">
+              <button class="btn btn-outline-secondary px-3" id="btn-conn-reset">지우기</button>
+              <button class="btn btn-success px-4 fw-bold" id="btn-conn-confirm" disabled>확인</button>
+            </div>
+            <div class="mt-3" id="connFeedback"></div>
+          </div>
+          <div id="connBonusSection" class="d-none text-start p-3 bg-light rounded-4 mt-2">
+            <div class="q-text mb-3 fw-bold" id="bonusQText"></div>
+            <div class="row g-2" id="bonusOpts"></div>
+            <div id="bonusFeedback"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="navbar-placeholder"></div>
+  <script src="../../../js/navbar.js"></script>
+
+  <div id="login-section" class="section-container active-section">
+    <div class="container py-4">
+      <div class="login-card">
+        <div class="text-center mb-4">
+          <h1 class="fw-bold fs-3">📐 삼각형 닮음 카드게임</h1>
+          <p class="text-muted">닮은 삼각형 쌍을 찾고, 닮음 조건과 대응 꼭짓점까지 맞혀 보세요!</p>
+        </div>
+        <div id="room-entrance-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-section" class="section-container">
+    <div class="container py-3">
+      <div class="game-wrapper">
+        <div class="game-top-header">
+          <div>
+            <div class="small opacity-75 fw-bold" id="level-badge">Round 1</div>
+            <div class="fw-bold fs-5 mt-1" id="lives-display">❤️❤️❤️❤️❤️</div>
+          </div>
+          <div class="text-end">
+            <div class="d-flex align-items-center justify-content-end gap-3">
+              <button id="btn-end-play" class="btn btn-outline-light btn-sm fw-bold px-2 py-1"
+                style="border-width: 2px;">플레이 종료</button>
+              <div class="text-end">
+                <div class="small opacity-75" style="line-height: 1;">Score <small id="combo"
+                    class="text-warning"></small></div>
+                <div class="fw-bold fs-4" id="score" style="line-height: 1.2;">0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="msg" class="text-center fw-bold small mb-2"></div>
+
+        <div id="board-wrap">
+          <div id="hint" class="small text-muted text-center mb-2">닮은 삼각형 카드 2장을 선택해 보세요. (함정 카드 2장 포함)</div>
+          <div class="row row-cols-3 row-cols-md-4 g-2" id="board"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameover-section" class="section-container">
+    <div class="container py-4">
+      <div class="login-card">
+        <div class="card border-0 shadow-sm rounded-4 p-4 text-center mb-4">
+          <div class="display-4 mb-3">📐</div>
+          <h2 class="fw-bold text-danger mb-2">게임 종료!</h2>
+          <div class="bg-light rounded-4 p-3 mb-4">
+            <p class="fs-5 mb-1">최종 점수: <span id="final-score" class="fw-bold text-primary fs-3">0</span>점</p>
+            <p class="fs-6 mb-1">정답률: <span id="final-accuracy" class="fw-bold text-info">0%</span></p>
+            <p class="small text-muted mb-0" id="final-detail"></p>
+          </div>
+          <div id="save-status" class="text-success fw-bold small mb-3"></div>
+          <div class="bg-light border rounded-4 p-3 mb-4 text-start">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0">📊 내 순위와 주변 실력</h6><span class="badge bg-primary px-3 py-1"
+                id="myRankBadge">-위</span>
+            </div>
+            <div class="small text-muted mb-2" id="rankSummaryText">순위를 계산 중입니다.</div>
+            <table class="table table-sm table-borderless align-middle mb-0" style="font-size:.9rem">
+              <thead>
+                <tr class="text-muted small">
+                  <th class="text-center" style="width:15%">순위</th>
+                  <th style="width:55%">닉네임</th>
+                  <th class="text-center" style="width:30%">점수</th>
+                </tr>
+              </thead>
+              <tbody id="rankNearbyTable"></tbody>
+            </table>
+          </div>
+          <button id="btn-restart" class="btn btn-primary btn-lg w-100 fw-bold">🔄 다시 도전하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dashboard-section" class="section-container">
+    <div class="container py-4">
+      <div class="admin-card mb-4">
+        <div id="dash-header-placeholder"></div>
+        <script src="../../../js/dashboard-header.js?v=4.2" data-title="삼각형 닮음 카드게임 대시보드"></script>
+        <div id="pendingGuestsContainer" class="mb-3"></div>
+        <div id="dashStatsContainer" class="row g-3 mb-4">
+          <div class="col-lg-3 col-md-4">
+            <div class="dash-stat-box h-100 d-flex flex-column justify-content-center text-center p-3">
+              <div class="text-muted small fw-bold mb-2">학급 평균 점수</div>
+              <div class="fs-2 fw-bold text-success" id="dashAvgScore">-</div>
+              <div class="text-muted small fw-bold mb-2 mt-4">학급 평균 명중률</div>
+              <div class="fs-3 fw-bold text-primary" id="dashAvgAcc">-</div>
+            </div>
+          </div>
+          <div class="col-lg-5 col-md-8">
+            <div class="dash-stat-box h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-pie-chart-fill me-1"></i> 닮음조건별 학급 정답률</h6>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
+                  id="statConditionBadge">방 선택 필요</span>
+              </div>
+              <div id="dashConditionStats">
+                <div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-4 col-md-12">
+            <div class="dash-stat-box h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0 text-warning-emphasis"><i class="bi bi-gift-fill me-1"></i> 보너스 퀴즈 정답률</h6>
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  id="statBonusBadge">방 선택 필요</span>
+              </div>
+              <div id="dashBonusStats">
+                <div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-end mb-2">
+          <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="toggleStudentId"
+              style="cursor:pointer">
+            <label class="form-check-label small fw-bold text-secondary" for="toggleStudentId" style="cursor:pointer">학번
+              표시</label>
+          </div>
+        </div>
+        <div class="table-responsive" id="adminTableWrap">
+          <table class="table table-hover align-middle mb-0 text-center" style="font-size:.9rem">
+            <thead class="table-light">
+              <tr>
+                <th>순위</th>
+                <th class="col-studentid">학번</th>
+                <th>닉네임</th>
+                <th>종합 성취수준</th>
+                <th>최고 점수</th>
+                <th>정답률</th>
+                <th>SSS</th>
+                <th>SAS</th>
+                <th>AA</th>
+                <th>대응점 연결</th>
+                <th>플레이</th>
+              </tr>
+            </thead>
+            <tbody id="adminTableBody">
+              <tr>
+                <td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db } from "../../../js/firebase-config.js";
+    import { renderRoomEntrance, customAlert, showPinResetModal } from "../../../js/room-auth.js?v=4.2";
+    import { firestoreRoom, renderGuestApproval, bindDeleteRoomButton, bindStudentIdToggle, buildSidMap, escapeHtml, safeNumber } from "../../../js/game-kit.js?v=4.2";
+    import { doc, setDoc, addDoc, getDocs, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    const room = firestoreRoom("similar_triangle_records");
+    let currentRoomCode = "", playerNickname = "", mySchool = "", myStudentId = "";
+    const $ = id => document.getElementById(id);
+    function showSection(id) { document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section')); $(id).classList.add('active-section'); }
+
+    // ======================= 규칙 기반 생성기 + 판정 (PRD 6장) =======================
+    const CFG = {
+      1: { ang: [30, 40, 50, 60, 70, 80], sc: [[2, 1], [3, 1], [4, 1]], tp: ['SSS', 'SSS', 'SA', 'SA', 'AA'], sd: [3, 8], th: [40, 50, 60, 70, 80] },
+      2: { ang: [30, 40, 50, 60, 70, 80, 90], sc: [[2, 1], [3, 1], [3, 2], [4, 3]], tp: ['SSS', 'SSS', 'SA', 'SA', 'AA'], sd: [3, 9], th: [40, 50, 60, 70, 80, 90, 100] },
+      3: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100], sc: [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2]], tp: ['SSS', 'SA', 'AA', 'SSS', 'SA'], sd: [3, 10], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110] },
+      4: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], sc: [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2], [5, 3]], tp: null, sd: [3, 11], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110, 120] },
+      5: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], sc: [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2], [5, 3], [5, 4]], tp: null, sd: [3, 12], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110, 120] }
+    };
+    const TN = { SSS: 'SSS', SA: 'SAS', AA: 'AA' };
+    function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+    let R = Math.random;
+    const pick = a => a[R() * a.length | 0];
+    const shuf = a => a.map(v => [R(), v]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+    const rint = (lo, hi) => lo + (R() * (hi - lo + 1) | 0);
+    const rk = v => v.map(x => v.filter(y => y < x).length);
+    const LET = 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split('');
+
+    function judge(a, b) {            // 닮음 판정: 정수 교차곱만 사용
+      if (a.type !== b.type) return 'INVALID';
+      if (a.type === 'SSS') { const x = [...a.s].sort((p, q) => p - q), y = [...b.s].sort((p, q) => p - q); return x[0] * y[1] === x[1] * y[0] && x[0] * y[2] === x[2] * y[0] ? 'SSS' : 'NONE'; }
+      if (a.type === 'SA') return a.ssa || b.ssa ? 'NONE' : a.th === b.th && (a.p * b.q === a.q * b.p || a.p * b.p === a.q * b.q) ? 'SAS' : 'NONE';
+      return [...a.ang].sort((p, q) => p - q).join() === [...b.ang].sort((p, q) => p - q).join() ? 'AA' : 'NONE';
+    }
+    function match(a, b) {            // 정답 대응: a의 꼭짓점 i → b의 꼭짓점 m[i]
+      if (a.type === 'SSS') { const ra = rk(a.s), rb = rk(b.s); return ra.map(r => rb.indexOf(r)); }
+      if (a.type === 'AA') return a.ang.map(x => b.ang.indexOf(x));
+      const same = a.p * b.q === a.q * b.p, m = []; m[a.k] = b.k;
+      m[(a.k + 1) % 3] = same ? (b.k + 1) % 3 : (b.k + 2) % 3; m[(a.k + 2) % 3] = same ? (b.k + 2) % 3 : (b.k + 1) % 3; return m;
+    }
+    function pts(c) {
+      if (c.type === 'SSS') { const s = c.s, x = (s[1] ** 2 + s[2] ** 2 - s[0] ** 2) / (2 * s[2]); return [[0, 0], [s[2], 0], [x, Math.sqrt(Math.max(0, s[1] ** 2 - x * x))]]; }
+      if (c.type === 'AA') { const r = c.ang.map(x => x * Math.PI / 180), l = Math.sin(r[1]) / Math.sin(r[2]); return [[0, 0], [1, 0], [l * Math.cos(r[0]), l * Math.sin(r[0])]]; }
+      const P = [], t = c.th * Math.PI / 180; P[c.k] = [0, 0]; P[(c.k + 1) % 3] = [c.p, 0];
+      const w = c.ssa ? Math.PI - t - Math.asin(c.p * Math.sin(t) / c.q) : t; P[(c.k + 2) % 3] = [c.q * Math.cos(w), c.q * Math.sin(w)]; return P;
+    }
+    function uniq(c) {                // 세 변·세 각이 모두 달라야 대응이 하나로 정해진다
+      const P = pts(c), d = (i, j) => Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]), s = [d(1, 2), d(2, 0), d(0, 1)];
+      const an = s.map((_, i) => Math.acos((s[(i + 1) % 3] ** 2 + s[(i + 2) % 3] ** 2 - s[i] ** 2) / (2 * s[(i + 1) % 3] * s[(i + 2) % 3])) * 180 / Math.PI);
+      const m = (v, f) => { let q = 1e9; for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) q = Math.min(q, f(v[i], v[j])); return q; };
+      return m(s, (a, b) => Math.abs(a - b) / Math.max(a, b)) > .08 && m(an, (a, b) => Math.abs(a - b)) > 4;
+    }
+    const deco = () => ({ L: shuf(LET).slice(0, 3), rot: R() * 360, mir: R() < .5 });
+    function maskFor(ang, vals) { const m = [false, false, false]; if (vals) ang.forEach((x, i) => { if (vals.includes(x)) m[i] = true; }); else shuf([0, 1, 2]).slice(0, 2).forEach(i => m[i] = true); return m; }
+
+    function makePair(type, rnd) {
+      const c = CFG[rnd] || CFG[Math.min(5, Math.max(1, rnd))], [n, d] = pick(c.sc);
+      if (type === 'AA') {
+        let x, y, z; for (let t = 0; t < 200; t++) { x = pick(c.ang); y = pick(c.ang); z = 180 - x - y; if (z >= 20 && z <= 120 && Math.min(Math.abs(x - y), Math.abs(x - z), Math.abs(y - z)) >= 5) break; }
+        const A = { type, ang: shuf([x, y, z]), ...deco() }; A.show = maskFor(A.ang);
+        const B = { type, ang: shuf([x, y, z]), ...deco() }; B.show = rnd < 3 ? maskFor(B.ang, A.ang.filter((_, i) => A.show[i])) : maskFor(B.ang);
+        return [A, B];
+      }
+      if (type === 'SSS') {
+        let a, b, e; for (let t = 0; t < 200; t++) { a = rint(...c.sd); b = rint(...c.sd); e = rint(...c.sd); if (a + b > e && a + e > b && b + e > a && a !== b && b !== e && a !== e) break; }
+        return [{ type, s: shuf([a, b, e]).map(v => v * d), ...deco() }, { type, s: shuf([a, b, e]).map(v => v * n), ...deco() }];
+      }
+      const p = rint(...c.sd); let q = rint(...c.sd); while (q === p) q = rint(...c.sd); const th = pick(c.th), sw = R() < .5;
+      return [{ type, k: R() * 3 | 0, th, p: p * d, q: q * d, ...deco() }, { type, k: R() * 3 | 0, th, p: (sw ? q : p) * n, q: (sw ? p : q) * n, ...deco() }];
+    }
+    function makeDecoy(T, rnd) {
+      if (T.type === 'AA') {
+        const [x, y] = T.ang, y2 = y + pick(rnd < 3 ? [-10, 10] : [-5, 5, -10, 10]), z2 = 180 - x - y2; if (z2 < 15 || y2 < 15) return null;
+        const ang = shuf([x, y2, z2]); return { type: 'AA', ang, show: maskFor(ang, rnd < 3 ? [x, y2] : null), ...deco(), role: 'decoy' };
+      }
+      if (T.type === 'SSS') {
+        const s = [...T.s], i = R() * 3 | 0; s[i] += pick([-2, -1, 1, 2]); const [a, b, c] = s; if (s[i] < 2 || !(a + b > c && a + c > b && b + c > a)) return null;
+        return { type: 'SSS', s, ...deco(), role: 'decoy' };
+      }
+      if (rnd >= 3 && R() < .5) { const sn = T.p * Math.sin(T.th * Math.PI / 180) / T.q; if (sn >= .95 || T.th + Math.asin(sn) * 180 / Math.PI >= 170) return null; return { type: 'SA', k: R() * 3 | 0, th: T.th, p: T.p, q: T.q, ssa: true, ...deco(), role: 'decoy' }; }
+      const th = T.th + pick(rnd < 3 ? [-10, 10] : [-5, 5, -10, 10]); if (th < 25 || th > 150) return null;
+      return { type: 'SA', k: R() * 3 | 0, th, p: T.p, q: T.q, ...deco(), role: 'decoy' };
+    }
+    function genBoard(rnd, seed) {
+      const cfg = CFG[rnd] || CFG[Math.min(5, Math.max(1, rnd))];
+      for (let t = 0; t < 80; t++) {
+        R = mulberry32(seed * 131 + t);
+        const types = cfg.tp ? shuf([...cfg.tp]) : shuf(['SSS', 'SA', 'AA', pick(['SSS', 'SA', 'AA']), pick(['SSS', 'SA', 'AA'])]);
+        const cards = [], twins = [];
+        types.forEach((ty, i) => { const [A, B] = makePair(ty, rnd); A.pid = B.pid = i; cards.push(A, B); twins.push(B); });
+        let ok = true; shuf(twins).slice(0, 2).forEach(T => { const D = makeDecoy(T, rnd); if (!D) ok = false; else { D.pid = null; cards.push(D); } });
+        if (!ok || cards.length !== 12 || !cards.every(uniq)) continue;
+        for (let i = 0; i < 12 && ok; i++) for (let j = i + 1; j < 12; j++) {          // 66쌍 전수 검증
+          const jd = judge(cards[i], cards[j]), sim = jd !== 'INVALID' && jd !== 'NONE', want = cards[i].pid != null && cards[i].pid === cards[j].pid;
+          if (sim !== want) { ok = false; break; }
+        }
+        if (ok) return shuf(cards).map((c, i) => ({ ...c, id: i }));
+      }
+      return genBoard(Math.max(1, rnd - 1), seed + 7);
+    }
+
+    // ======================= 카드 그리기 =======================
+    const COL = ['#2563eb', '#f59e0b', '#16a34a'], SYM = ['●', '▲', '■'];
+    function drawCard(c, o = {}) {
+      let P = pts(c).map(p => c.mir ? [-p[0], p[1]] : p), cs = Math.cos(c.rot * Math.PI / 180), sn = Math.sin(c.rot * Math.PI / 180);
+      P = P.map(p => [p[0] * cs - p[1] * sn, -(p[0] * sn + p[1] * cs)]);
+      const xs = P.map(p => p[0]), ys = P.map(p => p[1]), mnx = Math.min(...xs), mny = Math.min(...ys), w = Math.max(...xs) - mnx, h = Math.max(...ys) - mny, sc = Math.min(68 / w, 52 / h);
+      P = P.map(p => [60 + (p[0] - mnx - w / 2) * sc, 50 + (p[1] - mny - h / 2) * sc]);
+      const g = [P[0].map((_, i) => (P[0][i] + P[1][i] + P[2][i]) / 3)][0], out = (p, k) => { const dx = p[0] - g[0], dy = p[1] - g[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * k, p[1] + dy / l * k]; };
+      const mid = (i, j) => [(P[i][0] + P[j][0]) / 2, (P[i][1] + P[j][1]) / 2],
         T = (p, t, f = 10, cl = '#0f172a', halo = true) => `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3.5).toFixed(1)}" font-size="${f}" text-anchor="middle" fill="${cl}" font-weight="800"${halo ? ' paint-order="stroke fill" stroke="#ffffff" stroke-width="3px" stroke-linejoin="round"' : ''}>${t}</text>`;
-  let s = `<svg viewBox="0 0 120 100"><polygon points="${P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.3"/>`;
-  P.forEach((p, i) => { if (!o.conn) s += T(out(p, 11), c.L[i], 10, '#1e293b'); });
-  if (o.custom) {
-    if (o.custom.sides) o.custom.sides.forEach(sd => { s += T(out(mid(sd.u, sd.v), 10), sd.text, 10.5, sd.color || '#dc2626'); });
-    if (o.custom.angles) o.custom.angles.forEach(ag => { s += T([g[0] + (P[ag.u][0] - g[0]) * .55, g[1] + (P[ag.u][1] - g[1]) * .55], ag.text, 9.5, ag.color || '#dc2626'); });
-  } else {
-    if (c.type === 'SSS') c.s.forEach((v, i) => { s += T(out(mid((i + 1) % 3, (i + 2) % 3), 9.5), v, 10, '#dc2626'); });
-    if (c.type === 'AA') c.ang.forEach((v, i) => { if (c.show[i]) { s += T([g[0] + (P[i][0] - g[0]) * .55, g[1] + (P[i][1] - g[1]) * .55], v + '°', 9, '#dc2626'); } });
-    if (c.type === 'SA') { const av = c.ssa ? (c.k + 1) % 3 : c.k; s += T(out(mid(c.k, (c.k + 1) % 3), 9.5), c.p, 10, '#dc2626') + T(out(mid(c.k, (c.k + 2) % 3), 9.5), c.q, 10, '#dc2626') + T([g[0] + (P[av][0] - g[0]) * .55, g[1] + (P[av][1] - g[1]) * .55], c.th + '°', 9, '#dc2626'); }
-  }
-  if (o.conn) P.forEach((p, i) => { const pi = o.pairs.findIndex(q => q[o.side === 'a' ? 0 : 1] === i), bad = o.bad && o.bad.includes(o.side + i), sel = o.sel && o.sel.s === o.side && o.sel.v === i;
-    s += `<circle class="vtx" data-s="${o.side}" data-v="${i}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="9" fill="${pi >= 0 ? COL[pi] : '#fff'}" stroke="${bad ? '#dc2626' : sel ? '#2563eb' : '#334155'}" stroke-width="${sel || bad ? 3 : 1.5}"/>`
-      + T([p[0], p[1]], pi >= 0 ? c.L[i] + SYM[pi] : c.L[i], 8, pi >= 0 ? '#fff' : '#0f172a', false); });
-  return s + '</svg>';
-}
+      let s = `<svg viewBox="0 0 120 100"><polygon points="${P.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.3"/>`;
+      P.forEach((p, i) => { if (!o.conn) s += T(out(p, 11), c.L[i], 10, '#1e293b'); });
+      if (o.custom) {
+        if (o.custom.sides) o.custom.sides.forEach(sd => { s += T(out(mid(sd.u, sd.v), 10), sd.text, 10.5, sd.color || '#dc2626'); });
+        if (o.custom.angles) o.custom.angles.forEach(ag => { s += T([g[0] + (P[ag.u][0] - g[0]) * .55, g[1] + (P[ag.u][1] - g[1]) * .55], ag.text, 9.5, ag.color || '#dc2626'); });
+      } else {
+        if (c.type === 'SSS') c.s.forEach((v, i) => { s += T(out(mid((i + 1) % 3, (i + 2) % 3), 9.5), v, 10, '#dc2626'); });
+        if (c.type === 'AA') c.ang.forEach((v, i) => { if (c.show[i]) { s += T([g[0] + (P[i][0] - g[0]) * .55, g[1] + (P[i][1] - g[1]) * .55], v + '°', 9, '#dc2626'); } });
+        if (c.type === 'SA') { const av = c.ssa ? (c.k + 1) % 3 : c.k; s += T(out(mid(c.k, (c.k + 1) % 3), 9.5), c.p, 10, '#dc2626') + T(out(mid(c.k, (c.k + 2) % 3), 9.5), c.q, 10, '#dc2626') + T([g[0] + (P[av][0] - g[0]) * .55, g[1] + (P[av][1] - g[1]) * .55], c.th + '°', 9, '#dc2626'); }
+      }
+      if (o.conn) P.forEach((p, i) => {
+        const pi = o.pairs.findIndex(q => q[o.side === 'a' ? 0 : 1] === i), bad = o.bad && o.bad.includes(o.side + i), sel = o.sel && o.sel.s === o.side && o.sel.v === i;
+        s += `<circle class="vtx" data-s="${o.side}" data-v="${i}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="9" fill="${pi >= 0 ? COL[pi] : '#fff'}" stroke="${bad ? '#dc2626' : sel ? '#2563eb' : '#334155'}" stroke-width="${sel || bad ? 3 : 1.5}"/>`
+          + T([p[0], p[1]], pi >= 0 ? c.L[i] + SYM[pi] : c.L[i], 8, pi >= 0 ? '#fff' : '#0f172a', false);
+      });
+      return s + '</svg>';
+    }
 
-// ======================= 게임 상태·진행 =======================
-let G = null, CN = null;
-const newSt = () => ({ sssOk: 0, sssTot: 0, sasOk: 0, sasTot: 0, aaOk: 0, aaTot: 0, trapOk: 0, trapTot: 0, cSssTwo: 0, cSasAng: 0, cSsa: 0, cAaOne: 0, eSideOk: 0, eSideTot: 0, eAngOk: 0, eAngTot: 0, eMis: 0, eCalc: 0, vOk: 0, vTot: 0 });
-const msg = (t, cl = 'text-dark') => { $('msg').className = 'text-center fw-bold small mb-2 ' + cl; $('msg').textContent = t; };
-const show = (id, on) => $(id).classList.toggle('d-none', !on);
-function updateUI() {
-  const remPairs = G ? G.cards.filter(c => c.pid != null && !c.gone).length / 2 : 0;
-  $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
-  $('level-badge').innerHTML = `Round ${G.round} <span class="ms-2 opacity-100">🎯 남은 쌍 <span class="text-warning">${remPairs}</span>/5</span>`;
-  $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
-}
-function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
-function startRound() {
-  G.cards = genBoard(G.round, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board';
-  show('board-wrap', 1); msg(''); $('hint').textContent = '닮은 삼각형 카드 2장을 선택해 보세요. (함정 카드 2장 포함)'; updateUI(); renderBoard();
-}
-function renderBoard() {
-  $('board').innerHTML = G.cards.map(c => `<div class="col"><div class="tcard ${G.sel.includes(c.id) ? 'sel' : ''} ${c.gone ? 'gone' : ''}" data-id="${c.id}">${drawCard(c)}<div class="tag">${c.type === 'SSS' ? '변 3개' : c.type === 'AA' ? '각 2개' : '변 2개+각'}</div></div></div>`).join('');
-}
-$('board').addEventListener('click', e => {
-  const el = e.target.closest('.tcard'); if (!el || G.phase !== 'board') return; const id = +el.dataset.id; if (G.cards[id].gone) return;
-  G.sel = G.sel.includes(id) ? G.sel.filter(i => i !== id) : [...G.sel, id];
-  if (G.sel.length > 2) G.sel = [id];
-  renderBoard();
-  if (G.sel.length === 2) openCompareModal();
-});
+    // ======================= 게임 상태·진행 =======================
+    let G = null, CN = null;
+    const newSt = () => ({ sssOk: 0, sssTot: 0, sasOk: 0, sasTot: 0, aaOk: 0, aaTot: 0, trapOk: 0, trapTot: 0, eSideOk: 0, eSideTot: 0, eAngOk: 0, eAngTot: 0, vOk: 0, vTot: 0 });
+    const msg = (t, cl = 'text-dark') => { $('msg').className = 'text-center fw-bold small mb-2 ' + cl; $('msg').textContent = t; };
+    const show = (id, on) => $(id).classList.toggle('d-none', !on);
+    function updateUI() {
+      const remPairs = G ? G.cards.filter(c => c.pid != null && !c.gone).length / 2 : 0;
+      $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
+      $('level-badge').innerHTML = `Round ${G.round} <span class="ms-2 opacity-100">🎯 남은 쌍 <span class="text-warning">${remPairs}</span>/5</span>`;
+      $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
+    }
+    function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
+    function startRound() {
+      G.cards = genBoard(G.round, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board';
+      show('board-wrap', 1); msg(''); $('hint').textContent = '닮은 삼각형 카드 2장을 선택해 보세요. (함정 카드 2장 포함)'; updateUI(); renderBoard();
+    }
+    function renderBoard() {
+      $('board').innerHTML = G.cards.map(c => `<div class="col"><div class="tcard ${G.sel.includes(c.id) ? 'sel' : ''} ${c.gone ? 'gone' : ''}" data-id="${c.id}">${drawCard(c)}<div class="tag">${c.type === 'SSS' ? '변 3개' : c.type === 'AA' ? '각 2개' : '변 2개+각'}</div></div></div>`).join('');
+    }
+    $('board').addEventListener('click', e => {
+      const el = e.target.closest('.tcard'); if (!el || G.phase !== 'board') return; const id = +el.dataset.id; if (G.cards[id].gone) return;
+      G.sel = G.sel.includes(id) ? G.sel.filter(i => i !== id) : [...G.sel, id];
+      if (G.sel.length > 2) G.sel = [id];
+      renderBoard();
+      if (G.sel.length === 2) openCompareModal();
+    });
 
-// ---- 카드 확대 비교 모달 ----
-function openCompareModal() {
-  const [a, b] = G.sel.map(i => G.cards[i]);
-  $('compareCardsArea').innerHTML = `
+    // ---- 카드 확대 비교 모달 ----
+    function openCompareModal() {
+      const [a, b] = G.sel.map(i => G.cards[i]);
+      $('compareCardsArea').innerHTML = `
     <div class="col-6">
       <div class="card p-2 shadow-sm text-center border-2 border-primary">
         ${drawCard(a)}
@@ -334,56 +564,56 @@ function openCompareModal() {
       </div>
     </div>
   `;
-  bootstrap.Modal.getOrCreateInstance($('compareModal')).show();
-}
-$('btn-compare-close').addEventListener('click', () => { G.sel = []; renderBoard(); });
-$('judge-btns').addEventListener('click', e => {
-  const c = e.target.dataset.c; if (!c) return;
-  bootstrap.Modal.getInstance($('compareModal'))?.hide();
-  submit(c);
-});
-
-const mult = () => Math.min(2, 1 + .1 * G.combo);
-function gain(p, inc) { G.score += Math.round(p * mult()); if (inc) G.combo++; G.wstreak = 0; G.solved++; G.attempts++; G.rOk++; G.rAtt++; }
-function wrong() { G.wstreak++; G.lives--; G.combo = 0; G.attempts++; G.rAtt++; }
-function afterAction() {
-  updateUI(); renderBoard();
-  if (G.lives <= 0) { setTimeout(endGame, 600); return; }
-  if (G.cards.filter(c => c.pid != null && !c.gone).length === 0) endRound();
-}
-
-function submit(c) {
-  const [a, b] = G.sel.map(i => G.cards[i]), j = judge(a, b), dec = a.role === 'decoy' || b.role === 'decoy', ty = { SSS: 'sss', SA: 'sas', AA: 'aa' }[a.type];
-  if (j === 'NONE' || j === 'INVALID') {
-    wrong();
-    if (dec) { G.st.trapTot++; if ((a.role === 'decoy' ? a : b).kind) G.st[(a.role === 'decoy' ? a : b).kind]++; }
-    else if (ty) G.st[ty + 'Tot']++;
-    msg('이 두 삼각형은 닮음 조건을 만족하지 않아요! (하트 -1)', 'text-danger');
-    G.sel = [];
-    afterAction();
-  } else {
-    const jt = { SSS: 'sss', SAS: 'sas', AA: 'aa' }[j];
-    if (c === j) {
-      G.st[jt + 'Tot']++; G.st[jt + 'Ok']++;
-      G.sel = [];
-      openConnModal(a, b);
-      return;
+      bootstrap.Modal.getOrCreateInstance($('compareModal')).show();
     }
-    G.st[jt + 'Tot']++;
-    G.score += 30; G.attempts++; G.rAtt++; a.gone = b.gone = true;
-    msg(`닮은 쌍은 맞았지만 닮음 조건이 틀렸어요! 올바른 근거는 ${j} 닮음입니다. (+30점)`, 'text-warning');
-    G.sel = [];
-    afterAction();
-  }
-}
+    $('btn-compare-close').addEventListener('click', () => { G.sel = []; renderBoard(); });
+    $('judge-btns').addEventListener('click', e => {
+      const c = e.target.dataset.c; if (!c) return;
+      bootstrap.Modal.getInstance($('compareModal'))?.hide();
+      submit(c);
+    });
 
-// ---- 꼭짓점 기호 대응 순서 & 보너스 문제 ----
-function openConnModal(a, b) {
-  const m = match(a, b);
-  const correctOrder = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
-  CN = { a, b, m, correctOrder, input: [], bonus: null };
+    const mult = () => Math.min(2, 1 + .1 * G.combo);
+    function gain(p, inc) { G.score += Math.round(p * mult()); if (inc) G.combo++; G.wstreak = 0; G.solved++; G.attempts++; G.rOk++; G.rAtt++; }
+    function wrong() { G.wstreak++; G.lives--; G.combo = 0; G.attempts++; G.rAtt++; }
+    function afterAction() {
+      updateUI(); renderBoard();
+      if (G.lives <= 0) { setTimeout(endGame, 600); return; }
+      if (G.cards.filter(c => c.pid != null && !c.gone).length === 0) endRound();
+    }
 
-  $('connCardsArea').innerHTML = `
+    function submit(c) {
+      const [a, b] = G.sel.map(i => G.cards[i]), j = judge(a, b), dec = a.role === 'decoy' || b.role === 'decoy', ty = { SSS: 'sss', SA: 'sas', AA: 'aa' }[a.type];
+      if (j === 'NONE' || j === 'INVALID') {
+        wrong();
+        if (dec) G.st.trapTot++;
+        else if (ty) G.st[ty + 'Tot']++;
+        msg('이 두 삼각형은 닮음 조건을 만족하지 않아요! (하트 -1)', 'text-danger');
+        G.sel = [];
+        afterAction();
+      } else {
+        const jt = { SSS: 'sss', SAS: 'sas', AA: 'aa' }[j];
+        if (c === j) {
+          G.st[jt + 'Tot']++; G.st[jt + 'Ok']++;
+          G.sel = [];
+          openConnModal(a, b);
+          return;
+        }
+        G.st[jt + 'Tot']++;
+        G.score += 30; G.attempts++; G.rAtt++; a.gone = b.gone = true;
+        msg(`닮은 쌍은 맞았지만 닮음 조건이 틀렸어요! 올바른 근거는 ${j} 닮음입니다. (+30점)`, 'text-warning');
+        G.sel = [];
+        afterAction();
+      }
+    }
+
+    // ---- 꼭짓점 기호 대응 순서 & 보너스 문제 ----
+    function openConnModal(a, b) {
+      const m = match(a, b);
+      const correctOrder = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
+      CN = { a, b, m, correctOrder, input: [], bonus: null };
+
+      $('connCardsArea').innerHTML = `
     <div class="col-6">
       <div class="card p-2 shadow-sm text-center border-2 border-primary">
         ${drawCard(a)}
@@ -398,137 +628,137 @@ function openConnModal(a, b) {
     </div>
   `;
 
-  $('connTri1Name').textContent = a.L.join('');
-  $('connModalTitle').textContent = '🔗 대응하는 꼭짓점 순서 맞히기';
-  $('connFeedback').innerHTML = '';
-  $('connBonusSection').classList.add('d-none');
-  $('connMainSection').classList.remove('d-none');
-  renderConnSlots();
-  bootstrap.Modal.getOrCreateInstance($('connModal')).show();
-}
+      $('connTri1Name').textContent = a.L.join('');
+      $('connModalTitle').textContent = '🔗 대응하는 꼭짓점 순서 맞히기';
+      $('connFeedback').innerHTML = '';
+      $('connBonusSection').classList.add('d-none');
+      $('connMainSection').classList.remove('d-none');
+      renderConnSlots();
+      bootstrap.Modal.getOrCreateInstance($('connModal')).show();
+    }
 
-function renderConnSlots() {
-  for (let i = 0; i < 3; i++) {
-    const el = $('slot' + i);
-    const val = CN.input[i];
-    el.textContent = val || '?';
-    el.classList.toggle('filled', !!val);
-    el.title = val ? '클릭하면 지워집니다' : '';
-  }
-  $('connLetterBtns').innerHTML = CN.b.L.map(letter => {
-    const isUsed = CN.input.includes(letter);
-    return `<button class="btn ${isUsed ? 'btn-primary' : 'btn-outline-primary'} btn-lg fw-bold px-4 letter-choice-btn" data-letter="${letter}">${letter}</button>`;
-  }).join('');
-  $('btn-conn-confirm').disabled = CN.input.length !== 3;
-}
+    function renderConnSlots() {
+      for (let i = 0; i < 3; i++) {
+        const el = $('slot' + i);
+        const val = CN.input[i];
+        el.textContent = val || '?';
+        el.classList.toggle('filled', !!val);
+        el.title = val ? '클릭하면 지워집니다' : '';
+      }
+      $('connLetterBtns').innerHTML = CN.b.L.map(letter => {
+        const isUsed = CN.input.includes(letter);
+        return `<button class="btn ${isUsed ? 'btn-primary' : 'btn-outline-primary'} btn-lg fw-bold px-4 letter-choice-btn" data-letter="${letter}">${letter}</button>`;
+      }).join('');
+      $('btn-conn-confirm').disabled = CN.input.length !== 3;
+    }
 
-$('connLetterBtns').addEventListener('click', e => {
-  const btn = e.target.closest('.letter-choice-btn');
-  if (!btn || !CN || CN.bonus) return;
-  const letter = btn.dataset.letter;
-  if (CN.input.includes(letter)) {
-    CN.input = CN.input.filter(x => x !== letter);
-  } else if (CN.input.length < 3) {
-    CN.input.push(letter);
-  }
-  renderConnSlots();
-});
+    $('connLetterBtns').addEventListener('click', e => {
+      const btn = e.target.closest('.letter-choice-btn');
+      if (!btn || !CN || CN.bonus) return;
+      const letter = btn.dataset.letter;
+      if (CN.input.includes(letter)) {
+        CN.input = CN.input.filter(x => x !== letter);
+      } else if (CN.input.length < 3) {
+        CN.input.push(letter);
+      }
+      renderConnSlots();
+    });
 
-$('connSlots').addEventListener('click', e => {
-  const slot = e.target.closest('.slot-box');
-  if (!slot || !CN || CN.bonus) return;
-  const idx = +slot.id.replace('slot', '');
-  if (CN.input[idx]) {
-    CN.input.splice(idx, 1);
-    renderConnSlots();
-  }
-});
+    $('connSlots').addEventListener('click', e => {
+      const slot = e.target.closest('.slot-box');
+      if (!slot || !CN || CN.bonus) return;
+      const idx = +slot.id.replace('slot', '');
+      if (CN.input[idx]) {
+        CN.input.splice(idx, 1);
+        renderConnSlots();
+      }
+    });
 
-$('btn-conn-reset').addEventListener('click', () => { CN.input = []; renderConnSlots(); });
-$('btn-conn-confirm').addEventListener('click', () => { if (CN.input.length === 3) checkConnAnswer(); });
+    $('btn-conn-reset').addEventListener('click', () => { CN.input = []; renderConnSlots(); });
+    $('btn-conn-confirm').addEventListener('click', () => { if (CN.input.length === 3) checkConnAnswer(); });
 
-function checkConnAnswer() {
-  const isMatch = CN.input.every((val, idx) => val === CN.correctOrder[idx]);
-  G.st.vTot++;
-  if (isMatch) {
-    G.st.vOk++; gain(100, true); CN.a.gone = CN.b.gone = true; updateUI();
-    if (Math.random() < 0.45) {
-      $('connMainSection').classList.add('d-none');
-      setupBonusSection(CN.a, CN.b, CN.m);
-    } else {
-      $('connFeedback').innerHTML = `
+    function checkConnAnswer() {
+      const isMatch = CN.input.every((val, idx) => val === CN.correctOrder[idx]);
+      G.st.vTot++;
+      if (isMatch) {
+        G.st.vOk++; gain(100, true); CN.a.gone = CN.b.gone = true; updateUI();
+        if (Math.random() < 0.45) {
+          $('connMainSection').classList.add('d-none');
+          setupBonusSection(CN.a, CN.b, CN.m);
+        } else {
+          $('connFeedback').innerHTML = `
         <div class="alert alert-success fw-bold py-2 mb-3">
           🎉 정답! △${CN.a.L.join('')} ∽ △${CN.correctOrder.join('')} 대응 관계를 정확히 맞혔습니다! (+100점)
         </div>
         <button class="btn btn-primary px-4 fw-bold" id="btn-conn-next">다음 카드 찾기</button>
       `;
-      $('btn-conn-next').onclick = () => { bootstrap.Modal.getInstance($('connModal')).hide(); afterAction(); };
-    }
-  } else {
-    wrong(); CN.a.gone = CN.b.gone = true; updateUI();
-    $('connFeedback').innerHTML = `
+          $('btn-conn-next').onclick = () => { bootstrap.Modal.getInstance($('connModal')).hide(); afterAction(); };
+        }
+      } else {
+        wrong(); CN.a.gone = CN.b.gone = true; updateUI();
+        $('connFeedback').innerHTML = `
       <div class="alert alert-danger fw-bold py-2 mb-3">
         ❌ 대응하는 꼭짓점 순서가 틀렸어요! 올바른 순서는 <b>△${CN.a.L.join('')} ∽ △${CN.correctOrder.join('')}</b> 입니다. (하트 -1)
       </div>
       <button class="btn btn-secondary px-4 fw-bold" id="btn-conn-next">계속하기</button>
     `;
-    $('btn-conn-next').onclick = () => { bootstrap.Modal.getInstance($('connModal')).hide(); afterAction(); };
-  }
-}
+        $('btn-conn-next').onclick = () => { bootstrap.Modal.getInstance($('connModal')).hide(); afterAction(); };
+      }
+    }
 
-// ---- 보너스 퀴즈 출제 & 판정 ----
-function mkBonus(a, b, m) {
-  const T1 = a.L, T2 = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
-  const kind = Math.random() < 0.5 ? 'Side' : 'Ang';
-  let q, ans, opts, ex, customA = {}, customB = {}, badgeA = '', badgeB = '';
+    // ---- 보너스 퀴즈 출제 & 판정 ----
+    function mkBonus(a, b, m) {
+      const T1 = a.L, T2 = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
+      const kind = Math.random() < 0.5 ? 'Side' : 'Ang';
+      let q, ans, opts, ex, customA = {}, customB = {}, badgeA = '', badgeB = '';
 
-  if (kind === 'Side') {
-    const scList = (G && G.round === 1) ? [[2, 1], [3, 1], [4, 1]] : [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2]];
-    const [n, d] = scList[Math.floor(Math.random() * scList.length)];
-    const b1 = rint(2, 5), b2 = rint(2, 5);
-    const s1 = b1 * d, t1 = b1 * n, s2 = b2 * d, t2 = b2 * n;
-    const sideA_1 = T1[0] + T1[1], sideB_1 = T2[0] + T2[1];
-    const sideA_2 = T1[1] + T1[2], sideB_2 = T2[1] + T2[2];
-    
-    customA = { sides: [{ u: 0, v: 1, text: `${s1}`, color: '#2563eb' }, { u: 1, v: 2, text: `${s2}`, color: '#16a34a' }] };
-    customB = { sides: [{ u: m[0], v: m[1], text: `${t1}`, color: '#2563eb' }, { u: m[1], v: m[2], text: '?', color: '#dc2626' }] };
-    badgeA = `추가 변 ${sideA_2}=${s2}`;
-    badgeB = `대응변 ${sideB_2}=?`;
+      if (kind === 'Side') {
+        const scList = (G && G.round === 1) ? [[2, 1], [3, 1], [4, 1]] : [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2]];
+        const [n, d] = scList[Math.floor(Math.random() * scList.length)];
+        const b1 = rint(2, 5), b2 = rint(2, 5);
+        const s1 = b1 * d, t1 = b1 * n, s2 = b2 * d, t2 = b2 * n;
+        const sideA_1 = T1[0] + T1[1], sideB_1 = T2[0] + T2[1];
+        const sideA_2 = T1[1] + T1[2], sideB_2 = T2[1] + T2[2];
 
-    q = `두 삼각형의 닮음비가 ${sideA_1} : ${sideB_1} = ${s1} : ${t1} (${d} : ${n})입니다.<br>`
-      + `왼쪽 삼각형에 새로 주어진 변 <b>${sideA_2} = ${s2}</b>일 때, 오른쪽 삼각형의 물음표(<b>?</b>)로 표시된 대응변 <b>${sideB_2}</b>의 길이는?`;
-    ans = t2;
-    ex = `닮음비가 ${sideA_1} : ${sideB_1} = ${s1} : ${t1} (${d} : ${n})이므로, 대응변 ${sideB_2} = ${s2} × ${n}/${d} = ${t2}입니다.`;
-    opts = [{ v: t2 }, { v: Math.round(s2 * s1 / t1) || (t2 + 2), k: 'eCalc' }, { v: s2 + (t1 - s1), k: 'eCalc' }, { v: t1, k: 'eMis' }];
-  } else {
-    let x = pick([30, 35, 40, 45, 50, 55, 60, 65, 70]), y = pick([30, 40, 50, 60, 70]);
-    if (x + y >= 155) y = 150 - x;
-    if (x === y) y += 10;
-    const z = 180 - x - y;
-    
-    customA = { angles: [{ u: 0, text: `${x}°`, color: '#2563eb' }, { u: 1, text: `${y}°`, color: '#16a34a' }] };
-    customB = { angles: [{ u: m[2], text: '?', color: '#dc2626' }] };
-    badgeA = `주어진 각 ∠${T1[0]}, ∠${T1[1]}`;
-    badgeB = `대응각 ∠${T2[2]}=?`;
+        customA = { sides: [{ u: 0, v: 1, text: `${s1}`, color: '#2563eb' }, { u: 1, v: 2, text: `${s2}`, color: '#16a34a' }] };
+        customB = { sides: [{ u: m[0], v: m[1], text: `${t1}`, color: '#2563eb' }, { u: m[1], v: m[2], text: '?', color: '#dc2626' }] };
+        badgeA = `추가 변 ${sideA_2}=${s2}`;
+        badgeB = `대응변 ${sideB_2}=?`;
 
-    q = `△${T1.join('')} ∽ △${T2.join('')}에서 ∠${T1[0]} = ${x}°, ∠${T1[1]} = ${y}°입니다.<br>`
-      + `오른쪽 삼각형에서 물음표(<b>?</b>)로 표시된 대응각 <b>∠${T2[2]}</b>의 크기는 몇 도일까요?`;
-    ans = z;
-    ex = `△${T1.join('')}에서 ∠${T1[2]} = 180° − (${x}° + ${y}°) = ${z}°입니다. 닮은 두 삼각형에서 대응각의 크기는 서로 같으므로 대응각 ∠${T2[2]} = ${z}°입니다.`;
-    opts = [{ v: z }, { v: 180 - x, k: 'eCalc' }, { v: 180 - y, k: 'eCalc' }, { v: x, k: 'eMis' }];
-  }
-  const seen = new Set([ans]), os = [opts[0]];
-  opts.slice(1).forEach(o => { if (Number.isInteger(o.v) && o.v > 0 && !seen.has(o.v) && os.length < 4) { seen.add(o.v); os.push(o); } });
-  for (let k = 1; os.length < 4; k++) [ans + k, ans - k].forEach(v => { if (v > 0 && !seen.has(v) && os.length < 4) { seen.add(v); os.push({ v, k: 'eCalc' }); } });
-  return { kind, q, ans, ex, opts: shuf(os), done: false, customA, customB, badgeA, badgeB };
-}
+        q = `두 삼각형의 닮음비가 ${sideA_1} : ${sideB_1} = ${s1} : ${t1} (${d} : ${n})입니다.<br>`
+          + `왼쪽 삼각형에 새로 주어진 변 <b>${sideA_2} = ${s2}</b>일 때, 오른쪽 삼각형의 물음표(<b>?</b>)로 표시된 대응변 <b>${sideB_2}</b>의 길이는?`;
+        ans = t2;
+        ex = `닮음비가 ${sideA_1} : ${sideB_1} = ${s1} : ${t1} (${d} : ${n})이므로, 대응변 ${sideB_2} = ${s2} × ${n}/${d} = ${t2}입니다.`;
+        opts = [{ v: t2 }, { v: Math.round(s2 * s1 / t1) || (t2 + 2) }, { v: s2 + (t1 - s1) }, { v: t1 }];
+      } else {
+        let x = pick([30, 35, 40, 45, 50, 55, 60, 65, 70]), y = pick([30, 40, 50, 60, 70]);
+        if (x + y >= 155) y = 150 - x;
+        if (x === y) y += 10;
+        const z = 180 - x - y;
 
-function setupBonusSection(a, b, m) {
-  const bonus = mkBonus(a, b, m);
-  CN.bonus = bonus;
-  $('connModalTitle').textContent = '🎁 보너스 퀴즈: 대응변과 대응각의 크기 구하기';
+        customA = { angles: [{ u: 0, text: `${x}°`, color: '#2563eb' }, { u: 1, text: `${y}°`, color: '#16a34a' }] };
+        customB = { angles: [{ u: m[2], text: '?', color: '#dc2626' }] };
+        badgeA = `주어진 각 ∠${T1[0]}, ∠${T1[1]}`;
+        badgeB = `대응각 ∠${T2[2]}=?`;
 
-  $('connCardsArea').innerHTML = `
+        q = `△${T1.join('')} ∽ △${T2.join('')}에서 ∠${T1[0]} = ${x}°, ∠${T1[1]} = ${y}°입니다.<br>`
+          + `오른쪽 삼각형에서 물음표(<b>?</b>)로 표시된 대응각 <b>∠${T2[2]}</b>의 크기는 몇 도일까요?`;
+        ans = z;
+        ex = `△${T1.join('')}에서 ∠${T1[2]} = 180° − (${x}° + ${y}°) = ${z}°입니다. 닮은 두 삼각형에서 대응각의 크기는 서로 같으므로 대응각 ∠${T2[2]} = ${z}°입니다.`;
+        opts = [{ v: z }, { v: 180 - x }, { v: 180 - y }, { v: x }];
+      }
+      const seen = new Set([ans]), os = [opts[0]];
+      opts.slice(1).forEach(o => { if (Number.isInteger(o.v) && o.v > 0 && !seen.has(o.v) && os.length < 4) { seen.add(o.v); os.push(o); } });
+      for (let k = 1; os.length < 4; k++) [ans + k, ans - k].forEach(v => { if (v > 0 && !seen.has(v) && os.length < 4) { seen.add(v); os.push({ v }); } });
+      return { kind, q, ans, ex, opts: shuf(os), done: false, customA, customB, badgeA, badgeB };
+    }
+
+    function setupBonusSection(a, b, m) {
+      const bonus = mkBonus(a, b, m);
+      CN.bonus = bonus;
+      $('connModalTitle').textContent = '🎁 보너스 퀴즈: 대응변과 대응각의 크기 구하기';
+
+      $('connCardsArea').innerHTML = `
     <div class="col-6">
       <div class="card p-2 shadow-sm text-center border-2 border-primary">
         ${drawCard(a, { custom: bonus.customA })}
@@ -545,178 +775,176 @@ function setupBonusSection(a, b, m) {
     </div>
   `;
 
-  $('connBonusSection').classList.remove('d-none');
-  $('bonusQText').innerHTML = `<div class="mb-2"><span class="badge bg-warning text-dark me-2 fs-6">🎁 보너스 퀴즈! (+100점)</span><span class="text-success small fw-bold">대응 꼭짓점 정답 보너스!</span></div>${bonus.q}`;
-  $('bonusOpts').innerHTML = bonus.opts.map((o, idx) => `
+      $('connBonusSection').classList.remove('d-none');
+      $('bonusQText').innerHTML = `<div class="mb-2"><span class="badge bg-warning text-dark me-2 fs-6">🎁 보너스 퀴즈! (+100점)</span><span class="text-success small fw-bold">대응 꼭짓점 정답 보너스!</span></div>${bonus.q}`;
+      $('bonusOpts').innerHTML = bonus.opts.map((o, idx) => `
     <div class="col-6">
       <button class="btn btn-outline-primary w-100 py-3 fs-5 fw-bold bonus-opt-btn" data-idx="${idx}">${o.v}${bonus.kind === 'Ang' ? '°' : ''}</button>
     </div>
   `).join('');
-  $('bonusFeedback').innerHTML = '';
-}
+      $('bonusFeedback').innerHTML = '';
+    }
 
-$('bonusOpts').addEventListener('click', e => {
-  const btn = e.target.closest('.bonus-opt-btn');
-  if (!btn || !CN.bonus || CN.bonus.done) return;
-  answerBonus(+btn.dataset.idx);
-});
+    $('bonusOpts').addEventListener('click', e => {
+      const btn = e.target.closest('.bonus-opt-btn');
+      if (!btn || !CN.bonus || CN.bonus.done) return;
+      answerBonus(+btn.dataset.idx);
+    });
 
-function answerBonus(idx) {
-  CN.bonus.done = true;
-  const o = CN.bonus.opts[idx];
-  const isCorrect = o && o.v === CN.bonus.ans;
-  G.st['e' + CN.bonus.kind + 'Tot']++;
-  if (isCorrect) {
-    G.st['e' + CN.bonus.kind + 'Ok']++;
-    G.score += 100;
-    updateUI();
-    $('bonusFeedback').innerHTML = `
+    function answerBonus(idx) {
+      CN.bonus.done = true;
+      const o = CN.bonus.opts[idx];
+      const isCorrect = o && o.v === CN.bonus.ans;
+      G.st['e' + CN.bonus.kind + 'Tot']++;
+      if (isCorrect) {
+        G.st['e' + CN.bonus.kind + 'Ok']++;
+        G.score += 100;
+        updateUI();
+        $('bonusFeedback').innerHTML = `
       <div class="alert alert-success fw-bold py-2 mt-3">
         🎉 보너스 정답! +100점을 획득했습니다!
         <div class="small fw-normal text-muted mt-1">${CN.bonus.ex}</div>
       </div>
       <button class="btn btn-primary px-4 fw-bold mt-2" id="btn-bonus-done">완료하고 돌아가기</button>
     `;
-  } else {
-    if (o && o.k) G.st[o.k]++;
-    $('bonusFeedback').innerHTML = `
+      } else {
+        $('bonusFeedback').innerHTML = `
       <div class="alert alert-warning fw-bold py-2 mt-3">
         아쉽네요! 정답은 <b>${CN.bonus.ans}${CN.bonus.kind === 'Ang' ? '°' : ''}</b> 입니다. (보너스 문제는 하트가 차감되지 않습니다)
         <div class="small fw-normal text-muted mt-1">${CN.bonus.ex}</div>
       </div>
       <button class="btn btn-secondary px-4 fw-bold mt-2" id="btn-bonus-done">확인</button>
     `;
-  }
-  $('btn-bonus-done').onclick = () => {
-    bootstrap.Modal.getInstance($('connModal')).hide();
-    afterAction();
-  };
-}
+      }
+      $('btn-bonus-done').onclick = () => {
+        bootstrap.Modal.getInstance($('connModal')).hide();
+        afterAction();
+      };
+    }
 
-// ---- 라운드 종료 ----
-function endRound() {
-  if (G.over) return;
-  G.sel = [];
-  updateUI();
-  if (G.round >= 5) {
-    endGame();
-    return;
-  }
-  msg(`🎉 Round ${G.round} 클리어! 다음 라운드로 이동합니다!`, 'text-success');
-  setTimeout(() => {
-    if (!G.over) nextRound();
-  }, 900);
-}
-function nextRound() {
-  G.round++;
-  startRound();
-}
+    // ---- 라운드 종료 ----
+    function endRound() {
+      if (G.over) return;
+      G.sel = [];
+      updateUI();
+      if (G.round >= 5) {
+        endGame();
+        return;
+      }
+      msg(`🎉 Round ${G.round} 클리어! 다음 라운드로 이동합니다!`, 'text-success');
+      setTimeout(() => {
+        if (!G.over) nextRound();
+      }, 900);
+    }
+    function nextRound() {
+      G.round++;
+      startRound();
+    }
 
-$('btn-end-play').addEventListener('click', () => endGame());
-$('btn-restart').addEventListener('click', () => { showSection('game-section'); initGame(); });
+    $('btn-end-play').addEventListener('click', () => endGame());
+    $('btn-restart').addEventListener('click', () => { showSection('game-section'); initGame(); });
 
-// ======================= 기록 저장 =======================
-async function endGame() {
-  if (!G || G.over) return; G.over = true;
-  bootstrap.Modal.getInstance($('compareModal'))?.hide();
-  bootstrap.Modal.getInstance($('connModal'))?.hide();
-  const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
-  showSection('gameover-section'); $('final-score').textContent = G.score; $('final-accuracy').textContent = acc + '%';
-  $('final-detail').textContent = `도달 라운드: Round ${G.round} · 대응 연결 한 번에 ${S.vOk}/${S.vTot}`;
-  if (!currentRoomCode) {
-    $('save-status').textContent = "";
-    return;
-  }
-  $('save-status').className = 'text-primary fw-bold small mb-3';
-  $('save-status').textContent = '💾 기록 저장 중...';
-  try {
-    const recordData = {
-      nickname: playerNickname,
-      score: safeNumber(G.score),
-      accuracy: acc,
-      totalSolved: safeNumber(G.solved),
-      totalAttempts: safeNumber(G.attempts),
-      round: safeNumber(G.round),
-      sssOk: safeNumber(S.sssOk),
-      sssTot: safeNumber(S.sssTot),
-      sasOk: safeNumber(S.sasOk),
-      sasTot: safeNumber(S.sasTot),
-      aaOk: safeNumber(S.aaOk),
-      aaTot: safeNumber(S.aaTot),
-      vOk: safeNumber(S.vOk),
-      vTot: safeNumber(S.vTot),
-      cSssTwo: safeNumber(S.cSssTwo),
-      cSasAng: safeNumber(S.cSasAng),
-      cSsa: safeNumber(S.cSsa),
-      cAaOne: safeNumber(S.cAaOne),
-      playedAt: serverTimestamp()
-    };
-    await addDoc(room.records(currentRoomCode), recordData);
+    // ======================= 기록 저장 =======================
+    async function endGame() {
+      if (!G || G.over) return; G.over = true;
+      bootstrap.Modal.getInstance($('compareModal'))?.hide();
+      bootstrap.Modal.getInstance($('connModal'))?.hide();
+      const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
+      showSection('gameover-section'); $('final-score').textContent = G.score; $('final-accuracy').textContent = acc + '%';
+      $('final-detail').textContent = `도달 라운드: Round ${G.round} · 대응 연결 한 번에 ${S.vOk}/${S.vTot}`;
+      if (!currentRoomCode) {
+        $('save-status').textContent = "";
+        return;
+      }
+      $('save-status').className = 'text-primary fw-bold small mb-3';
+      $('save-status').textContent = '💾 기록 저장 중...';
+      try {
+        const recordData = {
+          nickname: playerNickname,
+          score: safeNumber(G.score),
+          accuracy: acc,
+          totalSolved: safeNumber(G.solved),
+          totalAttempts: safeNumber(G.attempts),
+          round: safeNumber(G.round),
+          sssOk: safeNumber(S.sssOk),
+          sssTot: safeNumber(S.sssTot),
+          sasOk: safeNumber(S.sasOk),
+          sasTot: safeNumber(S.sasTot),
+          aaOk: safeNumber(S.aaOk),
+          aaTot: safeNumber(S.aaTot),
+          vOk: safeNumber(S.vOk),
+          vTot: safeNumber(S.vTot),
+          eSideOk: safeNumber(S.eSideOk),
+          eSideTot: safeNumber(S.eSideTot),
+          eAngOk: safeNumber(S.eAngOk),
+          eAngTot: safeNumber(S.eAngTot),
+          playedAt: serverTimestamp()
+        };
+        await addDoc(room.records(currentRoomCode), recordData);
 
-    const patch = { nickname: playerNickname, lastScore: safeNumber(G.score), updatedAt: serverTimestamp() };
-    if (mySchool) patch.school = mySchool;
-    if (myStudentId) patch.studentId = myStudentId;
-    await setDoc(doc(room.students(currentRoomCode), playerNickname), patch, { merge: true });
-    $('save-status').className = 'text-success fw-bold small mb-3';
-    $('save-status').textContent = "✅ 기록이 저장되었습니다!";
-  } catch (e) {
-    console.error('기록 저장 실패:', e);
-    $('save-status').className = 'text-danger fw-bold small mb-3';
-    $('save-status').textContent = "⚠️ 기록 저장에 실패했습니다.";
-  }
-  await loadGameOverRankings();
-}
-async function loadGameOverRankings() {
-  if (!currentRoomCode) return;
-  try {
-    const snap = await getDocs(room.records(currentRoomCode)), best = {};
-    snap.forEach(d => { const r = d.data(), nick = String(r.nickname || ''); if (!nick) return; const it = { nickname: nick, score: safeNumber(r.score) }; if (!best[nick] || it.score > best[nick].score) best[nick] = it; });
-    const sorted = Object.values(best).sort((a, b) => b.score - a.score), total = sorted.length, myIdx = sorted.findIndex(i => i.nickname === playerNickname);
-    if (myIdx !== -1) { const rank = myIdx + 1; $('myRankBadge').textContent = `${rank}위 / ${total}명`; $('rankSummaryText').textContent = `전체 ${total}명 중 상위 ${Math.max(1, Math.round(rank / total * 100))}%에 해당합니다.`; }
-    let st = 0, en = total; if (total > 5) { st = Math.max(0, myIdx - 2); en = Math.min(total, st + 5); if (en - st < 5) st = Math.max(0, en - 5); }
-    $('rankNearbyTable').innerHTML = sorted.slice(st, en).map((it, i) => `<tr class="${it.nickname === playerNickname ? 'table-primary fw-bold' : ''}"><td class="text-center">${st + i + 1}</td><td>${escapeHtml(it.nickname)}</td><td class="text-center">${safeNumber(it.score)}점</td></tr>`).join('');
-  } catch (e) { console.error('주변 순위 로드 오류:', e); }
-}
+        const patch = { nickname: playerNickname, lastScore: safeNumber(G.score), updatedAt: serverTimestamp() };
+        if (mySchool) patch.school = mySchool;
+        if (myStudentId) patch.studentId = myStudentId;
+        await setDoc(doc(room.students(currentRoomCode), playerNickname), patch, { merge: true });
+        $('save-status').className = 'text-success fw-bold small mb-3';
+        $('save-status').textContent = "✅ 기록이 저장되었습니다!";
+      } catch (e) {
+        console.error('기록 저장 실패:', e);
+        $('save-status').className = 'text-danger fw-bold small mb-3';
+        $('save-status').textContent = "⚠️ 기록 저장에 실패했습니다.";
+      }
+      await loadGameOverRankings();
+    }
+    async function loadGameOverRankings() {
+      if (!currentRoomCode) return;
+      try {
+        const snap = await getDocs(room.records(currentRoomCode)), best = {};
+        snap.forEach(d => { const r = d.data(), nick = String(r.nickname || ''); if (!nick) return; const it = { nickname: nick, score: safeNumber(r.score) }; if (!best[nick] || it.score > best[nick].score) best[nick] = it; });
+        const sorted = Object.values(best).sort((a, b) => b.score - a.score), total = sorted.length, myIdx = sorted.findIndex(i => i.nickname === playerNickname);
+        if (myIdx !== -1) { const rank = myIdx + 1; $('myRankBadge').textContent = `${rank}위 / ${total}명`; $('rankSummaryText').textContent = `전체 ${total}명 중 상위 ${Math.max(1, Math.round(rank / total * 100))}%에 해당합니다.`; }
+        let st = 0, en = total; if (total > 5) { st = Math.max(0, myIdx - 2); en = Math.min(total, st + 5); if (en - st < 5) st = Math.max(0, en - 5); }
+        $('rankNearbyTable').innerHTML = sorted.slice(st, en).map((it, i) => `<tr class="${it.nickname === playerNickname ? 'table-primary fw-bold' : ''}"><td class="text-center">${st + i + 1}</td><td>${escapeHtml(it.nickname)}</td><td class="text-center">${safeNumber(it.score)}점</td></tr>`).join('');
+      } catch (e) { console.error('주변 순위 로드 오류:', e); }
+    }
 
-// ======================= 방 입장 =======================
-let unsubRooms = null, unsubStudents = null, unsubRecords = null, roomStudents = [], roomRecords = [], currentAdminRoom = '', excelData = [];
-renderRoomEntrance('room-entrance-container', {
-  getRoomData: room.getRoomData, studentsCollectionRef: room.students,
-  onJoin: async (roomCode, nickname, authInfo) => { currentRoomCode = roomCode; playerNickname = nickname; mySchool = authInfo?.school || ''; myStudentId = authInfo?.studentId || ''; showSection('game-section'); initGame(); },
-  onAdminSuccess: () => { showSection('dashboard-section'); unsubRooms = room.watchRooms($('roomSelect')); }
-});
+    // ======================= 방 입장 =======================
+    let unsubRooms = null, unsubStudents = null, unsubRecords = null, roomStudents = [], roomRecords = [], currentAdminRoom = '', excelData = [];
+    renderRoomEntrance('room-entrance-container', {
+      getRoomData: room.getRoomData, studentsCollectionRef: room.students,
+      onJoin: async (roomCode, nickname, authInfo) => { currentRoomCode = roomCode; playerNickname = nickname; mySchool = authInfo?.school || ''; myStudentId = authInfo?.studentId || ''; showSection('game-section'); initGame(); },
+      onAdminSuccess: () => { showSection('dashboard-section'); unsubRooms = room.watchRooms($('roomSelect')); }
+    });
 
-// ======================= 대시보드 =======================
-window.addEventListener('teacherAuthChanged', () => { if (unsubRooms) unsubRooms(); unsubRooms = room.watchRooms($('roomSelect')); });
-$('roomSelect').addEventListener('change', e => {
-  currentAdminRoom = e.target.value; if (unsubStudents) unsubStudents(); if (unsubRecords) unsubRecords();
-  if (!currentAdminRoom) { roomStudents = []; roomRecords = []; render(); return; }
-  unsubStudents = onSnapshot(room.students(currentAdminRoom), s => { roomStudents = []; s.forEach(d => roomStudents.push(d.data())); render(); });
-  unsubRecords = onSnapshot(room.records(currentAdminRoom), s => { roomRecords = []; s.forEach(d => roomRecords.push(d.data())); render(); });
-});
-$('btn-create-room').addEventListener('click', async () => { const code = await room.createRoom(); if (!code) return; $('roomSelect').value = code; $('roomSelect').dispatchEvent(new Event('change')); });
-$('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
-bindDeleteRoomButton($('btn-delete-room'), { getCode: () => currentAdminRoom, canDelete: c => room.canDelete(c), doDelete: c => room.deleteRoom(c), onDone: async () => { $('roomSelect').value = ''; $('roomSelect').dispatchEvent(new Event('change')); } });
-bindStudentIdToggle($('toggleStudentId'), [$('adminTableWrap')]);
+    // ======================= 대시보드 =======================
+    window.addEventListener('teacherAuthChanged', () => { if (unsubRooms) unsubRooms(); unsubRooms = room.watchRooms($('roomSelect')); });
+    $('roomSelect').addEventListener('change', e => {
+      currentAdminRoom = e.target.value; if (unsubStudents) unsubStudents(); if (unsubRecords) unsubRecords();
+      if (!currentAdminRoom) { roomStudents = []; roomRecords = []; render(); return; }
+      unsubStudents = onSnapshot(room.students(currentAdminRoom), s => { roomStudents = []; s.forEach(d => roomStudents.push(d.data())); render(); });
+      unsubRecords = onSnapshot(room.records(currentAdminRoom), s => { roomRecords = []; s.forEach(d => roomRecords.push(d.data())); render(); });
+    });
+    $('btn-create-room').addEventListener('click', async () => { const code = await room.createRoom(); if (!code) return; $('roomSelect').value = code; $('roomSelect').dispatchEvent(new Event('change')); });
+    $('btn-reset-pin')?.addEventListener('click', () => showPinResetModal());
+    bindDeleteRoomButton($('btn-delete-room'), { getCode: () => currentAdminRoom, canDelete: c => room.canDelete(c), doDelete: c => room.deleteRoom(c), onDone: async () => { $('roomSelect').value = ''; $('roomSelect').dispatchEvent(new Event('change')); } });
+    bindStudentIdToggle($('toggleStudentId'), [$('adminTableWrap')]);
 
-const ERR = [['cSssTwo', '두 변만 비례→SSS'], ['cSasAng', '끼인각 다름→SAS'], ['cSsa', 'SSA→SAS'], ['cAaOne', '한 각만 같음→AA']];
-const getTier = maxRound => maxRound >= 3 ? { label: '상 (우수)', badge: 'bg-success' } : maxRound === 2 ? { label: '중 (보통)', badge: 'bg-warning text-dark' } : { label: '하 (보충)', badge: 'bg-danger' };
-function openDetail(nick) {
-  const rs = roomRecords.filter(r => String(r.nickname || '') === nick).sort((a, b) => (b.playedAt?.toMillis?.() || 0) - (a.playedAt?.toMillis?.() || 0));
-  const p = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '-', n = (r, k) => safeNumber(r[k]);
-  $('detailTitle').innerHTML = `📋 <b>${escapeHtml(nick)}</b> 학생의 학습 상세 기록`;
+    const getTier = maxRound => maxRound >= 3 ? { label: '상 (우수)', badge: 'bg-success' } : maxRound === 2 ? { label: '중 (보통)', badge: 'bg-warning text-dark' } : { label: '하 (보충)', badge: 'bg-danger' };
+    function openDetail(nick) {
+      const rs = roomRecords.filter(r => String(r.nickname || '') === nick).sort((a, b) => (b.playedAt?.toMillis?.() || 0) - (a.playedAt?.toMillis?.() || 0));
+      const p = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '-', n = (r, k) => safeNumber(r[k]);
+      $('detailTitle').innerHTML = `📋 <b>${escapeHtml(nick)}</b> 학생의 학습 상세 기록`;
 
-  const conds = [
-    { key: 'sss', name: 'SSS 닮음', badge: 'bg-primary', ok: rs.reduce((s, r) => s + n(r, 'sssOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sssTot'), 0) },
-    { key: 'sas', name: 'SAS 닮음', badge: 'bg-warning text-dark', ok: rs.reduce((s, r) => s + n(r, 'sasOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sasTot'), 0) },
-    { key: 'aa', name: 'AA 닮음', badge: 'bg-success', ok: rs.reduce((s, r) => s + n(r, 'aaOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'aaTot'), 0) },
-    { key: 'v', label: '대응', name: '대응점 연결', badge: 'bg-info text-dark', ok: rs.reduce((s, r) => s + n(r, 'vOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'vTot'), 0) }
-  ];
+      const conds = [
+        { key: 'sss', name: 'SSS 닮음', badge: 'bg-primary', ok: rs.reduce((s, r) => s + n(r, 'sssOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sssTot'), 0) },
+        { key: 'sas', name: 'SAS 닮음', badge: 'bg-warning text-dark', ok: rs.reduce((s, r) => s + n(r, 'sasOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sasTot'), 0) },
+        { key: 'aa', name: 'AA 닮음', badge: 'bg-success', ok: rs.reduce((s, r) => s + n(r, 'aaOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'aaTot'), 0) },
+        { key: 'v', label: '대응', name: '대응점 연결', badge: 'bg-info text-dark', ok: rs.reduce((s, r) => s + n(r, 'vOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'vTot'), 0) }
+      ];
 
-  const cardsHtml = conds.map(c => {
-    const rate = c.tot > 0 ? Math.round(c.ok / c.tot * 100) + '%' : '-';
-    const fail = c.tot - c.ok;
-    return `
+      const cardsHtml = conds.map(c => {
+        const rate = c.tot > 0 ? Math.round(c.ok / c.tot * 100) + '%' : '-';
+        const fail = c.tot - c.ok;
+        return `
       <div class="col-6 col-md-3">
         <div class="card h-100 text-center shadow-sm border-0 rounded-3 p-3 bg-light">
           <div class="small fw-bold mb-1"><span class="badge ${c.badge} me-1">${c.label || c.key.toUpperCase()}</span>${c.name}</div>
@@ -725,12 +953,12 @@ function openDetail(nick) {
         </div>
       </div>
     `;
-  }).join('');
+      }).join('');
 
-  const trs = rs.map(r => {
-    const dt = r.playedAt?.toMillis ? new Date(r.playedAt.toMillis()).toLocaleString('ko-KR') : '-';
-    const a = n(r, 'totalAttempts'), v = a ? Math.round(n(r, 'totalSolved') / a * 100) : 0;
-    return `<tr>
+      const trs = rs.map(r => {
+        const dt = r.playedAt?.toMillis ? new Date(r.playedAt.toMillis()).toLocaleString('ko-KR') : '-';
+        const a = n(r, 'totalAttempts'), v = a ? Math.round(n(r, 'totalSolved') / a * 100) : 0;
+        return `<tr>
       <td>${escapeHtml(dt)}</td>
       <td class="fw-bold text-primary">${n(r, 'score')}점</td>
       <td><span class="badge bg-secondary">Round ${n(r, 'round') || n(r, 'level')}</span></td>
@@ -739,12 +967,13 @@ function openDetail(nick) {
       <td>${p(n(r, 'sasOk'), n(r, 'sasTot'))}</td>
       <td>${p(n(r, 'aaOk'), n(r, 'aaTot'))}</td>
       <td>${p(n(r, 'vOk'), n(r, 'vTot'))}</td>
+      <td>${p(n(r, 'eSideOk') + n(r, 'eAngOk'), n(r, 'eSideTot') + n(r, 'eAngTot'))}</td>
     </tr>`;
-  }).join('');
+      }).join('');
 
-  const tableBody = trs.length ? trs : '<tr><td colspan="8" class="py-3 text-muted">기록이 없습니다.</td></tr>';
+      const tableBody = trs.length ? trs : '<tr><td colspan="9"class="py-3 text-muted">기록이 없습니다.</td></tr>';
 
-  $('detailBody').innerHTML = `
+      $('detailBody').innerHTML = `
     <h6 class="fw-bold mb-3"><i class="bi bi-pie-chart-fill text-primary me-1"></i> 닮음조건별 누적 성적</h6>
     <div class="row g-2 mb-4">${cardsHtml}</div>
     <h6 class="fw-bold mb-2"><i class="bi bi-clock-history text-secondary me-1"></i> 학습 로그</h6>
@@ -760,57 +989,53 @@ function openDetail(nick) {
             <th>SAS</th>
             <th>AA</th>
             <th>대응점 연결</th>
+            <th>보너스 퀴즈</th>
           </tr>
         </thead>
         <tbody>${tableBody}</tbody>
       </table>
     </div>
   `;
-  bootstrap.Modal.getOrCreateInstance($('detailModal')).show();
-}
-$('adminTableBody').addEventListener('click', e => { const row = e.target.closest('.row-student'); if (row) openDetail(row.dataset.nick); });
-const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'aaOk', 'aaTot', 'vOk', 'vTot'];
-const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null, pc = v => v === null ? '-' : v + '%';
-function render() {
-  renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
-  if (!currentAdminRoom) {
-    $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
-    $('statConditionBadge').textContent = '방 선택 필요';
-    $('statErrorBadge').textContent = '방 선택 필요';
-    $('dashAvgScore').textContent = '-';
-    $('dashAvgAcc').textContent = '-';
-    $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
-    $('dashErrorStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
-    return;
-  }
-  const sidByNick = buildSidMap(roomStudents), stats = {};
-  let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAa = 0, okAa = 0, totV = 0, okV = 0;
-  const errMap = { cSssTwo: 0, cSasAng: 0, cSsa: 0, cAaOne: 0 };
-  let totalErrors = 0, totalPlays = roomRecords.length;
+      bootstrap.Modal.getOrCreateInstance($('detailModal')).show();
+    }
+    $('adminTableBody').addEventListener('click', e => { const row = e.target.closest('.row-student'); if (row) openDetail(row.dataset.nick); });
+    const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'aaOk', 'aaTot', 'vOk', 'vTot'];
+    const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null, pc = v => v === null ? '-' : v + '%';
+    function render() {
+      renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
+      if (!currentAdminRoom) {
+        $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+        $('statConditionBadge').textContent = '방 선택 필요';
+        $('statBonusBadge').textContent = '방 선택 필요';
+        $('dashAvgScore').textContent = '-';
+        $('dashAvgAcc').textContent = '-';
+        $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
+        $('dashBonusStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
+        return;
+      }
+      const sidByNick = buildSidMap(roomStudents), stats = {};
+      let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAa = 0, okAa = 0, totV = 0, okV = 0;
+      let totSide = 0, okSide = 0, totAng = 0, okAng = 0, totalPlays = roomRecords.length;
 
-  roomRecords.forEach(r => {
-    const nick = String(r.nickname || ''); if (!nick) return;
-    const s = stats[nick] || (stats[nick] = { plays: 0, best: 0, maxRound: 0, solved: 0, attempts: 0, k: Object.fromEntries(KEYS.map(x => [x, 0])) });
-    s.plays++; s.best = Math.max(s.best, safeNumber(r.score)); s.maxRound = Math.max(s.maxRound, safeNumber(r.round || r.level)); s.solved += safeNumber(r.totalSolved); s.attempts += safeNumber(r.totalAttempts); KEYS.forEach(x => s.k[x] += safeNumber(r[x]));
+      roomRecords.forEach(r => {
+        const nick = String(r.nickname || ''); if (!nick) return;
+        const s = stats[nick] || (stats[nick] = { plays: 0, best: 0, maxRound: 0, solved: 0, attempts: 0, k: Object.fromEntries(KEYS.map(x => [x, 0])) });
+        s.plays++; s.best = Math.max(s.best, safeNumber(r.score)); s.maxRound = Math.max(s.maxRound, safeNumber(r.round || r.level)); s.solved += safeNumber(r.totalSolved); s.attempts += safeNumber(r.totalAttempts); KEYS.forEach(x => s.k[x] += safeNumber(r[x]));
 
-    okSss += safeNumber(r.sssOk); totSss += safeNumber(r.sssTot);
-    okSas += safeNumber(r.sasOk); totSas += safeNumber(r.sasTot);
-    okAa += safeNumber(r.aaOk); totAa += safeNumber(r.aaTot);
-    okV += safeNumber(r.vOk); totV += safeNumber(r.vTot);
+        okSss += safeNumber(r.sssOk); totSss += safeNumber(r.sssTot);
+        okSas += safeNumber(r.sasOk); totSas += safeNumber(r.sasTot);
+        okAa += safeNumber(r.aaOk); totAa += safeNumber(r.aaTot);
+        okV += safeNumber(r.vOk); totV += safeNumber(r.vTot);
+        okSide += safeNumber(r.eSideOk); totSide += safeNumber(r.eSideTot);
+        okAng += safeNumber(r.eAngOk); totAng += safeNumber(r.eAngTot);
+      });
 
-    Object.keys(errMap).forEach(k => {
-      const cnt = safeNumber(r[k]);
-      errMap[k] += cnt;
-      totalErrors += cnt;
-    });
-  });
-
-  const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa), pV = pct(okV, totV);
-  $('statConditionBadge').textContent = `총 ${totalPlays}회 플레이`;
-  if (!totalPlays) {
-    $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
-  } else {
-    $('dashConditionStats').innerHTML = `
+      const pSss = pct(okSss, totSss), pSas = pct(okSas, totSas), pAa = pct(okAa, totAa), pV = pct(okV, totV);
+      $('statConditionBadge').textContent = `총 ${totalPlays}회 플레이`;
+      if (!totalPlays) {
+        $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
+      } else {
+        $('dashConditionStats').innerHTML = `
       <div class="mb-2">
         <div class="d-flex justify-content-between small fw-bold mb-1">
           <span><span class="badge bg-primary me-1">SSS</span>SSS 닮음 정답률</span>
@@ -839,72 +1064,81 @@ function render() {
         </div>
         <div class="progress" style="height:7px"><div class="progress-bar bg-info" style="width:${pV ?? 0}%"></div></div>
       </div>`;
-  }
+      }
 
-  $('statErrorBadge').textContent = `총 ${totalErrors}건 오답`;
-  if (totalErrors === 0) {
-    $('dashErrorStats').innerHTML = '<div class="text-muted text-center py-4 small">기록된 오답 데이터가 없습니다.</div>';
-  } else {
-    const errSorted = ERR.map(([k, label]) => ({ key: k, label, count: errMap[k] || 0 })).sort((a, b) => b.count - a.count);
-    $('dashErrorStats').innerHTML = errSorted.map((item, idx) => {
-      const errPct = totalErrors > 0 ? Math.round(item.count / totalErrors * 100) : 0;
-      const badgeCls = idx === 0 && item.count > 0 ? 'bg-danger' : 'bg-secondary';
-      return `
+      const totBonus = totSide + totAng, okBonus = okSide + okAng;
+      $('statBonusBadge').textContent = `총 ${totBonus}문제 풀이`;
+      if (!totBonus) {
+        $('dashBonusStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 보너스 퀴즈 기록이 없습니다.</div>';
+      } else {
+        const bonusRows = [
+          { label: '전체', ok: okBonus, tot: totBonus, bar: 'bg-warning', text: 'text-warning-emphasis' },
+          { label: '대응변의 길이', ok: okSide, tot: totSide, bar: 'bg-primary', text: 'text-primary' },
+          { label: '대응각의 크기', ok: okAng, tot: totAng, bar: 'bg-success', text: 'text-success' }
+        ];
+        $('dashBonusStats').innerHTML = bonusRows.map(b => {
+          const rate = pct(b.ok, b.tot);
+          return `
         <div class="mb-2">
-          <div class="d-flex justify-content-between small mb-1">
-            <span class="fw-bold"><span class="badge ${badgeCls} me-1" style="font-size:.7rem">${idx + 1}</span>${item.label}</span>
-            <span class="fw-bold text-danger">${item.count}회 <small class="text-muted">(${errPct}%)</small></span>
+          <div class="d-flex justify-content-between small fw-bold mb-1">
+            <span>${b.label}</span>
+            <span class="${b.text}">${b.ok}/${b.tot} (${pc(rate)})</span>
           </div>
-          <div class="progress" style="height:6px"><div class="progress-bar bg-danger" style="width:${errPct}%"></div></div>
+          <div class="progress" style="height:7px"><div class="progress-bar ${b.bar}" style="width:${rate ?? 0}%"></div></div>
         </div>`;
-    }).join('');
-  }
+        }).join('');
+      }
 
-  const names = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
-  if (!names.length) {
-    $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
-    $('dashAvgScore').textContent = '-';
-    $('dashAvgAcc').textContent = '-';
-    return;
-  }
-  let totalScore = 0, totalAcc = 0;
-  names.forEach(nick => {
-    const s = stats[nick];
-    const acc = pct(s.solved, s.attempts) ?? 0;
-    totalScore += s.best;
-    totalAcc += acc;
-  });
-  const tLen = names.length;
-  $('dashAvgScore').textContent = `${Math.round(totalScore / tLen)}점`;
-  $('dashAvgAcc').textContent = `${Math.round(totalAcc / tLen)}%`;
+      const names = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
+      if (!names.length) {
+        $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+        $('dashAvgScore').textContent = '-';
+        $('dashAvgAcc').textContent = '-';
+        return;
+      }
+      let totalScore = 0, totalAcc = 0;
+      names.forEach(nick => {
+        const s = stats[nick];
+        const acc = pct(s.solved, s.attempts) ?? 0;
+        totalScore += s.best;
+        totalAcc += acc;
+      });
+      const tLen = names.length;
+      $('dashAvgScore').textContent = `${Math.round(totalScore / tLen)}점`;
+      $('dashAvgAcc').textContent = `${Math.round(totalAcc / tLen)}%`;
 
-  excelData = [];
-  $('adminTableBody').innerHTML = names.map((nick, idx) => {
-    const s = stats[nick], k = s.k, acc = pct(s.solved, s.attempts) ?? 0, sid = sidByNick[nick] || '';
-    const v = { sss: pct(k.sssOk, k.sssTot), sas: pct(k.sasOk, k.sasTot), aa: pct(k.aaOk, k.aaTot), conn: pct(k.vOk, k.vTot) };
-    const tier = getTier(s.maxRound);
-    excelData.push({ "학번": sid, "순위": idx + 1, "닉네임": nick, "종합 성취수준": tier.label, "최고 도달 라운드": s.maxRound, "최고 점수": s.best, "정답률(%)": acc, "SSS(%)": v.sss ?? '', "SAS(%)": v.sas ?? '', "AA(%)": v.aa ?? '', "대응점 연결(%)": v.conn ?? '', "플레이 횟수": s.plays });
-    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1;
-    return `<tr class="row-student" data-nick="${escapeHtml(nick)}" style="cursor:pointer"><td class="fw-bold">${medal}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tier.badge} fs-6">${tier.label}</span></td><td class="fw-bold text-primary">${s.best}점</td><td>${acc}%</td>`
-      + [v.sss, v.sas, v.aa, v.conn].map(x => `<td>${pc(x)}</td>`).join('') + `<td><span class="badge bg-secondary">${s.plays}회</span></td></tr>`;
-  }).join('');
-}
-function buildLogData() {
-  const sidByNick = buildSidMap(roomStudents), pad = n => String(n).padStart(2, '0'), seq = {};
-  const ft = ts => { const ms = ts?.toMillis?.() || 0; if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-  const sk = n => sidByNick[n] ? `0${sidByNick[n]}` : `1${n}`;
-  return roomRecords.filter(r => String(r.nickname || '') !== '').sort((a, b) => { const x = sk(String(a.nickname)), y = sk(String(b.nickname)); return x !== y ? x.localeCompare(y) : (a.playedAt?.toMillis?.() || 0) - (b.playedAt?.toMillis?.() || 0); })
-    .map(r => { const n = String(r.nickname); seq[n] = (seq[n] || 0) + 1; const at = safeNumber(r.totalAttempts);
-      return { "학번": sidByNick[n] || '', "닉네임": n, "회차": seq[n], "일시": ft(r.playedAt), "점수": safeNumber(r.score), "도달 라운드": safeNumber(r.round || r.level), "맞힌 문제": safeNumber(r.totalSolved), "시도 수": at, "정답률(%)": at > 0 ? Math.round(safeNumber(r.totalSolved) / at * 100) : 0,
-        "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "AA 맞/시도": `${safeNumber(r.aaOk)}/${safeNumber(r.aaTot)}`, "대응점 연결 맞/시도": `${safeNumber(r.vOk)}/${safeNumber(r.vTot)}`,
-        "오판(두 변만 비례→SSS)": safeNumber(r.cSssTwo), "오판(끼인각 다름→SAS)": safeNumber(r.cSasAng), "오판(SSA→SAS)": safeNumber(r.cSsa), "오판(한 각만 같음→AA)": safeNumber(r.cAaOne) }; });
-}
-$('btn-export-excel').addEventListener('click', () => {
-  if (!excelData.length) return customAlert("알림", "다운로드할 데이터가 없습니다.");
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(excelData), "평가진단");
-  const log = buildLogData(); if (log.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(log), "학습로그");
-  XLSX.writeFile(wb, `삼각형닮음카드_${currentAdminRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-});
-</script>
+      excelData = [];
+      $('adminTableBody').innerHTML = names.map((nick, idx) => {
+        const s = stats[nick], k = s.k, acc = pct(s.solved, s.attempts) ?? 0, sid = sidByNick[nick] || '';
+        const v = { sss: pct(k.sssOk, k.sssTot), sas: pct(k.sasOk, k.sasTot), aa: pct(k.aaOk, k.aaTot), conn: pct(k.vOk, k.vTot) };
+        const tier = getTier(s.maxRound);
+        excelData.push({ "학번": sid, "순위": idx + 1, "닉네임": nick, "종합 성취수준": tier.label, "최고 도달 라운드": s.maxRound, "최고 점수": s.best, "정답률(%)": acc, "SSS(%)": v.sss ?? '', "SAS(%)": v.sas ?? '', "AA(%)": v.aa ?? '', "대응점 연결(%)": v.conn ?? '', "플레이 횟수": s.plays });
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1;
+        return `<tr class="row-student" data-nick="${escapeHtml(nick)}" style="cursor:pointer"><td class="fw-bold">${medal}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tier.badge} fs-6">${tier.label}</span></td><td class="fw-bold text-primary">${s.best}점</td><td>${acc}%</td>`
+          + [v.sss, v.sas, v.aa, v.conn].map(x => `<td>${pc(x)}</td>`).join('') + `<td><span class="badge bg-secondary">${s.plays}회</span></td></tr>`;
+      }).join('');
+    }
+    function buildLogData() {
+      const sidByNick = buildSidMap(roomStudents), pad = n => String(n).padStart(2, '0'), seq = {};
+      const ft = ts => { const ms = ts?.toMillis?.() || 0; if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+      const sk = n => sidByNick[n] ? `0${sidByNick[n]}` : `1${n}`;
+      return roomRecords.filter(r => String(r.nickname || '') !== '').sort((a, b) => { const x = sk(String(a.nickname)), y = sk(String(b.nickname)); return x !== y ? x.localeCompare(y) : (a.playedAt?.toMillis?.() || 0) - (b.playedAt?.toMillis?.() || 0); })
+        .map(r => {
+          const n = String(r.nickname); seq[n] = (seq[n] || 0) + 1; const at = safeNumber(r.totalAttempts);
+          return {
+            "학번": sidByNick[n] || '', "닉네임": n, "회차": seq[n], "일시": ft(r.playedAt), "점수": safeNumber(r.score), "도달 라운드": safeNumber(r.round || r.level), "맞힌 문제": safeNumber(r.totalSolved), "시도 수": at, "정답률(%)": at > 0 ? Math.round(safeNumber(r.totalSolved) / at * 100) : 0,
+            "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "AA 맞/시도": `${safeNumber(r.aaOk)}/${safeNumber(r.aaTot)}`, "대응점 연결 맞/시도": `${safeNumber(r.vOk)}/${safeNumber(r.vTot)}`,
+            "보너스 대응변 맞/시도": `${safeNumber(r.eSideOk)}/${safeNumber(r.eSideTot)}`, "보너스 대응각 맞/시도": `${safeNumber(r.eAngOk)}/${safeNumber(r.eAngTot)}`
+          };
+        });
+    }
+    $('btn-export-excel').addEventListener('click', () => {
+      if (!excelData.length) return customAlert("알림", "다운로드할 데이터가 없습니다.");
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(excelData), "평가진단");
+      const log = buildLogData(); if (log.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(log), "학습로그");
+      XLSX.writeFile(wb, `삼각형닮음카드_${currentAdminRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    });
+  </script>
 </body>
+
 </html>
