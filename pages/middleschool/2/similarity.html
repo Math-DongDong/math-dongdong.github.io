@@ -475,8 +475,11 @@
         const types = cfg.tp ? shuf([...cfg.tp]) : shuf(['SSS', 'SA', 'AA', pick(['SSS', 'SA', 'AA']), pick(['SSS', 'SA', 'AA'])]);
         const cards = [], twins = [];
         types.forEach((ty, i) => { const [A, B] = makePair(ty, rnd); A.pid = B.pid = i; cards.push(A, B); twins.push(B); });
-        let ok = true; shuf(twins).slice(0, 2).forEach(T => { const D = makeDecoy(T, rnd); if (!D) ok = false; else { D.pid = null; cards.push(D); } });
-        if (!ok || cards.length !== 12 || !cards.every(uniq)) continue;
+        // 닮지 않은 함정 쌍 1개: 같은 진짜 카드에서 파생한 두 장 (SSA끼리는 같은 모양이 되므로 제외)
+        let ok = true; const T = pick(twins), D1 = makeDecoy(T, rnd), D2 = makeDecoy(T, rnd);
+        if (!D1 || !D2 || (D1.ssa && D2.ssa)) continue;
+        [D1, D2].forEach(D => { D.pid = null; cards.push(D); });
+        if (cards.length !== 12 || !cards.every(uniq)) continue;
         for (let i = 0; i < 12 && ok; i++) for (let j = i + 1; j < 12; j++) {          // 66쌍 전수 검증
           const jd = judge(cards[i], cards[j]), sim = jd !== 'INVALID' && jd !== 'NONE', want = cards[i].pid != null && cards[i].pid === cards[j].pid;
           if (sim !== want) { ok = false; break; }
@@ -521,13 +524,14 @@
     const show = (id, on) => $(id).classList.toggle('d-none', !on);
     function updateUI() {
       $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
-      $('level-badge').textContent = `Round ${G.round}`;
+      $('level-badge').textContent = G.round > 3 ? `♾️ 무한도전 ${G.round - 3}` : `Round ${G.round}`;
       $('combo').textContent = G.combo > 1 ? `🔥x${Math.min(2, 1 + .1 * G.combo).toFixed(1)}` : '';
     }
     function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
     function startRound() {
       G.cards = genBoard(G.round, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board';
-      show('board-wrap', 1); msg(''); $('hint').textContent = '닮은 삼각형 카드 2장을 선택해 보세요. (함정 카드 2장 포함)'; updateUI(); renderBoard();
+      const task = G.round === 1 ? '닮음 조건을 맞혀 보세요.' : G.round === 2 ? '닮음 조건과 대응점 연결까지 맞혀 보세요.' : '닮음 조건, 대응점 연결, 대응변·대응각의 크기까지 맞혀 보세요.';
+      show('board-wrap', 1); msg(''); $('hint').textContent = `닮은 삼각형 카드 2장을 골라 ${task} (닮지 않은 함정 쌍 1개 포함)`; updateUI(); renderBoard();
     }
     function renderBoard() {
       $('board').innerHTML = G.cards.map(c => `<div class="col"><div class="tcard ${G.sel.includes(c.id) ? 'sel' : ''} ${c.gone ? 'gone' : ''}" data-id="${c.id}">${drawCard(c)}<div class="tag">${c.type === 'SSS' ? '변 3개' : c.type === 'AA' ? '각 2개' : '변 2개+각'}</div></div></div>`).join('');
@@ -591,6 +595,12 @@
         if (c === j) {
           G.st[jt + 'Tot']++; G.st[jt + 'Ok']++;
           G.sel = [];
+          if (G.round === 1) {          // 라운드 1: 닮음 조건만 판정
+            gain(100, true); a.gone = b.gone = true;
+            msg(`🎉 정답! ${j} 닮음입니다. (+100점)`, 'text-success');
+            afterAction();
+            return;
+          }
           openConnModal(a, b);
           return;
         }
@@ -677,7 +687,7 @@
       G.st.vTot++;
       if (isMatch) {
         G.st.vOk++; gain(100, true); CN.a.gone = CN.b.gone = true; updateUI();
-        if (Math.random() < 0.45) {
+        if (G.round >= 3) {             // 라운드 3 이후: 대응변·대응각 크기 문제 출제
           $('connMainSection').classList.add('d-none');
           setupBonusSection(CN.a, CN.b, CN.m);
         } else {
@@ -817,11 +827,9 @@
       if (G.over) return;
       G.sel = [];
       updateUI();
-      if (G.round >= 5) {
-        endGame();
-        return;
-      }
-      msg(`🎉 Round ${G.round} 클리어! 다음 라운드로 이동합니다!`, 'text-success');
+      msg(G.round < 3 ? `🎉 Round ${G.round} 클리어! 다음 라운드로 이동합니다!`
+        : G.round === 3 ? '🎉 Round 3 클리어! ♾️ 무한도전 모드가 시작됩니다!'
+          : `♾️ 무한도전 ${G.round - 3} 클리어! 새 카드 12장이 배열됩니다!`, 'text-success');
       setTimeout(() => {
         if (!G.over) nextRound();
       }, 900);
