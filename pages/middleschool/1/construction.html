@@ -91,6 +91,12 @@
             max-height: 220px;
             overflow-y: auto;
         }
+
+        /* 시연 중인 힌트 단계 강조 */
+        .demo-active-step {
+            color: #1d4ed8;
+            font-weight: 700;
+        }
     </style>
 </head>
 
@@ -107,6 +113,8 @@
         <section class="row g-4">
             <!-- 1. 작도 영역 (좌측) -->
             <div class="col-lg-8">
+                <!-- 작도 도구 패널 (시연 중에는 숨김) -->
+                <div id="tool-panel">
                 <!-- 도구 모음 -->
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <div class="btn-group" role="group" aria-label="작도 도구">
@@ -172,6 +180,30 @@
                 </div>
 
                 <p id="status-text" class="small text-secondary mb-2"></p>
+                </div>
+
+                <!-- 작도 시연 패널 -->
+                <div id="demo-panel" class="d-none mb-2">
+                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                        <span class="badge text-bg-primary fs-6" id="demo-step-badge">1 / 1 단계</span>
+                        <div class="btn-group" role="group" aria-label="시연 조절">
+                            <button type="button" class="btn btn-outline-dark" id="btn-demo-prev" title="이전 단계"><i
+                                    class="bi bi-skip-start-fill"></i></button>
+                            <button type="button" class="btn btn-outline-dark" id="btn-demo-play" title="재생 / 일시정지"><i
+                                    class="bi bi-pause-fill"></i></button>
+                            <button type="button" class="btn btn-outline-dark" id="btn-demo-next" title="다음 단계"><i
+                                    class="bi bi-skip-end-fill"></i></button>
+                        </div>
+                        <select id="demo-speed" class="form-select w-auto" aria-label="시연 속도">
+                            <option value="0.5">0.5배속</option>
+                            <option value="1" selected>1배속</option>
+                            <option value="2">2배속</option>
+                        </select>
+                        <button type="button" class="btn btn-success ms-auto" id="btn-demo-close"><i
+                                class="bi bi-pencil"></i> 따라 하기</button>
+                    </div>
+                    <div class="alert alert-primary small py-2 mb-0" id="demo-caption"></div>
+                </div>
 
                 <div id="canvas-wrapper">
                     <canvas id="construction-canvas"></canvas>
@@ -199,6 +231,8 @@
                         <div class="card-body">
                             <h5 class="card-title fw-bold" id="mission-title"></h5>
                             <p class="card-text small text-secondary mb-3" id="mission-description"></p>
+                            <button type="button" class="btn btn-outline-primary w-100 mb-2" id="btn-demo"><i
+                                    class="bi bi-play-circle"></i> 작도 시연 보기</button>
                             <button type="button" class="btn btn-primary w-100" id="btn-check"><i
                                     class="bi bi-check2-circle"></i> 정답 확인</button>
                             <div id="check-feedback" class="alert small mt-3 mb-0 d-none" role="alert"></div>
@@ -241,6 +275,10 @@
                             <input class="form-check-input" type="checkbox" role="switch" id="show-intersections"
                                 checked>
                             <label class="form-check-label small" for="show-intersections">교점 표시</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="show-ghost">
+                            <label class="form-check-label small" for="show-ghost">예시 안내선</label>
                         </div>
                     </div>
 
@@ -329,6 +367,47 @@
             ];
         }
 
+        // ===== 작도 시연 동작 정의 (step: 힌트 단계 번호) =====
+        const demoMeasure = (step, from, to) => ({ type: 'measure', step, from, to });
+        const demoPoint = (step, at, label = '') => ({ type: 'point', step, at, label });
+        const demoLine = (step, lineType, p1, p2) => ({ type: 'line', step, lineType, p1, p2 });
+        const demoTriangleSides = (step, A, B, C) => [demoLine(step, 'segment', A, B), demoLine(step, 'segment', B, C), demoLine(step, 'segment', C, A)];
+
+        // 목표점 주변을 지나는 짧은 호
+        function demoArcAround(step, center, radius, target, spread = 0.35) {
+            const angle = Math.atan2(target.y - center.y, target.x - center.x);
+            return { type: 'arc', step, center, radius, start: angle - spread, sweep: spread * 2 };
+        }
+
+        // 화면 기준 각도 fromDegrees ~ toDegrees 구간을 덮는 호 (양 끝 여유 포함)
+        function demoArcBetween(step, center, radius, fromDegrees, toDegrees) {
+            const start = -fromDegrees * Math.PI / 180, sweep = -(toDegrees - fromDegrees) * Math.PI / 180;
+            const direction = Math.sign(sweep) || 1;
+            return { type: 'arc', step, center, radius, start: start - 0.25 * direction, sweep: sweep + 0.5 * direction };
+        }
+
+        // 크기가 같은 각의 작도 (steps: 5개 동작 묶음의 힌트 단계 번호, 숫자 하나면 모두 같은 단계)
+        function demoAngleCopy(steps, givenVertex, givenDegrees, target, baseDegrees, turnDegrees, radius, labels = []) {
+            const stepOf = index => Array.isArray(steps) ? steps[index] : steps;
+            const givenStart = polarPoint(givenVertex, 0, radius), givenEnd = polarPoint(givenVertex, givenDegrees, radius);
+            const targetStart = polarPoint(target, baseDegrees, radius), targetEnd = polarPoint(target, baseDegrees + turnDegrees, radius);
+            return [
+                demoArcBetween(stepOf(0), givenVertex, radius, 0, givenDegrees),
+                demoPoint(stepOf(0), givenStart, labels[0]), demoPoint(stepOf(0), givenEnd, labels[1]),
+                demoArcBetween(stepOf(1), target, radius, baseDegrees, baseDegrees + turnDegrees),
+                demoPoint(stepOf(1), targetStart, labels[2]),
+                demoMeasure(stepOf(2), givenStart, givenEnd),
+                demoArcAround(stepOf(3), targetStart, dist(givenStart, givenEnd), targetEnd),
+                demoPoint(stepOf(3), targetEnd, labels[3]),
+                demoLine(stepOf(4), 'ray', target, targetEnd)
+            ];
+        }
+
+        function upperCircleIntersection(center1, radius1, center2, radius2) {
+            const toCircle = (center, r) => ({ cx: center.x, cy: center.y, r, start: 0, sweep: TWO_PI });
+            return intersectArcArc(toCircle(center1, radius1), toCircle(center2, radius2)).sort((p, q) => p.y - q.y)[0];
+        }
+
         // ===== 연습 문제 정의 =====
         const MISSIONS = {
             segmentCopy: {
@@ -347,6 +426,11 @@
                         createLine('ray', this.P, this.direction, true),
                         createPoint(this.A, 'A', true), createPoint(this.B, 'B', true), createPoint(this.P, 'P', true)
                     ];
+                },
+                demo() {
+                    const length = dist(this.A, this.B), direction = unit(sub(this.direction, this.P));
+                    const Q = { x: this.P.x + direction.x * length, y: this.P.y + direction.y * length };
+                    return [demoMeasure(0, this.A, this.B), demoArcAround(1, this.P, length, Q), demoPoint(2, Q, 'Q')];
                 },
                 check() {
                     const ray = { lineType: 'ray', p1: this.P, p2: this.direction };
@@ -379,6 +463,9 @@
                         createPoint(this.O, 'O', true), createPoint(X, 'X', true), createPoint(Y, 'Y', true),
                         createPoint(this.P, 'P', true), createPoint(this.Q, 'Q', true)
                     ];
+                },
+                demo() {
+                    return demoAngleCopy([0, 1, 2, 3, 4], this.O, this.angleDegrees, this.P, 0, this.angleDegrees, 150, ['A', 'B', 'C', 'D']);
                 },
                 check() {
                     const targetAngle = this.angleDegrees * Math.PI / 180;
@@ -418,6 +505,18 @@
                         ...createGivenSegment({ x: 70, y: 190 }, { x: 70 + this.lengths.c, y: 190 }, 'c')
                     ];
                 },
+                demo() {
+                    const { a, b, c } = this.lengths;
+                    const B = { x: 500, y: 470 }, C = { x: 500 + a, y: 470 };
+                    const A = upperCircleIntersection(B, c, C, b);
+                    return [
+                        demoLine(0, 'line', { x: 420, y: 470 }, { x: 960, y: 470 }), demoPoint(0, B, 'B'),
+                        demoMeasure(1, { x: 70, y: 70 }, { x: 70 + a, y: 70 }), demoArcAround(1, B, a, C), demoPoint(1, C, 'C'),
+                        demoMeasure(2, { x: 70, y: 190 }, { x: 70 + c, y: 190 }), demoArcAround(2, B, c, A),
+                        demoMeasure(2, { x: 70, y: 130 }, { x: 70 + b, y: 130 }), demoArcAround(2, C, b, A), demoPoint(2, A, 'A'),
+                        ...demoTriangleSides(3, A, B, C)
+                    ];
+                },
                 check() {
                     const targetLengths = Object.values(this.lengths).sort((x, y) => x - y);
                     const triangles = findUserTriangles();
@@ -439,12 +538,24 @@
                     '길이 c를 재어 한 변 위에 점 B를, 길이 b를 재어 다른 변 위에 점 C를 찍습니다.',
                     '자 도구의 [선분]으로 AB, BC, CA를 그어 삼각형을 완성합니다.'
                 ],
-                lengths: { b: 230, c: 180 }, angleDegrees: 55,
+                lengths: { b: 230, c: 180 }, angleDegrees: 55, angleVertex: { x: 90, y: 330 },
                 build() {
                     return [
                         ...createGivenSegment({ x: 70, y: 70 }, { x: 70 + this.lengths.b, y: 70 }, 'b'),
                         ...createGivenSegment({ x: 70, y: 130 }, { x: 70 + this.lengths.c, y: 130 }, 'c'),
-                        ...createGivenAngle({ x: 90, y: 330 }, this.angleDegrees, 140, '∠A')
+                        ...createGivenAngle(this.angleVertex, this.angleDegrees, 140, '∠A')
+                    ];
+                },
+                demo() {
+                    const { b, c } = this.lengths;
+                    const A = { x: 500, y: 480 };
+                    const B = polarPoint(A, 0, c), C = polarPoint(A, this.angleDegrees, b);
+                    return [
+                        demoLine(0, 'line', { x: 420, y: 480 }, { x: 960, y: 480 }), demoPoint(0, A, 'A'),
+                        ...demoAngleCopy(1, this.angleVertex, this.angleDegrees, A, 0, this.angleDegrees, 80),
+                        demoMeasure(2, { x: 70, y: 130 }, { x: 70 + c, y: 130 }), demoArcAround(2, A, c, B), demoPoint(2, B, 'B'),
+                        demoMeasure(2, { x: 70, y: 70 }, { x: 70 + b, y: 70 }), demoArcAround(2, A, b, C, 0.25), demoPoint(2, C, 'C'),
+                        ...demoTriangleSides(3, A, B, C)
                     ];
                 },
                 check() {
@@ -469,12 +580,26 @@
                     '두 각의 변이 만나는 교점을 점 A로 찍습니다.',
                     '자 도구의 [선분]으로 AB, BC, CA를 그어 삼각형을 완성합니다.'
                 ],
-                length: 250, angleB: 50, angleC: 65,
+                length: 250, angleB: 50, angleC: 65, vertexB: { x: 90, y: 290 }, vertexC: { x: 90, y: 480 },
                 build() {
                     return [
                         ...createGivenSegment({ x: 70, y: 70 }, { x: 70 + this.length, y: 70 }, 'a'),
-                        ...createGivenAngle({ x: 90, y: 290 }, this.angleB, 140, '∠B'),
-                        ...createGivenAngle({ x: 90, y: 480 }, this.angleC, 140, '∠C')
+                        ...createGivenAngle(this.vertexB, this.angleB, 140, '∠B'),
+                        ...createGivenAngle(this.vertexC, this.angleC, 140, '∠C')
+                    ];
+                },
+                demo() {
+                    const B = { x: 480, y: 500 }, C = { x: 480 + this.length, y: 500 };
+                    const A = intersectLineLine(
+                        { lineType: 'ray', p1: B, p2: polarPoint(B, this.angleB, 1) },
+                        { lineType: 'ray', p1: C, p2: polarPoint(C, 180 - this.angleC, 1) })[0];
+                    return [
+                        demoLine(0, 'line', { x: 400, y: 500 }, { x: 960, y: 500 }), demoPoint(0, B, 'B'),
+                        demoMeasure(0, { x: 70, y: 70 }, { x: 70 + this.length, y: 70 }), demoArcAround(0, B, this.length, C), demoPoint(0, C, 'C'),
+                        ...demoAngleCopy(1, this.vertexB, this.angleB, B, 0, this.angleB, 80),
+                        ...demoAngleCopy(1, this.vertexC, this.angleC, C, 180, -this.angleC, 80),
+                        demoPoint(2, A, 'A'),
+                        ...demoTriangleSides(3, A, B, C)
                     ];
                 },
                 check() {
@@ -525,8 +650,11 @@
             activeTool: 'ruler',
             rulerType: 'segment',
             showLabels: true,
-            showIntersections: true
+            showIntersections: true,
+            showGhost: false
         };
+        const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null };
+        let ghostObjects = [];
         const view = { scale: 1, offsetX: 0, offsetY: 0 };
         const pointer = { isDown: false, downScreen: null, moved: false, type: 'mouse', hoverScreen: null, hoverSnap: null, hoverErase: null };
         const rulerState = { start: null, justStarted: false };
@@ -548,6 +676,10 @@
         const checkButton = document.getElementById('btn-check');
         const checkFeedback = document.getElementById('check-feedback');
         const constructionLog = document.getElementById('construction-log');
+        const demoButton = document.getElementById('btn-demo');
+        const demoPlayButton = document.getElementById('btn-demo-play');
+        const demoCaption = document.getElementById('demo-caption');
+        const showGhostInput = document.getElementById('show-ghost');
 
         const allObjects = () => state.givenObjects.concat(state.userObjects);
         const getUserObjects = kind => state.userObjects.filter(o => o.kind === kind);
@@ -1021,21 +1153,21 @@
             ctx.restore();
         }
 
-        function drawLabel(text, screenX, screenY, font) {
+        function drawLabel(text, screenX, screenY, font, color = '#0f172a') {
             ctx.save();
             ctx.font = font;
             ctx.lineWidth = 4;
             ctx.strokeStyle = '#ffffff';
-            ctx.fillStyle = '#0f172a';
+            ctx.fillStyle = color;
             ctx.strokeText(text, screenX, screenY);
             ctx.fillText(text, screenX, screenY);
             ctx.restore();
         }
 
-        function drawPoint(point) {
+        function drawPoint(point, color = point.given ? COLORS.given : COLORS.userPoint, labelColor = '#0f172a') {
             const p = worldToScreen(point);
             ctx.save();
-            ctx.fillStyle = point.given ? COLORS.given : COLORS.userPoint;
+            ctx.fillStyle = color;
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 1.5;
             ctx.beginPath();
@@ -1043,7 +1175,7 @@
             ctx.fill();
             ctx.stroke();
             ctx.restore();
-            if (state.showLabels && point.label) drawLabel(point.label, p.x + 7, p.y - 8, "700 15px 'Pretendard Variable', sans-serif");
+            if (state.showLabels && point.label) drawLabel(point.label, p.x + 7, p.y - 8, "700 15px 'Pretendard Variable', sans-serif", labelColor);
         }
 
         function drawRing(screenPoint, radius, color, fillColor = null) {
@@ -1162,10 +1294,19 @@
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, width, height);
 
-            const objects = allObjects();
+            // 시연 중에는 학생 작도 대신 시연 도형을 표시
+            const objects = demoState.active ? state.givenObjects.concat(demoState.objects) : allObjects();
+            if (!demoState.active && state.showGhost) drawGhost();
             objects.filter(o => o.kind === 'mark').forEach(mark => drawArc(mark, COLORS.given, 1.5));
             objects.filter(o => o.kind === 'arc').forEach(arc => drawArc(arc, COLORS.arc, 1.6));
             objects.filter(o => o.kind === 'line').forEach(line => drawLine(line, line.given ? COLORS.given : COLORS.userLine, line.given ? 2.4 : 2));
+
+            if (demoState.active) {
+                objects.filter(o => o.kind === 'point').forEach(point => drawPoint(point));
+                drawGivenTexts(objects);
+                drawDemoAnimation();
+                return;
+            }
 
             if (state.activeTool === 'eraser' && pointer.hoverErase) {
                 const target = pointer.hoverErase;
@@ -1181,14 +1322,31 @@
                     .forEach(p => drawRing(worldToScreen(p), 3, COLORS.intersection, '#ffffff'));
             }
 
-            objects.filter(o => o.kind === 'point').forEach(drawPoint);
+            objects.filter(o => o.kind === 'point').forEach(point => drawPoint(point));
+            drawGivenTexts(objects);
+
+            drawToolPreview();
+            drawSnapIndicator();
+        }
+
+        function drawGivenTexts(objects) {
             objects.filter(o => o.kind === 'text').forEach(text => {
                 const p = worldToScreen(text);
                 drawLabel(text.text, p.x - 8, p.y, "italic 700 17px 'Pretendard Variable', serif");
             });
+        }
 
-            drawToolPreview();
-            drawSnapIndicator();
+        // 예시 안내선 (스냅·채점 대상 아님)
+        function drawGhost() {
+            const ghostColor = '#94a3b8';
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            ghostObjects.forEach(o => {
+                if (o.kind === 'arc') drawArc(o, ghostColor, 1.2, [5, 4]);
+                else if (o.kind === 'line') drawLine(o, ghostColor, 1.5, [6, 4]);
+            });
+            ghostObjects.filter(o => o.kind === 'point').forEach(point => drawPoint(point, ghostColor, ghostColor));
+            ctx.restore();
         }
 
         // ===== UI 갱신 =====
@@ -1252,6 +1410,148 @@
             render();
         }
 
+        // ===== 작도 시연 플레이어 =====
+        const DEMO_DURATIONS = { measure: 1100, arc: 1500, point: 450, line: 1100 };
+        const DEMO_HOLD = 350;
+        const easeInOut = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const lerp = (p, q, t) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+        const lastDemoStep = () => demoState.actions.reduce((max, action) => Math.max(max, action.step), 0);
+        const currentDemoStep = () => demoState.actions[demoState.index]?.step ?? lastDemoStep() + 1;
+
+        function demoActionResult(action) {
+            switch (action.type) {
+                case 'arc': return [{ kind: 'arc', cx: action.center.x, cy: action.center.y, r: action.radius, start: action.start, sweep: action.sweep }];
+                case 'point': return [{ kind: 'point', x: action.at.x, y: action.at.y, label: action.label }];
+                case 'line': return [{ kind: 'line', lineType: action.lineType, p1: action.p1, p2: action.p2 }];
+                default: return [];
+            }
+        }
+
+        // 진행 중인 동작을 도구 모양과 함께 그리기
+        function drawDemoAnimation() {
+            const action = demoState.actions[demoState.index];
+            if (!action) return;
+            const t = easeInOut(Math.min(1, demoState.progress));
+            if (action.type === 'measure') {
+                drawCompass(action.from, lerp(action.from, action.to, t));
+            } else if (action.type === 'arc') {
+                const partialArc = { cx: action.center.x, cy: action.center.y, r: action.radius, start: action.start, sweep: action.sweep * t };
+                if (t > 0) drawArc(partialArc, COLORS.arc, 2);
+                drawCompass(action.center, arcPointAt(partialArc, partialArc.start + partialArc.sweep));
+            } else if (action.type === 'point') {
+                drawRing(worldToScreen(action.at), 4 + 12 * (1 - t), COLORS.userPoint);
+            } else if (action.type === 'line') {
+                drawRulerBand(action.p1, action.p2);
+                if (t > 0) drawLine({ lineType: 'segment', p1: action.p1, p2: lerp(action.p1, action.p2, t) }, COLORS.userLine, 2);
+            }
+        }
+
+        function finishDemoAction() {
+            const action = demoState.actions[demoState.index];
+            demoState.objects.push(...demoActionResult(action));
+            demoState.index++;
+            demoState.progress = 0;
+            const next = demoState.actions[demoState.index];
+            demoState.hold = next && next.step !== action.step ? DEMO_HOLD * 3 : DEMO_HOLD;
+            if (!next) pauseDemo();
+        }
+
+        function demoTick(time) {
+            if (!demoState.playing) return;
+            const elapsed = demoState.lastTime === null ? 0 : (time - demoState.lastTime) * demoState.speed;
+            demoState.lastTime = time;
+            if (demoState.hold > 0) {
+                demoState.hold -= elapsed;
+            } else {
+                demoState.progress += elapsed / DEMO_DURATIONS[demoState.actions[demoState.index].type];
+                if (demoState.progress >= 1) finishDemoAction();
+            }
+            render();
+            updateDemoUi();
+            if (demoState.playing) demoState.frameId = requestAnimationFrame(demoTick);
+        }
+
+        // step 이전 단계의 동작을 모두 완료한 상태로 이동
+        function jumpToDemoStep(step) {
+            demoState.objects = [];
+            demoState.index = 0;
+            demoState.progress = 0;
+            demoState.hold = 0;
+            while (demoState.index < demoState.actions.length && demoState.actions[demoState.index].step < step) {
+                demoState.objects.push(...demoActionResult(demoState.actions[demoState.index]));
+                demoState.index++;
+            }
+            if (demoState.index >= demoState.actions.length) pauseDemo();
+            render();
+            updateDemoUi();
+        }
+
+        function playDemo() {
+            if (demoState.index >= demoState.actions.length) jumpToDemoStep(0);
+            demoState.playing = true;
+            demoState.lastTime = null;
+            cancelAnimationFrame(demoState.frameId);
+            demoState.frameId = requestAnimationFrame(demoTick);
+            updateDemoUi();
+        }
+
+        function pauseDemo() {
+            demoState.playing = false;
+            cancelAnimationFrame(demoState.frameId);
+            updateDemoUi();
+        }
+
+        function goToPreviousDemoStep() {
+            const step = currentDemoStep();
+            const isAtStepStart = demoState.index === demoState.actions.findIndex(action => action.step === step) && demoState.progress === 0;
+            jumpToDemoStep(Math.max(0, isAtStepStart || step > lastDemoStep() ? step - 1 : step));
+        }
+
+        const goToNextDemoStep = () => jumpToDemoStep(currentDemoStep() + 1);
+
+        function startDemo() {
+            const mission = MISSIONS[state.missionId];
+            if (!mission.demo) return;
+            resetToolState();
+            pointer.hoverSnap = null;
+            demoState.active = true;
+            demoState.actions = mission.demo();
+            document.getElementById('tool-panel').classList.add('d-none');
+            document.getElementById('demo-panel').classList.remove('d-none');
+            canvas.style.cursor = 'default';
+            jumpToDemoStep(0);
+            playDemo();
+        }
+
+        function closeDemo(showGuide) {
+            pauseDemo();
+            demoState.active = false;
+            demoState.objects = [];
+            document.getElementById('tool-panel').classList.remove('d-none');
+            document.getElementById('demo-panel').classList.add('d-none');
+            highlightHintStep(-1);
+            if (showGuide) state.showGhost = ghostObjects.length > 0;
+            showGhostInput.checked = state.showGhost;
+            setActiveTool(state.activeTool);
+        }
+
+        function highlightHintStep(step) {
+            document.querySelectorAll('#mission-steps li').forEach((item, index) => item.classList.toggle('demo-active-step', index === step));
+        }
+
+        function updateDemoUi() {
+            if (!demoState.active) return;
+            const steps = MISSIONS[state.missionId].steps;
+            const step = currentDemoStep();
+            const isFinished = demoState.index >= demoState.actions.length;
+            document.getElementById('demo-step-badge').textContent = isFinished ? '시연 완료' : `${step + 1} / ${steps.length} 단계`;
+            demoCaption.textContent = isFinished
+                ? '시연이 끝났어요! [따라 하기]를 누르면 예시 안내선을 보며 직접 작도할 수 있어요.'
+                : `${step + 1}. ${steps[step]}`;
+            demoPlayButton.innerHTML = demoState.playing ? '<i class="bi bi-pause-fill"></i>' : '<i class="bi bi-play-fill"></i>';
+            highlightHintStep(isFinished ? -1 : step);
+        }
+
         // ===== 문제 불러오기 =====
         function buildMissionSelect() {
             const groups = {};
@@ -1266,9 +1566,15 @@
         }
 
         function loadMission(id) {
+            if (demoState.active) closeDemo(false);
             const mission = MISSIONS[id];
             state.missionId = id;
             state.givenObjects = mission.build();
+            ghostObjects = mission.demo ? mission.demo().flatMap(demoActionResult) : [];
+            state.showGhost = false;
+            showGhostInput.checked = false;
+            showGhostInput.disabled = !mission.demo;
+            demoButton.classList.toggle('d-none', !mission.demo);
             state.userObjects = [];
             state.log = [];
             state.undoStack = [];
@@ -1295,7 +1601,7 @@
         };
 
         canvas.addEventListener('pointerdown', event => {
-            if (event.pointerType === 'mouse' && event.button !== 0) return;
+            if (demoState.active || (event.pointerType === 'mouse' && event.button !== 0)) return;
             canvas.setPointerCapture(event.pointerId);
             const screenPos = getScreenPos(event);
             Object.assign(pointer, { isDown: true, downScreen: screenPos, moved: false, type: event.pointerType, hoverScreen: screenPos });
@@ -1307,6 +1613,7 @@
         });
 
         canvas.addEventListener('pointermove', event => {
+            if (demoState.active) return;
             const screenPos = getScreenPos(event);
             const previous = pointer.hoverScreen;
             pointer.type = event.pointerType;
@@ -1412,6 +1719,14 @@
             loadMission(missionSelect.value);
         });
 
+        demoButton.addEventListener('click', startDemo);
+        demoPlayButton.addEventListener('click', () => demoState.playing ? pauseDemo() : playDemo());
+        document.getElementById('btn-demo-prev').addEventListener('click', goToPreviousDemoStep);
+        document.getElementById('btn-demo-next').addEventListener('click', goToNextDemoStep);
+        document.getElementById('btn-demo-close').addEventListener('click', () => closeDemo(true));
+        document.getElementById('demo-speed').addEventListener('change', event => { demoState.speed = Number(event.target.value); });
+        showGhostInput.addEventListener('change', () => { state.showGhost = showGhostInput.checked; render(); });
+
         checkButton.addEventListener('click', () => {
             const mission = MISSIONS[state.missionId];
             if (mission.check) showFeedback(mission.check());
@@ -1419,6 +1734,10 @@
 
         document.addEventListener('keydown', event => {
             if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
+            if (demoState.active) {
+                if (event.key === 'Escape') closeDemo(false);
+                return;
+            }
             const key = event.key.toLowerCase();
             if (event.key === 'Escape') {
                 resetToolState();
