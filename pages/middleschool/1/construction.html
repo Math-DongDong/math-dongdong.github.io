@@ -88,10 +88,6 @@
             padding: 1.5rem;
         }
 
-        #construction-log {
-            max-height: 220px;
-            overflow-y: auto;
-        }
     </style>
 </head>
 
@@ -231,38 +227,6 @@
                                     class="bi bi-check2-circle"></i> 정답 확인</button>
                             <div id="check-feedback" class="alert small mt-3 mb-0 d-none" role="alert"></div>
                         </div>
-                    </div>
-
-                    <div>
-                        <button class="btn btn-sm btn-outline-secondary w-100 mb-2" type="button"
-                            data-bs-toggle="collapse" data-bs-target="#usage-collapse" aria-expanded="false">
-                            <i class="bi bi-question-circle"></i> 도구 사용법
-                        </button>
-                        <div class="collapse" id="usage-collapse">
-                            <ul class="small bg-white border rounded p-3 ps-4 mb-0">
-                                <li><b>점</b>: 클릭하여 점을 찍어요. 교점이나 도형 근처를 클릭하면 정확히 달라붙어요. 이미 있는 점을 클릭하면 이름을 바꿀 수 있어요.</li>
-                                <li><b>자</b>: 두 점을 차례로 클릭(또는 드래그)하여 선분을 그어요.</li>
-                                <li><b>컴퍼스</b>: 처음에는 두 점을 차례로 클릭해 컴퍼스를 벌려요. 바늘을 꽂을 중심을 클릭하면 [벌린 간격 유지]와
-                                    [벌린 간격 조절]이 나와요.</li>
-                                <li><b>벌린 간격 유지</b>: 연필로 그리기 시작할 곳 → 끝낼 곳을 차례로 클릭해 그려요. (터치: 시작할 곳을 누른 채 돌린 뒤 떼기)</li>
-                                <li><b>벌린 간격 조절</b>: 새로 벌릴 점을 클릭하면 바로 연필로 그릴 수 있어요. 간격만 바꾸고 그리지 않으려면 [그리지 않기]를 눌러요.</li>
-                                <li>버튼이 떠 있을 때 다른 곳을 클릭하면 중심이 그곳으로 옮겨져요.</li>
-                                <li><b>단축키</b>: Esc 취소, Ctrl+Z 되돌리기, Ctrl+Y 다시하기, 마우스 휠 확대/축소</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div class="form-check form-switch mb-0">
-                            <input class="form-check-input" type="checkbox" role="switch" id="show-ghost">
-                            <label class="form-check-label small" for="show-ghost">예시 안내선</label>
-                        </div>
-                        <div class="form-text d-none" id="ghost-note">안내선은 하나의 예시 위치예요. 다른 위치나 방향에 작도해도 조건만 맞으면 정답이에요.</div>
-                    </div>
-
-                    <div>
-                        <h6 class="fw-bold text-secondary"><i class="bi bi-journal-text"></i> 작도 기록</h6>
-                        <ol id="construction-log" class="small bg-white border rounded p-3 ps-4 mb-0"></ol>
                     </div>
                 </div>
             </div>
@@ -624,19 +588,16 @@
             missionId: 'segmentCopy',
             givenObjects: [],
             userObjects: [],
-            log: [],
             undoStack: [],
             redoStack: [],
-            activeTool: 'ruler',
-            showGhost: false
+            activeTool: 'ruler'
         };
         const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null };
-        let ghostObjects = [];
         const view = { scale: 1, offsetX: 0, offsetY: 0 };
         const pointer = { isDown: false, downScreen: null, moved: false, type: 'mouse', hoverScreen: null, hoverSnap: null, hoverErase: null };
         const rulerState = { start: null, justStarted: false };
         const compassState = {
-            stage: 'measure1', centerSnap: null, radius: null, radiusLabel: '',
+            stage: 'measure1', centerSnap: null, radius: null,
             startAngle: null, lastAngle: null, sweep: 0, sweepPressed: false, startedOnPress: false, justStarted: false, measureSnap: null
         };
         let intersectionCache = [];
@@ -650,11 +611,9 @@
         const compassChoice = document.getElementById('compass-choice');
         const checkButton = document.getElementById('btn-check');
         const checkFeedback = document.getElementById('check-feedback');
-        const constructionLog = document.getElementById('construction-log');
         const demoButton = document.getElementById('btn-demo');
         const demoPlayButton = document.getElementById('btn-demo-play');
         const demoCaption = document.getElementById('demo-caption');
-        const showGhostInput = document.getElementById('show-ghost');
 
         const allObjects = () => state.givenObjects.concat(state.userObjects);
         const getUserObjects = kind => state.userObjects.filter(o => o.kind === kind);
@@ -872,24 +831,11 @@
             return point;
         }
 
-        function describeLength(snapA, snapB) {
-            const isSame = (p, q) => dist(p, q) < 1e-6;
-            const labeledSegment = allObjects().find(o => o.kind === 'line' && o.label
-                && ((isSame(o.p1, snapA) && isSame(o.p2, snapB)) || (isSame(o.p1, snapB) && isSame(o.p2, snapA))));
-            if (labeledSegment) return labeledSegment.label;
-            const labelA = snapA.type === 'point' ? snapA.ref.label : '';
-            const labelB = snapB.type === 'point' ? snapB.ref.label : '';
-            if (labelA && labelB) return labelA + labelB;
-            return `약 ${Math.round(dist(snapA, snapB))}`;
-        }
-
         // ===== 기록 / 되돌리기 =====
-        const captureSnapshot = () => JSON.stringify({ userObjects: state.userObjects, log: state.log });
+        const captureSnapshot = () => JSON.stringify(state.userObjects);
 
         function restoreSnapshot(json) {
-            const data = JSON.parse(json);
-            state.userObjects = data.userObjects;
-            state.log = data.log;
+            state.userObjects = JSON.parse(json);
         }
 
         function pushHistory() {
@@ -914,8 +860,6 @@
             geometryChanged();
         }
 
-        const addLog = (objectId, text) => state.log.push({ objectId, text });
-
         function geometryChanged() {
             recomputeIntersections();
             hideFeedback();
@@ -939,9 +883,7 @@
                 return;
             }
             pushHistory();
-            const point = ensurePointAt(snap);
-            const placeText = { intersection: '교점에 ', object: '도형 위에 ', free: '' }[snap.type];
-            addLog(point.id, `점: ${placeText}점 ${point.label} 찍기`);
+            ensurePointAt(snap);
             geometryChanged();
         }
 
@@ -965,7 +907,6 @@
         function eraseObject(target) {
             pushHistory();
             state.userObjects = state.userObjects.filter(o => o !== target);
-            state.log = state.log.filter(entry => entry.objectId !== target.id);
             geometryChanged();
         }
 
@@ -975,7 +916,6 @@
             const p1 = ensurePointAt(startSnap), p2 = ensurePointAt(endSnap);
             const line = createLine('segment', p1, p2);
             state.userObjects.push(line);
-            addLog(line.id, `자: 선분 ${p1.label}${p2.label} 긋기`);
             geometryChanged();
         }
 
@@ -1007,8 +947,6 @@
             const centerPoint = ensurePointAt(c.centerSnap);
             const arc = createArc(centerPoint, c.radius, c.startAngle, c.sweep);
             state.userObjects.push(arc);
-            const shapeName = Math.abs(c.sweep) >= TWO_PI - 1e-9 ? '원' : '원의 일부';
-            addLog(arc.id, `컴퍼스: 중심 ${centerPoint.label || '(이름 없음)'}, 반지름 ${c.radiusLabel}인 ${shapeName} 그리기`);
             resetToolState();
             geometryChanged();
         }
@@ -1038,7 +976,6 @@
                 const radius = dist(c.centerSnap, snap);
                 if (radius * view.scale < 3) return;
                 c.radius = radius;
-                c.radiusLabel = describeLength(c.centerSnap, snap);
                 beginPencilStart();
             } else if (c.stage === 'sweep') {
                 if (c.startedOnPress) {
@@ -1055,7 +992,6 @@
                 const length = dist(c.measureSnap, snap);
                 if (length * view.scale < 3) return;
                 c.radius = length;
-                c.radiusLabel = describeLength(c.measureSnap, snap);
                 c.stage = 'center';
             }
         }
@@ -1283,7 +1219,6 @@
 
             // 시연 중에는 학생 작도 대신 시연 도형을 표시
             const objects = demoState.active ? state.givenObjects.concat(demoState.objects) : allObjects();
-            if (!demoState.active && state.showGhost) drawGhost();
             objects.filter(o => o.kind === 'mark').forEach(mark => drawArc(mark, COLORS.given, 1.5));
             objects.filter(o => o.kind === 'arc').forEach(arc => drawArc(arc, COLORS.arc, 1.6));
             objects.filter(o => o.kind === 'line').forEach(line => drawLine(line, line.given ? COLORS.given : COLORS.userLine, line.given ? 2.4 : 2));
@@ -1319,19 +1254,6 @@
                 const p = worldToScreen(text);
                 drawLabel(text.text, p.x - 8, p.y, "italic 700 17px 'Pretendard Variable', serif");
             });
-        }
-
-        // 예시 안내선 (스냅·채점 대상 아님)
-        function drawGhost() {
-            const ghostColor = '#94a3b8';
-            ctx.save();
-            ctx.globalAlpha = 0.6;
-            ghostObjects.forEach(o => {
-                if (o.kind === 'arc') drawArc(o, ghostColor, 1.2, [5, 4]);
-                else if (o.kind === 'line') drawLine(o, ghostColor, 1.5, [6, 4]);
-            });
-            ghostObjects.filter(o => o.kind === 'point').forEach(point => drawPoint(point, ghostColor, ghostColor));
-            ctx.restore();
         }
 
         // ===== UI 갱신 =====
@@ -1372,26 +1294,9 @@
             compassChoice.style.top = `${Math.max(8, Math.min(center.y - compassChoice.offsetHeight / 2, maxTop))}px`;
         }
 
-        // 삼각형 문제는 작도 위치가 자유로우므로 안내선이 예시임을 알림
-        function updateGhostNote() {
-            const isTriangleMission = MISSIONS[state.missionId].group === '삼각형의 작도';
-            document.getElementById('ghost-note').classList.toggle('d-none', !(state.showGhost && isTriangleMission));
-        }
-
         function updateUi() {
             document.getElementById('btn-undo').disabled = !state.undoStack.length;
             document.getElementById('btn-redo').disabled = !state.redoStack.length;
-            constructionLog.innerHTML = '';
-            if (!state.log.length) {
-                constructionLog.innerHTML = '<li class="list-unstyled text-secondary">아직 작도한 내용이 없어요.</li>';
-            } else {
-                state.log.forEach(entry => {
-                    const item = document.createElement('li');
-                    item.textContent = entry.text;
-                    constructionLog.appendChild(item);
-                });
-                constructionLog.scrollTop = constructionLog.scrollHeight;
-            }
             updateStatus();
         }
 
@@ -1644,15 +1549,12 @@
             playDemo();
         }
 
-        function closeDemo(showGuide) {
+        function closeDemo() {
             pauseDemo();
             demoState.active = false;
             demoState.objects = [];
             document.getElementById('tool-panel').classList.remove('d-none');
             document.getElementById('demo-panel').classList.add('d-none');
-            if (showGuide) state.showGhost = ghostObjects.length > 0;
-            showGhostInput.checked = state.showGhost;
-            updateGhostNote();
             setActiveTool(state.activeTool);
         }
 
@@ -1663,7 +1565,7 @@
             const isFinished = demoState.index >= demoState.actions.length;
             document.getElementById('demo-step-badge').textContent = isFinished ? '시연 완료' : `${step + 1} / ${steps.length} 단계`;
             demoCaption.textContent = isFinished
-                ? '시연이 끝났어요! [따라 하기]를 누르면 예시 안내선을 보며 직접 작도할 수 있어요.'
+                ? '시연이 끝났어요! [따라 하기]를 눌러 직접 작도해 보세요.'
                 : `${step + 1}. ${steps[step]}`;
             demoPlayButton.innerHTML = demoState.playing ? '<i class="bi bi-pause-fill"></i>' : '<i class="bi bi-play-fill"></i>';
         }
@@ -1682,18 +1584,12 @@
         }
 
         function loadMission(id) {
-            if (demoState.active) closeDemo(false);
+            if (demoState.active) closeDemo();
             const mission = MISSIONS[id];
             state.missionId = id;
             state.givenObjects = mission.build();
-            ghostObjects = mission.demo ? mission.demo().flatMap(demoActionResult) : [];
-            state.showGhost = false;
-            showGhostInput.checked = false;
-            showGhostInput.disabled = !mission.demo;
             demoButton.classList.toggle('d-none', !mission.demo);
-            updateGhostNote();
             state.userObjects = [];
-            state.log = [];
             state.undoStack = [];
             state.redoStack = [];
             compassState.radius = null;
@@ -1810,7 +1706,6 @@
             if (!await showCustomModal('🗑️ 모두 지우기', '내가 작도한 내용을 모두 지울까요?', { type: 'confirm' })) return;
             pushHistory();
             state.userObjects = [];
-            state.log = [];
             resetToolState();
             geometryChanged();
         });
@@ -1834,9 +1729,8 @@
         demoPlayButton.addEventListener('click', () => demoState.playing ? pauseDemo() : playDemo());
         document.getElementById('btn-demo-prev').addEventListener('click', goToPreviousDemoStep);
         document.getElementById('btn-demo-next').addEventListener('click', goToNextDemoStep);
-        document.getElementById('btn-demo-close').addEventListener('click', () => closeDemo(true));
+        document.getElementById('btn-demo-close').addEventListener('click', closeDemo);
         document.getElementById('demo-speed').addEventListener('change', event => { demoState.speed = Number(event.target.value); });
-        showGhostInput.addEventListener('change', () => { state.showGhost = showGhostInput.checked; updateGhostNote(); render(); });
 
         checkButton.addEventListener('click', () => {
             const mission = MISSIONS[state.missionId];
@@ -1847,7 +1741,7 @@
             if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
             if (customModalElement.classList.contains('show')) return;
             if (demoState.active) {
-                if (event.key === 'Escape') closeDemo(false);
+                if (event.key === 'Escape') closeDemo();
                 return;
             }
             const key = event.key.toLowerCase();
