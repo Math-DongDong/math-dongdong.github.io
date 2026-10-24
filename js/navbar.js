@@ -154,6 +154,14 @@
     const navData = NAVBAR_DATA[navType];
     if (!navData) return;
 
+    // 전체화면 버튼 아이콘용 Bootstrap Icons CSS가 페이지에 없으면 자동 추가
+    if (!document.querySelector('link[href*="bootstrap-icons"]')) {
+        const iconsLink = document.createElement('link');
+        iconsLink.rel = 'stylesheet';
+        iconsLink.href = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css';
+        document.head.appendChild(iconsLink);
+    }
+
     // 4. HTML 동적 생성
     let menuHtml = '';
     navData.menu.forEach((group, index) => {
