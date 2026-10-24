@@ -336,7 +336,8 @@
         const SCRIPT_TYPE_ATTR = 'data-hte-script-type';
         const NO_SCRIPT_TYPE = '__none__';
         const NON_TEXT_TAGS = new Set(['IMG', 'INPUT', 'BR', 'HR', 'VIDEO', 'AUDIO', 'IFRAME', 'CANVAS', 'SVG', 'EMBED', 'OBJECT', 'SELECT', 'TEXTAREA']);
-        const VOID_TAGS = ['link', 'meta', 'br', 'hr', 'img', 'input', 'source', 'area', 'col', 'embed', 'track', 'wbr'];
+        const VOID_TAGS = ['link', 'meta', 'base', 'br', 'hr', 'img', 'input', 'source', 'area', 'col', 'embed', 'param', 'track', 'wbr'];
+        const RAW_TEXT_TAGS = ['script', 'style', 'textarea', 'title'];
         const BOOLEAN_ATTRS = ['hidden', 'disabled', 'checked', 'selected', 'readonly', 'required', 'multiple', 'autofocus', 'novalidate', 'defer', 'async', 'open'];
         const MATH_SYMBOLS = ['×', '÷', '−', '±', '≠', '≤', '≥', '²', '³', '√', 'π', '°', '∠', '△', '⊥', '∥', '∴', '∵', '…', '·', '→', '①', '②', '③', '④', '⑤'];
         const HISTORY_LIMIT = 60;
@@ -356,7 +357,7 @@ hte-overlay hte-box.is-editing hte-label{background:#fd7e14;}
 [data-hte-editing]{cursor:text;outline:none;}
 html[data-hte-reveal] [hidden]:not(#view-mission):not(#view-done):not(#reviewCard){display:block!important;outline:2px dashed #fd7e14;outline-offset:4px;}
 html[data-hte-reveal] [hidden]:not(#view-mission):not(#view-done):not(#reviewCard)::before{content:"숨김 영역 · 학생 화면에서는 버튼을 눌러야 보여요";display:block;margin:0 0 8px;color:#fd7e14;font:700 12px/1.4 sans-serif;}
-html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}`;
+html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;transition:none!important;}`;
 
         // ===== 상태 =====
         const state = {
@@ -375,6 +376,8 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             fileName: 'document.html',
             baseUrl: AHAMATH_FOLDER_URL,
             originalHtml: '',
+            sourceSpans: [],
+            pristineDoc: null,
             questionSource: null,
             questionDraft: null,
             activeQuestionIndex: 0,
@@ -397,6 +400,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             return Number.isFinite(number) ? number : 0;
         };
 
+        const stripSourceIds = html => html.replace(/\sdata-hte-(?:src|new)="[^"]*"/g, '').replace(/@hte:\d+@/g, '');
         const escapeHtml = text => String(text).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
         const stripTags = html => String(html).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '');
 
@@ -468,7 +472,10 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
 
         // ===== 불러오기 =====
         function loadHtmlIntoEditor(htmlText, fileName, baseUrl) {
-            const parsedDoc = new DOMParser().parseFromString(htmlText, 'text/html');
+            const { annotated, spans } = annotateSource(htmlText);
+            const parsedDoc = new DOMParser().parseFromString(annotated, 'text/html');
+            state.pristineDoc = new DOMParser().parseFromString(annotated, 'text/html');
+            state.sourceSpans = spans;
             state.originalHtml = htmlText;
             state.doctype = serializeDoctype(parsedDoc.doctype);
             state.fileName = fileName;
@@ -489,6 +496,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             editorStyle.setAttribute(UI_ATTR, '');
             editorStyle.textContent = FRAME_EDITOR_CSS;
             parsedDoc.head.appendChild(editorStyle);
+            parsedDoc.documentElement.toggleAttribute('data-hte-reveal', byId('revealHiddenSwitch').checked);
 
             byId('currentFileLabel').textContent = fileName;
             loadSection.classList.add('d-none');
@@ -792,6 +800,9 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             finishTextEditing();
             const copy = el.cloneNode(true);
             copy.removeAttribute('id');
+            // 복사본 자체는 새 요소로 표시하고, 안쪽 요소는 원본과 같은 코드 위치를 그대로 가리킴
+            copy.setAttribute('data-hte-new', el.getAttribute('data-hte-src') ?? el.getAttribute('data-hte-new') ?? '');
+            copy.removeAttribute('data-hte-src');
             el.after(copy);
             selectElement(copy);
             commitHistory();
@@ -851,8 +862,248 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             restoreSnapshot(state.historyIndex + 1);
         }
 
-        // ===== 내보내기 =====
-        // 원본 파일의 작성 습관(<link ... />, hidden, 줄바꿈 문자)을 따라 git diff를 최소화
+        // ===== 원본 코드 위치 기록 =====
+        // 시작 태그마다 data-hte-src="번호", 주석마다 @hte:번호@ 를 붙여 DOM과 원본 코드 위치를 연결
+        function findTagEnd(source, index) {
+            let quote = null;
+            for (let i = index; i < source.length; i++) {
+                const ch = source[i];
+                if (quote) {
+                    if (ch === quote) quote = null;
+                } else if (ch === '"' || ch === "'") {
+                    if (/=\s*$/.test(source.slice(Math.max(index, i - 20), i))) quote = ch;
+                } else if (ch === '>') {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function annotateSource(source) {
+            const spans = [];
+            const stack = [];
+            const tagPattern = /<!--[\s\S]*?-->|<![^>]*>|<\/([a-zA-Z][\w:-]*)\s*>|<([a-zA-Z][\w:-]*)/g;
+            let annotated = '';
+            let copiedUntil = 0;
+            let match;
+            while ((match = tagPattern.exec(source))) {
+                if (match[0].startsWith('<!--')) {
+                    const insertAt = match.index + 4;
+                    annotated += source.slice(copiedUntil, insertAt) + `@hte:${spans.length}@`;
+                    copiedUntil = insertAt;
+                    spans.push({ name: '#comment', start: match.index, openEnd: tagPattern.lastIndex, closeStart: tagPattern.lastIndex, end: tagPattern.lastIndex, patchable: true });
+                    continue;
+                }
+                if (match[0].startsWith('<!')) continue;
+
+                if (match[1]) {
+                    // 끝 태그: 짝이 되는 시작 태그를 찾고, 그 사이에 닫히지 않은 요소는 위치를 신뢰하지 않음
+                    const name = match[1].toLowerCase();
+                    let openIndex = -1;
+                    for (let i = stack.length - 1; i >= 0; i--) {
+                        if (spans[stack[i]].name === name) { openIndex = i; break; }
+                    }
+                    if (openIndex === -1) continue;
+                    for (let i = stack.length - 1; i > openIndex; i--) spans[stack[i]].patchable = false;
+                    Object.assign(spans[stack[openIndex]], { closeStart: match.index, end: tagPattern.lastIndex });
+                    stack.length = openIndex;
+                    continue;
+                }
+
+                const name = match[2].toLowerCase();
+                const tagEnd = findTagEnd(source, tagPattern.lastIndex);
+                if (tagEnd === -1) break;
+                const isSelfClosing = source[tagEnd - 1] === '/';
+                const insertAt = isSelfClosing ? tagEnd - 1 : tagEnd;
+                annotated += source.slice(copiedUntil, insertAt) + ` data-hte-src="${spans.length}"`;
+                copiedUntil = insertAt;
+
+                const id = spans.length;
+                const span = { name, start: match.index, openEnd: tagEnd + 1, closeStart: null, end: null, patchable: true };
+                spans.push(span);
+                tagPattern.lastIndex = tagEnd + 1;
+
+                const isForeign = stack.some(index => spans[index].name === 'svg' || spans[index].name === 'math');
+                if (VOID_TAGS.includes(name) || (isSelfClosing && (isForeign || name === 'svg' || name === 'math'))) {
+                    span.closeStart = span.end = span.openEnd;
+                } else if (RAW_TEXT_TAGS.includes(name)) {
+                    const closePattern = new RegExp(`</${name}\\s*>`, 'gi');
+                    closePattern.lastIndex = span.openEnd;
+                    const close = closePattern.exec(source);
+                    if (!close) break;
+                    span.closeStart = close.index;
+                    span.end = closePattern.lastIndex;
+                    tagPattern.lastIndex = span.end;
+                } else {
+                    stack.push(id);
+                }
+            }
+            annotated += source.slice(copiedUntil);
+            spans.forEach(span => { if (span.end === null) span.patchable = false; });
+            return { annotated, spans };
+        }
+
+        // ===== 내보내기: 바뀐 부분만 원본 코드에 반영 =====
+        function getSourceId(node) {
+            if (node.nodeType === 1) return node.getAttribute('data-hte-src');
+            if (node.nodeType === 8) {
+                const match = /^@hte:(\d+)@/.exec(node.data);
+                return match ? match[1] : null;
+            }
+            return null;
+        }
+
+        // 파서가 스스로 만든 요소(tbody 등)는 원본 코드에 없으므로 펼쳐서 자식만 봄
+        function flattenChildren(node) {
+            const result = [];
+            node.childNodes.forEach(child => {
+                if (child.nodeType === 1 && !child.hasAttribute('data-hte-src') && !child.hasAttribute('data-hte-new')) result.push(...flattenChildren(child));
+                else result.push(child);
+            });
+            return result;
+        }
+
+        function getAttributeMap(el, ignoredNames = []) {
+            return el.getAttributeNames()
+                .filter(name => !name.startsWith('data-hte-') && !ignoredNames.includes(name))
+                .map(name => name + '=' + el.getAttribute(name))
+                .sort()
+                .join('\u0000');
+        }
+
+        function buildStartTag(el, sourceStartTag) {
+            const attrs = el.getAttributeNames().filter(name => !name.startsWith('data-hte-')).map(name => {
+                const value = el.getAttribute(name);
+                return value === '' && BOOLEAN_ATTRS.includes(name) ? ` ${name}` : ` ${name}="${value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`;
+            }).join('');
+            return `<${el.localName}${attrs}${/\/>$/.test(sourceStartTag) ? ' />' : '>'}`;
+        }
+
+        function createPatchContext() {
+            const pristine = state.pristineDoc;
+            const nodesById = new Map();
+            pristine.querySelectorAll('[data-hte-src]').forEach(el => nodesById.set(el.getAttribute('data-hte-src'), el));
+            const walker = pristine.createTreeWalker(pristine, NodeFilter.SHOW_COMMENT);
+            while (walker.nextNode()) {
+                const id = getSourceId(walker.currentNode);
+                if (id !== null) nodesById.set(id, walker.currentNode);
+            }
+            return { source: state.originalHtml, spans: state.sourceSpans, nodesById };
+        }
+
+        function emitNode(node, ctx) {
+            if (node.nodeType === 8) {
+                const id = getSourceId(node);
+                return id !== null ? ctx.source.slice(ctx.spans[id].start, ctx.spans[id].end) : `<!--${node.data}-->`;
+            }
+            return node.hasAttribute('data-hte-new') ? emitCopy(node, ctx) : emitElement(node, ctx);
+        }
+
+        function emitElement(el, ctx) {
+            const id = el.getAttribute('data-hte-src');
+            const span = id !== null ? ctx.spans[id] : null;
+            const original = id !== null ? ctx.nodesById.get(id) : null;
+            if (!span || !span.patchable || !original || original.localName !== el.localName) return stripSourceIds(el.outerHTML);
+
+            const sourceStartTag = ctx.source.slice(span.start, span.openEnd);
+            const isSameStartTag = getAttributeMap(el) === getAttributeMap(original);
+            if (isSameStartTag && el.innerHTML === original.innerHTML) return ctx.source.slice(span.start, span.end);
+
+            const startTag = isSameStartTag ? sourceStartTag : buildStartTag(el, sourceStartTag);
+            if (span.end === span.openEnd) return startTag;
+
+            let inner;
+            if (el.innerHTML === original.innerHTML) inner = ctx.source.slice(span.openEnd, span.closeStart);
+            else if (RAW_TEXT_TAGS.includes(el.localName)) inner = el.innerHTML;
+            else inner = emitChildren(el, original, span, ctx) ?? stripSourceIds(el.innerHTML);
+            return startTag + inner + ctx.source.slice(span.closeStart, span.end);
+        }
+
+        // 복제한 요소는 원본 코드를 바탕으로 쓰고 id 속성만 뺌
+        function emitCopy(copy, ctx) {
+            const id = copy.getAttribute('data-hte-new');
+            const span = ctx.spans[id];
+            const original = ctx.nodesById.get(id);
+            if (!span?.patchable || original?.nodeType !== 1 || original.localName !== copy.localName
+                || getAttributeMap(copy, ['id']) !== getAttributeMap(original, ['id'])) {
+                return stripSourceIds(copy.outerHTML);
+            }
+            const startTag = ctx.source.slice(span.start, span.openEnd).replace(/\s+id\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i, '');
+            if (span.end === span.openEnd) return startTag;
+            let inner;
+            if (copy.innerHTML === original.innerHTML) inner = ctx.source.slice(span.openEnd, span.closeStart);
+            else if (RAW_TEXT_TAGS.includes(copy.localName)) inner = copy.innerHTML;
+            else inner = emitChildren(copy, original, span, ctx) ?? stripSourceIds(copy.innerHTML);
+            return startTag + inner + ctx.source.slice(span.closeStart, span.end);
+        }
+
+        function emitChildren(el, original, span, ctx) {
+            const finalKids = flattenChildren(el);
+            const originalKids = flattenChildren(original);
+            const markedKids = originalKids.filter(node => getSourceId(node) !== null);
+
+            // 원본 형제들 사이의 코드(공백·줄바꿈)를 그대로 쓰려면 위치가 순서대로 있어야 함
+            const gaps = [];
+            let previousEnd = span.openEnd;
+            for (const node of markedKids) {
+                const nodeSpan = ctx.spans[getSourceId(node)];
+                if (!nodeSpan.patchable || nodeSpan.start < previousEnd) return null;
+                gaps.push(ctx.source.slice(previousEnd, nodeSpan.start));
+                previousEnd = nodeSpan.end;
+            }
+            if (previousEnd > span.closeStart) return null;
+            const trailingGap = ctx.source.slice(previousEnd, span.closeStart);
+
+            // A. 자식 구성과 글자가 그대로이고, 자식 안쪽만 바뀐 경우
+            const hasSameStructure = finalKids.length === originalKids.length && finalKids.every((node, index) => {
+                const other = originalKids[index];
+                if (node.nodeType !== other.nodeType) return false;
+                if (node.nodeType === 1 || node.nodeType === 8) return getSourceId(node) !== null && getSourceId(node) === getSourceId(other);
+                return node.data === other.data;
+            });
+            if (hasSameStructure) {
+                let markedIndex = 0;
+                return finalKids.map(node => getSourceId(node) === null ? '' : gaps[markedIndex++] + emitNode(node, ctx)).join('') + trailingGap;
+            }
+
+            // B. 공백으로만 나뉜 블록 목록에서 요소를 지우거나 복제한 경우
+            const isBlank = node => node.nodeType === 3 && /^[ \t\n\r\f]*$/.test(node.data);
+            const isNew = node => node.nodeType === 1 && node.hasAttribute('data-hte-new');
+            if (!originalKids.every(node => isBlank(node) || getSourceId(node) !== null)) return null;
+            if (!finalKids.every(node => isBlank(node) || isNew(node) || getSourceId(node) !== null)) return null;
+
+            const indexById = new Map(markedKids.map((node, index) => [getSourceId(node), index]));
+            const lineBreakOf = gap => (gap.match(/\n[ \t]*$/) || [''])[0];
+            let output = '';
+            let lastIndex = -1;
+            for (const node of finalKids) {
+                if (isBlank(node)) continue;
+                if (isNew(node)) {
+                    const sourceIndex = indexById.get(node.getAttribute('data-hte-new'));
+                    output += lineBreakOf(gaps[sourceIndex ?? lastIndex + 1] ?? trailingGap) + emitNode(node, ctx);
+                    continue;
+                }
+                const index = indexById.get(getSourceId(node));
+                if (index === undefined || index <= lastIndex) return null;
+                output += gaps[index] + emitNode(node, ctx);
+                lastIndex = index;
+            }
+            return output + trailingGap;
+        }
+
+        const normalizeMarkup = html => stripSourceIds(html).replace(/[ \t\n\r\f]+/g, ' ').replace(/> </g, '><').trim();
+
+        function buildPatchedSource(clone) {
+            const ctx = createPatchContext();
+            const htmlSpan = ctx.spans[clone.getAttribute('data-hte-src')];
+            if (!htmlSpan || !htmlSpan.patchable) return null;
+            const output = ctx.source.slice(0, htmlSpan.start) + emitElement(clone, ctx) + ctx.source.slice(htmlSpan.end);
+            // 만든 코드를 다시 읽어 편집 화면과 같은 문서가 되는지 확인
+            const reparsed = new DOMParser().parseFromString(output, 'text/html');
+            return normalizeMarkup(reparsed.documentElement.outerHTML) === normalizeMarkup(clone.outerHTML) ? output : null;
+        }
+
+        // 원본 반영에 실패했을 때만 쓰는 방식: 전체를 새로 쓰되 원본의 작성 습관(/>, hidden, 줄바꿈)을 따름
         function matchOriginalFormatting(html) {
             const original = state.originalHtml;
             const codeBlockPattern = /(<script\b[\s\S]*?<\/script>|<style\b[\s\S]*?<\/style>)/gi;
@@ -878,11 +1129,11 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             return result;
         }
 
-        function buildExportHtml(forPreview = false) {
+        function buildCleanDocumentClone(keepBase) {
             const clone = state.frameDoc.documentElement.cloneNode(true);
             clone.querySelectorAll('hte-overlay').forEach(node => node.remove());
             clone.querySelectorAll(`[${UI_ATTR}]`).forEach(node => {
-                if (forPreview && node.tagName === 'BASE') node.removeAttribute(UI_ATTR);
+                if (keepBase && node.tagName === 'BASE') node.removeAttribute(UI_ATTR);
                 else node.remove();
             });
             clone.removeAttribute('data-hte-reveal');
@@ -897,8 +1148,21 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
                 if (originalType === NO_SCRIPT_TYPE) script.removeAttribute('type');
                 else script.setAttribute('type', originalType);
             });
-            const html = (state.doctype ? state.doctype + '\n' : '') + clone.outerHTML;
-            return forPreview ? html : matchOriginalFormatting(html);
+            return clone;
+        }
+
+        function buildExportHtml(forPreview = false) {
+            const clone = buildCleanDocumentClone(forPreview);
+            const doctypePrefix = state.doctype ? state.doctype + '\n' : '';
+            if (forPreview) return doctypePrefix + stripSourceIds(clone.outerHTML);
+            try {
+                const patched = buildPatchedSource(clone);
+                if (patched !== null) return patched;
+            } catch (error) {
+                console.warn(error);
+            }
+            alert('원본 코드 모양을 그대로 살려 저장하지 못해 전체 코드를 새로 정리해서 저장합니다.\n(git에서 바뀐 줄이 많아 보일 수 있어요)');
+            return matchOriginalFormatting(doctypePrefix + stripSourceIds(clone.outerHTML));
         }
 
         function downloadHtml() {
@@ -1002,8 +1266,60 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             return { closeIndex, entries };
         }
 
-        function evaluateLiteral(source) {
-            return Function('"use strict"; return (' + source + ');')();
+        // [ item, ... ] 배열의 각 항목 위치를 반환
+        function scanArrayItems(text, openIndex) {
+            const closeIndex = scanUntil(text, openIndex + 1, ']');
+            if (text[openIndex] !== '[' || closeIndex < 0) throw new Error('괄호 짝이 맞지 않습니다.');
+            const items = [];
+            let index = openIndex + 1;
+            while (true) {
+                index = skipSpaceAndComments(text, index);
+                if (text[index] === ',') { index++; continue; }
+                if (index >= closeIndex) break;
+                const start = index;
+                let end = scanUntil(text, index, ',]');
+                if (end < 0) end = closeIndex;
+                index = end;
+                while (/\s/.test(text[end - 1])) end--;
+                items.push({ start, end });
+            }
+            return { closeIndex, items };
+        }
+
+        function isPlainStringLiteral(raw) {
+            const quote = raw[0];
+            if (!["'", '"', '`'].includes(quote) || skipStringLiteral(raw, 0) !== raw.length) return false;
+            return quote !== '`' || !raw.includes('${');
+        }
+
+        // 따옴표 하나로 된 글자는 글로, fracText(...)처럼 계산이 들어간 값은 코드 그대로 다룸
+        function toField(key, raw) {
+            if (isPlainStringLiteral(raw)) {
+                const value = Function('"use strict"; return (' + raw + ');')();
+                return { key, kind: 'string', value, originalValue: value, originalRaw: raw };
+            }
+            return { key, kind: 'code', value: raw, originalValue: raw, originalRaw: raw };
+        }
+
+        const makeField = (key, value, kind = 'string') => ({ key, kind, value, originalValue: undefined, originalRaw: null });
+        const findField = (fields, key) => fields.find(field => field.key === key);
+
+        function parseQuestionFields(raw) {
+            return scanObjectEntries(raw, 0).entries.map(entry => {
+                const valueRaw = raw.slice(entry.valueStart, entry.valueEnd);
+                if (entry.key === 'choices' && valueRaw.startsWith('[')) {
+                    try {
+                        const choices = scanArrayItems(valueRaw, 0).items.map(item => {
+                            const choiceRaw = valueRaw.slice(item.start, item.end);
+                            return scanObjectEntries(choiceRaw, 0).entries.map(choiceEntry => toField(choiceEntry.key, choiceRaw.slice(choiceEntry.valueStart, choiceEntry.valueEnd)));
+                        });
+                        return { key: 'choices', kind: 'choices', choices };
+                    } catch (error) {
+                        // 보기가 객체 목록이 아니면 코드 그대로 다룸
+                    }
+                }
+                return toField(entry.key, valueRaw);
+            });
         }
 
         function locateQuestionSource() {
@@ -1023,46 +1339,39 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
                 questionsEntry,
                 questionBlock,
                 versionEntry: findEntry('recordVersion') || null,
-                topicId: topicEntry ? evaluateLiteral(text.slice(topicEntry.valueStart, topicEntry.valueEnd)) : '',
-                questions: questionBlock.entries.map(entry => {
-                    const raw = text.slice(entry.valueStart, entry.valueEnd);
-                    return { key: entry.key, raw, value: evaluateLiteral(raw) };
-                })
+                topicId: topicEntry ? toField('topicId', text.slice(topicEntry.valueStart, topicEntry.valueEnd)).value : '',
+                questions: questionBlock.entries.map(entry => ({ key: entry.key, entry, raw: text.slice(entry.valueStart, entry.valueEnd) }))
             };
         }
 
         // ===== 미션 문항: JS 소스 쓰기 =====
         const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
+        const QUESTION_KEY_ORDER = ['group', 'badge', 'title', 'stem', 'data', 'choices', 'ok'];
+        const CHOICE_KEY_ORDER = ['id', 'text', 'hint', 'correct'];
         const formatKey = key => IDENTIFIER_PATTERN.test(key) ? key : quoteJsString(key);
-        const isSameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
         function quoteJsString(value) {
-            return "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n') + "'";
+            return "'" + String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n') + "'";
         }
 
-        function toInlineLiteral(value) {
-            if (typeof value === 'string') return quoteJsString(value);
-            if (Array.isArray(value)) return '[' + value.map(toInlineLiteral).join(', ') + ']';
-            if (value && typeof value === 'object') {
-                const parts = Object.entries(value).filter(([, v]) => v !== undefined).map(([k, v]) => formatKey(k) + ': ' + toInlineLiteral(v));
-                return parts.length ? '{ ' + parts.join(', ') + ' }' : '{}';
+        function fieldSource(field, indent) {
+            if (field.kind === 'string') return field.value === field.originalValue ? field.originalRaw : quoteJsString(field.value);
+            if (field.kind === 'choices') {
+                const itemIndent = indent + '    ';
+                return '[\n' + field.choices.map(choice => itemIndent + '{ ' + choice
+                    .filter(choiceField => !(choiceField.key === 'hint' && choiceField.kind === 'string' && choiceField.value === ''))
+                    .map(choiceField => `${formatKey(choiceField.key)}: ${fieldSource(choiceField)}`)
+                    .join(', ') + ' }').join(',\n') + '\n' + indent + ']';
             }
-            return String(value);
+            return field.value;
         }
 
         // 기존 파일과 같은 모양: 첫 줄에 group·badge·title, 보기는 한 줄에 하나
-        function serializeQuestion(question, indent) {
+        function serializeQuestion(fields, indent) {
             const inner = indent + '    ';
-            const headKeys = ['group', 'badge', 'title'].filter(key => key in question);
-            const lines = headKeys.length ? [headKeys.map(key => `${key}: ${toInlineLiteral(question[key])}`).join(', ')] : [];
-            Object.keys(question).filter(key => !headKeys.includes(key) && question[key] !== undefined).forEach(key => {
-                const value = question[key];
-                if (Array.isArray(value) && value.some(item => item && typeof item === 'object')) {
-                    lines.push(`${formatKey(key)}: [\n${value.map(item => inner + '    ' + toInlineLiteral(item)).join(',\n')}\n${inner}]`);
-                } else {
-                    lines.push(`${formatKey(key)}: ${toInlineLiteral(value)}`);
-                }
-            });
+            const headKeys = ['group', 'badge', 'title'].filter(key => findField(fields, key));
+            const lines = headKeys.length ? [headKeys.map(key => `${key}: ${fieldSource(findField(fields, key), inner)}`).join(', ')] : [];
+            fields.filter(field => !headKeys.includes(field.key)).forEach(field => lines.push(`${formatKey(field.key)}: ${fieldSource(field, inner)}`));
             return '{\n' + lines.map(line => inner + line).join(',\n') + '\n' + indent + '}';
         }
 
@@ -1070,6 +1379,8 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             const lineStart = text.lastIndexOf('\n', index - 1) + 1;
             return text.slice(lineStart).match(/^[ \t]*/)[0];
         }
+
+        const isQuestionChanged = item => !item.fields ? false : serializeQuestion(item.fields, item.indent) !== item.initialSerialized;
 
         // 바뀐 문항만 다시 쓰고 나머지는 원문 그대로 둠
         function buildQuestionScript(source, draft) {
@@ -1080,19 +1391,31 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
 
             if (keepsStructure) {
                 draft.items.forEach((item, index) => {
-                    if (isSameValue(item.value, item.original)) return;
+                    if (!isQuestionChanged(item)) return;
                     const entry = questionBlock.entries[index];
-                    replacements.push({ start: entry.valueStart, end: entry.valueEnd, text: serializeQuestion(item.value, lineIndentAt(text, entry.entryStart)) });
+                    replacements.push({ start: entry.valueStart, end: entry.valueEnd, text: serializeQuestion(item.fields, item.indent) });
                 });
             } else {
-                const outerIndent = lineIndentAt(text, questionsEntry.entryStart);
-                const firstEntry = questionBlock.entries[0];
-                const indent = firstEntry ? lineIndentAt(text, firstEntry.entryStart) : outerIndent + '    ';
-                const body = draft.items.map(item => {
-                    const valueText = item.original && isSameValue(item.value, item.original) ? item.raw : serializeQuestion(item.value, indent);
-                    return indent + formatKey(item.key) + ': ' + valueText;
-                }).join(',\n');
-                replacements.push({ start: questionsEntry.valueStart, end: questionBlock.closeIndex + 1, text: '{\n' + body + '\n' + outerIndent + '}' });
+                // 문항을 더하거나 지운 경우: 남은 문항 사이의 원래 줄바꿈·주석은 그대로 살림
+                const entries = questionBlock.entries;
+                const gaps = entries.map((entry, index) => text.slice(index === 0 ? questionsEntry.valueStart + 1 : entries[index - 1].valueEnd, entry.entryStart).replace(/^\s*,/, ''));
+                const trailingGap = entries.length ? text.slice(entries[entries.length - 1].valueEnd, questionBlock.closeIndex) : '\n' + lineIndentAt(text, questionsEntry.entryStart);
+                const indexByKey = new Map(entries.map((entry, index) => [entry.key, index]));
+                let body = '';
+                let lastIndex = -1;
+                draft.items.forEach((item, position) => {
+                    const index = item.originalKey !== null ? indexByKey.get(item.originalKey) : undefined;
+                    const valueText = item.raw !== null && !isQuestionChanged(item) ? item.raw : serializeQuestion(item.fields, item.indent);
+                    let entryText;
+                    if (index !== undefined && index > lastIndex) {
+                        entryText = gaps[index] + text.slice(entries[index].entryStart, entries[index].valueStart) + valueText;
+                        lastIndex = index;
+                    } else {
+                        entryText = '\n' + item.indent + formatKey(item.key) + ': ' + valueText;
+                    }
+                    body += (position === 0 ? '' : ',') + entryText;
+                });
+                replacements.push({ start: questionsEntry.valueStart + 1, end: questionBlock.closeIndex, text: body + trailingGap });
             }
 
             if (versionEntry && draft.recordVersion !== draft.originalRecordVersion) {
@@ -1104,6 +1427,8 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
         }
 
         // ===== 미션 문항 편집 모달 =====
+        const CODE_FIELD_NOTE = '<span class="badge text-bg-warning ms-1">코드</span> <span class="text-muted fw-normal small">따옴표 안의 글만 고치세요</span>';
+
         function openQuestionEditor() {
             finishTextEditing();
             let source;
@@ -1114,15 +1439,20 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
                 return;
             }
             const recordVersion = source.versionEntry ? parseNumber(source.text.slice(source.versionEntry.valueStart, source.versionEntry.valueEnd)) : null;
+            const defaultIndent = source.questions[0] ? lineIndentAt(source.text, source.questions[0].entry.entryStart) : lineIndentAt(source.text, source.questionsEntry.entryStart) + '    ';
             state.questionSource = source;
             state.questionDraft = {
-                items: source.questions.map(question => ({
-                    key: question.key,
-                    originalKey: question.key,
-                    raw: question.raw,
-                    original: question.value,
-                    value: structuredClone(question.value)
-                })),
+                items: source.questions.map(question => {
+                    const indent = lineIndentAt(source.text, question.entry.entryStart);
+                    let fields = null;
+                    try {
+                        fields = parseQuestionFields(question.raw);
+                    } catch (error) {
+                        // 객체로 적혀 있지 않은 문항은 고치지 않고 그대로 둠
+                    }
+                    return { key: question.key, originalKey: question.key, raw: question.raw, indent, fields, initialSerialized: fields ? serializeQuestion(fields, indent) : null };
+                }),
+                defaultIndent,
                 recordVersion,
                 originalRecordVersion: recordVersion
             };
@@ -1135,15 +1465,26 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             questionModal.show();
         }
 
+        const getGroupOf = item => item.fields ? findField(item.fields, 'group')?.value : '';
+
         function renderQuestionList() {
-            const list = byId('questionList');
-            list.innerHTML = state.questionDraft.items.map((item, index) => {
-                const isChallenge = item.value.group === 'challenge';
+            byId('questionList').innerHTML = state.questionDraft.items.map((item, index) => {
+                const titleField = item.fields && (findField(item.fields, 'title') || findField(item.fields, 'stem'));
+                const label = titleField ? (titleField.kind === 'string' ? stripTags(titleField.value) : titleField.value) : '(코드로 된 문항)';
                 return `<button type="button" class="list-group-item list-group-item-action ${index === state.activeQuestionIndex ? 'active' : ''}" data-question-index="${index}">
-                    <span class="badge ${isChallenge ? 'text-bg-danger' : 'text-bg-primary'} me-1 font-monospace">${escapeHtml(item.key)}</span>
-                    ${escapeHtml(stripTags(item.value.title || item.value.stem || '(제목 없음)'))}
+                    <span class="badge ${getGroupOf(item) === 'challenge' ? 'text-bg-danger' : 'text-bg-primary'} me-1 font-monospace">${escapeHtml(item.key)}</span>
+                    ${escapeHtml(label || '(제목 없음)')}
                 </button>`;
             }).join('');
+        }
+
+        function renderTextControl(field, label, attrs, multiline) {
+            const isCode = field?.kind === 'code';
+            const className = `form-control form-control-sm${isCode ? ' font-monospace' : ''}`;
+            const control = multiline || isCode
+                ? `<textarea class="${className}" rows="${multiline ? 3 : 2}" ${attrs}></textarea>`
+                : `<input type="text" class="${className}" ${attrs}>`;
+            return `<label class="d-block mb-2"><span class="form-label d-block">${label}${isCode ? CODE_FIELD_NOTE : ''}</span>${control}</label>`;
         }
 
         function renderQuestionForm() {
@@ -1153,104 +1494,110 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
                 form.innerHTML = '<p class="text-muted text-center py-5">왼쪽에서 문항을 추가하세요.</p>';
                 return;
             }
-            const question = item.value;
-            const choices = Array.isArray(question.choices) ? question.choices : [];
-            const extraKeys = Object.keys(question).filter(key => !['group', 'badge', 'title', 'stem', 'data', 'choices', 'ok'].includes(key));
-
-            form.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-3">
+            const header = `<div class="d-flex justify-content-between align-items-center mb-3">
                     <h3 class="h6 fw-bold mb-0">문항 <span class="font-monospace">${escapeHtml(item.key)}</span></h3>
                     <button type="button" class="btn btn-sm btn-outline-danger" id="deleteQuestionButton"><i class="bi bi-trash"></i> 문항 삭제</button>
-                </div>
-                <div class="row g-2 mb-2">
-                    <div class="col-sm-4">
-                        <label class="form-label" for="qGroup">구분</label>
-                        <select class="form-select form-select-sm" id="qGroup" data-question-field="group">
-                            <option value="basic">기초 (basic)</option>
-                            <option value="challenge">도전 (challenge)</option>
-                        </select>
-                    </div>
-                    <div class="col-sm-8">
-                        <label class="form-label" for="qBadge">배지</label>
-                        <input type="text" class="form-control form-control-sm" id="qBadge" data-question-field="badge">
-                    </div>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" for="qTitle">제목</label>
-                    <input type="text" class="form-control form-control-sm" id="qTitle" data-question-field="title">
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" for="qStem">문제</label>
-                    <textarea class="form-control form-control-sm" rows="3" id="qStem" data-question-field="stem"></textarea>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="qData">자료 (data)</label>
-                    <input type="text" class="form-control form-control-sm" id="qData" data-question-field="data">
-                </div>
-                <label class="form-label">보기 <span class="text-muted fw-normal">(정답 하나를 고르고, 오답에는 힌트를 적어요)</span></label>
-                <div id="choiceList">
-                    ${choices.map((choice, index) => `
-                    <div class="border rounded p-2 mb-2 ${choice.correct ? 'border-success bg-success-subtle' : ''}">
-                        <div class="d-flex gap-2 align-items-center">
+                </div>`;
+            if (!item.fields) {
+                form.innerHTML = header + '<div class="alert alert-secondary small">이 문항은 객체가 아닌 코드로 만들어져 있어 여기서 고칠 수 없습니다. 코드에서 직접 고쳐 주세요.</div>';
+                return;
+            }
+
+            const fields = item.fields;
+            const field = key => findField(fields, key);
+            const groupField = field('group');
+            const choicesField = field('choices');
+            const extraKeys = fields.map(f => f.key).filter(key => !QUESTION_KEY_ORDER.includes(key));
+
+            const groupControl = groupField?.kind === 'code'
+                ? renderTextControl(groupField, '구분', 'data-question-field="group"')
+                : `<label class="d-block mb-2"><span class="form-label d-block">구분</span>
+                    <select class="form-select form-select-sm" data-question-field="group">
+                        <option value="basic">기초 (basic)</option>
+                        <option value="challenge">도전 (challenge)</option>
+                    </select></label>`;
+
+            let choicesHtml;
+            if (choicesField?.kind === 'choices') {
+                choicesHtml = choicesField.choices.map((choice, index) => {
+                    const isCorrect = findField(choice, 'correct')?.value.trim() === 'true';
+                    return `<div class="border rounded p-2 mb-2 ${isCorrect ? 'border-success bg-success-subtle' : ''}">
+                        <div class="d-flex gap-2 align-items-center mb-1">
                             <div class="form-check mb-0 text-nowrap">
-                                <input class="form-check-input" type="radio" name="correctChoice" id="correct${index}" data-correct-index="${index}" ${choice.correct ? 'checked' : ''}>
+                                <input class="form-check-input" type="radio" name="correctChoice" id="correct${index}" data-correct-index="${index}" ${isCorrect ? 'checked' : ''}>
                                 <label class="form-check-label small" for="correct${index}">정답</label>
                             </div>
-                            <span class="badge text-bg-light border font-monospace">${escapeHtml(choice.id ?? '')}</span>
-                            <input type="text" class="form-control form-control-sm" placeholder="보기 내용" data-choice-index="${index}" data-choice-field="text">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" data-remove-choice="${index}" title="보기 삭제"><i class="bi bi-x-lg"></i></button>
+                            <span class="badge text-bg-light border font-monospace">${escapeHtml(findField(choice, 'id')?.value ?? '')}</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-remove-choice="${index}" title="보기 삭제"><i class="bi bi-x-lg"></i></button>
                         </div>
-                        ${choice.correct ? '' : `<textarea class="form-control form-control-sm mt-2" rows="2" placeholder="이 보기를 골랐을 때 보여 줄 힌트" data-choice-index="${index}" data-choice-field="hint"></textarea>`}
-                    </div>`).join('')}
+                        ${renderTextControl(findField(choice, 'text'), '보기 내용', `data-choice-index="${index}" data-choice-field="text"`)}
+                        ${isCorrect ? '' : renderTextControl(findField(choice, 'hint'), '이 보기를 골랐을 때 보여 줄 힌트', `data-choice-index="${index}" data-choice-field="hint"`, true)}
+                    </div>`;
+                }).join('') + '<button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="addChoiceButton"><i class="bi bi-plus-lg"></i> 보기 추가</button>';
+            } else {
+                choicesHtml = renderTextControl(choicesField, '보기 목록', 'data-question-field="choices"', true);
+            }
+
+            form.innerHTML = header + `
+                <div class="row g-2">
+                    <div class="col-sm-4">${groupControl}</div>
+                    <div class="col-sm-8">${renderTextControl(field('badge'), '배지', 'data-question-field="badge"')}</div>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="addChoiceButton"><i class="bi bi-plus-lg"></i> 보기 추가</button>
-                <div class="mb-2">
-                    <label class="form-label" for="qOk">정답 해설 (ok)</label>
-                    <textarea class="form-control form-control-sm" rows="3" id="qOk" data-question-field="ok"></textarea>
-                </div>
+                ${renderTextControl(field('title'), '제목', 'data-question-field="title"')}
+                ${renderTextControl(field('stem'), '문제', 'data-question-field="stem"', true)}
+                ${renderTextControl(field('data'), '자료 (data)', 'data-question-field="data"')}
+                <span class="form-label d-block">보기 <span class="text-muted fw-normal">(정답 하나를 고르고, 오답에는 힌트를 적어요)</span></span>
+                ${choicesHtml}
+                ${renderTextControl(field('ok'), '정답 해설 (ok)', 'data-question-field="ok"', true)}
                 ${extraKeys.length ? `<div class="form-text">그 밖의 항목(${extraKeys.map(escapeHtml).join(', ')})은 그대로 유지됩니다.</div>` : ''}`;
 
             // 값은 속성 문자열이 아닌 value로 넣어야 따옴표·태그가 그대로 보존됨
-            form.querySelectorAll('[data-question-field]').forEach(field => { field.value = question[field.dataset.questionField] ?? ''; });
-            form.querySelectorAll('[data-choice-field]').forEach(field => { field.value = choices[field.dataset.choiceIndex][field.dataset.choiceField] ?? ''; });
+            form.querySelectorAll('[data-question-field]').forEach(control => { control.value = field(control.dataset.questionField)?.value ?? ''; });
+            form.querySelectorAll('[data-choice-field]').forEach(control => {
+                control.value = findField(choicesField.choices[control.dataset.choiceIndex], control.dataset.choiceField)?.value ?? '';
+            });
         }
 
-        function updateQuestionField(field) {
-            const item = state.questionDraft.items[state.activeQuestionIndex];
-            const key = field.dataset.questionField;
-            // 원래 없던 항목은 비어 있으면 새로 만들지 않음
-            if (field.value === '' && !(key in (item.original || {})) && !['stem', 'ok'].includes(key)) delete item.value[key];
-            else item.value[key] = field.value;
-            if (key === 'group' || key === 'title') renderQuestionList();
+        // 값 설정: 원래 없던 항목은 비어 있으면 만들지 않고, 새 항목은 정해진 순서 자리에 끼워 넣음
+        function setFieldValue(fields, key, value, keyOrder) {
+            const field = findField(fields, key);
+            if (field) {
+                if (field.kind === 'string' && value === '' && field.originalValue === undefined && !['stem', 'ok', 'text'].includes(key)) fields.splice(fields.indexOf(field), 1);
+                else field.value = value;
+                return;
+            }
+            if (value === '') return;
+            const position = fields.findIndex(other => keyOrder.indexOf(other.key) > keyOrder.indexOf(key));
+            fields.splice(position === -1 ? fields.length : position, 0, makeField(key, value));
         }
 
-        function updateChoiceField(field) {
-            const choice = state.questionDraft.items[state.activeQuestionIndex].value.choices[field.dataset.choiceIndex];
-            const key = field.dataset.choiceField;
-            if (key === 'hint' && field.value === '') delete choice.hint;
-            else choice[key] = field.value;
+        function getActiveFields() {
+            return state.questionDraft.items[state.activeQuestionIndex].fields;
         }
 
         function setCorrectChoice(choiceIndex) {
-            const choices = state.questionDraft.items[state.activeQuestionIndex].value.choices;
-            choices.forEach((choice, index) => {
-                if (index === choiceIndex) choice.correct = true;
-                else delete choice.correct;
+            findField(getActiveFields(), 'choices').choices.forEach((choice, index) => {
+                const correctField = findField(choice, 'correct');
+                if (index === choiceIndex) {
+                    if (correctField) Object.assign(correctField, { kind: 'code', value: 'true' });
+                    else choice.push(makeField('correct', 'true', 'code'));
+                } else if (correctField) {
+                    choice.splice(choice.indexOf(correctField), 1);
+                }
             });
             renderQuestionForm();
         }
 
         function addChoice() {
-            const question = state.questionDraft.items[state.activeQuestionIndex].value;
-            question.choices = Array.isArray(question.choices) ? question.choices : [];
-            const usedIds = new Set(question.choices.map(choice => choice.id));
-            const nextId = 'abcdefghij'.split('').find(letter => !usedIds.has(letter)) || String(question.choices.length + 1);
-            question.choices.push({ id: nextId, text: '', hint: '' });
+            const choices = findField(getActiveFields(), 'choices').choices;
+            const usedIds = new Set(choices.map(choice => findField(choice, 'id')?.value));
+            const nextId = 'abcdefghij'.split('').find(letter => !usedIds.has(letter)) || String(choices.length + 1);
+            choices.push([makeField('id', nextId), makeField('text', ''), makeField('hint', '')]);
             renderQuestionForm();
         }
 
         function removeChoice(choiceIndex) {
-            const choices = state.questionDraft.items[state.activeQuestionIndex].value.choices;
+            const choices = findField(getActiveFields(), 'choices').choices;
             if (choices.length <= 2) {
                 alert('보기는 2개 이상이어야 합니다.');
                 return;
@@ -1263,22 +1610,21 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             const items = state.questionDraft.items;
             const prefix = group === 'challenge' ? 'x' : 'q';
             const number = Math.max(0, ...items.filter(item => new RegExp(`^${prefix}\\d+$`).test(item.key)).map(item => parseInt(item.key.slice(1), 10))) + 1;
-            const newItem = {
-                key: prefix + number,
-                originalKey: null,
-                raw: null,
-                original: null,
-                value: {
-                    group,
-                    badge: group === 'challenge' ? `도전 미션 ${number}` : `미션 ${number}`,
-                    title: (group === 'challenge' ? `도전 ${number}` : `미션 ${number}`) + '<br>',
-                    stem: '',
-                    choices: [{ id: 'a', text: '', hint: '' }, { id: 'b', text: '', correct: true }],
-                    ok: ''
-                }
-            };
+            const label = group === 'challenge' ? `도전 ${number}` : `미션 ${number}`;
+            const fields = [
+                makeField('group', group),
+                makeField('badge', group === 'challenge' ? `도전 미션 ${number}` : `미션 ${number}`),
+                makeField('title', label + '<br>'),
+                makeField('stem', ''),
+                { key: 'choices', kind: 'choices', choices: [
+                    [makeField('id', 'a'), makeField('text', ''), makeField('hint', '')],
+                    [makeField('id', 'b'), makeField('text', ''), makeField('correct', 'true', 'code')]
+                ] },
+                makeField('ok', '')
+            ];
+            const newItem = { key: prefix + number, originalKey: null, raw: null, indent: state.questionDraft.defaultIndent, fields, initialSerialized: null };
             // 기초 문항은 마지막 기초 문항 뒤, 도전 문항은 맨 뒤에 추가
-            const lastBasicIndex = items.map(item => item.value.group).lastIndexOf('basic');
+            const lastBasicIndex = items.map(getGroupOf).lastIndexOf('basic');
             const insertIndex = group === 'basic' ? lastBasicIndex + 1 : items.length;
             items.splice(insertIndex, 0, newItem);
             state.activeQuestionIndex = insertIndex;
@@ -1297,15 +1643,18 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
 
         function collectQuestionWarnings(draft) {
             const warnings = [];
+            const isFilled = field => !!field && String(field.value).trim() !== '';
             draft.items.forEach(item => {
-                const question = item.value;
-                const choices = Array.isArray(question.choices) ? question.choices : [];
-                if (!String(question.stem || '').trim()) warnings.push(`${item.key}: 문제가 비어 있어요.`);
-                if (choices.filter(choice => choice.correct).length !== 1) warnings.push(`${item.key}: 정답이 하나가 아니에요.`);
-                if (choices.some(choice => !String(choice.text || '').trim())) warnings.push(`${item.key}: 내용이 빈 보기가 있어요.`);
+                if (!item.fields) return;
+                if (!isFilled(findField(item.fields, 'stem'))) warnings.push(`${item.key}: 문제가 비어 있어요.`);
+                const choicesField = findField(item.fields, 'choices');
+                if (choicesField?.kind !== 'choices') return;
+                const correctCount = choicesField.choices.filter(choice => findField(choice, 'correct')?.value.trim() === 'true').length;
+                if (correctCount !== 1) warnings.push(`${item.key}: 정답이 하나가 아니에요.`);
+                if (choicesField.choices.some(choice => !isFilled(findField(choice, 'text')))) warnings.push(`${item.key}: 내용이 빈 보기가 있어요.`);
             });
-            const removedOriginal = state.questionSource.questions.some(question => !draft.items.some(item => item.originalKey === question.key));
-            if (removedOriginal && draft.recordVersion === draft.originalRecordVersion) {
+            const hasRemovedQuestion = state.questionSource.questions.some(question => !draft.items.some(item => item.originalKey === question.key));
+            if (hasRemovedQuestion && draft.recordVersion === draft.originalRecordVersion) {
                 warnings.push('기존 문항을 지웠어요. ID의 뜻이 바뀌었다면 기록 버전을 1 올리세요.');
             }
             return warnings;
@@ -1321,24 +1670,17 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
 
             const newScript = buildQuestionScript(state.questionSource, draft);
             try {
-                const { questions } = locateQuestionSourceFromText(newScript);
-                if (questions.length !== draft.items.length) throw new Error('문항 수가 맞지 않습니다.');
+                Function(newScript); // 실행하지 않고 문법만 검사
+                const configOpen = newScript.indexOf('{', newScript.indexOf('AhaMath.start('));
+                const questionsEntry = scanObjectEntries(newScript, configOpen).entries.find(entry => entry.key === 'questions');
+                if (scanObjectEntries(newScript, questionsEntry.valueStart).entries.length !== draft.items.length) throw new Error('문항 수가 맞지 않습니다.');
             } catch (error) {
-                alert('문항 코드를 만드는 중 문제가 생겨 적용하지 않았습니다.\n' + error.message);
+                alert('문항 코드에 문제가 있어 적용하지 않았습니다. 코드 칸의 따옴표·괄호를 확인해 주세요.\n\n' + error.message);
                 return;
             }
             state.questionSource.script.textContent = newScript;
             commitHistory();
             questionModal.hide();
-        }
-
-        // 적용 전 검증용: 새로 만든 코드를 다시 읽어 봄
-        function locateQuestionSourceFromText(text) {
-            const configOpen = text.indexOf('{', text.indexOf('AhaMath.start('));
-            const config = scanObjectEntries(text, configOpen);
-            const questionsEntry = config.entries.find(entry => entry.key === 'questions');
-            const questionBlock = scanObjectEntries(text, questionsEntry.valueStart);
-            return { questions: questionBlock.entries.map(entry => evaluateLiteral(text.slice(entry.valueStart, entry.valueEnd))) };
         }
 
         // ===== 수학 기호 =====
@@ -1483,8 +1825,14 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;}
             renderQuestionForm();
         });
         byId('questionForm').addEventListener('input', event => {
-            if (event.target.dataset.questionField) updateQuestionField(event.target);
-            else if (event.target.dataset.choiceField) updateChoiceField(event.target);
+            const control = event.target;
+            if (control.dataset.questionField) {
+                setFieldValue(getActiveFields(), control.dataset.questionField, control.value, QUESTION_KEY_ORDER);
+                if (control.dataset.questionField === 'group' || control.dataset.questionField === 'title') renderQuestionList();
+            } else if (control.dataset.choiceField) {
+                const choice = findField(getActiveFields(), 'choices').choices[control.dataset.choiceIndex];
+                setFieldValue(choice, control.dataset.choiceField, control.value, CHOICE_KEY_ORDER);
+            }
         });
         byId('questionForm').addEventListener('change', event => {
             if (event.target.dataset.correctIndex !== undefined) setCorrectChoice(parseInt(event.target.dataset.correctIndex, 10));
