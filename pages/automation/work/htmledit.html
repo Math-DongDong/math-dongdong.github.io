@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML 화면 편집기</title>
+    <!-- 파비콘 및 PWA 설정 -->
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <meta name="description" content="HTML 파일을 불러와 PPT처럼 텍스트를 직접 수정하고, 요소의 위치·크기·서식을 마우스로 편집한 뒤 다시 HTML로 저장하는 무료 도구입니다.">
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- 공통 CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+
+    <style>
+        body {
+            background-color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #333;
+        }
+
+        .container-main {
+            max-width: 960px;
+            margin: 30px auto;
+            padding: 0 15px;
+        }
+
+        .upload-area {
+            border: 2px dashed #b6c8e8;
+            border-radius: 12px;
+            background: #f8fbff;
+            cursor: pointer;
+            transition: background-color .2s, border-color .2s;
+        }
+
+        .upload-area.is-dragover {
+            background: #e7f0ff;
+            border-color: #0d6efd;
+        }
+
+        #codeInput {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 13px;
+            min-height: 260px;
+        }
+
+        /* ===== 편집 화면 ===== */
+        .editor-toolbar .btn {
+            white-space: nowrap;
+        }
+
+        .canvas-viewport {
+            height: calc(100vh - 230px);
+            min-height: 520px;
+            overflow: auto;
+            background: #e9ecef;
+            padding: 16px;
+        }
+
+        #canvasSizer {
+            position: relative;
+            margin: 0 auto;
+            overflow: hidden;
+        }
+
+        #editorFrame {
+            display: block;
+            border: 0;
+            background: #fff;
+            transform-origin: 0 0;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .12);
+        }
+
+        .property-panel {
+            max-height: calc(100vh - 230px);
+            min-height: 520px;
+            overflow-y: auto;
+        }
+
+        .property-panel .form-label {
+            font-size: .75rem;
+            color: #6c757d;
+            margin-bottom: 2px;
+        }
+
+        .property-panel input[type="color"] {
+            height: 31px;
+            padding: 2px;
+        }
+
+        .breadcrumb-bar {
+            font-size: .8rem;
+            min-height: 28px;
+        }
+
+        .breadcrumb-bar button {
+            font-family: Consolas, monospace;
+        }
+
+        #exportCode {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+        }
+
+        @media (max-width: 991.98px) {
+            .canvas-viewport {
+                height: 70vh;
+                min-height: 400px;
+            }
+
+            .property-panel {
+                max-height: none;
+                min-height: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 공통 네비게이션바 -->
+    <div id="navbar-container"></div>
+
+    <!-- ===== 1. 불러오기 화면 ===== -->
+    <main class="container-main" id="loadSection">
+        <header class="text-center mb-4">
+            <h1 class="fw-bold text-primary mt-2">
+                <i class="bi bi-filetype-html"></i> HTML 화면 편집기
+            </h1>
+            <p class="text-muted fs-6 mb-0">
+                HTML을 불러와 PPT처럼 글자를 고치고, 요소를 끌어서 옮기거나 크기를 바꿀 수 있습니다.<br>
+                모든 처리는 브라우저 안에서만 실행됩니다.
+            </p>
+        </header>
+
+        <section class="card border-0 shadow-sm">
+            <div class="card-header bg-light border-0 pt-3">
+                <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#fileTabPane"
+                            type="button" role="tab">📂 파일 첨부</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#codeTabPane"
+                            type="button" role="tab">⌨️ 코드 입력</button>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body p-4">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="fileTabPane" role="tabpanel">
+                        <div class="upload-area p-5 text-center" id="dropZone">
+                            <i class="bi bi-cloud-arrow-up display-4 text-primary"></i>
+                            <p class="fw-bold mt-2 mb-1">HTML 파일을 끌어다 놓거나 클릭해서 선택하세요</p>
+                            <p class="small text-muted mb-0">.html, .htm 파일 지원</p>
+                            <input type="file" id="htmlFileInput" accept=".html,.htm,text/html" class="d-none">
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="codeTabPane" role="tabpanel">
+                        <textarea id="codeInput" class="form-control mb-3"
+                            placeholder="여기에 HTML 코드를 붙여넣으세요."></textarea>
+                        <div class="d-flex gap-2 justify-content-end">
+                            <button type="button" class="btn btn-outline-secondary" id="loadSampleButton">
+                                <i class="bi bi-lightbulb"></i> 예시 코드
+                            </button>
+                            <button type="button" class="btn btn-primary fw-bold" id="startFromCodeButton">
+                                <i class="bi bi-pencil-square"></i> 편집 시작
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-7">
+                        <label for="baseUrlInput" class="form-label small fw-bold">기준 URL (선택)</label>
+                        <input type="url" id="baseUrlInput" class="form-control form-control-sm"
+                            placeholder="예: https://example.com/pages/">
+                        <div class="form-text">상대 경로 이미지·CSS가 깨질 때 원본 주소를 입력하세요. 저장 파일에는 포함되지 않습니다.</div>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="runScriptsSwitch">
+                            <label class="form-check-label small fw-bold" for="runScriptsSwitch">편집 중 스크립트 실행</label>
+                        </div>
+                        <div class="form-text">끄면 스크립트를 잠시 멈추고 편집하며, 저장할 때 원래대로 되돌립니다.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mt-4 small text-muted">
+            <h2 class="h6 fw-bold text-dark">사용 방법</h2>
+            <ul class="mb-0">
+                <li><b>클릭</b>하면 선택되고, <b>끌면</b> 이동합니다. 테두리의 <b>핸들</b>로 크기를 조절합니다. (Shift: 비율 유지)</li>
+                <li><b>더블클릭</b> 또는 <b>Enter</b>로 글자를 고칩니다. 글자 일부를 드래그한 뒤 서식을 바꾸면 그 부분에만 적용됩니다.</li>
+                <li>방향키로 1px(Shift: 10px)씩 이동하고, Delete로 삭제, Ctrl+Z/Y로 되돌리기, Ctrl+D로 복제합니다.</li>
+            </ul>
+        </section>
+    </main>
+
+    <!-- ===== 2. 편집 화면 ===== -->
+    <main class="container-fluid px-3 px-lg-4 py-3 d-none" id="editorSection">
+        <!-- 도구 막대 -->
+        <div class="editor-toolbar d-flex flex-wrap gap-2 align-items-center mb-2">
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-secondary" id="undoButton" title="실행 취소 (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
+                <button type="button" class="btn btn-outline-secondary" id="redoButton" title="다시 실행 (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-primary" id="addTextBoxButton"><i class="bi bi-fonts"></i> 텍스트 상자</button>
+                <button type="button" class="btn btn-outline-primary" id="addImageButton"><i class="bi bi-image"></i> 이미지</button>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-secondary needs-selection" id="duplicateButton" title="복제 (Ctrl+D)"><i class="bi bi-copy"></i></button>
+                <button type="button" class="btn btn-outline-secondary needs-selection" id="bringForwardButton" title="앞으로 가져오기"><i class="bi bi-front"></i></button>
+                <button type="button" class="btn btn-outline-secondary needs-selection" id="sendBackwardButton" title="뒤로 보내기"><i class="bi bi-back"></i></button>
+                <button type="button" class="btn btn-outline-danger needs-selection" id="deleteButton" title="삭제 (Delete)"><i class="bi bi-trash"></i></button>
+            </div>
+            <div class="d-flex gap-1 align-items-center">
+                <select id="canvasWidthSelect" class="form-select form-select-sm w-auto" title="화면 너비">
+                    <option value="full">너비: 화면 맞춤</option>
+                    <option value="1920">1920px</option>
+                    <option value="1280">1280px</option>
+                    <option value="1024">1024px</option>
+                    <option value="768">768px (태블릿)</option>
+                    <option value="375">375px (모바일)</option>
+                </select>
+                <select id="zoomSelect" class="form-select form-select-sm w-auto" title="배율">
+                    <option value="fit">배율: 맞춤</option>
+                    <option value="0.5">50%</option>
+                    <option value="0.75">75%</option>
+                    <option value="1">100%</option>
+                    <option value="1.25">125%</option>
+                    <option value="1.5">150%</option>
+                </select>
+            </div>
+            <div class="btn-group btn-group-sm ms-lg-auto">
+                <button type="button" class="btn btn-outline-secondary" id="newFileButton"><i class="bi bi-folder2-open"></i> 새 파일</button>
+                <button type="button" class="btn btn-outline-secondary" id="viewCodeButton"><i class="bi bi-code-slash"></i> 코드</button>
+                <button type="button" class="btn btn-outline-secondary" id="previewButton"><i class="bi bi-box-arrow-up-right"></i> 미리보기</button>
+                <button type="button" class="btn btn-primary fw-bold" id="downloadButton"><i class="bi bi-download"></i> 저장</button>
+            </div>
+        </div>
+
+        <!-- 선택 경로 -->
+        <nav class="breadcrumb-bar d-flex flex-wrap align-items-center gap-1 mb-2" id="breadcrumbBar" aria-label="선택 요소 경로"></nav>
+
+        <div class="row g-3">
+            <!-- 캔버스 -->
+            <section class="col-lg-9">
+                <div class="canvas-viewport border rounded-3" id="canvasViewport">
+                    <div id="canvasSizer">
+                        <iframe id="editorFrame" title="HTML 편집 화면"></iframe>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 속성 패널 -->
+            <aside class="col-lg-3">
+                <div class="property-panel card border-0 shadow-sm">
+                    <div class="card-body p-3">
+                        <div id="panelEmpty" class="text-center text-muted small py-5">
+                            <i class="bi bi-cursor fs-2 d-block mb-2"></i>
+                            편집할 요소를 클릭하세요.
+                        </div>
+
+                        <div id="panelFields" class="d-none">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <span class="badge text-bg-primary font-monospace text-truncate" id="selectedTagLabel"></span>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary" id="selectParentButton" title="상위 요소 선택"><i class="bi bi-arrow-up-square"></i></button>
+                                    <button type="button" class="btn btn-outline-secondary" id="editTextButton" title="텍스트 편집 (Enter)"><i class="bi bi-cursor-text"></i></button>
+                                    <button type="button" class="btn btn-outline-secondary" id="clearStyleButton" title="직접 지정한 서식 지우기"><i class="bi bi-eraser"></i></button>
+                                </div>
+                            </div>
+
+                            <!-- 위치·크기 -->
+                            <h3 class="h6 fw-bold small mt-3 mb-2">위치 · 크기 (px)</h3>
+                            <div class="row g-2">
+                                <div class="col-6"><label class="form-label" for="propLeft">X 이동</label><input type="number" id="propLeft" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propTop">Y 이동</label><input type="number" id="propTop" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propWidth">너비</label><input type="number" id="propWidth" min="0" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propHeight">높이</label><input type="number" id="propHeight" min="0" class="form-control form-control-sm"></div>
+                                <div class="col-12"><button type="button" class="btn btn-sm btn-light border w-100" id="resetPositionButton"><i class="bi bi-arrow-return-left"></i> 위치 · 크기 초기화</button></div>
+                            </div>
+
+                            <!-- 글자 -->
+                            <h3 class="h6 fw-bold small mt-3 mb-2">글자</h3>
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <select id="propFontFamily" class="form-select form-select-sm" aria-label="글꼴">
+                                        <option value="">글꼴: 기존 유지</option>
+                                        <option value="'Noto Sans KR', sans-serif">Noto Sans KR</option>
+                                        <option value="'Malgun Gothic', sans-serif">맑은 고딕</option>
+                                        <option value="'Nanum Gothic', sans-serif">나눔고딕</option>
+                                        <option value="'Nanum Myeongjo', serif">나눔명조</option>
+                                        <option value="Arial, sans-serif">Arial</option>
+                                        <option value="Georgia, serif">Georgia</option>
+                                        <option value="'Times New Roman', serif">Times New Roman</option>
+                                        <option value="'Courier New', monospace">Courier New</option>
+                                    </select>
+                                </div>
+                                <div class="col-6"><label class="form-label" for="propFontSize">크기</label><input type="number" id="propFontSize" min="1" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propColor">글자색</label><input type="color" id="propColor" class="form-control form-control-sm w-100"></div>
+                                <div class="col-12 d-flex gap-1">
+                                    <div class="btn-group btn-group-sm flex-fill" id="textToggleGroup">
+                                        <button type="button" class="btn btn-outline-secondary" data-text-toggle="bold" title="굵게"><i class="bi bi-type-bold"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-text-toggle="italic" title="기울임"><i class="bi bi-type-italic"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-text-toggle="underline" title="밑줄"><i class="bi bi-type-underline"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-text-toggle="strikeThrough" title="취소선"><i class="bi bi-type-strikethrough"></i></button>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="btn-group btn-group-sm w-100" id="alignGroup">
+                                        <button type="button" class="btn btn-outline-secondary" data-align="left" title="왼쪽 정렬"><i class="bi bi-text-left"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-align="center" title="가운데 정렬"><i class="bi bi-text-center"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-align="right" title="오른쪽 정렬"><i class="bi bi-text-right"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-align="justify" title="양쪽 정렬"><i class="bi bi-justify"></i></button>
+                                    </div>
+                                </div>
+                                <div class="col-6"><label class="form-label" for="propLineHeight">줄 간격(배)</label><input type="number" id="propLineHeight" step="0.1" min="0" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propLetterSpacing">자간</label><input type="number" id="propLetterSpacing" step="0.5" class="form-control form-control-sm"></div>
+                            </div>
+
+                            <!-- 채우기·테두리 -->
+                            <h3 class="h6 fw-bold small mt-3 mb-2">채우기 · 테두리</h3>
+                            <div class="row g-2">
+                                <div class="col-6"><label class="form-label" for="propBgColor">배경색</label><input type="color" id="propBgColor" class="form-control form-control-sm w-100"></div>
+                                <div class="col-6 d-flex align-items-end">
+                                    <div class="form-check small mb-1">
+                                        <input class="form-check-input" type="checkbox" id="propBgNone">
+                                        <label class="form-check-label" for="propBgNone">배경 없음</label>
+                                    </div>
+                                </div>
+                                <div class="col-4"><label class="form-label" for="propBorderWidth">두께</label><input type="number" id="propBorderWidth" min="0" class="form-control form-control-sm"></div>
+                                <div class="col-4"><label class="form-label" for="propBorderStyle">선</label>
+                                    <select id="propBorderStyle" class="form-select form-select-sm">
+                                        <option value="none">없음</option>
+                                        <option value="solid">실선</option>
+                                        <option value="dashed">파선</option>
+                                        <option value="dotted">점선</option>
+                                        <option value="double">이중</option>
+                                    </select>
+                                </div>
+                                <div class="col-4"><label class="form-label" for="propBorderColor">색</label><input type="color" id="propBorderColor" class="form-control form-control-sm w-100"></div>
+                                <div class="col-6"><label class="form-label" for="propRadius">모서리</label><input type="number" id="propRadius" min="0" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propPadding">안쪽 여백</label><input type="number" id="propPadding" min="0" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propOpacity">투명도(0~1)</label><input type="number" id="propOpacity" min="0" max="1" step="0.1" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="form-label" for="propZIndex">겹침 순서</label><input type="number" id="propZIndex" class="form-control form-control-sm"></div>
+                            </div>
+
+                            <!-- 요소별 추가 옵션 -->
+                            <div id="imageTools" class="d-none mt-3">
+                                <button type="button" class="btn btn-sm btn-outline-primary w-100" id="replaceImageButton"><i class="bi bi-arrow-repeat"></i> 이미지 교체</button>
+                            </div>
+                            <div id="linkTools" class="d-none mt-3">
+                                <label class="form-label" for="propHref">링크 주소</label>
+                                <input type="url" id="propHref" class="form-control form-control-sm">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+        <p class="small text-muted mt-2 mb-0">
+            클릭: 선택 · 드래그: 이동 · 핸들: 크기 (Shift 비율 유지) · 더블클릭/Enter: 글자 편집 · Esc: 편집 종료 · 방향키: 미세 이동
+        </p>
+    </main>
+
+    <!-- 코드 보기 모달 -->
+    <div class="modal fade" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold" id="codeModalLabel"><i class="bi bi-code-slash"></i> HTML 코드</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea id="exportCode" class="form-control" rows="22" spellcheck="false"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="applyCodeButton"><i class="bi bi-arrow-repeat"></i> 수정한 코드 다시 불러오기</button>
+                    <button type="button" class="btn btn-primary" id="copyCodeButton"><i class="bi bi-clipboard"></i> 복사</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="imageFileInput" accept="image/*" class="d-none">
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 공통 JS -->
+    <script src="../../../js/navbar.js"></script>
+
+    <script>
+        // ===== 상수 =====
+        const UI_ATTR = 'data-hte-ui';
+        const SCRIPT_TYPE_ATTR = 'data-hte-script-type';
+        const NO_SCRIPT_TYPE = '__none__';
+        const HANDLE_NAMES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+        const NON_TEXT_TAGS = new Set(['IMG', 'INPUT', 'BR', 'HR', 'VIDEO', 'AUDIO', 'IFRAME', 'CANVAS', 'SVG', 'EMBED', 'OBJECT', 'SELECT', 'TEXTAREA']);
+        const HISTORY_LIMIT = 60;
+
+        const SAMPLE_HTML = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>예시 슬라이드</title>
+<style>
+  body { margin: 0; font-family: 'Malgun Gothic', sans-serif; background: #f4f6fb; }
+  .slide { position: relative; width: 960px; height: 540px; margin: 40px auto; padding: 56px; box-sizing: border-box; background: #fff; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+  .badge { display: inline-block; padding: 6px 14px; border-radius: 999px; background: #ffb703; color: #fff; font-weight: bold; }
+  h1 { margin: 16px 0; color: #1f3c88; font-size: 44px; }
+  p { color: #555; font-size: 22px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <section class="slide">
+    <span class="badge">중학교 1학년</span>
+    <h1>기본 도형의 작도</h1>
+    <p>눈금 없는 자와 컴퍼스만을 사용하여<br>도형을 그리는 것을 <b>작도</b>라고 합니다.</p>
+    <ul style="font-size: 20px; color: #333;">
+      <li>눈금 없는 자: 두 점을 잇는 선분 그리기</li>
+      <li>컴퍼스: 원 그리기, 길이 옮기기</li>
+    </ul>
+  </section>
+</body>
+</html>`;
+
+        const FRAME_EDITOR_CSS = `
+hte-overlay{position:absolute!important;left:0!important;top:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;display:block!important;z-index:2147483647!important;pointer-events:none!important;}
+hte-overlay hte-box{position:absolute;display:none;box-sizing:border-box;margin:0;padding:0;border:0;background:none;pointer-events:none;}
+hte-overlay hte-box.hte-hover{outline:1px dashed #0d6efd;}
+hte-overlay hte-box.hte-select{outline:2px solid #0d6efd;}
+hte-overlay hte-box.hte-select.is-editing{outline-color:#fd7e14;}
+hte-overlay hte-handle{position:absolute;display:block;width:10px;height:10px;margin:-5px 0 0 -5px;box-sizing:border-box;background:#fff;border:2px solid #0d6efd;border-radius:2px;pointer-events:auto;touch-action:none;}
+hte-overlay hte-box.is-editing hte-handle,hte-overlay hte-box.is-locked hte-handle{display:none;}
+hte-overlay hte-handle[data-handle="nw"]{left:0;top:0;cursor:nwse-resize;}
+hte-overlay hte-handle[data-handle="n"]{left:50%;top:0;cursor:ns-resize;}
+hte-overlay hte-handle[data-handle="ne"]{left:100%;top:0;cursor:nesw-resize;}
+hte-overlay hte-handle[data-handle="e"]{left:100%;top:50%;cursor:ew-resize;}
+hte-overlay hte-handle[data-handle="se"]{left:100%;top:100%;cursor:nwse-resize;}
+hte-overlay hte-handle[data-handle="s"]{left:50%;top:100%;cursor:ns-resize;}
+hte-overlay hte-handle[data-handle="sw"]{left:0;top:100%;cursor:nesw-resize;}
+hte-overlay hte-handle[data-handle="w"]{left:0;top:50%;cursor:ew-resize;}
+hte-overlay hte-label{position:absolute;display:block;left:-2px;top:-24px;padding:3px 6px;border-radius:3px;background:#0d6efd;color:#fff;font:600 11px/1.2 sans-serif;white-space:nowrap;}
+hte-overlay hte-box.label-below hte-label{top:calc(100% + 6px);}
+hte-overlay hte-box.is-editing hte-label{background:#fd7e14;}
+html[data-hte-dragging],html[data-hte-dragging] *{user-select:none!important;-webkit-user-select:none!important;}
+[data-hte-selected]{cursor:move;touch-action:none;}
+[data-hte-editing]{cursor:text;outline:none;}`;
+
+        // ===== 상태 =====
+        const state = {
+            frameDoc: null,
+            frameWin: null,
+            overlay: null,
+            selectedEl: null,
+            editingEl: null,
+            editingOriginalHtml: '',
+            editingPrevContentEditable: null,
+            savedRange: null,
+            isPointerBusy: false,
+            history: [],
+            historyIndex: -1,
+            isDirty: false,
+            doctype: '<!DOCTYPE html>',
+            fileName: 'document.html',
+            imageInputMode: 'add',
+            commitTimer: null
+        };
+
+        // ===== DOM 참조 =====
+        const byId = id => document.getElementById(id);
+        const loadSection = byId('loadSection');
+        const editorSection = byId('editorSection');
+        const editorFrame = byId('editorFrame');
+        const canvasViewport = byId('canvasViewport');
+        const canvasSizer = byId('canvasSizer');
+        const codeModal = new bootstrap.Modal(byId('codeModal'));
+
+        // ===== 유틸 =====
+        const parseNumber = value => {
+            const number = parseFloat(value);
+            return Number.isFinite(number) ? number : 0;
+        };
+        const roundTo = (value, digits = 0) => {
+            const factor = 10 ** digits;
+            return Math.round(value * factor) / factor;
+        };
+
+        function parseColor(value) {
+            const match = String(value).match(/rgba?\(([^)]+)\)/);
+            if (!match) return null;
+            const parts = match[1].split(/[\s,/]+/).filter(Boolean).map(parseFloat);
+            return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+        }
+
+        function toHexColor(value, fallback = '#000000') {
+            const color = parseColor(value);
+            if (!color || color.a === 0) return fallback;
+            return '#' + [color.r, color.g, color.b].map(c => Math.round(c).toString(16).padStart(2, '0')).join('');
+        }
+
+        function isTransparentColor(value) {
+            const color = parseColor(value);
+            return !color || color.a === 0;
+        }
+
+        function describeElement(el) {
+            let label = el.tagName.toLowerCase();
+            if (el.id) label += '#' + el.id;
+            else if (el.classList.length) label += '.' + el.classList[0];
+            return label;
+        }
+
+        function getComputed(el) {
+            return state.frameWin.getComputedStyle(el);
+        }
+
+        function serializeDoctype(doctype) {
+            if (!doctype) return '';
+            let text = '<!DOCTYPE ' + doctype.name;
+            if (doctype.publicId) text += ` PUBLIC "${doctype.publicId}"`;
+            if (doctype.systemId) text += ` "${doctype.systemId}"`;
+            return text + '>';
+        }
+
+        async function readHtmlFile(file) {
+            const buffer = await file.arrayBuffer();
+            const utf8Text = new TextDecoder('utf-8').decode(buffer);
+            if (!utf8Text.includes('�')) return utf8Text;
+            return new TextDecoder('euc-kr').decode(buffer);
+        }
+
+        function readImageAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ===== 불러오기 =====
+        function loadHtmlIntoEditor(htmlText, fileName) {
+            if (!htmlText.trim()) {
+                alert('HTML 코드를 입력하거나 파일을 선택해 주세요.');
+                return;
+            }
+            const parsedDoc = new DOMParser().parseFromString(htmlText, 'text/html');
+            state.doctype = serializeDoctype(parsedDoc.doctype);
+            state.fileName = fileName || state.fileName;
+
+            if (!byId('runScriptsSwitch').checked) {
+                parsedDoc.querySelectorAll('script').forEach(script => {
+                    script.setAttribute(SCRIPT_TYPE_ATTR, script.hasAttribute('type') ? script.getAttribute('type') : NO_SCRIPT_TYPE);
+                    script.setAttribute('type', 'text/hte-disabled');
+                });
+            }
+
+            const baseUrl = byId('baseUrlInput').value.trim();
+            if (baseUrl) {
+                const baseEl = parsedDoc.createElement('base');
+                baseEl.href = baseUrl;
+                baseEl.setAttribute(UI_ATTR, '');
+                parsedDoc.head.prepend(baseEl);
+            }
+
+            const editorStyle = parsedDoc.createElement('style');
+            editorStyle.setAttribute(UI_ATTR, '');
+            editorStyle.textContent = FRAME_EDITOR_CSS;
+            parsedDoc.head.appendChild(editorStyle);
+
+            loadSection.classList.add('d-none');
+            editorSection.classList.remove('d-none');
+            applyCanvasLayout();
+
+            editorFrame.onload = setupFrame;
+            editorFrame.srcdoc = state.doctype + '\n' + parsedDoc.documentElement.outerHTML;
+        }
+
+        function setupFrame() {
+            const doc = editorFrame.contentDocument;
+            state.frameDoc = doc;
+            state.frameWin = editorFrame.contentWindow;
+            state.selectedEl = null;
+            state.editingEl = null;
+
+            buildOverlay(doc);
+
+            doc.addEventListener('pointerdown', handleFramePointerDown, true);
+            doc.addEventListener('pointermove', handleFramePointerMove);
+            doc.addEventListener('pointerout', event => { if (!event.relatedTarget) hideHoverBox(); });
+            doc.addEventListener('click', handleFrameClick, true);
+            doc.addEventListener('dblclick', handleFrameDoubleClick, true);
+            doc.addEventListener('submit', event => event.preventDefault(), true);
+            doc.addEventListener('dragstart', event => event.preventDefault());
+            doc.addEventListener('keydown', handleKeyDown);
+            doc.addEventListener('selectionchange', saveTextSelection);
+            doc.addEventListener('input', updateOverlay);
+            doc.addEventListener('scroll', updateOverlay, true);
+            doc.addEventListener('load', updateOverlay, true);
+            state.frameWin.addEventListener('resize', updateOverlay);
+
+            state.history = [];
+            state.historyIndex = -1;
+            commitHistory();
+            state.isDirty = false;
+            selectElement(null);
+        }
+
+        function buildOverlay(doc) {
+            const root = doc.createElement('hte-overlay');
+            root.setAttribute(UI_ATTR, '');
+            root.innerHTML = '<hte-box class="hte-hover"></hte-box>'
+                + '<hte-box class="hte-select"><hte-label></hte-label>'
+                + HANDLE_NAMES.map(name => `<hte-handle data-handle="${name}"></hte-handle>`).join('')
+                + '</hte-box>';
+            doc.documentElement.appendChild(root);
+            state.overlay = {
+                hoverBox: root.querySelector('.hte-hover'),
+                selectBox: root.querySelector('.hte-select'),
+                sizeLabel: root.querySelector('hte-label')
+            };
+        }
+
+        // ===== 캔버스 크기 / 배율 =====
+        function applyCanvasLayout() {
+            const widthSetting = byId('canvasWidthSelect').value;
+            const zoomSetting = byId('zoomSelect').value;
+            const viewportStyle = getComputedStyle(canvasViewport);
+            const availableWidth = canvasViewport.clientWidth - parseNumber(viewportStyle.paddingLeft) - parseNumber(viewportStyle.paddingRight);
+            const availableHeight = canvasViewport.clientHeight - parseNumber(viewportStyle.paddingTop) - parseNumber(viewportStyle.paddingBottom);
+
+            const targetWidth = widthSetting === 'full' ? availableWidth : parseNumber(widthSetting);
+            const zoom = zoomSetting === 'fit' ? Math.min(1, availableWidth / targetWidth) : parseNumber(zoomSetting);
+            const frameWidth = widthSetting === 'full' ? availableWidth / zoom : targetWidth;
+            const frameHeight = availableHeight / zoom;
+
+            editorFrame.style.width = frameWidth + 'px';
+            editorFrame.style.height = frameHeight + 'px';
+            editorFrame.style.transform = `scale(${zoom})`;
+            canvasSizer.style.width = frameWidth * zoom + 'px';
+            canvasSizer.style.height = frameHeight * zoom + 'px';
+        }
+
+        // ===== 오버레이 =====
+        function getSelectableTarget(node) {
+            const doc = state.frameDoc;
+            let el = node && node.nodeType === 1 ? node : node?.parentElement;
+            if (!el || el.closest('hte-overlay')) return null;
+            const svgRoot = el.closest('svg');
+            if (svgRoot) el = svgRoot;
+            if (el === doc.documentElement || el === doc.body) return null;
+            return el;
+        }
+
+        function positionBox(box, el) {
+            const rect = el.getBoundingClientRect();
+            box.style.left = rect.left + state.frameWin.scrollX + 'px';
+            box.style.top = rect.top + state.frameWin.scrollY + 'px';
+            box.style.width = rect.width + 'px';
+            box.style.height = rect.height + 'px';
+            box.style.display = 'block';
+            return rect;
+        }
+
+        function updateOverlay() {
+            if (!state.overlay) return;
+            const { selectBox, sizeLabel } = state.overlay;
+            const el = state.selectedEl;
+            if (!el || !el.isConnected) {
+                selectBox.style.display = 'none';
+                return;
+            }
+            const rect = positionBox(selectBox, el);
+            sizeLabel.textContent = `${describeElement(el)}  ${Math.round(rect.width)} × ${Math.round(rect.height)}`;
+            selectBox.classList.toggle('is-editing', !!state.editingEl);
+            selectBox.classList.toggle('is-locked', el === state.frameDoc.body);
+            selectBox.classList.toggle('label-below', rect.top + state.frameWin.scrollY < 26);
+        }
+
+        function hideHoverBox() {
+            if (state.overlay) state.overlay.hoverBox.style.display = 'none';
+        }
+
+        // ===== 선택 =====
+        function selectElement(el) {
+            if (state.editingEl && state.editingEl !== el) finishTextEditing();
+            state.selectedEl?.removeAttribute('data-hte-selected');
+            state.selectedEl = el;
+            el?.setAttribute('data-hte-selected', '');
+            hideHoverBox();
+            updateOverlay();
+            refreshPanel();
+            renderBreadcrumb();
+            updateToolbarState();
+        }
+
+        function renderBreadcrumb() {
+            const bar = byId('breadcrumbBar');
+            bar.innerHTML = '';
+            const el = state.selectedEl;
+            if (!el) {
+                bar.innerHTML = '<span class="text-muted">선택된 요소 없음</span>';
+                return;
+            }
+            const chain = [];
+            for (let node = el; node && node !== state.frameDoc.documentElement; node = node.parentElement) chain.unshift(node);
+            chain.forEach((node, index) => {
+                if (index > 0) bar.insertAdjacentHTML('beforeend', '<i class="bi bi-chevron-right text-muted"></i>');
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-sm py-0 px-1 ' + (node === el ? 'btn-primary' : 'btn-light border');
+                button.textContent = describeElement(node);
+                button.addEventListener('click', () => selectElement(node));
+                bar.appendChild(button);
+            });
+        }
+
+        function updateToolbarState() {
+            const hasMovableSelection = !!state.selectedEl && state.selectedEl !== state.frameDoc?.body;
+            document.querySelectorAll('.needs-selection').forEach(button => { button.disabled = !hasMovableSelection; });
+            byId('undoButton').disabled = state.historyIndex <= 0;
+            byId('redoButton').disabled = state.historyIndex >= state.history.length - 1;
+        }
+
+        // ===== iframe 포인터 이벤트 =====
+        function handleFramePointerDown(event) {
+            if (event.button !== 0) return;
+            if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+
+            const handle = event.target.closest?.('hte-handle');
+            if (handle && state.selectedEl) {
+                event.preventDefault();
+                startResize(event, handle.dataset.handle);
+                return;
+            }
+
+            if (state.editingEl) {
+                if (state.editingEl.contains(event.target)) return;
+                finishTextEditing();
+            }
+
+            const target = getSelectableTarget(event.target);
+            if (!target) {
+                selectElement(null);
+                return;
+            }
+            event.preventDefault();
+            const selected = state.selectedEl;
+            if (selected && selected !== state.frameDoc.body && selected.contains(target)) {
+                startMove(event, target);
+            } else {
+                selectElement(target);
+                startMove(event, null);
+            }
+        }
+
+        function handleFramePointerMove(event) {
+            if (state.isPointerBusy || !state.overlay) return;
+            const target = getSelectableTarget(event.target);
+            if (!target || target === state.selectedEl) {
+                hideHoverBox();
+                return;
+            }
+            positionBox(state.overlay.hoverBox, target);
+        }
+
+        function handleFrameClick(event) {
+            event.preventDefault();
+            if (!state.editingEl) event.stopPropagation();
+        }
+
+        function handleFrameDoubleClick(event) {
+            const pointedNode = state.frameDoc.elementFromPoint(event.clientX, event.clientY);
+            if (state.editingEl && state.editingEl.contains(pointedNode)) return;
+            let target = getSelectableTarget(pointedNode);
+            if (!target || NON_TEXT_TAGS.has(target.tagName.toUpperCase())) return;
+            // 인라인 요소(b, span 등)를 더블클릭하면 감싸는 블록 전체를 편집
+            while (getComputed(target).display === 'inline' && target.parentElement && target.parentElement !== state.frameDoc.body) {
+                target = target.parentElement;
+            }
+            event.preventDefault();
+            startTextEditing(target, { x: event.clientX, y: event.clientY });
+        }
+
+        function trackPointer(event, onMove, onEnd) {
+            const doc = state.frameDoc;
+            state.isPointerBusy = true;
+            const handleUp = () => {
+                doc.removeEventListener('pointermove', onMove);
+                doc.removeEventListener('pointerup', handleUp);
+                doc.removeEventListener('pointercancel', handleUp);
+                doc.documentElement.removeAttribute('data-hte-dragging');
+                state.isPointerBusy = false;
+                onEnd();
+            };
+            doc.addEventListener('pointermove', onMove);
+            doc.addEventListener('pointerup', handleUp);
+            doc.addEventListener('pointercancel', handleUp);
+        }
+
+        // 드래그가 iframe 밖으로 나가도 이벤트를 계속 받기 위한 포인터 캡처 (클릭 대상이 바뀌지 않도록 드래그 시작 후에만 호출)
+        function capturePointer(pointerId) {
+            try { state.frameDoc.documentElement.setPointerCapture(pointerId); } catch (error) { /* 캡처 미지원 시 무시 */ }
+        }
+
+        // 이동 준비: static이면 relative로 바꾸고 left/top 기준값을 반환
+        function prepareForMove(el) {
+            const computed = getComputed(el);
+            if (computed.position === 'static') el.style.position = 'relative';
+            const left = parseNumber(computed.left);
+            const top = parseNumber(computed.top);
+            if (computed.position === 'absolute' || computed.position === 'fixed') {
+                if (!el.style.width) el.style.width = computed.width;
+                el.style.right = 'auto';
+                el.style.bottom = 'auto';
+            }
+            el.style.left = left + 'px';
+            el.style.top = top + 'px';
+            return { left, top };
+        }
+
+        function startMove(event, clickTarget) {
+            const el = state.selectedEl;
+            const startX = event.clientX;
+            const startY = event.clientY;
+            let origin = null;
+
+            trackPointer(event, moveEvent => {
+                const deltaX = moveEvent.clientX - startX;
+                const deltaY = moveEvent.clientY - startY;
+                if (!origin) {
+                    if (el === state.frameDoc.body || Math.hypot(deltaX, deltaY) < 4) return;
+                    origin = prepareForMove(el);
+                    capturePointer(event.pointerId);
+                    state.frameDoc.documentElement.setAttribute('data-hte-dragging', '');
+                    hideHoverBox();
+                }
+                el.style.left = Math.round(origin.left + deltaX) + 'px';
+                el.style.top = Math.round(origin.top + deltaY) + 'px';
+                updateOverlay();
+            }, () => {
+                if (origin) {
+                    commitHistory();
+                    refreshPanel();
+                } else if (clickTarget && clickTarget !== el) {
+                    selectElement(clickTarget);
+                }
+            });
+        }
+
+        function startResize(event, handleName) {
+            const el = state.selectedEl;
+            if (el === state.frameDoc.body) return;
+            const computed = getComputed(el);
+            if (computed.display === 'inline') el.style.display = 'inline-block';
+
+            const movesOrigin = handleName.includes('n') || handleName.includes('w');
+            const origin = movesOrigin ? prepareForMove(el) : null;
+            const startWidth = parseNumber(computed.width);
+            const startHeight = parseNumber(computed.height);
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const isCorner = handleName.length === 2;
+            const isImage = el.tagName === 'IMG';
+            state.frameDoc.documentElement.setAttribute('data-hte-dragging', '');
+            hideHoverBox();
+            capturePointer(event.pointerId);
+
+            trackPointer(event, moveEvent => {
+                const deltaX = moveEvent.clientX - startX;
+                const deltaY = moveEvent.clientY - startY;
+                let width = startWidth;
+                let height = startHeight;
+                if (handleName.includes('e')) width = startWidth + deltaX;
+                if (handleName.includes('w')) width = startWidth - deltaX;
+                if (handleName.includes('s')) height = startHeight + deltaY;
+                if (handleName.includes('n')) height = startHeight - deltaY;
+                width = Math.max(5, width);
+                height = Math.max(5, height);
+
+                if (isCorner && (isImage || moveEvent.shiftKey) && startHeight > 0) {
+                    const ratio = startWidth / startHeight;
+                    if (Math.abs(width - startWidth) / startWidth > Math.abs(height - startHeight) / startHeight) height = width / ratio;
+                    else width = height * ratio;
+                }
+
+                if (handleName !== 'n' && handleName !== 's') el.style.width = Math.round(width) + 'px';
+                if (handleName !== 'e' && handleName !== 'w') el.style.height = Math.round(height) + 'px';
+                if (handleName.includes('w')) el.style.left = Math.round(origin.left + startWidth - width) + 'px';
+                if (handleName.includes('n')) el.style.top = Math.round(origin.top + startHeight - height) + 'px';
+                updateOverlay();
+            }, () => {
+                commitHistory();
+                refreshPanel();
+            });
+        }
+
+        // ===== 텍스트 편집 =====
+        function startTextEditing(el, point, selectAll = false) {
+            if (state.editingEl === el) return;
+            selectElement(el);
+            state.editingEl = el;
+            state.editingOriginalHtml = el.innerHTML;
+            state.editingPrevContentEditable = el.getAttribute('contenteditable');
+            el.setAttribute('contenteditable', 'true');
+            el.setAttribute('data-hte-editing', '');
+            state.frameWin.focus();
+            el.focus();
+            placeCaret(el, point, selectAll);
+            updateOverlay();
+        }
+
+        function placeCaret(el, point, selectAll) {
+            const doc = state.frameDoc;
+            let range = null;
+            if (point) {
+                if (doc.caretRangeFromPoint) {
+                    range = doc.caretRangeFromPoint(point.x, point.y);
+                } else if (doc.caretPositionFromPoint) {
+                    const position = doc.caretPositionFromPoint(point.x, point.y);
+                    if (position) {
+                        range = doc.createRange();
+                        range.setStart(position.offsetNode, position.offset);
+                    }
+                }
+            }
+            if (!range || !el.contains(range.startContainer)) {
+                range = doc.createRange();
+                range.selectNodeContents(el);
+                if (!selectAll) range.collapse(false);
+            }
+            const selection = doc.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+
+        function finishTextEditing() {
+            const el = state.editingEl;
+            if (!el) return;
+            state.editingEl = null;
+            state.savedRange = null;
+            if (state.editingPrevContentEditable === null) el.removeAttribute('contenteditable');
+            else el.setAttribute('contenteditable', state.editingPrevContentEditable);
+            el.removeAttribute('data-hte-editing');
+            state.frameDoc.getSelection().removeAllRanges();
+            if (el.innerHTML !== state.editingOriginalHtml) commitHistory();
+            updateOverlay();
+        }
+
+        function saveTextSelection() {
+            if (!state.editingEl) return;
+            const selection = state.frameDoc.getSelection();
+            if (selection.rangeCount && state.editingEl.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+                state.savedRange = selection.getRangeAt(0).cloneRange();
+            }
+        }
+
+        function hasEditingSelection() {
+            return !!(state.editingEl && state.savedRange && !state.savedRange.collapsed);
+        }
+
+        // 텍스트 일부에만 서식 적용
+        function applySelectionCommand(command, value) {
+            const doc = state.frameDoc;
+            state.frameWin.focus();
+            state.editingEl.focus();
+            const selection = doc.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(state.savedRange);
+
+            if (command === 'fontSize') {
+                doc.execCommand('styleWithCSS', false, false);
+                doc.execCommand('fontSize', false, '7');
+                state.editingEl.querySelectorAll('font[size="7"]').forEach(fontEl => {
+                    const span = doc.createElement('span');
+                    span.style.fontSize = value + 'px';
+                    span.append(...fontEl.childNodes);
+                    fontEl.replaceWith(span);
+                });
+            } else {
+                doc.execCommand('styleWithCSS', false, true);
+                doc.execCommand(command, false, value);
+            }
+            saveTextSelection();
+            updateOverlay();
+        }
+
+        // ===== 속성 패널 =====
+        const STYLE_FIELDS = [
+            { inputId: 'propLeft', cssProp: 'left', unit: 'px', positioned: true, read: cs => cs.position === 'static' ? 0 : roundTo(parseNumber(cs.left)) },
+            { inputId: 'propTop', cssProp: 'top', unit: 'px', positioned: true, read: cs => cs.position === 'static' ? 0 : roundTo(parseNumber(cs.top)) },
+            { inputId: 'propWidth', cssProp: 'width', unit: 'px', sizing: true, read: cs => roundTo(parseNumber(cs.width)) },
+            { inputId: 'propHeight', cssProp: 'height', unit: 'px', sizing: true, read: cs => roundTo(parseNumber(cs.height)) },
+            { inputId: 'propFontFamily', cssProp: 'font-family', unit: '', selectionCommand: 'fontName', read: cs => matchFontOption(cs.fontFamily) },
+            { inputId: 'propFontSize', cssProp: 'font-size', unit: 'px', selectionCommand: 'fontSize', read: cs => roundTo(parseNumber(cs.fontSize), 1) },
+            { inputId: 'propColor', cssProp: 'color', unit: '', selectionCommand: 'foreColor', read: cs => toHexColor(cs.color) },
+            { inputId: 'propLineHeight', cssProp: 'line-height', unit: '', read: cs => cs.lineHeight === 'normal' ? '' : roundTo(parseNumber(cs.lineHeight) / parseNumber(cs.fontSize), 2) },
+            { inputId: 'propLetterSpacing', cssProp: 'letter-spacing', unit: 'px', read: cs => cs.letterSpacing === 'normal' ? 0 : roundTo(parseNumber(cs.letterSpacing), 1) },
+            { inputId: 'propBgColor', cssProp: 'background-color', unit: '', selectionCommand: 'hiliteColor', read: cs => toHexColor(cs.backgroundColor, '#ffffff') },
+            { inputId: 'propBorderWidth', cssProp: 'border-width', unit: 'px', read: cs => roundTo(parseNumber(cs.borderTopWidth)) },
+            { inputId: 'propBorderStyle', cssProp: 'border-style', unit: '', read: cs => cs.borderTopStyle },
+            { inputId: 'propBorderColor', cssProp: 'border-color', unit: '', read: cs => toHexColor(cs.borderTopColor) },
+            { inputId: 'propRadius', cssProp: 'border-radius', unit: 'px', read: cs => roundTo(parseNumber(cs.borderTopLeftRadius)) },
+            { inputId: 'propPadding', cssProp: 'padding', unit: 'px', read: cs => roundTo(parseNumber(cs.paddingTop)) },
+            { inputId: 'propOpacity', cssProp: 'opacity', unit: '', read: cs => roundTo(parseNumber(cs.opacity), 2) },
+            { inputId: 'propZIndex', cssProp: 'z-index', unit: '', positioned: true, read: cs => cs.zIndex === 'auto' ? '' : cs.zIndex }
+        ];
+
+        function matchFontOption(fontFamily) {
+            const normalizeFirstFamily = value => value.split(',')[0].replace(/["']/g, '').trim().toLowerCase();
+            const current = normalizeFirstFamily(fontFamily);
+            const option = [...byId('propFontFamily').options].find(opt => opt.value && normalizeFirstFamily(opt.value) === current);
+            return option ? option.value : '';
+        }
+
+        function refreshPanel() {
+            const el = state.selectedEl;
+            byId('panelEmpty').classList.toggle('d-none', !!el);
+            byId('panelFields').classList.toggle('d-none', !el);
+            if (!el) return;
+
+            const computed = getComputed(el);
+            byId('selectedTagLabel').textContent = describeElement(el);
+            STYLE_FIELDS.forEach(field => {
+                const input = byId(field.inputId);
+                if (document.activeElement !== input) input.value = field.read(computed);
+            });
+            byId('propBgNone').checked = isTransparentColor(computed.backgroundColor);
+
+            const decorations = computed.textDecorationLine;
+            const toggleStates = {
+                bold: parseInt(computed.fontWeight, 10) >= 600,
+                italic: computed.fontStyle === 'italic',
+                underline: decorations.includes('underline'),
+                strikeThrough: decorations.includes('line-through')
+            };
+            document.querySelectorAll('[data-text-toggle]').forEach(button => {
+                button.classList.toggle('active', toggleStates[button.dataset.textToggle]);
+            });
+            const align = computed.textAlign === 'start' ? 'left' : computed.textAlign;
+            document.querySelectorAll('[data-align]').forEach(button => {
+                button.classList.toggle('active', button.dataset.align === align);
+            });
+
+            byId('imageTools').classList.toggle('d-none', el.tagName !== 'IMG');
+            byId('linkTools').classList.toggle('d-none', el.tagName !== 'A');
+            if (el.tagName === 'A') byId('propHref').value = el.getAttribute('href') || '';
+        }
+
+        function applyStyleField(field, isFinal) {
+            const el = state.selectedEl;
+            if (!el) return;
+            const input = byId(field.inputId);
+            const rawValue = input.value.trim();
+
+            if (field.selectionCommand && hasEditingSelection()) {
+                if (isFinal && rawValue) {
+                    applySelectionCommand(field.selectionCommand, rawValue);
+                    commitHistory();
+                }
+                return;
+            }
+
+            const computed = getComputed(el);
+            if (field.positioned && computed.position === 'static') el.style.position = 'relative';
+            if (field.sizing && computed.display === 'inline') el.style.display = 'inline-block';
+
+            if (rawValue === '') el.style.removeProperty(field.cssProp);
+            else el.style.setProperty(field.cssProp, rawValue + field.unit);
+
+            if (field.cssProp === 'border-width' && rawValue !== '' && computed.borderTopStyle === 'none') {
+                el.style.borderStyle = 'solid';
+                byId('propBorderStyle').value = 'solid';
+            }
+            if (field.cssProp === 'background-color') byId('propBgNone').checked = false;
+
+            updateOverlay();
+            if (isFinal) commitHistory();
+        }
+
+        function toggleTextStyle(kind) {
+            const el = state.selectedEl;
+            if (!el) return;
+            if (hasEditingSelection()) {
+                applySelectionCommand(kind);
+            } else {
+                const computed = getComputed(el);
+                if (kind === 'bold') el.style.fontWeight = parseInt(computed.fontWeight, 10) >= 600 ? 'normal' : 'bold';
+                if (kind === 'italic') el.style.fontStyle = computed.fontStyle === 'italic' ? 'normal' : 'italic';
+                if (kind === 'underline' || kind === 'strikeThrough') {
+                    const line = kind === 'underline' ? 'underline' : 'line-through';
+                    const lines = new Set(computed.textDecorationLine.split(' ').filter(value => value && value !== 'none'));
+                    if (lines.has(line)) lines.delete(line);
+                    else lines.add(line);
+                    el.style.textDecorationLine = lines.size ? [...lines].join(' ') : 'none';
+                }
+            }
+            commitHistory();
+            refreshPanel();
+            updateOverlay();
+        }
+
+        // ===== 요소 조작 =====
+        function getMovableSelection() {
+            const el = state.selectedEl;
+            return el && el !== state.frameDoc.body ? el : null;
+        }
+
+        function getTopZIndex() {
+            let maxZ = 0;
+            state.frameDoc.body.querySelectorAll('*').forEach(node => {
+                const z = parseInt(getComputed(node).zIndex, 10);
+                if (Number.isFinite(z) && z > maxZ) maxZ = z;
+            });
+            return maxZ;
+        }
+
+        function addTextBox() {
+            const doc = state.frameDoc;
+            const win = state.frameWin;
+            const textBox = doc.createElement('div');
+            textBox.textContent = '텍스트를 입력하세요';
+            Object.assign(textBox.style, {
+                position: 'absolute',
+                left: Math.round(win.scrollX + win.innerWidth / 2 - 120) + 'px',
+                top: Math.round(win.scrollY + win.innerHeight / 2 - 30) + 'px',
+                minWidth: '120px',
+                padding: '8px 12px',
+                fontSize: '24px',
+                zIndex: String(getTopZIndex() + 1)
+            });
+            doc.body.appendChild(textBox);
+            commitHistory();
+            startTextEditing(textBox, null, true);
+        }
+
+        async function handleImageFile(file) {
+            if (!file) return;
+            const dataUrl = await readImageAsDataUrl(file);
+            if (state.imageInputMode === 'replace' && state.selectedEl?.tagName === 'IMG') {
+                state.selectedEl.src = dataUrl;
+                state.selectedEl.addEventListener('load', updateOverlay, { once: true });
+                commitHistory();
+                return;
+            }
+            const doc = state.frameDoc;
+            const win = state.frameWin;
+            const image = doc.createElement('img');
+            image.src = dataUrl;
+            image.alt = file.name;
+            Object.assign(image.style, {
+                position: 'absolute',
+                left: Math.round(win.scrollX + 40) + 'px',
+                top: Math.round(win.scrollY + 40) + 'px',
+                width: Math.min(320, Math.round(win.innerWidth / 2)) + 'px',
+                height: 'auto',
+                zIndex: String(getTopZIndex() + 1)
+            });
+            doc.body.appendChild(image);
+            image.addEventListener('load', updateOverlay, { once: true });
+            selectElement(image);
+            commitHistory();
+        }
+
+        function openImagePicker(mode) {
+            state.imageInputMode = mode;
+            const input = byId('imageFileInput');
+            input.value = '';
+            input.click();
+        }
+
+        function duplicateSelected() {
+            const el = getMovableSelection();
+            if (!el) return;
+            finishTextEditing();
+            const copy = el.cloneNode(true);
+            copy.removeAttribute('data-hte-selected');
+            copy.removeAttribute('id');
+            const position = getComputed(el).position;
+            if (position === 'absolute' || position === 'fixed') {
+                const origin = prepareForMove(el);
+                copy.style.cssText = el.style.cssText;
+                copy.style.left = origin.left + 20 + 'px';
+                copy.style.top = origin.top + 20 + 'px';
+            }
+            el.after(copy);
+            selectElement(copy);
+            commitHistory();
+        }
+
+        function deleteSelected() {
+            const el = getMovableSelection();
+            if (!el) return;
+            selectElement(null);
+            el.remove();
+            commitHistory();
+        }
+
+        function shiftZIndex(step) {
+            const el = getMovableSelection();
+            if (!el) return;
+            const computed = getComputed(el);
+            if (computed.position === 'static') el.style.position = 'relative';
+            el.style.zIndex = String(parseNumber(computed.zIndex) + step);
+            commitHistory();
+            refreshPanel();
+        }
+
+        function nudgeSelected(deltaX, deltaY) {
+            const el = getMovableSelection();
+            if (!el) return;
+            const origin = prepareForMove(el);
+            el.style.left = origin.left + deltaX + 'px';
+            el.style.top = origin.top + deltaY + 'px';
+            updateOverlay();
+            refreshPanel();
+            clearTimeout(state.commitTimer);
+            state.commitTimer = setTimeout(commitHistory, 400);
+        }
+
+        function resetPositionAndSize() {
+            const el = state.selectedEl;
+            if (!el) return;
+            ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach(prop => el.style.removeProperty(prop));
+            if (el.style.position === 'relative') el.style.removeProperty('position');
+            updateOverlay();
+            refreshPanel();
+            commitHistory();
+        }
+
+        // ===== 실행 취소 / 다시 실행 =====
+        function captureSnapshot() {
+            const body = state.frameDoc.body;
+            const selected = state.selectedEl;
+            selected?.removeAttribute('data-hte-selected');
+            const snapshot = { bodyHtml: body.innerHTML, bodyStyle: body.getAttribute('style') };
+            selected?.setAttribute('data-hte-selected', '');
+            return snapshot;
+        }
+
+        function commitHistory() {
+            if (!state.frameDoc) return;
+            clearTimeout(state.commitTimer);
+            const snapshot = captureSnapshot();
+            const last = state.history[state.historyIndex];
+            if (last && last.bodyHtml === snapshot.bodyHtml && last.bodyStyle === snapshot.bodyStyle) return;
+            state.history = state.history.slice(0, state.historyIndex + 1);
+            state.history.push(snapshot);
+            if (state.history.length > HISTORY_LIMIT) state.history.shift();
+            state.historyIndex = state.history.length - 1;
+            state.isDirty = true;
+            updateToolbarState();
+        }
+
+        function restoreSnapshot(index) {
+            if (index < 0 || index >= state.history.length) return;
+            finishTextEditing();
+            selectElement(null);
+            const snapshot = state.history[index];
+            const body = state.frameDoc.body;
+            body.innerHTML = snapshot.bodyHtml;
+            if (snapshot.bodyStyle === null) body.removeAttribute('style');
+            else body.setAttribute('style', snapshot.bodyStyle);
+            body.querySelectorAll('[data-hte-editing]').forEach(node => {
+                node.removeAttribute('data-hte-editing');
+                node.removeAttribute('contenteditable');
+            });
+            state.historyIndex = index;
+            state.isDirty = true;
+            updateToolbarState();
+        }
+
+        function undo() {
+            finishTextEditing();
+            restoreSnapshot(state.historyIndex - 1);
+        }
+
+        function redo() {
+            restoreSnapshot(state.historyIndex + 1);
+        }
+
+        // ===== 내보내기 =====
+        function buildExportHtml() {
+            const clone = state.frameDoc.documentElement.cloneNode(true);
+            clone.querySelectorAll(`[${UI_ATTR}], hte-overlay`).forEach(node => node.remove());
+            clone.removeAttribute('data-hte-dragging');
+            clone.querySelectorAll('[data-hte-selected]').forEach(node => node.removeAttribute('data-hte-selected'));
+            clone.querySelectorAll('[data-hte-editing]').forEach(node => {
+                node.removeAttribute('data-hte-editing');
+                if (state.editingPrevContentEditable === null) node.removeAttribute('contenteditable');
+                else node.setAttribute('contenteditable', state.editingPrevContentEditable);
+            });
+            clone.querySelectorAll(`script[${SCRIPT_TYPE_ATTR}]`).forEach(script => {
+                const originalType = script.getAttribute(SCRIPT_TYPE_ATTR);
+                script.removeAttribute(SCRIPT_TYPE_ATTR);
+                if (originalType === NO_SCRIPT_TYPE) script.removeAttribute('type');
+                else script.setAttribute('type', originalType);
+            });
+            clone.querySelectorAll('[style=""]').forEach(node => node.removeAttribute('style'));
+
+            const head = clone.querySelector('head');
+            if (head && !head.querySelector('meta[charset], meta[http-equiv="Content-Type" i]')) {
+                head.insertAdjacentHTML('afterbegin', '<meta charset="UTF-8">');
+            }
+            return (state.doctype ? state.doctype + '\n' : '') + clone.outerHTML;
+        }
+
+        function downloadHtml() {
+            finishTextEditing();
+            const blob = new Blob([buildExportHtml()], { type: 'text/html;charset=utf-8' });
+            const baseName = state.fileName.replace(/\.(html?|txt)$/i, '');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${baseName}_edited.html`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            state.isDirty = false;
+        }
+
+        function openPreview() {
+            finishTextEditing();
+            const blob = new Blob([buildExportHtml()], { type: 'text/html;charset=utf-8' });
+            window.open(URL.createObjectURL(blob), '_blank');
+        }
+
+        // ===== 키보드 =====
+        function handleKeyDown(event) {
+            if (!state.frameDoc || editorSection.classList.contains('d-none')) return;
+            const target = event.target;
+            if (target.ownerDocument === document && target.closest('input, textarea, select, [contenteditable], .modal')) return;
+            if (target.ownerDocument === document && target.tagName === 'BUTTON' && (event.key === 'Enter' || event.key === ' ')) return;
+
+            if (state.editingEl) {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    finishTextEditing();
+                }
+                return;
+            }
+
+            const key = event.key.toLowerCase();
+            const isModifier = event.ctrlKey || event.metaKey;
+            if (isModifier && key === 'z') {
+                event.preventDefault();
+                event.shiftKey ? redo() : undo();
+                return;
+            }
+            if (isModifier && key === 'y') {
+                event.preventDefault();
+                redo();
+                return;
+            }
+            if (!state.selectedEl) return;
+            if (isModifier && key === 'd') {
+                event.preventDefault();
+                duplicateSelected();
+                return;
+            }
+
+            const step = event.shiftKey ? 10 : 1;
+            const arrowMoves = { arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, -step], arrowdown: [0, step] };
+            if (arrowMoves[key]) {
+                event.preventDefault();
+                nudgeSelected(...arrowMoves[key]);
+            } else if (key === 'delete' || key === 'backspace') {
+                event.preventDefault();
+                deleteSelected();
+            } else if (key === 'escape') {
+                selectElement(null);
+            } else if (key === 'enter' && !NON_TEXT_TAGS.has(state.selectedEl.tagName.toUpperCase())) {
+                event.preventDefault();
+                startTextEditing(state.selectedEl);
+            }
+        }
+
+        // ===== 이벤트 연결 =====
+        const dropZone = byId('dropZone');
+        const htmlFileInput = byId('htmlFileInput');
+
+        async function openHtmlFile(file) {
+            if (!file) return;
+            if (!/\.html?$/i.test(file.name) && file.type !== 'text/html') {
+                alert('HTML 파일(.html, .htm)만 불러올 수 있습니다.');
+                return;
+            }
+            const htmlText = await readHtmlFile(file);
+            byId('codeInput').value = htmlText;
+            loadHtmlIntoEditor(htmlText, file.name);
+        }
+
+        dropZone.addEventListener('click', () => htmlFileInput.click());
+        htmlFileInput.addEventListener('change', () => {
+            openHtmlFile(htmlFileInput.files[0]);
+            htmlFileInput.value = '';
+        });
+        ['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => {
+            event.preventDefault();
+            dropZone.classList.add('is-dragover');
+        }));
+        ['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => {
+            event.preventDefault();
+            dropZone.classList.remove('is-dragover');
+        }));
+        dropZone.addEventListener('drop', event => openHtmlFile(event.dataTransfer.files[0]));
+
+        byId('loadSampleButton').addEventListener('click', () => { byId('codeInput').value = SAMPLE_HTML; });
+        byId('startFromCodeButton').addEventListener('click', () => loadHtmlIntoEditor(byId('codeInput').value, 'document.html'));
+
+        byId('undoButton').addEventListener('click', undo);
+        byId('redoButton').addEventListener('click', redo);
+        byId('addTextBoxButton').addEventListener('click', addTextBox);
+        byId('addImageButton').addEventListener('click', () => openImagePicker('add'));
+        byId('replaceImageButton').addEventListener('click', () => openImagePicker('replace'));
+        byId('imageFileInput').addEventListener('change', event => handleImageFile(event.target.files[0]));
+        byId('duplicateButton').addEventListener('click', duplicateSelected);
+        byId('deleteButton').addEventListener('click', deleteSelected);
+        byId('bringForwardButton').addEventListener('click', () => shiftZIndex(1));
+        byId('sendBackwardButton').addEventListener('click', () => shiftZIndex(-1));
+        byId('resetPositionButton').addEventListener('click', resetPositionAndSize);
+        byId('selectParentButton').addEventListener('click', () => {
+            const parent = state.selectedEl?.parentElement;
+            if (parent && parent !== state.frameDoc.documentElement) selectElement(parent);
+        });
+        byId('editTextButton').addEventListener('click', () => {
+            const el = state.selectedEl;
+            if (el && !NON_TEXT_TAGS.has(el.tagName.toUpperCase())) startTextEditing(el);
+        });
+        byId('clearStyleButton').addEventListener('click', () => {
+            if (!state.selectedEl) return;
+            state.selectedEl.removeAttribute('style');
+            updateOverlay();
+            refreshPanel();
+            commitHistory();
+        });
+
+        STYLE_FIELDS.forEach(field => {
+            const input = byId(field.inputId);
+            input.addEventListener('input', () => applyStyleField(field, false));
+            input.addEventListener('change', () => applyStyleField(field, true));
+        });
+        byId('propBgNone').addEventListener('change', event => {
+            const el = state.selectedEl;
+            if (!el) return;
+            if (event.target.checked) el.style.backgroundColor = 'transparent';
+            else el.style.backgroundColor = byId('propBgColor').value;
+            commitHistory();
+        });
+        byId('propHref').addEventListener('change', event => {
+            if (state.selectedEl?.tagName !== 'A') return;
+            state.selectedEl.setAttribute('href', event.target.value.trim());
+            commitHistory();
+        });
+
+        // 버튼 클릭 시 iframe의 텍스트 선택이 풀리지 않도록 포커스 이동 방지
+        document.querySelectorAll('[data-text-toggle], [data-align]').forEach(button => {
+            button.addEventListener('mousedown', event => event.preventDefault());
+        });
+        document.querySelectorAll('[data-text-toggle]').forEach(button => {
+            button.addEventListener('click', () => toggleTextStyle(button.dataset.textToggle));
+        });
+        document.querySelectorAll('[data-align]').forEach(button => {
+            button.addEventListener('click', () => {
+                if (!state.selectedEl) return;
+                state.selectedEl.style.textAlign = button.dataset.align;
+                commitHistory();
+                refreshPanel();
+            });
+        });
+
+        byId('canvasWidthSelect').addEventListener('change', () => { applyCanvasLayout(); updateOverlay(); });
+        byId('zoomSelect').addEventListener('change', () => { applyCanvasLayout(); updateOverlay(); });
+        window.addEventListener('resize', () => {
+            if (editorSection.classList.contains('d-none')) return;
+            applyCanvasLayout();
+            updateOverlay();
+        });
+
+        byId('downloadButton').addEventListener('click', downloadHtml);
+        byId('previewButton').addEventListener('click', openPreview);
+        byId('viewCodeButton').addEventListener('click', () => {
+            finishTextEditing();
+            byId('exportCode').value = buildExportHtml();
+            codeModal.show();
+        });
+        byId('copyCodeButton').addEventListener('click', async () => {
+            const button = byId('copyCodeButton');
+            try {
+                await navigator.clipboard.writeText(byId('exportCode').value);
+                button.innerHTML = '<i class="bi bi-check2"></i> 복사됨';
+            } catch (error) {
+                byId('exportCode').select();
+                document.execCommand('copy');
+                button.innerHTML = '<i class="bi bi-check2"></i> 복사됨';
+            }
+            setTimeout(() => { button.innerHTML = '<i class="bi bi-clipboard"></i> 복사'; }, 1500);
+        });
+        byId('applyCodeButton').addEventListener('click', () => {
+            codeModal.hide();
+            loadHtmlIntoEditor(byId('exportCode').value, state.fileName);
+        });
+        byId('newFileButton').addEventListener('click', () => {
+            if (state.isDirty && !confirm('저장하지 않은 변경 사항이 사라집니다. 새 파일을 여시겠습니까?')) return;
+            editorSection.classList.add('d-none');
+            loadSection.classList.remove('d-none');
+            editorFrame.onload = null;
+            editorFrame.removeAttribute('srcdoc');
+            state.frameDoc = null;
+            state.overlay = null;
+            state.isDirty = false;
+        });
+
+        document.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('beforeunload', event => {
+            if (state.isDirty) event.preventDefault();
+        });
+    </script>
+</body>
+
+</html>
