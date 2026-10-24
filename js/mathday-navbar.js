@@ -30,7 +30,7 @@
     { file: 'circle.html', label: '완벽한 원 그리기', icon: 'bi-circle' },
   ];
 
-  const currentFile = (window.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+  const currentFile = (window.location.pathname.split('/').pop() || 'mathday.html').toLowerCase();
 
   const menuHtml = menuItems.map(function (item) {
     const isActive = item.file.toLowerCase() === currentFile;
@@ -50,7 +50,7 @@
   const navbarHtml =
     '<nav class="navbar navbar-expand-lg mathday-navbar sticky-top">' +
     '<div class="container-fluid px-3 px-lg-4">' +
-    '<a class="navbar-brand d-flex align-items-center gap-2" href="index.html">' +
+    '<a class="navbar-brand d-flex align-items-center gap-2" href="mathday.html">' +
     '<span class="brand-pi">π</span><span>Math Day!</span>' +
     '</a>' +
     '<button class="navbar-toggler" type="button" data-bs-toggle="collapse" ' +
