@@ -55,7 +55,7 @@
 
         @media (max-width: 991px) {
             #canvas-wrapper {
-                height: 540px;
+                height: 700px;
             }
         }
 
@@ -195,7 +195,7 @@
             <div class="d-flex flex-wrap align-items-center gap-2 column-gap-3">
                 <label for="mission-select" class="fw-bold text-secondary text-nowrap mb-0"><i
                         class="bi bi-list-task"></i> 연습 문제</label>
-                <select id="mission-select" class="form-select w-auto"></select>
+                <select id="mission-select" class="form-select w-auto mw-100"></select>
                 <p class="text-secondary mb-0" id="mission-description"></p>
             </div>
         </section>
@@ -233,7 +233,7 @@
 
                         <div class="d-flex gap-2 ms-auto">
                             <button type="button" class="btn btn-outline-primary" id="btn-demo"><i
-                                    class="bi bi-play-circle"></i> 작도 시연 보기</button>
+                                    class="bi bi-play-circle"></i> 작도 시연</button>
                             <button type="button" class="btn btn-primary" id="btn-check"><i
                                     class="bi bi-check2-circle"></i> 정답 확인</button>
                             <button type="button" class="btn btn-outline-success" id="btn-answer"><i
@@ -255,19 +255,27 @@
                 <div id="demo-panel" class="d-none">
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <span class="badge text-bg-primary fs-6" id="demo-step-badge">1 / 1 단계</span>
-                        <div class="btn-group" role="group" aria-label="시연 조절">
+                        <!-- 연속 재생: 재생 / 일시정지 -->
+                        <button type="button" class="btn btn-outline-dark" id="btn-demo-play" title="재생 / 일시정지"><i
+                                class="bi bi-play-fill pe-none" id="demo-play-icon"></i></button>
+                        <!-- 단계 보기: 이전 / 이 단계 다시 / 다음 -->
+                        <div class="btn-group d-none" role="group" aria-label="단계 이동" id="demo-step-controls">
                             <button type="button" class="btn btn-outline-dark" id="btn-demo-prev" title="이전 단계"><i
-                                    class="bi bi-skip-start-fill"></i></button>
-                            <button type="button" class="btn btn-outline-dark" id="btn-demo-play" title="재생 / 일시정지"><i
-                                    class="bi bi-play-fill pe-none" id="demo-play-icon"></i></button>
+                                    class="bi bi-skip-start-fill pe-none"></i></button>
+                            <button type="button" class="btn btn-outline-dark" id="btn-demo-replay" title="이 단계 다시"><i
+                                    class="bi bi-arrow-repeat pe-none"></i></button>
                             <button type="button" class="btn btn-outline-dark" id="btn-demo-next" title="다음 단계"><i
-                                    class="bi bi-skip-end-fill"></i></button>
+                                    class="bi bi-skip-end-fill pe-none"></i></button>
                         </div>
                         <select id="demo-speed" class="form-select w-auto" aria-label="시연 속도">
                             <option value="0.5">0.5배속</option>
                             <option value="1" selected>1배속</option>
                             <option value="2">2배속</option>
                         </select>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="demo-continuous" checked>
+                            <label class="form-check-label small" for="demo-continuous">연속 재생</label>
+                        </div>
                         <button type="button" class="btn btn-success ms-auto" id="btn-demo-close"><i
                                 class="bi bi-pencil"></i> 따라 하기</button>
                     </div>
@@ -661,7 +669,8 @@
             redoStack: [],
             activeTool: 'ruler'
         };
-        const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null };
+        const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null,
+            continuous: true, focusStep: 0 };  // continuous=false면 단계 보기 (focusStep: 보고 있는 단계)
         const view = { scale: 1, offsetX: 0, offsetY: 0 };
         const pointer = { isDown: false, downScreen: null, moved: false, type: 'mouse', hoverScreen: null, hoverSnap: null, hoverErase: null };
         // end: 두 번째 점을 찍어 [선분 / 반직선] 선택을 기다리는 중이면 그 끝점
@@ -1687,7 +1696,12 @@
             const next = demoState.actions[demoState.index];
             if (action.type === 'compassMove') demoState.hold = 80;
             else demoState.hold = next && next.step !== action.step ? DEMO_HOLD * 3 : DEMO_HOLD;
-            if (!next) pauseDemo();
+            if (!next) {
+                pauseDemo();
+            } else if (!demoState.continuous && next.step !== action.step) {
+                demoState.hold = 0;
+                pauseDemo();
+            }
         }
 
         function demoTick(time) {
@@ -1736,13 +1750,19 @@
             updateDemoUi();
         }
 
-        function goToPreviousDemoStep() {
-            const step = currentDemoStep();
-            const isAtStepStart = demoState.index === demoState.actions.findIndex(action => action.step === step) && demoState.progress === 0;
-            jumpToDemoStep(Math.max(0, isAtStepStart || step > lastDemoStep() ? step - 1 : step));
+        // 단계 보기: 앞 단계까지 완성된 상태에서 해당 단계 하나만 재생
+        function playDemoStep(step) {
+            demoState.focusStep = Math.max(0, Math.min(step, lastDemoStep()));
+            jumpToDemoStep(demoState.focusStep);
+            playDemo();
         }
 
-        const goToNextDemoStep = () => jumpToDemoStep(currentDemoStep() + 1);
+        function setDemoContinuous(isContinuous) {
+            demoState.continuous = isContinuous;
+            pauseDemo();
+            if (!isContinuous) demoState.focusStep = Math.min(currentDemoStep(), lastDemoStep());
+            updateDemoUi();
+        }
 
         function startDemo() {
             const mission = MISSIONS[state.missionId];
@@ -1754,8 +1774,12 @@
             document.getElementById('tool-panel').classList.add('d-none');
             document.getElementById('demo-panel').classList.remove('d-none');
             canvas.style.cursor = 'default';
-            jumpToDemoStep(0);
-            playDemo();
+            if (demoState.continuous) {
+                jumpToDemoStep(0);
+                playDemo();
+            } else {
+                playDemoStep(0);
+            }
         }
 
         function closeDemo() {
@@ -1770,12 +1794,24 @@
         function updateDemoUi() {
             if (!demoState.active) return;
             const steps = MISSIONS[state.missionId].steps;
-            const step = currentDemoStep();
-            const isFinished = demoState.index >= demoState.actions.length;
-            document.getElementById('demo-step-badge').textContent = isFinished ? '시연 완료' : `${step + 1} / ${steps.length} 단계`;
-            demoCaption.innerHTML = isFinished
-                ? '시연이 끝났어요! [따라 하기]를 눌러 직접 작도해 보세요.'
-                : `${step + 1}. ${steps[step]}` + (demoState.playing ? '' : ' <span class="text-secondary fw-normal">(▶를 누르면 재생돼요)</span>');
+            const isContinuous = demoState.continuous;
+            document.getElementById('btn-demo-play').classList.toggle('d-none', !isContinuous);
+            document.getElementById('demo-step-controls').classList.toggle('d-none', isContinuous);
+            if (isContinuous) {
+                const step = currentDemoStep();
+                const isFinished = demoState.index >= demoState.actions.length;
+                document.getElementById('demo-step-badge').textContent = isFinished ? '시연 완료' : `${step + 1} / ${steps.length} 단계`;
+                demoCaption.innerHTML = isFinished
+                    ? '시연이 끝났어요! [따라 하기]를 눌러 직접 작도해 보세요.'
+                    : `${step + 1}. ${steps[step]}` + (demoState.playing ? '' : ' <span class="text-secondary fw-normal">(▶를 누르면 재생돼요)</span>');
+            } else {
+                // 단계 보기: 보고 있는 단계를 표시, 처음/마지막 단계에서는 이전/다음 비활성
+                const step = demoState.focusStep;
+                document.getElementById('demo-step-badge').textContent = `${step + 1} / ${steps.length} 단계`;
+                demoCaption.innerHTML = `${step + 1}. ${steps[step]}`;
+                document.getElementById('btn-demo-prev').disabled = step <= 0;
+                document.getElementById('btn-demo-next').disabled = step >= lastDemoStep();
+            }
             // 매 프레임 아이콘을 새로 만들면 클릭이 씹히므로 상태가 바뀔 때만 클래스 변경
             const iconClass = `bi ${demoState.playing ? 'bi-pause-fill' : 'bi-play-fill'} pe-none`;
             if (demoPlayIcon.className !== iconClass) demoPlayIcon.className = iconClass;
@@ -1839,7 +1875,9 @@
             const previous = pointer.hoverScreen;
             pointer.type = event.pointerType;
             pointer.hoverScreen = screenPos;
-            if (pointer.isDown && dist(screenPos, pointer.downScreen) > 6) pointer.moved = true;
+            // 터치는 손가락 떨림이 있으므로 더 많이 움직여야 드래그로 판단
+            const dragThreshold = event.pointerType === 'touch' ? 14 : 6;
+            if (pointer.isDown && dist(screenPos, pointer.downScreen) > dragThreshold) pointer.moved = true;
 
             if (state.activeTool === 'pan') {
                 if (pointer.isDown && previous) {
@@ -1948,8 +1986,10 @@
 
         demoButton.addEventListener('click', startDemo);
         demoPlayButton.addEventListener('click', () => demoState.playing ? pauseDemo() : playDemo());
-        document.getElementById('btn-demo-prev').addEventListener('click', goToPreviousDemoStep);
-        document.getElementById('btn-demo-next').addEventListener('click', goToNextDemoStep);
+        document.getElementById('btn-demo-prev').addEventListener('click', () => playDemoStep(demoState.focusStep - 1));
+        document.getElementById('btn-demo-replay').addEventListener('click', () => playDemoStep(demoState.focusStep));
+        document.getElementById('btn-demo-next').addEventListener('click', () => playDemoStep(demoState.focusStep + 1));
+        document.getElementById('demo-continuous').addEventListener('change', event => setDemoContinuous(event.target.checked));
         document.getElementById('btn-demo-close').addEventListener('click', closeDemo);
         document.getElementById('demo-speed').addEventListener('change', event => { demoState.speed = Number(event.target.value); });
 
