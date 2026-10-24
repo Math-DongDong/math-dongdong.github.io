@@ -38,6 +38,10 @@
         '.frac>i{font-style:normal;padding:0 .3em}',
         '.frac>i:last-of-type{border-top:2px solid currentColor}',
 
+        /* ---------- 문자(변수) : 기울인 글꼴로 × 와 구별 ---------- */
+        '.v{font-style:italic;font-family:"Times New Roman",Times,serif;font-size:1.12em;line-height:1;',
+        '    padding:0 .03em}',
+
         /* ---------- 공통 ---------- */
         '.al-cap{text-align:center;font-weight:700;margin:.7rem 0 0;opacity:0;transition:opacity .4s ease}',
         '.al-cap.on{opacity:1}',
@@ -68,13 +72,13 @@
         '.tl-groups{display:flex;justify-content:center;align-items:flex-end;gap:.5rem;flex-wrap:wrap}',
         '.tl-group{display:flex;flex-direction:column;align-items:center;gap:.3rem}',
         '.tl-name{font-weight:800;font-size:.95rem}',
-        '.tl-row{display:flex;align-items:flex-end;gap:4px;min-height:66px;padding:6px 8px;',
+        '.tl-row{display:flex;align-items:flex-end;gap:3px;min-height:66px;padding:6px 7px;',
         '    border:1.5px solid var(--border);border-radius:10px;background:#fafafa}',
         '.tl-op{font-size:1.4rem;font-weight:800;color:var(--muted);align-self:center;padding:0 .1rem}',
         '.tl-x,.tl-1{display:flex;align-items:center;justify-content:center;font-weight:800;border-radius:4px}',
-        '.tl-x{width:20px;height:54px;background:#facc15;border:1.5px solid #ca8a04;color:#713f12;font-size:.85rem}',
-        '.tl-1{width:20px;height:20px;background:#38bdf8;border:1.5px solid #0284c7;color:#0c4a6e;font-size:.7rem}',
-        '.tl-gap{width:14px}',
+        '.tl-x{width:17px;height:54px;background:#facc15;border:1.5px solid #ca8a04;color:#713f12;font-size:.8rem}',
+        '.tl-1{width:17px;height:17px;background:#38bdf8;border:1.5px solid #0284c7;color:#0c4a6e;font-size:.62rem}',
+        '.tl-gap{width:10px}',
         '.tl-merge{margin-top:.9rem;display:flex;flex-direction:column;align-items:center;gap:.3rem}',
         '.tl-merge .tl-x,.tl-merge .tl-1{opacity:0;transform:translateY(-10px);',
         '    transition:opacity .3s ease,transform .3s ease}',
@@ -110,14 +114,15 @@
         '.bl-steps li{padding:.15rem 0}',
 
         /* ---------- 식 고쳐 쓰기 ---------- */
-        '.al-chain{display:grid;grid-template-columns:1fr auto 1fr;column-gap:.45rem;row-gap:.15rem;',
-        '    align-items:center;font-size:1.15rem;font-weight:700}',
+        '.al-chain{display:grid;grid-template-columns:auto auto auto;justify-content:center;column-gap:.45rem;',
+        '    row-gap:.15rem;align-items:center;font-size:1.15rem;font-weight:700}',
         '.al-chain .c-l{text-align:right}',
         '.al-chain .c-r{text-align:left}',
         '.al-chain .c-full{grid-column:1/-1;text-align:center}',
         '.al-chain .c-note{grid-column:1/-1;text-align:center;font-size:.85rem;font-weight:600;color:var(--muted)}',
         '.al-chain .last{color:var(--primary)}',
-        '.al-chain .hi{color:var(--aha);background:var(--aha-soft);border-radius:6px}'
+        '.al-chain .hi{color:var(--aha);background:var(--aha-soft);border-radius:6px}',
+        '@media (max-width:420px){.al-chain{font-size:1rem;column-gap:.3rem}}'
     ].join('\n');
 
     if (!document.getElementById('ahamath-algebra-style')) {
@@ -262,7 +267,7 @@
         const H = 90;
         const top = 12;
         const left = 40;
-        const widths = parts.map(function (p) { return /[a-zA-Z]/.test(p) ? 170 : 64; });
+        const widths = parts.map(function (p) { return /[a-zA-Z]/.test(p) ? 160 : 84; });
         const total = widths.reduce(function (a, b) { return a + b; }, 0);
         const W = left + total + 16;
 
@@ -455,6 +460,60 @@
     document.querySelectorAll('.fx').forEach(function (el) {
         el.innerHTML = fracText(el.innerHTML);
     });
+
+    /* =========================================================================
+       5. 문자(변수) 기울이기
+          굵은 글씨에서 x 와 × 가 똑같아 보이므로, 본문의 영문자를 모두
+          <span class="v"> 로 감쌉니다. 시각 자료를 다시 그리거나 문항이 바뀌어도
+          MutationObserver 가 새로 생긴 글자를 다시 감쌉니다. cm · kg 같은 단위는 그대로 둡니다.
+       ========================================================================= */
+    const LETTER = /(cm|kg|km)|([A-Za-z])/g;
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    function wrapLetters(textNode) {
+        const text = textNode.nodeValue;
+        const parent = textNode.parentNode;
+        if (!parent || !/[A-Za-z]/.test(text)) { return; }
+        if (parent.closest('.v, script, style, .bi')) { return; }
+        const inSvg = !!parent.closest('svg');
+        if (inSvg && parent.nodeName.toLowerCase() !== 'text') { return; }
+
+        const frag = document.createDocumentFragment();
+        let last = 0;
+        text.replace(LETTER, function (m, unit, ch, at) {
+            if (unit) { return m; }
+            if (at > last) { frag.appendChild(document.createTextNode(text.slice(last, at))); }
+            const box = inSvg ? document.createElementNS(SVG_NS, 'tspan') : document.createElement('span');
+            box.setAttribute('class', 'v');
+            box.textContent = ch;
+            frag.appendChild(box);
+            last = at + 1;
+            return m;
+        });
+        if (last === 0) { return; }
+        if (last < text.length) { frag.appendChild(document.createTextNode(text.slice(last))); }
+        parent.replaceChild(frag, textNode);
+    }
+
+    function wrapAll(root) {
+        if (root.nodeType === 3) { wrapLetters(root); return; }
+        if (root.nodeType !== 1) { return; }
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const list = [];
+        while (walker.nextNode()) { list.push(walker.currentNode); }
+        list.forEach(wrapLetters);
+    }
+
+    const main = document.querySelector('main');
+    if (main) {
+        wrapAll(main);
+        new MutationObserver(function (records) {
+            records.forEach(function (r) {
+                r.addedNodes.forEach(wrapAll);
+                if (r.type === 'characterData') { wrapLetters(r.target); }
+            });
+        }).observe(main, { childList: true, subtree: true, characterData: true });
+    }
 
     global.AhaAlgebra = { fracText: fracText, fracHtml: fracHtml };
 

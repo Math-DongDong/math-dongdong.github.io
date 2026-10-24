@@ -70,6 +70,16 @@ pages/
 | `gcdlcm` | `1/gcdlcm.html` | 최대공약수와 최소공배수 | 5 / 3 |
 | `addsub` | `1/addsub.html` | 정수와 유리수의 덧셈과 뺄셈 | 5 / 3 |
 | `muldiv` | `1/muldiv.html` | 정수와 유리수의 곱셈과 나눗셈 | 5 / 3 |
+| `letter` | `1/letter.html` | 문자의 사용과 식의 값 | 5 / 3 |
+| `linearmuldiv` | `1/linearmuldiv.html` | 일차식과 수의 곱셈, 나눗셈 | 5 / 3 |
+| `linearaddsub` | `1/linearaddsub.html` | 일차식의 덧셈과 뺄셈 | 5 / 3 |
+| `equation` | `1/equation.html` | 등식과 방정식 | 5 / 3 |
+| `linearequation` | `1/linearequation.html` | 일차방정식의 풀이 | 5 / 3 |
+
+> 문자와 식 단원 5개 페이지는 `js/ahamath-algebra.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
+> 이 파일에 단원 전용 시각 자료 6종(`border` · `terms` · `tiles` · `area` · `balance` · `chain`)과
+> 문자 분수 표기(`AhaAlgebra.fracText('(x + 2)/3')`)가 들어 있고, 본문의 영문자를 기울인 글꼴로 바꿔 x 와 × 를 구별합니다.
+> 쓰는 법은 그 파일 맨 위 주석에 있습니다.
 
 > 줄기와 잎 그림은 따로 만들지 않고 `frequency.html` 의 도입부(개념 카드 1~4)에서 다룹니다.
 
