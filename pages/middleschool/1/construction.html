@@ -123,7 +123,7 @@
                 <div class="modal-body pb-0">
                     <p class="mb-0 fs-5" id="customModalMessage"></p>
                     <input type="text" class="form-control form-control-lg mt-3 text-center fw-bold d-none"
-                        id="customModalInput" maxlength="4" autocomplete="off">
+                        id="customModalInput" maxlength="4" autocomplete="off" autocapitalize="characters" lang="en">
                 </div>
                 <div class="modal-footer border-0 pt-3">
                     <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
@@ -917,9 +917,10 @@
         }
 
         async function renamePoint(point) {
-            const input = await showCustomModal('✏️ 점 이름 바꾸기', '새 이름을 입력하세요. (비우면 이름 없음)', { type: 'prompt', defaultValue: point.label });
+            const toPointLabel = value => value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+            const input = await showCustomModal('✏️ 점 이름 바꾸기', '새 이름을 영어 대문자로 입력하세요. (비우면 이름 없음)', { type: 'prompt', defaultValue: point.label, inputFilter: toPointLabel });
             if (input === null) return;
-            const newLabel = input.trim().slice(0, 4);
+            const newLabel = toPointLabel(input);
             if (newLabel === point.label) return;
             const duplicate = newLabel ? allObjects().find(o => o.kind === 'point' && o !== point && o.label === newLabel) : null;
             if (duplicate?.given) {
@@ -1350,7 +1351,8 @@
         });
 
         // type: 'alert' → true, 'confirm' → true/false, 'prompt' → 입력값/null
-        function openCustomModal(title, message, { type = 'alert', defaultValue = '' } = {}) {
+        // inputFilter: 입력값을 실시간으로 바꾸는 함수 (prompt 전용)
+        function openCustomModal(title, message, { type = 'alert', defaultValue = '', inputFilter = null } = {}) {
             return new Promise(resolve => {
                 const modal = bootstrap.Modal.getOrCreateInstance(customModalElement);
                 const input = document.getElementById('customModalInput');
@@ -1361,7 +1363,7 @@
                 document.getElementById('customModalTitle').textContent = title;
                 document.getElementById('customModalMessage').textContent = message;
                 input.classList.toggle('d-none', !isPrompt);
-                input.value = defaultValue;
+                input.value = inputFilter ? inputFilter(defaultValue) : defaultValue;
                 cancelButton.classList.toggle('d-none', type === 'alert');
 
                 // X 버튼·바깥 클릭·Esc로 닫으면 취소로 처리
@@ -1374,7 +1376,13 @@
                 };
                 const handleConfirm = () => close(isPrompt ? input.value : true);
                 const handleCancel = () => close(isPrompt ? null : false);
-                const handleEnter = event => { if (event.key === 'Enter') handleConfirm(); };
+                const handleEnter = event => { if (event.key === 'Enter' && !event.isComposing) handleConfirm(); };
+                // 한글 조합 중에는 건드리지 않고, 조합이 끝나면 걸러냄
+                const handleFilter = event => {
+                    if (!inputFilter || event.isComposing) return;
+                    const filtered = inputFilter(input.value);
+                    if (filtered !== input.value) input.value = filtered;
+                };
                 const handleShown = () => {
                     isFullyShown = true;
                     if (isClosePending) { modal.hide(); return; }
@@ -1384,6 +1392,8 @@
                     confirmButton.removeEventListener('click', handleConfirm);
                     cancelButton.removeEventListener('click', handleCancel);
                     input.removeEventListener('keydown', handleEnter);
+                    input.removeEventListener('input', handleFilter);
+                    input.removeEventListener('compositionend', handleFilter);
                     customModalElement.removeEventListener('shown.bs.modal', handleShown);
                     customModalElement.removeEventListener('hidden.bs.modal', handleHidden);
                     resolve(result);
@@ -1392,6 +1402,8 @@
                 confirmButton.addEventListener('click', handleConfirm);
                 cancelButton.addEventListener('click', handleCancel);
                 input.addEventListener('keydown', handleEnter);
+                input.addEventListener('input', handleFilter);
+                input.addEventListener('compositionend', handleFilter);
                 customModalElement.addEventListener('shown.bs.modal', handleShown);
                 customModalElement.addEventListener('hidden.bs.modal', handleHidden);
                 modal.show();

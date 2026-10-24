@@ -401,7 +401,8 @@
             return {
                 id: id,
                 flow: QUESTIONS[id].group,
-                label: QUESTIONS[id].title + '<br>' + (bestOf(id) === 'solved' ? '한 번에 맞히지 못했어요' : '아직 못 맞혔어요')
+                /* 제목 안의 <br>은 한 줄로 펴고, 반복되는 '한 번에 맞히지 못했어요'는 생략 */
+                label: QUESTIONS[id].title.replace(/<br\s*\/?>/gi, ' ') + (bestOf(id) === 'solved' ? '' : ' · 아직 못 맞혔어요')
             };
         });
     }
