@@ -151,21 +151,7 @@
                                 class="bi bi-arrows-move"></i></label>
                     </div>
 
-                    <!-- 도구별 세부 옵션 (도구 버튼 오른쪽) -->
-                    <div id="ruler-options" class="d-flex flex-wrap gap-2 align-items-center">
-                        <div class="btn-group" role="group" aria-label="자 종류">
-                            <input type="radio" class="btn-check" name="ruler-type" id="ruler-segment" value="segment"
-                                autocomplete="off" checked>
-                            <label class="btn btn-outline-primary" for="ruler-segment">선분</label>
-                            <input type="radio" class="btn-check" name="ruler-type" id="ruler-ray" value="ray"
-                                autocomplete="off">
-                            <label class="btn btn-outline-primary" for="ruler-ray">반직선</label>
-                            <input type="radio" class="btn-check" name="ruler-type" id="ruler-line" value="line"
-                                autocomplete="off">
-                            <label class="btn btn-outline-primary" for="ruler-line">직선</label>
-                        </div>
-                    </div>
-
+                    <!-- 컴퍼스 세부 옵션 (도구 버튼 오른쪽) -->
                     <div id="compass-options" class="d-none flex-wrap gap-2 align-items-center">
                         <button type="button" class="btn btn-outline-primary" id="btn-measure"><i
                                 class="bi bi-arrows-expand-vertical"></i> 두 점으로 벌리기</button>
@@ -253,7 +239,7 @@
                         <div class="collapse" id="usage-collapse">
                             <ul class="small bg-white border rounded p-3 ps-4 mb-0">
                                 <li><b>점</b>: 클릭하여 점을 찍어요. 교점이나 도형 근처를 클릭하면 정확히 달라붙어요. 이미 있는 점을 클릭하면 이름을 바꿀 수 있어요.</li>
-                                <li><b>자</b>: 두 점을 차례로 클릭(또는 드래그)하여 선분·반직선·직선을 그어요.</li>
+                                <li><b>자</b>: 두 점을 차례로 클릭(또는 드래그)하여 선분을 그어요.</li>
                                 <li><b>컴퍼스</b>: ① 바늘을 꽂을 중심 클릭 → ② 벌릴 점 클릭 → ③ 연필로 그리기 시작할 곳 클릭 → ④ 돌려서 끝낼 곳 클릭해요.
                                     (터치: ③에서 누른 채 돌린 뒤 손을 떼요)</li>
                                 <li><b>두 점으로 벌리기</b>: 다른 곳의 길이를 재어 옮길 때 사용해요. [벌린 길이 유지]가 켜져 있으면 중심만 클릭하면 돼요.</li>
@@ -287,7 +273,6 @@
         const FAR_DISTANCE = 1e5;
         const CHECK_LENGTH_EPS = 1e-2;
         const CHECK_ANGLE_EPS = 1e-4;
-        const LINE_TYPE_NAMES = { segment: '선분', ray: '반직선', line: '직선' };
         const COLORS = {
             given: '#0f172a',
             userLine: '#2563eb',
@@ -375,10 +360,12 @@
         }
 
         // 크기가 같은 각의 작도 (steps: 5개 동작 묶음의 작도 단계 번호, 숫자 하나면 모두 같은 단계)
-        function demoAngleCopy(steps, givenVertex, givenDegrees, target, baseDegrees, turnDegrees, radius, labels = []) {
+        // sideLength: 마지막에 긋는 각의 변(선분) 길이 (기본값은 교점까지)
+        function demoAngleCopy(steps, givenVertex, givenDegrees, target, baseDegrees, turnDegrees, radius, labels = [], sideLength = radius) {
             const stepOf = index => Array.isArray(steps) ? steps[index] : steps;
             const givenStart = polarPoint(givenVertex, 0, radius), givenEnd = polarPoint(givenVertex, givenDegrees, radius);
             const targetStart = polarPoint(target, baseDegrees, radius), targetEnd = polarPoint(target, baseDegrees + turnDegrees, radius);
+            const lineEnd = polarPoint(target, baseDegrees + turnDegrees, sideLength);
             return [
                 demoArcBetween(stepOf(0), givenVertex, radius, 0, givenDegrees),
                 demoPoint(stepOf(0), givenStart, labels[0]), demoPoint(stepOf(0), givenEnd, labels[1]),
@@ -387,7 +374,7 @@
                 demoMeasure(stepOf(2), givenStart, givenEnd),
                 demoArcAround(stepOf(3), targetStart, dist(givenStart, givenEnd), targetEnd),
                 demoPoint(stepOf(3), targetEnd, labels[3]),
-                demoLine(stepOf(4), 'ray', target, targetEnd)
+                demoLine(stepOf(4), 'segment', target, lineEnd)
             ];
         }
 
@@ -434,13 +421,13 @@
             angleCopy: {
                 group: '기본 도형의 작도',
                 title: '크기가 같은 각의 작도',
-                description: '반직선 PQ를 한 변으로 하여 ∠XOY와 크기가 같은 ∠DPQ를 작도하세요. 반직선 PD를 그으면 완성! (점 도구로 점을 클릭하면 이름을 바꿀 수 있어요)',
+                description: '반직선 PQ를 한 변으로 하여 ∠XOY와 크기가 같은 ∠DPQ를 작도하세요. 선분 PD를 그으면 완성! (점 도구로 점을 클릭하면 이름을 바꿀 수 있어요)',
                 steps: [
                     '점 O를 중심으로 원의 일부를 그려 변 OX, OY와 만나는 두 교점을 A, B라 합니다.',
                     '[벌린 길이 유지]를 켠 채로 점 P를 중심으로 같은 반지름으로 원의 일부를 크게 그려, 반직선 PQ와 만나는 교점을 C라 합니다.',
                     '[두 점으로 벌리기]로 두 점 A, B 사이의 거리를 잽니다.',
                     '점 C를 중심으로 반지름이 AB인 원의 일부를 그려, 2에서 그린 원의 일부와 만나는 교점을 D라 합니다.',
-                    '자 도구의 [반직선]으로 반직선 PD를 그으면 ∠DPQ = ∠XOY입니다.'
+                    '자 도구로 선분 PD를 그으면 ∠DPQ = ∠XOY입니다.'
                 ],
                 O: { x: 110, y: 300 }, angleDegrees: 48, P: { x: 500, y: 520 }, Q: { x: 760, y: 520 },
                 build() {
@@ -465,19 +452,19 @@
                         && getUserObjects('line').some(line => isOnLine(this.P, line) && isOnLine(point, line)));
                     if (candidates.some(point => point.label === 'D')) return { success: true, message: '🎉 정답! ∠XOY와 크기가 같은 ∠DPQ를 정확히 작도했어요.' };
                     if (candidates.length) return { success: false, message: '반직선의 방향은 맞지만 그 위의 점 이름이 D가 아니에요. 점 도구로 그 점을 클릭해 이름을 D로 바꿔 주세요.' };
-                    return { success: false, message: '점 P에서 시작하여 ∠XOY와 같은 크기의 각을 이루는 반직선 PD가 아직 없어요. 작도 시연을 참고해 교점을 정확히 이용해 보세요.' };
+                    return { success: false, message: '점 P에서 시작하여 ∠XOY와 같은 크기의 각을 이루는 선분 PD가 아직 없어요. 작도 시연을 참고해 교점을 정확히 이용해 보세요.' };
                 }
             },
 
             triangleSSS: {
                 group: '삼각형의 작도',
                 title: '세 변의 길이가 주어질 때',
-                description: '세 변의 길이 a, b, c가 주어질 때 BC = a, CA = b, AB = c인 △ABC를 작도하세요. 꼭짓점의 이름도 A, B, C로 맞추고, 자 도구의 [선분]으로 세 꼭짓점을 이어야 완성!',
+                description: '세 변의 길이 a, b, c가 주어질 때 BC = a, CA = b, AB = c인 △ABC를 작도하세요. 꼭짓점의 이름도 A, B, C로 맞추고, 자 도구로 세 꼭짓점을 이어야 완성!',
                 steps: [
-                    '자 도구의 [직선]으로 직선을 하나 긋고, 점 도구로 직선 위에 한 점(B)을 찍습니다.',
+                    '자 도구로 선분을 하나 길게 긋고, 점 도구로 그 위에 한 점(B)을 찍습니다.',
                     '[두 점으로 벌리기]로 a의 양 끝을 클릭해 길이 a를 잰 다음, 점 B를 중심으로 원의 일부를 그려 직선과의 교점(C)을 찍습니다.',
                     '길이 c를 재어 점 B를 중심으로, 길이 b를 재어 점 C를 중심으로 원의 일부를 그리고, 두 원의 일부가 만나는 교점(A)을 찾습니다.',
-                    '자 도구의 [선분]으로 AB, BC, CA를 그어 삼각형을 완성합니다.'
+                    '자 도구로 선분 AB, BC, CA를 그어 삼각형을 완성합니다.'
                 ],
                 lengths: { a: 260, b: 200, c: 170 },
                 build() {
@@ -492,7 +479,7 @@
                     const B = { x: 500, y: 470 }, C = { x: 500 + a, y: 470 };
                     const A = upperCircleIntersection(B, c, C, b);
                     return [
-                        demoLine(0, 'line', { x: 420, y: 470 }, { x: 960, y: 470 }), demoPoint(0, B, 'B'),
+                        demoLine(0, 'segment', { x: 420, y: 470 }, { x: 960, y: 470 }), demoPoint(0, B, 'B'),
                         demoMeasure(1, { x: 70, y: 70 }, { x: 70 + a, y: 70 }), demoArcAround(1, B, a, C), demoPoint(1, C, 'C'),
                         demoMeasure(2, { x: 70, y: 190 }, { x: 70 + c, y: 190 }), demoArcAround(2, B, c, A),
                         demoMeasure(2, { x: 70, y: 130 }, { x: 70 + b, y: 130 }), demoArcAround(2, C, b, A), demoPoint(2, A, 'A'),
@@ -511,10 +498,10 @@
                 title: '두 변의 길이와 그 끼인각이 주어질 때',
                 description: '두 변의 길이 b, c와 그 끼인각 ∠A가 주어질 때 AC = b, AB = c인 △ABC를 작도하세요. 꼭짓점의 이름도 A, B, C로 맞춰야 정답이에요.',
                 steps: [
-                    '자 도구로 직선을 긋고, 점 도구로 그 위에 점 A를 찍습니다.',
+                    '자 도구로 선분을 하나 길게 긋고, 점 도구로 그 위에 점 A를 찍습니다.',
                     '크기가 같은 각의 작도 방법으로 점 A에 ∠A와 크기가 같은 각을 작도합니다.',
                     '길이 c를 재어 한 변 위에 점 B를, 길이 b를 재어 다른 변 위에 점 C를 찍습니다.',
-                    '자 도구의 [선분]으로 AB, BC, CA를 그어 삼각형을 완성합니다.'
+                    '자 도구로 선분 AB, BC, CA를 그어 삼각형을 완성합니다.'
                 ],
                 lengths: { b: 230, c: 180 }, angleDegrees: 55, angleVertex: { x: 90, y: 330 },
                 build() {
@@ -529,8 +516,8 @@
                     const A = { x: 500, y: 480 };
                     const B = polarPoint(A, 0, c), C = polarPoint(A, this.angleDegrees, b);
                     return [
-                        demoLine(0, 'line', { x: 420, y: 480 }, { x: 960, y: 480 }), demoPoint(0, A, 'A'),
-                        ...demoAngleCopy(1, this.angleVertex, this.angleDegrees, A, 0, this.angleDegrees, 80),
+                        demoLine(0, 'segment', { x: 420, y: 480 }, { x: 960, y: 480 }), demoPoint(0, A, 'A'),
+                        ...demoAngleCopy(1, this.angleVertex, this.angleDegrees, A, 0, this.angleDegrees, 80, [], b + 50),
                         demoMeasure(2, { x: 70, y: 130 }, { x: 70 + c, y: 130 }), demoArcAround(2, A, c, B), demoPoint(2, B, 'B'),
                         demoMeasure(2, { x: 70, y: 70 }, { x: 70 + b, y: 70 }), demoArcAround(2, A, b, C, 0.25), demoPoint(2, C, 'C'),
                         ...demoTriangleSides(3, A, B, C)
@@ -550,10 +537,10 @@
                 title: '한 변의 길이와 양 끝 각이 주어질 때',
                 description: '한 변의 길이 a와 그 양 끝 각 ∠B, ∠C가 주어질 때 BC = a인 △ABC를 작도하세요. 꼭짓점의 이름도 A, B, C로 맞춰야 정답이에요.',
                 steps: [
-                    '자 도구로 직선을 긋고 그 위에 점 B를 찍은 다음, 길이 a를 옮겨 점 C를 찍습니다.',
-                    '점 B에 ∠B, 점 C에 ∠C와 크기가 같은 각을 각각 작도합니다. (두 각은 직선의 같은 쪽에!)',
+                    '자 도구로 선분을 하나 길게 긋고 그 위에 점 B를 찍은 다음, 길이 a를 옮겨 점 C를 찍습니다.',
+                    '점 B에 ∠B, 점 C에 ∠C와 크기가 같은 각을 각각 작도합니다. (두 각은 선분의 같은 쪽에! 각의 변은 서로 만나도록 길게 그어요)',
                     '두 각의 변이 만나는 교점을 점 A로 찍습니다.',
-                    '자 도구의 [선분]으로 AB, BC, CA를 그어 삼각형을 완성합니다.'
+                    '자 도구로 선분 AB, BC, CA를 그어 삼각형을 완성합니다.'
                 ],
                 length: 250, angleB: 50, angleC: 65, vertexB: { x: 90, y: 290 }, vertexC: { x: 90, y: 480 },
                 build() {
@@ -569,10 +556,10 @@
                         { lineType: 'ray', p1: B, p2: polarPoint(B, this.angleB, 1) },
                         { lineType: 'ray', p1: C, p2: polarPoint(C, 180 - this.angleC, 1) })[0];
                     return [
-                        demoLine(0, 'line', { x: 400, y: 500 }, { x: 960, y: 500 }), demoPoint(0, B, 'B'),
+                        demoLine(0, 'segment', { x: 400, y: 500 }, { x: 960, y: 500 }), demoPoint(0, B, 'B'),
                         demoMeasure(0, { x: 70, y: 70 }, { x: 70 + this.length, y: 70 }), demoArcAround(0, B, this.length, C), demoPoint(0, C, 'C'),
-                        ...demoAngleCopy(1, this.vertexB, this.angleB, B, 0, this.angleB, 80),
-                        ...demoAngleCopy(1, this.vertexC, this.angleC, C, 180, -this.angleC, 80),
+                        ...demoAngleCopy(1, this.vertexB, this.angleB, B, 0, this.angleB, 80, [], dist(B, A) + 50),
+                        ...demoAngleCopy(1, this.vertexC, this.angleC, C, 180, -this.angleC, 80, [], dist(C, A) + 50),
                         demoPoint(2, A, 'A'),
                         ...demoTriangleSides(3, A, B, C)
                     ];
@@ -603,7 +590,7 @@
         // 꼭짓점 이름(A, B, C)까지 맞는 삼각형이 있는지 판정 (isMatch: 이름 붙은 꼭짓점으로 조건 확인)
         function checkTriangle(isMatch, conditionText) {
             const triangles = findUserTriangles();
-            if (!triangles.length) return { success: false, message: '아직 선분 세 개로 이루어진 삼각형이 없어요. 마지막에 자 도구의 [선분]으로 세 꼭짓점을 이어 주세요.' };
+            if (!triangles.length) return { success: false, message: '아직 선분 세 개로 이루어진 삼각형이 없어요. 마지막에 자 도구로 세 꼭짓점을 이어 주세요.' };
             const isSolved = triangles.some(vertices => {
                 const namedVertices = nameTriangleVertices(vertices);
                 return namedVertices && isMatch(namedVertices);
@@ -637,7 +624,6 @@
             undoStack: [],
             redoStack: [],
             activeTool: 'ruler',
-            rulerType: 'segment',
             showGhost: false
         };
         const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null };
@@ -982,9 +968,9 @@
             if (dist(startSnap, endSnap) * view.scale < 3) return;
             pushHistory();
             const p1 = ensurePointAt(startSnap), p2 = ensurePointAt(endSnap);
-            const line = createLine(state.rulerType, p1, p2);
+            const line = createLine('segment', p1, p2);
             state.userObjects.push(line);
-            addLog(line.id, `자: ${LINE_TYPE_NAMES[line.lineType]} ${p1.label}${p2.label} 긋기`);
+            addLog(line.id, `자: 선분 ${p1.label}${p2.label} 긋기`);
             geometryChanged();
         }
 
@@ -1241,7 +1227,7 @@
             if (state.activeTool === 'ruler' && rulerState.start && hover) {
                 drawRulerBand(rulerState.start, hover);
                 if (dist(rulerState.start, hover) > 1e-6) {
-                    drawLine({ lineType: state.rulerType, p1: rulerState.start, p2: hover }, COLORS.preview, 1.5, [6, 4]);
+                    drawLine({ lineType: 'segment', p1: rulerState.start, p2: hover }, COLORS.preview, 1.5, [6, 4]);
                 }
                 return;
             }
@@ -1347,7 +1333,7 @@
             const c = compassState;
             const messages = {
                 point: '클릭하여 점을 찍어요. 이미 있는 점을 클릭하면 이름을 바꿀 수 있어요.',
-                ruler: rulerState.start ? '끝점을 클릭하세요. (Esc: 취소)' : `시작점을 클릭하세요. 두 점을 이어 ${LINE_TYPE_NAMES[state.rulerType]}을 그어요.`,
+                ruler: rulerState.start ? '끝점을 클릭하세요. (Esc: 취소)' : '시작점을 클릭하세요. 두 점을 이어 선분을 그어요.',
                 eraser: '지울 도형을 클릭하세요. (주어진 도형은 지울 수 없어요)',
                 pan: '드래그하여 화면을 이동해요. 마우스 휠이나 오른쪽 아래 버튼으로 확대·축소할 수 있어요.'
             };
@@ -1463,8 +1449,6 @@
             state.activeTool = tool;
             document.getElementById(`tool-${tool}`).checked = true;
             resetToolState();
-            document.getElementById('ruler-options').classList.toggle('d-none', tool !== 'ruler');
-            document.getElementById('ruler-options').classList.toggle('d-flex', tool === 'ruler');
             document.getElementById('compass-options').classList.toggle('d-none', tool !== 'compass');
             document.getElementById('compass-options').classList.toggle('d-flex', tool === 'compass');
             canvas.style.cursor = tool === 'pan' ? 'grab' : (tool === 'eraser' ? 'pointer' : 'crosshair');
@@ -1775,9 +1759,6 @@
             input.addEventListener('change', () => setActiveTool(input.value));
         });
 
-        document.querySelectorAll('input[name="ruler-type"]').forEach(input => {
-            input.addEventListener('change', () => { state.rulerType = input.value; updateStatus(); render(); });
-        });
 
         document.getElementById('btn-measure').addEventListener('click', () => {
             resetToolState();
