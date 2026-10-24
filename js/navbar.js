@@ -10,7 +10,7 @@
             "menu": [
                 {
                     "title": "아하! 수학",
-                    "path": "pages/middleschool/index.html"
+                    "path": "pages/middleschool/ahamath.html"
                 },
                 {
                     "title": "중1 수학",
@@ -247,7 +247,7 @@
             if (cleanLinkHref && (
                 normalizedPath.endsWith(cleanLinkHref) ||
                 (cleanLinkHref.endsWith('index.html') && normalizedPath.endsWith(cleanLinkHref.replace('index.html', ''))) ||
-                (cleanLinkHref === 'pages/middleschool/index.html' && normalizedPath.includes('/pages/middleschool/ahamath/'))
+                (cleanLinkHref === 'pages/middleschool/ahamath.html' && normalizedPath.includes('/pages/middleschool/ahamath/'))
             )) {
                 link.classList.add('active');
             }

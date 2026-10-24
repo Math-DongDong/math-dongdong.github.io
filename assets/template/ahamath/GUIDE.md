@@ -26,7 +26,7 @@ assets/
 
 pages/
 └── middleschool/
-     ├── index.html                    ← 메인(주제 목록). 여기에 주제를 등록합니다
+     ├── ahamath.html                  ← 메인(주제 목록). 여기에 주제를 등록합니다
      └── ahamath/
           └── 1/
                ├── coordinate.html       ← 순서쌍과 좌표
@@ -90,7 +90,7 @@ pages/
 
 ### ③ 메인에 등록
 
-`pages/middleschool/index.html` 의 `TOPICS` 배열에 항목을 추가합니다.
+`pages/middleschool/ahamath.html` 의 `TOPICS` 배열에 항목을 추가합니다.
 
 ```js
 {
@@ -629,7 +629,7 @@ ahamath.{topicId}.v1
 // js/ahamath.js
 function firstTryCount(ids) { return ids.filter(function (id) { return bestOf(id) === 'firstTry'; }).length; }
 
-// pages/middleschool/index.html
+// pages/middleschool/ahamath.html
 function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 ```
 
@@ -742,7 +742,7 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 9. 어조는 다정한 존댓말 구어체, 한자식 용어는 쉬운 말로 풀어 쓸 것
    화면 조작(스크롤·다시 보기)을 설명하는 문장은 넣지 말 것
    용어가 애매하면 기호를 그대로 쓸 것 (`부호는 방향` → `+ 와 - 는 방향`)
-10. 마지막에 index.html 의 TOPICS 에 넣을 항목을
+10. 마지막에 ahamath.html 의 TOPICS 에 넣을 항목을
     basicTotal / challengeTotal 까지 채워서 함께 제시할 것
 11. 작업 전에 [구현 계획]을 짧은 불릿으로 먼저 제시할 것
 
@@ -751,9 +751,9 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 추가할까요?" 형식으로 질문해 주세요.
 ```
 
-새 페이지를 만든 뒤에는 `index.html`의 `href`가 `./ahamath/1/[파일명].html`인지,
+새 페이지를 만든 뒤에는 `ahamath.html`의 `href`가 `./ahamath/1/[파일명].html`인지,
 공통 파일 경로가 `../../../../css/ahamath.css` · `../../../../js/ahamath.js`인지 확인하세요.
-목록으로 돌아가는 경로(`../../index.html`)는 `js/ahamath.js` 가 알아서 처리합니다.
+목록으로 돌아가는 경로(`../../ahamath.html`)는 `js/ahamath.js` 가 알아서 처리합니다.
 
 ---
 

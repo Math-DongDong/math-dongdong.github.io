@@ -6,7 +6,7 @@
      <script src="../../../../js/ahamath.js"></script>
      <script>
          AhaMath.start({
-             topicId: 'coordinate',      // 메인 index.html 의 TOPICS id 와 같게
+             topicId: 'coordinate',      // ahamath.html 의 TOPICS id 와 같게
              recordVersion: 1,           // 문항 구성이 바뀌면 숫자를 올려요
              questions: { q1: { ... } }  // 기초 q1~, 도전 x1~
          });
@@ -34,7 +34,7 @@
     let TOPIC_ID = '';
     let RECORD_VERSION = 1;
     let STORAGE_KEY = '';
-    let LIST_HREF = '../../index.html';   // 주제 목록(메인) 경로
+    let LIST_HREF = '../../ahamath.html';   // 주제 목록(메인) 경로
     let QUESTIONS = {};
     let FLOW = null;
     let ALL_IDS = [];
