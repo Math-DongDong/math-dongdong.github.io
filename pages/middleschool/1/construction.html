@@ -90,6 +90,19 @@
             text-decoration: overline;
         }
 
+        .answer-canvas-wrapper {
+            position: relative;
+            height: 60vh;
+            min-height: 320px;
+        }
+
+        #answer-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
         .compass-choice {
             position: absolute;
             z-index: 5;
@@ -129,6 +142,27 @@
                     <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
                         id="customModalCancel">취소</button>
                     <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 정답 보기 모달 (정답 작도를 흔적과 함께 표시) -->
+    <div class="modal fade" id="answerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">📐 정답 작도</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="answer-canvas-wrapper border rounded-3">
+                        <canvas id="answer-canvas"></canvas>
+                    </div>
+                    <ol class="small text-secondary mt-3 mb-0 ps-4" id="answer-steps"></ol>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-primary rounded-3 px-4" data-bs-dismiss="modal">닫기</button>
                 </div>
             </div>
         </div>
@@ -202,6 +236,8 @@
                                     class="bi bi-play-circle"></i> 작도 시연 보기</button>
                             <button type="button" class="btn btn-primary" id="btn-check"><i
                                     class="bi bi-check2-circle"></i> 정답 확인</button>
+                            <button type="button" class="btn btn-outline-success" id="btn-answer"><i
+                                    class="bi bi-eye"></i> 정답 보기</button>
                         </div>
 
                         <div class="btn-group" role="group" aria-label="편집">
@@ -223,7 +259,7 @@
                             <button type="button" class="btn btn-outline-dark" id="btn-demo-prev" title="이전 단계"><i
                                     class="bi bi-skip-start-fill"></i></button>
                             <button type="button" class="btn btn-outline-dark" id="btn-demo-play" title="재생 / 일시정지"><i
-                                    class="bi bi-pause-fill"></i></button>
+                                    class="bi bi-play-fill pe-none" id="demo-play-icon"></i></button>
                             <button type="button" class="btn btn-outline-dark" id="btn-demo-next" title="다음 단계"><i
                                     class="bi bi-skip-end-fill"></i></button>
                         </div>
@@ -240,6 +276,12 @@
             </div>
 
             <!-- 컴퍼스 중심 옆에 뜨는 선택 버튼 -->
+            <!-- 자로 두 점을 찍은 뒤 끝점 옆에 뜨는 선택 버튼 -->
+            <div id="ruler-choice" class="compass-choice d-none d-flex flex-column gap-1">
+                <button type="button" class="btn btn-sm btn-primary shadow-sm" id="btn-draw-segment">선분 긋기</button>
+                <button type="button" class="btn btn-sm btn-light border shadow-sm" id="btn-draw-ray">반직선 긋기</button>
+            </div>
+
             <div id="compass-choice" class="compass-choice d-none d-flex flex-column gap-1">
                 <button type="button" class="btn btn-sm btn-primary shadow-sm" id="btn-keep-radius">벌린 간격 유지</button>
                 <button type="button" class="btn btn-sm btn-light border shadow-sm" id="btn-adjust-radius">벌린 간격 조절</button>
@@ -270,7 +312,6 @@
             userLine: '#2563eb',
             arc: '#f97316',
             userPoint: '#dc2626',
-            intersection: '#94a3b8',
             snap: '#2563eb',
             preview: '#64748b',
             erase: '#ef4444'
@@ -328,7 +369,8 @@
                 createPoint(vertex, '', true),
                 createPoint(armEnd1, '', true),
                 createPoint(armEnd2, '', true),
-                createText({ x: vertex.x - 38, y: vertex.y + 6 }, label)
+                // 각 이름은 꼭짓점 왼쪽에 붙여 표시 (화면 크기와 관계없이 꼭짓점과 일정 간격)
+                { ...createText({ x: vertex.x, y: vertex.y + 6 }, label), alignRightOf: true }
             ];
         }
 
@@ -352,8 +394,8 @@
         }
 
         // 크기가 같은 각의 작도 (steps: 5개 동작 묶음의 작도 단계 번호, 숫자 하나면 모두 같은 단계)
-        // sideLength: 마지막에 긋는 각의 변(선분) 길이 (기본값은 교점까지)
-        function demoAngleCopy(steps, givenVertex, givenDegrees, target, baseDegrees, turnDegrees, radius, labels = [], sideLength = radius) {
+        // sideLength: 마지막에 긋는 각의 변 길이 (기본값은 교점까지), lineType: 그 변의 종류 (선분 / 반직선)
+        function demoAngleCopy(steps, givenVertex, givenDegrees, target, baseDegrees, turnDegrees, radius, labels = [], sideLength = radius, lineType = 'segment') {
             const stepOf = index => Array.isArray(steps) ? steps[index] : steps;
             const givenStart = polarPoint(givenVertex, 0, radius), givenEnd = polarPoint(givenVertex, givenDegrees, radius);
             const targetStart = polarPoint(target, baseDegrees, radius), targetEnd = polarPoint(target, baseDegrees + turnDegrees, radius);
@@ -366,7 +408,7 @@
                 demoMeasure(stepOf(2), givenStart, givenEnd),
                 demoArcAround(stepOf(3), targetStart, dist(givenStart, givenEnd), targetEnd),
                 demoPoint(stepOf(3), targetEnd, labels[3]),
-                demoLine(stepOf(4), 'segment', target, lineEnd)
+                demoLine(stepOf(4), lineType, target, lineEnd)
             ];
         }
 
@@ -422,7 +464,7 @@
                     '점 P를 중심으로 [벌린 간격 유지]를 선택해 같은 반지름으로 원의 일부를 크게 그리고, 반직선 PQ와 만나는 교점을 C라 합니다.',
                     `점 A에서 [벌린 간격 조절]을 선택하고 점 B를 클릭해 컴퍼스를 ${seg('AB')}만큼 벌린 뒤, [그리지 않기]를 누릅니다.`,
                     `점 C를 중심으로 반지름이 ${seg('AB')}인 원의 일부를 그려, 2에서 그린 원의 일부와 만나는 교점을 D라 합니다.`,
-                    '자 도구로 선분 PD를 그으면 ∠DPQ = ∠XOY입니다.'
+                    '자 도구의 [반직선 긋기]로 반직선 PD를 그으면 ∠DPQ = ∠XOY입니다.'
                 ],
                 O: { x: 110, y: 300 }, angleDegrees: 48, P: { x: 500, y: 520 }, Q: { x: 760, y: 520 },
                 build() {
@@ -435,7 +477,7 @@
                     ];
                 },
                 demo() {
-                    return demoAngleCopy([0, 1, 2, 3, 4], this.O, this.angleDegrees, this.P, 0, this.angleDegrees, 150, ['A', 'B', 'C', 'D']);
+                    return demoAngleCopy([0, 1, 2, 3, 4], this.O, this.angleDegrees, this.P, 0, this.angleDegrees, 150, ['A', 'B', 'C', 'D'], 150, 'ray');
                 },
                 check() {
                     const targetAngle = this.angleDegrees * Math.PI / 180;
@@ -447,7 +489,7 @@
                         && getUserObjects('line').some(line => isOnLine(this.P, line) && isOnLine(point, line)));
                     if (candidates.some(point => point.label === 'D')) return { success: true, message: '🎉 정답! ∠XOY와 크기가 같은 ∠DPQ를 정확히 작도했어요.' };
                     if (candidates.length) return { success: false, message: '반직선의 방향은 맞지만 그 위의 점 이름이 D가 아니에요. 점 도구로 그 점을 클릭해 이름을 D로 바꿔 주세요.' };
-                    return { success: false, message: '점 P에서 시작하여 ∠XOY와 같은 크기의 각을 이루는 선분 PD가 아직 없어요. 작도 시연을 참고해 교점을 정확히 이용해 보세요.' };
+                    return { success: false, message: '점 P에서 시작하여 ∠XOY와 같은 크기의 각을 이루는 반직선 PD가 아직 없어요. 작도 시연을 참고해 교점을 정확히 이용해 보세요.' };
                 }
             },
 
@@ -585,7 +627,7 @@
         // 꼭짓점 이름(A, B, C)까지 맞는 삼각형이 있는지 판정 (isMatch: 이름 붙은 꼭짓점으로 조건 확인)
         function checkTriangle(isMatch, conditionText) {
             const triangles = findUserTriangles();
-            if (!triangles.length) return { success: false, message: '아직 선분 세 개로 이루어진 삼각형이 없어요. 마지막에 자 도구로 세 꼭짓점을 이어 주세요.' };
+            if (!triangles.length) return { success: false, message: '아직 삼각형이 완성되지 않았어요. 자 도구로 세 꼭짓점을 선분으로 이어 주세요.' };
             const isSolved = triangles.some(vertices => {
                 const namedVertices = nameTriangleVertices(vertices);
                 return namedVertices && isMatch(namedVertices);
@@ -622,7 +664,8 @@
         const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null };
         const view = { scale: 1, offsetX: 0, offsetY: 0 };
         const pointer = { isDown: false, downScreen: null, moved: false, type: 'mouse', hoverScreen: null, hoverSnap: null, hoverErase: null };
-        const rulerState = { start: null, justStarted: false };
+        // end: 두 번째 점을 찍어 [선분 / 반직선] 선택을 기다리는 중이면 그 끝점
+        const rulerState = { start: null, end: null, justStarted: false };
         const compassState = {
             stage: 'measure1', centerSnap: null, radius: null,
             startAngle: null, lastAngle: null, sweep: 0, sweepPressed: false, startedOnPress: false, justStarted: false, measureSnap: null
@@ -632,14 +675,17 @@
 
         // ===== DOM =====
         const canvas = document.getElementById('construction-canvas');
-        const ctx = canvas.getContext('2d');
+        // 정답 보기 모달에 그릴 때 잠시 대상 캔버스를 바꾸므로 let
+        let ctx = canvas.getContext('2d');
         const missionSelect = document.getElementById('mission-select');
         const statusText = document.getElementById('status-text');
         const compassChoice = document.getElementById('compass-choice');
+        const rulerChoice = document.getElementById('ruler-choice');
         const checkButton = document.getElementById('btn-check');
         const checkToast = document.getElementById('check-toast');
         const demoButton = document.getElementById('btn-demo');
         const demoPlayButton = document.getElementById('btn-demo-play');
+        const demoPlayIcon = document.getElementById('demo-play-icon');
         const demoCaption = document.getElementById('demo-caption');
 
         const allObjects = () => state.givenObjects.concat(state.userObjects);
@@ -769,26 +815,25 @@
         }
 
         // ===== 삼각형 판별 =====
+        // 세 점을 꼭짓점으로 하는 삼각형 찾기
+        // 두 꼭짓점이 이미 그어진 선분 하나 위에 함께 있으면(긴 선분 안의 일부) 그 변도 그어진 것으로 봄
         function findUserTriangles() {
-            const segments = getUserObjects('line').filter(line => line.lineType === 'segment');
+            const segments = getUserObjects('line');
+            const vertices = [];
+            getUserObjects('point').forEach(point => {
+                if (!vertices.some(v => dist(v, point) < CHECK_LENGTH_EPS)) vertices.push(point);
+            });
+            const isOnSegment = (p, segment) => distanceToLineObject(p, segment) < CHECK_LENGTH_EPS;
+            const isConnected = vertices.map(p => vertices.map(q =>
+                p !== q && segments.some(segment => isOnSegment(p, segment) && isOnSegment(q, segment))));
             const triangles = [];
-            for (let i = 0; i < segments.length; i++) {
-                for (let j = i + 1; j < segments.length; j++) {
-                    for (let k = j + 1; k < segments.length; k++) {
-                        const sides = [segments[i], segments[j], segments[k]];
-                        const vertices = [];
-                        sides.flatMap(side => [side.p1, side.p2]).forEach(end => {
-                            if (!vertices.some(v => dist(v, end) < CHECK_LENGTH_EPS)) vertices.push(end);
-                        });
-                        if (vertices.length !== 3) continue;
-                        const pairKeys = new Set(sides.map(side => {
-                            const a = vertices.findIndex(v => dist(v, side.p1) < CHECK_LENGTH_EPS);
-                            const b = vertices.findIndex(v => dist(v, side.p2) < CHECK_LENGTH_EPS);
-                            return a === b ? 'degenerate' : `${Math.min(a, b)}-${Math.max(a, b)}`;
-                        }));
-                        if (pairKeys.has('degenerate') || pairKeys.size !== 3) continue;
-                        if (Math.abs(cross(sub(vertices[1], vertices[0]), sub(vertices[2], vertices[0]))) < 1) continue;
-                        triangles.push(vertices);
+            for (let i = 0; i < vertices.length; i++) {
+                for (let j = i + 1; j < vertices.length; j++) {
+                    if (!isConnected[i][j]) continue;
+                    for (let k = j + 1; k < vertices.length; k++) {
+                        if (!isConnected[i][k] || !isConnected[j][k]) continue;
+                        if (Math.abs(cross(sub(vertices[j], vertices[i]), sub(vertices[k], vertices[i]))) < 1) continue;
+                        triangles.push([vertices[i], vertices[j], vertices[k]]);
                     }
                 }
             }
@@ -899,6 +944,7 @@
         // ===== 도구 동작 =====
         function resetToolState() {
             rulerState.start = null;
+            rulerState.end = null;
             Object.assign(compassState, {
                 // 벌린 간격(radius)은 기억, 아직 벌리지 않았다면 두 점 재기부터
                 stage: compassState.radius ? 'center' : 'measure1', centerSnap: null, startAngle: null, lastAngle: null,
@@ -940,11 +986,11 @@
             geometryChanged();
         }
 
-        function commitRulerLine(startSnap, endSnap) {
-            if (dist(startSnap, endSnap) * view.scale < 3) return;
+        // lineType: 'segment'(선분) 또는 'ray'(첫 점에서 시작해 두 번째 점 쪽으로 뻗는 반직선)
+        function commitRulerLine(startSnap, endSnap, lineType) {
             pushHistory();
             const p1 = ensurePointAt(startSnap), p2 = ensurePointAt(endSnap);
-            const line = createLine('segment', p1, p2);
+            const line = createLine(lineType, p1, p2);
             state.userObjects.push(line);
             geometryChanged();
         }
@@ -1031,8 +1077,10 @@
         function handlePress() {
             switch (state.activeTool) {
                 case 'ruler':
-                    if (!rulerState.start) {
+                    if (!rulerState.start || rulerState.end) {
+                        // 처음 시작하거나, 선택 버튼이 떠 있을 때 다른 곳을 누르면 그 점에서 새로 시작
                         rulerState.start = pointer.hoverSnap;
+                        rulerState.end = null;
                         rulerState.justStarted = true;
                     } else {
                         rulerState.justStarted = false;
@@ -1056,10 +1104,9 @@
                     }
                     break;
                 case 'ruler': {
-                    if (!rulerState.start || (rulerState.justStarted && !pointer.moved)) break;
-                    const startSnap = rulerState.start;
-                    rulerState.start = null;
-                    commitRulerLine(startSnap, pointer.hoverSnap);
+                    if (!rulerState.start || rulerState.end || (rulerState.justStarted && !pointer.moved)) break;
+                    if (dist(rulerState.start, pointer.hoverSnap) * view.scale < 3) { rulerState.start = null; break; }
+                    rulerState.end = pointer.hoverSnap;
                     break;
                 }
                 case 'compass':
@@ -1114,10 +1161,10 @@
             ctx.restore();
         }
 
-        function drawPoint(point, color = point.given ? COLORS.given : COLORS.userPoint, labelColor = '#0f172a') {
+        function drawPoint(point) {
             const p = worldToScreen(point);
             ctx.save();
-            ctx.fillStyle = color;
+            ctx.fillStyle = point.given ? COLORS.given : COLORS.userPoint;
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 1.5;
             ctx.beginPath();
@@ -1125,7 +1172,107 @@
             ctx.fill();
             ctx.stroke();
             ctx.restore();
-            if (point.label) drawLabel(point.label, p.x + 7, p.y - 8, "700 15px 'Pretendard Variable', sans-serif", labelColor);
+        }
+
+        // ===== 점 이름 자동 배치 (선·원의 일부·다른 이름과 겹치지 않는 위치 선택) =====
+        const POINT_LABEL_FONT = "700 15px 'Pretendard Variable', sans-serif";
+        // 주어진 글자: 길이 a, b, c는 기울임, 각(∠A 등)은 점 이름처럼 똑바로
+        // 글자 왼쪽 x (화면 좌표): 각 이름은 꼭짓점에서 10px 왼쪽에서 끝나도록
+        const givenTextLeft = (text, screenX, width) => text.alignRightOf ? screenX - 10 - width : screenX - 8;
+        const givenTextFont = text => text.startsWith('∠')
+            ? "700 17px 'Pretendard Variable', sans-serif"
+            : "italic 700 17px 'Pretendard Variable', serif";
+        const LABEL_HEIGHT = 12;
+
+        // 점 기준 후보 위치 (선호 순서): 글자 왼쪽 x, 기준선 y
+        const LABEL_CANDIDATES = [
+            (p, w) => ({ x: p.x + 7, y: p.y - 8 }),           // 오른쪽 위
+            (p, w) => ({ x: p.x + 9, y: p.y + 5 }),           // 오른쪽
+            (p, w) => ({ x: p.x - 7 - w, y: p.y - 8 }),       // 왼쪽 위
+            (p, w) => ({ x: p.x - 9 - w, y: p.y + 5 }),       // 왼쪽
+            (p, w) => ({ x: p.x - w / 2, y: p.y - 10 }),      // 위
+            (p, w) => ({ x: p.x - w / 2, y: p.y + 21 }),      // 아래
+            (p, w) => ({ x: p.x + 7, y: p.y + 19 }),          // 오른쪽 아래
+            (p, w) => ({ x: p.x - 7 - w, y: p.y + 19 })       // 왼쪽 아래
+        ];
+
+        const rectsOverlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+        // 선분(화면 좌표)이 사각형을 지나는지 (Liang–Barsky 클리핑)
+        function segmentHitsRect(a, b, rect) {
+            let t0 = 0, t1 = 1;
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const checks = [[-dx, a.x - rect.left], [dx, rect.right - a.x], [-dy, a.y - rect.top], [dy, rect.bottom - a.y]];
+            for (const [p, q] of checks) {
+                if (Math.abs(p) < 1e-12) { if (q < 0) return false; continue; }
+                const t = q / p;
+                if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+                else { if (t < t0) return false; if (t < t1) t1 = t; }
+            }
+            return true;
+        }
+
+        // 원의 일부(화면 좌표)가 사각형 테두리를 지나는지: 테두리를 따라가며 원과 만나는 곳의 각도 확인
+        function arcHitsRect(arc, rect) {
+            const center = worldToScreen({ x: arc.cx, y: arc.cy }), r = arc.r * view.scale;
+            const corners = [[rect.left, rect.top], [rect.right, rect.top], [rect.right, rect.bottom], [rect.left, rect.bottom]];
+            const nearestX = Math.max(rect.left, Math.min(center.x, rect.right)), nearestY = Math.max(rect.top, Math.min(center.y, rect.bottom));
+            const farthest = Math.max(...corners.map(([x, y]) => Math.hypot(x - center.x, y - center.y)));
+            if (Math.hypot(nearestX - center.x, nearestY - center.y) > r || farthest < r) return false;
+            const samples = [];
+            for (let i = 0; i < 4; i++) {
+                const [x1, y1] = corners[i], [x2, y2] = corners[(i + 1) % 4];
+                for (let k = 0; k < 8; k++) samples.push({ x: x1 + (x2 - x1) * k / 8, y: y1 + (y2 - y1) * k / 8 });
+            }
+            const offset = s => Math.hypot(s.x - center.x, s.y - center.y) - r;
+            return samples.some((s, i) => {
+                const next = samples[(i + 1) % samples.length];
+                if (offset(s) * offset(next) > 0) return false;
+                const mid = { x: (s.x + next.x) / 2, y: (s.y + next.y) / 2 };
+                return isAngleOnArc(arc, Math.atan2(mid.y - center.y, mid.x - center.x));
+            });
+        }
+
+        function drawPointLabels(objects) {
+            ctx.save();
+            const occupied = objects.filter(o => o.kind === 'text').map(text => {
+                ctx.font = givenTextFont(text.text);
+                const p = worldToScreen(text), width = ctx.measureText(text.text).width;
+                const left = givenTextLeft(text, p.x, width);
+                return { left, right: left + width, top: p.y - 14, bottom: p.y + 3 };
+            });
+            const pointBoxes = objects.filter(o => o.kind === 'point').map(point => {
+                const p = worldToScreen(point);
+                return { left: p.x - 5, right: p.x + 5, top: p.y - 5, bottom: p.y + 5 };
+            });
+            const curves = objects.filter(o => o.kind === 'line' || o.kind === 'arc' || o.kind === 'mark');
+            ctx.restore();
+
+            objects.filter(o => o.kind === 'point' && o.label).forEach(point => {
+                const p = worldToScreen(point);
+                ctx.save();
+                ctx.font = POINT_LABEL_FONT;
+                const width = ctx.measureText(point.label).width;
+                ctx.restore();
+                let best = null, bestPenalty = Infinity;
+                for (const candidate of LABEL_CANDIDATES) {
+                    const position = candidate(p, width);
+                    const rect = { left: position.x - 2, right: position.x + width + 2, top: position.y - LABEL_HEIGHT - 2, bottom: position.y + 3 };
+                    let penalty = 0;
+                    curves.forEach(curve => {
+                        const hit = curve.kind === 'line'
+                            ? segmentHitsRect(...getLineDrawEnds(curve).map(worldToScreen), rect)
+                            : arcHitsRect(curve, rect);
+                        if (hit) penalty += 10;
+                    });
+                    penalty += occupied.filter(box => rectsOverlap(box, rect)).length * 10;
+                    penalty += pointBoxes.filter(box => rectsOverlap(box, rect)).length * 5;
+                    if (penalty < bestPenalty) { best = { position, rect }; bestPenalty = penalty; }
+                    if (penalty === 0) break;
+                }
+                occupied.push(best.rect);
+                drawLabel(point.label, best.position.x, best.position.y, POINT_LABEL_FONT);
+            });
         }
 
         function drawRing(screenPoint, radius, color, fillColor = null) {
@@ -1193,10 +1340,13 @@
 
         function drawToolPreview() {
             const hover = pointer.hoverSnap;
-            if (state.activeTool === 'ruler' && rulerState.start && hover) {
-                drawRulerBand(rulerState.start, hover);
-                if (dist(rulerState.start, hover) > 1e-6) {
-                    drawLine({ lineType: 'segment', p1: rulerState.start, p2: hover }, COLORS.preview, 1.5, [6, 4]);
+            if (state.activeTool === 'ruler' && rulerState.start && (rulerState.end || hover)) {
+                const end = rulerState.end || hover;
+                drawRulerBand(rulerState.start, end);
+                if (dist(rulerState.start, end) > 1e-6) {
+                    // 선택 대기 중에는 반직선으로 뻗을 방향을 연하게 함께 표시
+                    if (rulerState.end) drawLine({ lineType: 'ray', p1: rulerState.start, p2: end }, 'rgba(100,116,139,0.35)', 1, [2, 5]);
+                    drawLine({ lineType: 'segment', p1: rulerState.start, p2: end }, COLORS.preview, 1.5, [6, 4]);
                 }
                 return;
             }
@@ -1246,6 +1396,7 @@
             const width = canvas.clientWidth, height = canvas.clientHeight;
             if (!width || !height) return;
             updateCompassChoice();
+            updateRulerChoice();
             ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, width, height);
@@ -1259,6 +1410,7 @@
             if (demoState.active) {
                 objects.filter(o => o.kind === 'point').forEach(point => drawPoint(point));
                 drawGivenTexts(objects);
+                drawPointLabels(objects);
                 drawDemoAnimation();
                 return;
             }
@@ -1270,13 +1422,9 @@
                 else drawRing(worldToScreen(target), 9, COLORS.erase);
             }
 
-            const points = objects.filter(o => o.kind === 'point');
-            intersectionCache
-                .filter(p => !points.some(point => dist(point, p) < 1e-6))
-                .forEach(p => drawRing(worldToScreen(p), 3, COLORS.intersection, '#ffffff'));
-
             objects.filter(o => o.kind === 'point').forEach(point => drawPoint(point));
             drawGivenTexts(objects);
+            drawPointLabels(objects);
 
             drawToolPreview();
             drawSnapIndicator();
@@ -1284,8 +1432,12 @@
 
         function drawGivenTexts(objects) {
             objects.filter(o => o.kind === 'text').forEach(text => {
-                const p = worldToScreen(text);
-                drawLabel(text.text, p.x - 8, p.y, "italic 700 17px 'Pretendard Variable', serif");
+                const p = worldToScreen(text), font = givenTextFont(text.text);
+                ctx.save();
+                ctx.font = font;
+                const width = ctx.measureText(text.text).width;
+                ctx.restore();
+                drawLabel(text.text, givenTextLeft(text, p.x, width), p.y, font);
             });
         }
 
@@ -1294,7 +1446,8 @@
             const c = compassState;
             const messages = {
                 point: '클릭하여 점을 찍어요. 이미 있는 점을 클릭하면 이름을 바꿀 수 있어요.',
-                ruler: rulerState.start ? '끝점을 클릭하세요. (Esc: 취소)' : '시작점을 클릭하세요. 두 점을 이어 선분을 그어요.',
+                ruler: rulerState.end ? '[선분 긋기] 또는 [반직선 긋기]를 선택하세요. (다른 곳을 클릭하면 새로 시작해요)'
+                    : rulerState.start ? '두 번째 점을 클릭하세요. (Esc: 취소)' : '첫 번째 점을 클릭하세요.',
                 eraser: '지울 도형을 클릭하세요. (주어진 도형은 지울 수 없어요)',
                 pan: '드래그하여 화면을 이동해요. 마우스 휠이나 오른쪽 아래 버튼으로 확대·축소할 수 있어요.'
             };
@@ -1320,12 +1473,24 @@
             document.getElementById('btn-keep-radius').classList.toggle('d-none', stage !== 'choose');
             document.getElementById('btn-adjust-radius').classList.toggle('d-none', stage !== 'choose');
             document.getElementById('btn-skip-drawing').classList.toggle('d-none', stage !== 'start');
-            const center = worldToScreen(compassState.centerSnap);
-            const maxLeft = canvas.clientWidth - compassChoice.offsetWidth - 8;
-            const maxTop = canvas.clientHeight - compassChoice.offsetHeight - 8;
-            compassChoice.style.left = `${Math.max(8, Math.min(center.x + 30, maxLeft))}px`;
+            placeChoiceNear(compassChoice, compassState.centerSnap);
+        }
+
+        // [선분 긋기 / 반직선 긋기] 버튼을 두 번째 점 옆에 배치
+        function updateRulerChoice() {
+            const isVisible = !demoState.active && state.activeTool === 'ruler' && !!rulerState.end;
+            rulerChoice.classList.toggle('d-none', !isVisible);
+            if (isVisible) placeChoiceNear(rulerChoice, rulerState.end);
+        }
+
+        // 선택 버튼 묶음을 기준점 오른쪽에 두되 캔버스·상단 막대를 벗어나지 않게
+        function placeChoiceNear(element, worldPoint) {
+            const anchor = worldToScreen(worldPoint);
+            const maxLeft = canvas.clientWidth - element.offsetWidth - 8;
+            const maxTop = canvas.clientHeight - element.offsetHeight - 8;
             const minTop = document.getElementById('canvas-topbar').offsetHeight + 8;
-            compassChoice.style.top = `${Math.max(minTop, Math.min(center.y - compassChoice.offsetHeight / 2, maxTop))}px`;
+            element.style.left = `${Math.max(8, Math.min(anchor.x + 30, maxLeft))}px`;
+            element.style.top = `${Math.max(minTop, Math.min(anchor.y - element.offsetHeight / 2, maxTop))}px`;
         }
 
         function updateUi() {
@@ -1610,8 +1775,10 @@
             document.getElementById('demo-step-badge').textContent = isFinished ? '시연 완료' : `${step + 1} / ${steps.length} 단계`;
             demoCaption.innerHTML = isFinished
                 ? '시연이 끝났어요! [따라 하기]를 눌러 직접 작도해 보세요.'
-                : `${step + 1}. ${steps[step]}`;
-            demoPlayButton.innerHTML = demoState.playing ? '<i class="bi bi-pause-fill"></i>' : '<i class="bi bi-play-fill"></i>';
+                : `${step + 1}. ${steps[step]}` + (demoState.playing ? '' : ' <span class="text-secondary fw-normal">(▶를 누르면 재생돼요)</span>');
+            // 매 프레임 아이콘을 새로 만들면 클릭이 씹히므로 상태가 바뀔 때만 클래스 변경
+            const iconClass = `bi ${demoState.playing ? 'bi-pause-fill' : 'bi-play-fill'} pe-none`;
+            if (demoPlayIcon.className !== iconClass) demoPlayIcon.className = iconClass;
         }
 
         // ===== 문제 불러오기 =====
@@ -1633,6 +1800,7 @@
             state.missionId = id;
             state.givenObjects = mission.build();
             demoButton.classList.toggle('d-none', !mission.demo);
+            document.getElementById('btn-answer').classList.toggle('d-none', !mission.demo);
             state.userObjects = [];
             state.undoStack = [];
             state.redoStack = [];
@@ -1733,6 +1901,16 @@
             render();
         });
 
+        // 자: 두 점을 찍은 뒤 선분 / 반직선 선택
+        const finishRuler = lineType => {
+            if (!rulerState.end) return;
+            const startSnap = rulerState.start, endSnap = rulerState.end;
+            rulerState.start = rulerState.end = null;
+            commitRulerLine(startSnap, endSnap, lineType);
+        };
+        document.getElementById('btn-draw-segment').addEventListener('click', () => finishRuler('segment'));
+        document.getElementById('btn-draw-ray').addEventListener('click', () => finishRuler('ray'));
+
         // 벌린 간격은 기억한 채 그리기만 취소
         document.getElementById('btn-skip-drawing').addEventListener('click', () => {
             if (compassState.stage !== 'start') return;
@@ -1775,6 +1953,48 @@
         document.getElementById('btn-demo-close').addEventListener('click', closeDemo);
         document.getElementById('demo-speed').addEventListener('change', event => { demoState.speed = Number(event.target.value); });
 
+        // ===== 정답 보기 =====
+        const answerModalElement = document.getElementById('answerModal');
+        const answerCanvas = document.getElementById('answer-canvas');
+
+        // 주어진 도형 + 정답 작도(시연 결과)를 모달 캔버스에 그리기 (기존 그리기 함수 재사용)
+        function renderAnswerPreview() {
+            const mission = MISSIONS[state.missionId];
+            if (!mission.demo) return;
+            const width = answerCanvas.clientWidth, height = answerCanvas.clientHeight;
+            const ratio = window.devicePixelRatio || 1;
+            answerCanvas.width = Math.round(width * ratio);
+            answerCanvas.height = Math.round(height * ratio);
+
+            const mainContext = ctx, mainView = { ...view };
+            ctx = answerCanvas.getContext('2d');
+            view.scale = Math.min(width / WORLD_WIDTH, height / WORLD_HEIGHT) * 0.96;
+            view.offsetX = (width - WORLD_WIDTH * view.scale) / 2;
+            view.offsetY = (height - WORLD_HEIGHT * view.scale) / 2;
+            try {
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
+                const objects = state.givenObjects.concat(mission.demo().flatMap(demoActionResult));
+                objects.filter(o => o.kind === 'mark').forEach(mark => drawArc(mark, COLORS.given, 1.5));
+                objects.filter(o => o.kind === 'arc').forEach(arc => drawArc(arc, COLORS.arc, 1.6));
+                objects.filter(o => o.kind === 'line').forEach(line => drawLine(line, line.given ? COLORS.given : COLORS.userLine, line.given ? 2.4 : 2));
+                objects.filter(o => o.kind === 'point').forEach(point => drawPoint(point));
+                drawGivenTexts(objects);
+                drawPointLabels(objects);
+            } finally {
+                ctx = mainContext;
+                Object.assign(view, mainView);
+            }
+        }
+
+        document.getElementById('btn-answer').addEventListener('click', () => {
+            const mission = MISSIONS[state.missionId];
+            document.getElementById('answer-steps').innerHTML = mission.steps.map(step => `<li class="mb-1">${step}</li>`).join('');
+            bootstrap.Modal.getOrCreateInstance(answerModalElement).show();
+        });
+        answerModalElement.addEventListener('shown.bs.modal', renderAnswerPreview);
+
         checkButton.addEventListener('click', () => {
             const mission = MISSIONS[state.missionId];
             if (mission.check) showFeedback(mission.check());
@@ -1782,7 +2002,7 @@
 
         document.addEventListener('keydown', event => {
             if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
-            if (customModalElement.classList.contains('show')) return;
+            if (customModalElement.classList.contains('show') || answerModalElement.classList.contains('show')) return;
             if (demoState.active) {
                 if (event.key === 'Escape') closeDemo();
                 return;
