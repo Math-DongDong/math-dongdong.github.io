@@ -998,8 +998,8 @@
                     <input type="radio" name="modalRoomMode" id="modeQuickRadio" value="quick" class="mt-1" checked>
                     <div>
                         <strong class="block text-sm font-bold text-ink">🚀 빠른 입장 모드</strong>
-                        <span class="block mt-0.5 text-xs text-muted leading-relaxed">학번·PIN 없이 <b>이름(닉네임)</b>만 입력하여 즉시
-                            설문에 참여합니다. 학급 외 설문이나 간편 조사에 적합합니다.</span>
+                        <span class="block mt-0.5 text-xs text-muted leading-relaxed">학번·PIN·닉네임 없이 <b>익명</b>으로 즉시
+                            설문에 참여합니다. 제출할 때마다 새 응답으로 저장되어 익명 조사에 적합합니다.</span>
                     </div>
                 </label>
                 <label
@@ -1073,7 +1073,7 @@
 
     <script type="module">
         import { auth, db } from '../../js/firebase-config.js';
-        import { customAlert, customConfirm, makeStudentKey, renderRoomEntrance } from '../../js/room-auth.js?v=4.2';
+        import { customAlert, customConfirm, renderRoomEntrance } from '../../js/room-auth.js?v=4.2';
         import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
         import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
         import {
@@ -2374,20 +2374,25 @@
             return selected.map(option => tails[option] ? `${option}: ${tails[option]}` : option).join('\n');
         }
 
+        const isQuickRoom = roomData => (roomData?.roomMode || 'quick') !== 'auth';
+        const responseTimeMillis = response => response.updatedAt?.toMillis ? response.updatedAt.toMillis() : 0;
+
         function renderResponses(responses) {
             const schema = currentRoomData.formSchema || [];
+            const showStudentId = !isQuickRoom(currentRoomData);
             $('responseCountBadge').textContent = `${Math.max(Number(currentRoomData.responseCount) || 0, responses.length)}명 응답`;
-            $('responseTableHead').innerHTML = `<tr><th class="border-b border-line p-2">학번</th><th class="border-b border-line p-2">수정일</th>${schema.map(question => {
+            $('responseTableHead').innerHTML = `<tr>${showStudentId ? '<th class="border-b border-line p-2">학번</th>' : ''}<th class="border-b border-line p-2">${showStudentId ? '수정일' : '제출일'}</th>${schema.map(question => {
                 const branchTag = question.branchOption && question.branchOption !== '__merge__'
                     ? `<div class="text-[10px] text-blue-600 font-normal">🌿[${escapeHtml(question.branchOption)}]</div>`
                     : '';
                 return `<th class="border-b border-line p-2">${escapeHtml(stripTags(question.title))}${branchTag}</th>`;
             }).join('')}<th class="border-b border-line p-2">관리</th></tr>`;
             if (!responses.length) {
-                $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + 3}">아직 제출된 응답이 없습니다.</td></tr>`;
+                $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + (showStudentId ? 3 : 2)}">아직 제출된 응답이 없습니다.</td></tr>`;
                 return;
             }
-            responses.sort((a, b) => String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }));
+            if (showStudentId) responses.sort((a, b) => String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }));
+            else responses.sort((a, b) => responseTimeMillis(b) - responseTimeMillis(a));
             $('responseTableBody').innerHTML = responses.map(response => {
                 let dateStr = '';
                 let timeStr = '';
@@ -2399,7 +2404,8 @@
                 const formattedDate = dateStr
                     ? `${escapeHtml(dateStr)}<br><span class="text-xs text-muted">${escapeHtml(timeStr)}</span>`
                     : '';
-                return `<tr><td class="border-b border-line/60 p-2 font-medium">${escapeHtml(response.studentId)}</td><td class="border-b border-line/60 p-2 whitespace-nowrap leading-tight text-xs">${formattedDate}</td>${schema.map(question => `<td class="max-w-xs whitespace-pre-wrap break-words border-b border-line/60 p-2">${escapeHtml(formatAnswer(response.answers?.[question.id]))}</td>`).join('')}<td class="border-b border-line/60 p-2"><div class="flex flex-wrap justify-center gap-1"><button type="button" class="btn btn-light text-xs" data-edit-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(response.studentId)} 응답 수정"><i class="bi bi-pencil"></i> 수정</button><button type="button" class="btn btn-light text-xs text-red-700" data-delete-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(response.studentId)} 응답 삭제"><i class="bi bi-trash"></i> 삭제</button></div></td></tr>`;
+                const responseLabel = showStudentId ? response.studentId : '익명';
+                return `<tr>${showStudentId ? `<td class="border-b border-line/60 p-2 font-medium">${escapeHtml(response.studentId)}</td>` : ''}<td class="border-b border-line/60 p-2 whitespace-nowrap leading-tight text-xs">${formattedDate}</td>${schema.map(question => `<td class="max-w-xs whitespace-pre-wrap break-words border-b border-line/60 p-2">${escapeHtml(formatAnswer(response.answers?.[question.id]))}</td>`).join('')}<td class="border-b border-line/60 p-2"><div class="flex flex-wrap justify-center gap-1"><button type="button" class="btn btn-light text-xs" data-edit-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(responseLabel)} 응답 수정"><i class="bi bi-pencil"></i> 수정</button><button type="button" class="btn btn-light text-xs text-red-700" data-delete-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(responseLabel)} 응답 삭제"><i class="bi bi-trash"></i> 삭제</button></div></td></tr>`;
             }).join('');
 
             $('responseTableBody').querySelectorAll('[data-edit-response]').forEach(button => {
@@ -2414,7 +2420,7 @@
                     const responseId = button.dataset.deleteResponse;
                     const response = responses.find(item => item.id === responseId);
                     if (!response || !currentRoom) return;
-                    const ok = await customConfirm('응답 삭제', `${escapeHtml(response.studentId)} 학생의 응답을 삭제할까요?`);
+                    const ok = await customConfirm('응답 삭제', showStudentId ? `${escapeHtml(response.studentId)} 학생의 응답을 삭제할까요?` : '이 익명 응답을 삭제할까요?');
                     if (!ok) return;
                     try {
                         const roomRef = doc(db, 'custom_forms', currentRoom);
@@ -2560,6 +2566,7 @@
             `;
 
             // 각 문항별 통계 렌더링
+            const showStudentId = !isQuickRoom(currentRoomData);
             $('statsQuestionsContainer').innerHTML = schema.map((q, idx) => {
                 const typeLabels = {
                     choice: '객관식 (단일 선택)',
@@ -2572,7 +2579,7 @@
 
                 // 응답 추출 및 카운트
                 const parsedAnswers = responses.map(r => ({
-                    studentId: r.studentId || '-',
+                    studentId: showStudentId ? (r.studentId || '-') : '',
                     ans: extractAnswer(q, r.answers?.[q.id])
                 }));
 
@@ -2649,7 +2656,7 @@
                                                 <div id="${tailBoxId}" class="mt-2 space-y-1 rounded-lg border border-line bg-page/40 p-2.5 text-xs" hidden>
                                                     ${tails.map(t => `
                                                         <div class="flex items-start gap-1.5 leading-relaxed py-0.5 border-b border-line/40 last:border-b-0">
-                                                            <span class="font-bold text-board whitespace-nowrap">[${escapeHtml(t.studentId)}]:</span>
+                                                            ${t.studentId ? `<span class="font-bold text-board whitespace-nowrap">[${escapeHtml(t.studentId)}]:</span>` : '<span class="text-muted">·</span>'}
                                                             <span class="text-ink break-words">${escapeHtml(t.text)}</span>
                                                         </div>
                                                     `).join('')}
@@ -2736,7 +2743,7 @@
                                                 <div id="${tailBoxId}" class="mt-2 space-y-1 rounded-lg border border-line bg-page/40 p-2.5 text-xs" hidden>
                                                     ${tails.map(t => `
                                                         <div class="flex items-start gap-1.5 leading-relaxed py-0.5 border-b border-line/40 last:border-b-0">
-                                                            <span class="font-bold text-board whitespace-nowrap">[${escapeHtml(t.studentId)}]:</span>
+                                                            ${t.studentId ? `<span class="font-bold text-board whitespace-nowrap">[${escapeHtml(t.studentId)}]:</span>` : '<span class="text-muted">·</span>'}
                                                             <span class="text-ink break-words">${escapeHtml(t.text)}</span>
                                                         </div>
                                                     `).join('')}
@@ -2843,14 +2850,14 @@
                         <div class="mt-4 pt-3 border-t border-line/60">
                             <div class="mb-3 flex items-center justify-between gap-2">
                                 <span class="text-xs font-bold text-muted">전체 응답 목록 (${validCount}건)</span>
-                                <input type="text" id="short_filter_input_${escapeHtml(q.id)}" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 응답 검색..." data-filter-input="short_tbody_${escapeHtml(q.id)}">
+                                <input type="text" id="short_filter_input_${escapeHtml(q.id)}" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="${showStudentId ? '학번 또는 응답 검색...' : '응답 검색...'}" data-filter-input="short_tbody_${escapeHtml(q.id)}">
                             </div>
 
                             <div class="max-h-64 overflow-y-auto rounded-xl border border-line bg-white">
                                 <table class="min-w-full border-collapse text-left text-xs">
                                     <thead class="sticky top-0 bg-page/90 backdrop-blur-xs border-b border-line text-muted font-bold z-10">
                                         <tr>
-                                            <th class="p-2.5 w-24 whitespace-nowrap">학번</th>
+                                            ${showStudentId ? '<th class="p-2.5 w-24 whitespace-nowrap">학번</th>' : ''}
                                             <th class="p-2.5">응답 내용</th>
                                             ${q.hasTail ? '<th class="p-2.5">꼬리 질문</th>' : ''}
                                         </tr>
@@ -2858,7 +2865,7 @@
                                     <tbody id="short_tbody_${escapeHtml(q.id)}" class="divide-y divide-line/60">
                                         ${validResponses.map(r => `
                                             <tr class="filterable-row hover:bg-page/30 transition-colors" data-text="${escapeHtml((r.studentId + ' ' + r.ans.text + ' ' + (r.ans.tail || '')).toLowerCase())}">
-                                                <td class="p-2.5 font-bold text-board whitespace-nowrap align-top">[${escapeHtml(r.studentId)}]</td>
+                                                ${showStudentId ? `<td class="p-2.5 font-bold text-board whitespace-nowrap align-top">[${escapeHtml(r.studentId)}]</td>` : ''}
                                                 <td class="p-2.5 text-ink font-medium leading-relaxed align-top">${escapeHtml(r.ans.text)}</td>
                                                 ${q.hasTail ? `<td class="p-2.5 text-muted align-top">${r.ans.tail ? escapeHtml(r.ans.tail) : '-'}</td>` : ''}
                                             </tr>
@@ -2907,13 +2914,13 @@
                         <div class="mt-4 pt-3 border-t border-line/60">
                             <div class="mb-3 flex items-center justify-between gap-2">
                                 <span class="text-xs font-bold text-muted">전체 서술 응답 목록 (${validCount}건)</span>
-                                <input type="text" id="long_filter_input_${escapeHtml(q.id)}" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="학번 또는 내용 검색..." data-filter-input="long_tbody_${escapeHtml(q.id)}">
+                                <input type="text" id="long_filter_input_${escapeHtml(q.id)}" class="field !py-1 !px-2 text-xs max-w-xs" placeholder="${showStudentId ? '학번 또는 내용 검색...' : '내용 검색...'}" data-filter-input="long_tbody_${escapeHtml(q.id)}">
                             </div>
                             <div class="max-h-80 overflow-y-auto rounded-xl border border-line bg-white">
                                 <table class="min-w-full border-collapse text-left text-xs">
                                     <thead class="sticky top-0 bg-page/90 backdrop-blur-xs border-b border-line text-muted font-bold z-10">
                                         <tr>
-                                            <th class="p-2.5 w-24 whitespace-nowrap">학번</th>
+                                            ${showStudentId ? '<th class="p-2.5 w-24 whitespace-nowrap">학번</th>' : ''}
                                             <th class="p-2.5 w-16 text-center whitespace-nowrap">글자수</th>
                                             <th class="p-2.5">서술 내용</th>
                                         </tr>
@@ -2921,7 +2928,7 @@
                                     <tbody id="long_tbody_${escapeHtml(q.id)}" class="divide-y divide-line/60">
                                         ${validResponses.map(r => `
                                             <tr class="filterable-row hover:bg-page/30 transition-colors" data-text="${escapeHtml((r.studentId + ' ' + r.ans.text).toLowerCase())}">
-                                                <td class="p-2.5 font-bold text-board whitespace-nowrap align-top">[${escapeHtml(r.studentId)}]</td>
+                                                ${showStudentId ? `<td class="p-2.5 font-bold text-board whitespace-nowrap align-top">[${escapeHtml(r.studentId)}]</td>` : ''}
                                                 <td class="p-2.5 text-muted text-center whitespace-nowrap align-top">${r.ans.text.length}자</td>
                                                 <td class="p-2.5 text-ink leading-relaxed whitespace-pre-wrap break-words align-top">${escapeHtml(r.ans.text)}</td>
                                             </tr>
@@ -3017,7 +3024,9 @@
         function openResponseEdit(response) {
             if (!currentRoom || !currentRoomData) return;
             $('responseEditModal').dataset.responseId = response.id;
-            $('responseEditStudent').textContent = `학번 ${response.studentId || '-'} · 닉네임 ${response.studentName || '-'}`;
+            $('responseEditStudent').textContent = isQuickRoom(currentRoomData)
+                ? `익명 응답 · ${response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '-'}`
+                : `학번 ${response.studentId || '-'}`;
             $('responseEditTitle').innerHTML = formatRichText(currentRoomData.memo || '설문');
             $('responseEditDescription').innerHTML = formatRichText(currentRoomData.description || '');
             responseEditLiveAnswers = JSON.parse(JSON.stringify(response.answers || {}));
@@ -3075,8 +3084,10 @@
                 const snapshot = await getDocs(collection(db, 'custom_forms', currentRoom, 'responses'));
                 const schema = currentRoomData.formSchema || [];
                 const responses = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+                const showStudentId = !isQuickRoom(currentRoomData);
+                if (!showStudentId) responses.sort((a, b) => responseTimeMillis(a) - responseTimeMillis(b));
                 const headers = [
-                    '학번', '수정일',
+                    ...(showStudentId ? ['학번'] : []), showStudentId ? '수정일' : '제출일',
                     ...schema.map(question => (
                         question.branchOption && question.branchOption !== '__merge__'
                             ? `[${question.branchOption}] ${stripTags(question.title)}`
@@ -3084,7 +3095,7 @@
                     ))
                 ];
                 const rows = responses.map(response => [
-                    response.studentId || '',
+                    ...(showStudentId ? [response.studentId || ''] : []),
                     response.updatedAt?.toDate ? response.updatedAt.toDate().toLocaleString('ko-KR') : '',
                     ...schema.map(question => formatAnswer(response.answers?.[question.id]))
                 ]);
@@ -3092,7 +3103,7 @@
                 const wb = XLSX.utils.book_new();
                 const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
                 ws['!cols'] = [
-                    { wch: 14 }, { wch: 22 },
+                    ...(showStudentId ? [{ wch: 14 }] : []), { wch: 22 },
                     ...schema.map(() => ({ wch: 28 }))
                 ];
                 XLSX.utils.book_append_sheet(wb, ws, '응답');
@@ -3351,34 +3362,30 @@
                 else armStudentClose(roomCode, scheduledCloseAt);
             }
 
-            const isQuick = roomData.roomMode !== 'auth';
+            // 빠른 입장은 익명 조사: 닉네임을 쓰지 않고, 입장·제출마다 새 응답 문서를 만듭니다.
+            const isQuick = isQuickRoom(roomData);
             const effectiveStudentId = isQuick
-                ? `q_${encodeURIComponent(nickname)}`
+                ? createAnonymousResponseId()
                 : String(authInfo.studentId || '');
             if (!effectiveStudentId) throw new Error('학생 정보를 확인할 수 없습니다.');
 
-            const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', effectiveStudentId));
-            const responseData = responseSnapshot.exists() ? responseSnapshot.data() : {};
-            let studentData = {};
+            let responseExists = false;
+            let existingAnswers = {};
             if (!isQuick) {
-                const school = String(authInfo.school || roomData.creatorSchool || '').trim();
-                const studentSnapshot = await getDoc(doc(db, 'student_auth', makeStudentKey(school, effectiveStudentId)));
-                studentData = studentSnapshot.exists() ? studentSnapshot.data() : {};
+                const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', effectiveStudentId));
+                responseExists = responseSnapshot.exists();
+                existingAnswers = responseExists ? responseSnapshot.data().answers || {} : {};
             }
 
-            const resolvedName = isQuick
-                ? nickname
-                : responseData.studentName || studentData.studentName || studentData.name || effectiveStudentId;
-            const existingAnswers = responseData.answers || {};
             studentSession = {
                 roomCode,
                 studentId: effectiveStudentId,
-                studentName: resolvedName,
+                studentName: isQuick ? '익명' : effectiveStudentId,
                 isQuick,
                 isGuest: !!authInfo.isGuest
             };
             studentRoomData = roomData;
-            studentResponseExists = responseSnapshot.exists();
+            studentResponseExists = responseExists;
             window.studentResponseExists = studentResponseExists;
             $('studentFormTitle').innerHTML = formatRichText(roomData.memo || '설문');
             $('studentFormMemo').innerHTML = formatRichText(roomData.description || '');
@@ -3391,19 +3398,23 @@
             $('submitResponseButton').textContent = studentResponseExists ? '수정 내용 저장' : '응답 제출';
             $('studentRoomEntryBox').hidden = true;
             $('studentFormPanel').hidden = false;
-            if ($('studentInfoBadge')) {
-                let badgeText = '';
-                if (isQuick) {
-                    badgeText = resolvedName ? `${resolvedName}` : '';
-                } else {
-                    if (effectiveStudentId && resolvedName && resolvedName !== effectiveStudentId) {
-                        badgeText = `${effectiveStudentId} ${resolvedName}`;
-                    } else {
-                        badgeText = effectiveStudentId || resolvedName || '';
-                    }
-                }
-                $('studentInfoBadge').textContent = badgeText;
-            }
+            if ($('studentInfoBadge')) $('studentInfoBadge').textContent = isQuick ? '익명 응답' : effectiveStudentId;
+            clearDirty();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function createAnonymousResponseId() {
+            return `q_anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        }
+
+        /** 빠른 입장: 제출 후 이전 응답을 남기지 않고 새 빈 양식으로 초기화 */
+        function resetQuickFormForNextResponse() {
+            studentSession.studentId = createAnonymousResponseId();
+            studentResponseExists = false;
+            window.studentResponseExists = false;
+            $('existingResponseNotice').hidden = true;
+            $('submitResponseButton').textContent = '응답 제출';
+            renderStudentQuestions(Array.isArray(studentRoomData.formSchema) ? studentRoomData.formSchema : [], {}, false);
             clearDirty();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -3555,17 +3566,22 @@
                     };
                     transaction.set(responseRef, update, { merge: true });
                     if (!existing.exists()) {
-                        transaction.update(roomRef, {
-                            responseCount: (Number(latestRoom.responseCount) || 0) + 1,
-                            students: arrayUnion(studentSession.studentId)
-                        });
+                        const roomUpdate = { responseCount: (Number(latestRoom.responseCount) || 0) + 1 };
+                        // 익명 응답 ID는 방 문서에 누적하지 않음
+                        if (!studentSession.isQuick) roomUpdate.students = arrayUnion(studentSession.studentId);
+                        transaction.update(roomRef, roomUpdate);
                     }
                 });
-                studentResponseExists = true;
-                $('existingResponseNotice').hidden = false;
-                button.textContent = '수정 내용 저장';
-                clearDirty();
-                showNotice('응답이 안전하게 저장되었습니다.');
+                if (studentSession.isQuick) {
+                    resetQuickFormForNextResponse();
+                    showNotice('응답이 제출되었습니다. 감사합니다.');
+                } else {
+                    studentResponseExists = true;
+                    $('existingResponseNotice').hidden = false;
+                    button.textContent = '수정 내용 저장';
+                    clearDirty();
+                    showNotice('응답이 안전하게 저장되었습니다.');
+                }
             } catch (error) {
                 console.error('응답 저장 실패:', error);
                 if (String(error.message || '').includes('마감')) markStudentFormClosed();
