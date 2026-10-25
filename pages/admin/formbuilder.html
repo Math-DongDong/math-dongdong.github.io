@@ -416,6 +416,11 @@
             border-color: #24493d;
         }
 
+        .pill-choice:disabled:not([aria-pressed="true"]) {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
         [hidden] {
             display: none !important;
         }
@@ -1150,8 +1155,32 @@
             options: [],
             tailCondition: '',
             tailTitle: '',
-            tailPlaceholder: ''
+            tailPlaceholder: '',
+            maxSelect: 0
         });
+
+        function getPillLimit(question) {
+            const limit = Math.floor(Number(question?.maxSelect) || 0);
+            return limit > 0 ? limit : 0;
+        }
+
+        function togglePillOption(question, selected, option) {
+            if (selected.has(option)) { selected.delete(option); return true; }
+            const limit = getPillLimit(question);
+            if (limit && selected.size >= limit) { showNotice(`최대 ${limit}개까지 선택할 수 있습니다.`, true); return false; }
+            selected.add(option);
+            return true;
+        }
+
+        function renderPillButtons(question, selected, dataAttr, disabled) {
+            const limit = getPillLimit(question);
+            const isFull = limit && selected.length >= limit;
+            const hint = limit ? `<p class="mt-1 text-xs text-muted">최대 ${limit}개까지 선택 가능 (${selected.length}/${limit})</p>` : '';
+            return `${hint}<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => {
+                const isSelected = selected.includes(option);
+                return `<button type="button" class="pill-choice" ${dataAttr}="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${isSelected}" ${disabled || (isFull && !isSelected) ? 'disabled' : ''}>${escapeHtml(option)}</button>`;
+            }).join('')}</div>`;
+        }
 
         function stripTags(text) {
             return String(text || '').replace(/<[^>]*>/g, '').replace(/\[color=[^\]]+\]/gi, '').replace(/\[\/color\]/gi, '').replace(/\*\*/g, '').replace(/__/g, '').trim();
@@ -1828,6 +1857,9 @@
                         ${['choice', 'dropdown', 'pill'].includes(question.type) ? `<label class="text-xs font-bold sm:col-span-2">선택지 (줄바꿈 또는 쉼표로 구분)
                             <textarea class="field mt-1" rows="3" data-field="options" placeholder="선택지 1&#10;선택지 2" ${locked ? 'disabled' : ''}>${escapeHtml((question.options || []).join('\n'))}</textarea>
                         </label>` : ''}
+                        ${question.type === 'pill' ? `<label class="text-xs font-bold sm:col-span-2">최대 선택 개수 (0 = 제한 없음)
+                            <input type="number" class="field mt-1 max-w-[160px]" data-field="maxSelect" min="0" max="${(question.options || []).length || 40}" step="1" value="${getPillLimit(question)}" ${locked ? 'disabled' : ''}>
+                        </label>` : ''}
                         <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="required" ${question.required ? 'checked' : ''} ${locked ? 'disabled' : ''}> 답변 필수</label>
                         ${['short', 'choice', 'pill'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasTail" ${question.hasTail ? 'checked' : ''} ${locked ? 'disabled' : ''}> ${question.type === 'short' ? '꼬리 질문 추가' : '선택지별 꼬리 질문'}</label>` : ''}
                         ${['choice', 'dropdown'].includes(question.type) ? `<label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" data-field="hasBranch" ${question.hasBranch ? 'checked' : ''} ${locked ? 'disabled' : ''}> 선택에 따른 분기 생성</label>` : ''}
@@ -1893,6 +1925,7 @@
             if (!question) return;
             const field = event.target.dataset.field;
             if (field === 'options') question.options = asOptions(event.target.value);
+            else if (field === 'maxSelect') question.maxSelect = Math.max(0, Math.floor(Number(event.target.value) || 0));
             else if (field) question[field] = event.target.value;
             markSchemaDirty();
         });
@@ -1905,6 +1938,7 @@
             const field = event.target.dataset.field;
             if (field === 'options') question.options = asOptions(event.target.value);
             else if (field === 'required' || field === 'hasTail' || field === 'hasBranch') question[field] = event.target.checked;
+            else if (field === 'maxSelect') question.maxSelect = Math.max(0, Math.floor(Number(event.target.value) || 0));
             else if (field) question[field] = event.target.value;
             if (field === 'type') {
                 if (['choice', 'dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
@@ -1912,6 +1946,7 @@
                 if (!['short', 'choice', 'pill'].includes(question.type)) { question.hasTail = false; }
                 if (!['choice', 'dropdown'].includes(question.type)) { question.hasBranch = false; }
                 if (!['short', 'long'].includes(question.type)) { question.placeholder = ''; }
+                if (question.type !== 'pill') { question.maxSelect = 0; }
                 renderBuilder(currentRoomData.formSchema);
             }
             if (field === 'options' || field === 'hasTail' || field === 'tailCondition' || field === 'hasBranch' || field === 'branchOption') renderBuilder(currentRoomData.formSchema);
@@ -1994,7 +2029,7 @@
                         control += `<label class="mt-3 block text-sm font-semibold">${formatRichText((question.tailTitle || '추가 설명').replaceAll('{option}', selectedChoice))}<textarea class="field mt-1" rows="3" data-preview-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedChoice)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(answer?.tailAnswers?.[selectedChoice] || '')}</textarea></label>`;
                     }
                 } else if (question.type === 'pill') {
-                    control = `<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => `<button type="button" class="pill-choice" data-preview-pill="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${selected.includes(option)}">${escapeHtml(option)}</button>`).join('')}</div>`;
+                    control = renderPillButtons(question, selected, 'data-preview-pill', false);
                     if (question.hasTail) control += (question.options || []).filter(option => selected.includes(option)).map(option => `<label class="mt-3 block text-sm font-semibold">${formatRichText((question.tailTitle || '추가 설명').replaceAll('{option}', option))}<textarea class="field mt-1" rows="3" data-preview-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}">${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('');
                 }
                 const branchBadge = ['choice', 'dropdown'].includes(question.type) && question.hasBranch
@@ -2061,8 +2096,7 @@
             previewAnswers = collectPreviewAnswers(schema);
             const answer = previewAnswers[question.id] || { selected: [], tailAnswers: {} };
             const selected = new Set(Array.isArray(answer.selected) ? answer.selected : []);
-            if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
-            else selected.add(button.dataset.option);
+            if (!togglePillOption(question, selected, button.dataset.option)) return;
             previewAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers || {} };
             renderPreviewQuestions(schema, previewAnswers);
         });
@@ -3103,7 +3137,7 @@
                         control += `<label class="mt-3 block text-sm font-semibold">${formatRichText((question.tailTitle || '추가 설명').replaceAll('{option}', selectedChoice))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(selectedChoice)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[selectedChoice] || '')}</textarea></label>`;
                     }
                 } else if (question.type === 'pill') {
-                    control = `<div class="mt-2 flex flex-wrap gap-2">${(question.options || []).map(option => `<button type="button" class="pill-choice" data-pill="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" aria-pressed="${selected.includes(option)}" ${disabled ? 'disabled' : ''}>${escapeHtml(option)}</button>`).join('')}</div>`;
+                    control = renderPillButtons(question, selected, 'data-pill', disabled);
                     if (question.hasTail) control += (question.options || []).filter(option => selected.includes(option)).map(option => `<label class="mt-3 block text-sm font-semibold">${formatRichText((question.tailTitle || '추가 설명').replaceAll('{option}', option))}<textarea class="field mt-1" rows="3" data-tail="${escapeHtml(question.id)}" data-option="${escapeHtml(option)}" placeholder="${escapeHtml(question.tailPlaceholder || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(answer?.tailAnswers?.[option] || '')}</textarea></label>`).join('');
                 }
                 const branchBadge = ['choice', 'dropdown'].includes(question.type) && question.hasBranch
@@ -3258,10 +3292,9 @@
             if (!question) return;
             const answer = responseEditLiveAnswers[question.id] || { selected: [], tailAnswers: {} };
             const selected = new Set(Array.isArray(answer.selected) ? answer.selected : []);
-            if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
-            else selected.add(button.dataset.option);
+            if (!togglePillOption(question, selected, button.dataset.option)) return;
             responseEditLiveAnswers[question.id] = { selected: [...selected], tailAnswers: answer.tailAnswers || {} };
-            if (question.hasTail) {
+            if (question.hasTail || getPillLimit(question)) {
                 renderStudentQuestions(schema, responseEditLiveAnswers, false, 'responseEditQuestions');
             } else {
                 button.setAttribute('aria-pressed', String(selected.has(button.dataset.option)));
@@ -3300,8 +3333,7 @@
             const nextAnswers = collectAnswers(studentRoomData.formSchema);
             const answer = nextAnswers[question.id];
             const selected = new Set(Array.isArray(answer?.selected) ? answer.selected : []);
-            if (selected.has(button.dataset.option)) selected.delete(button.dataset.option);
-            else selected.add(button.dataset.option);
+            if (!togglePillOption(question, selected, button.dataset.option)) return;
             nextAnswers[question.id] = { selected: [...selected], tailAnswers: answer?.tailAnswers || {} };
             renderStudentQuestions(studentRoomData.formSchema, nextAnswers, false);
             setDirty();
@@ -3444,6 +3476,11 @@
                             : !String(typeof value === 'object' ? (value?.selected || value?.value || '') : (value || '')).trim();
                 if (question.required && empty) {
                     showNotice(`필수 문항에 응답해주세요: ${question.title}`, true);
+                    document.querySelector(`[data-question="${CSS.escape(question.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+                if (question.type === 'pill' && getPillLimit(question) && (value?.selected?.length || 0) > getPillLimit(question)) {
+                    showNotice(`최대 ${getPillLimit(question)}개까지 선택할 수 있습니다: ${question.title}`, true);
                     document.querySelector(`[data-question="${CSS.escape(question.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     return;
                 }
