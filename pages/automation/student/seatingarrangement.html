@@ -360,7 +360,7 @@
                         <h4 class="fw-bold mb-1 text-dark d-flex align-items-center gap-2">
                             <i class="bi bi-code-slash text-primary"></i> Apps Script 소스 코드 확인 및 복사
                         </h4>
-                        <p class="text-secondary small mb-0">새 스프레드시트에서 직접 스크립트(Code.gs)와 웹 앱 화면(index.html)을 구성할 때 아래 코드를 복사하여 사용하세요.</p>
+                        <p class="text-secondary small mb-0">새 스프레드시트에서 직접 스크립트(Code.gs)와 웹 앱 화면(index.html), 고급설정 화면(advanced.html)을 구성할 때 아래 코드를 복사하여 사용하세요. (Apps Script 편집기에서 HTML 파일 추가 시 각각 'index', 'advanced'로 이름 지정)</p>
                     </div>
                     <button class="btn btn-outline-primary fw-semibold rounded-pill px-3 py-2 btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#sourceCodeCollapse" aria-expanded="false" aria-controls="sourceCodeCollapse">
                         <i class="bi bi-code-square me-1"></i> 코드 보기 / 숨기기
@@ -381,6 +381,11 @@
                                     <i class="bi bi-filetype-html text-danger me-1"></i> index.html (프론트엔드 웹앱)
                                 </button>
                             </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link fw-bold px-3 py-2 rounded-3 shadow-sm" id="advancedhtml-tab" data-bs-toggle="pill" data-bs-target="#advancedhtml-pane" type="button" role="tab">
+                                    <i class="bi bi-filetype-html text-info me-1"></i> advanced.html (고급설정 화면)
+                                </button>
+                            </li>
                         </ul>
 
                         <!-- 탭 컨텐츠 -->
@@ -397,12 +402,31 @@
                                         </button>
                                     </div>
                                     <pre class="code-box-pre"><code id="codeGsContent">/**
+ * ==========================================================
+ *  학급 자리 배치 시스템 - 서버 코드 (code.gs)
+ * ==========================================================
+ */
+
+// ▼ 분리 규칙(고급설정) 시트 설정
+const RULE_SHEET_NAME = '분리규칙';
+const RULE_HEADERS = ['학생번호목록', '학생이름', '분리방향', '수정일시'];
+// 방향 코드 ↔ 한글 라벨 (시트에는 사람이 읽기 쉬운 한글로 저장)
+const DIR_LABELS = { v: '상하', h: '좌우', d: '대각선' };
+
+// ▼ 최근 랜덤 배치의 규칙 충족 결과 (교사용 고급설정 창에서만 확인)
+//    민감 정보가 아닌 '내부 기록용' 값이라 별도 설정 화면 없이 코드에서만 관리합니다.
+const LAST_CHECK_KEY = 'LAST_PLACEMENT_CHECK';
+
+/**
  * 구글 시트 열릴 때 커스텀 메뉴 생성
+ * - 고급설정(분리 배치 규칙)은 웹 앱이 아닌 이 메뉴에서만 편집/확인
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🎲 자리 배치 시스템')
     .addItem('DB 세팅 및 초기화 (샘플데이터 포함)', 'setupDatabase')
+    .addSeparator()
+    .addItem('⚙️ 고급설정 (분리 배치 규칙)', 'openAdvancedSettings')
     .addToUi();
 }
 
@@ -417,7 +441,32 @@ function doGet() {
 }
 
 /**
+ * [메뉴] 고급설정 화면(advanced.html)을 구글 시트 위 모달 창으로 열기
+ */
+function openAdvancedSettings() {
+  const html = HtmlService.createHtmlOutputFromFile('advanced')
+    .setWidth(560)
+    .setHeight(720);
+  SpreadsheetApp.getUi().showModalDialog(html, '⚙️ 고급설정 · 분리 배치 규칙');
+}
+
+/**
+ * 고급설정 화면용 초기 데이터
+ * (학생 명단 + 저장된 규칙 + 최근 랜덤 배치 결과를 한 번에 전달)
+ */
+function getAdvancedSettingsData() {
+  return {
+    students: getStudents(),
+    rules: getSeparationRules(),
+    lastCheck: getLastPlacementCheck_()
+  };
+}
+
+/**
  * 데이터베이스(시트) 초기화 및 샘플 데이터 입력
+ * - 학생명단 : 샘플 30명으로 덮어씀
+ * - 배치이력 : 없을 때만 헤더 생성 (기존 이력 보존)
+ * - 분리규칙 : 없을 때만 헤더 생성 (기존 규칙 보존)
  */
 function setupDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -458,7 +507,10 @@ function setupDatabase() {
       .setBackground('#10B981').setFontColor('#FFFFFF').setFontWeight('bold');
   }
 
-  SpreadsheetApp.getUi().alert('DB 세팅이 완료되었습니다! 30명의 샘플 학생 데이터가 생성되었습니다.');
+  // 3. 분리규칙 시트 생성 (이미 있으면 기존 규칙을 그대로 둠)
+  getOrCreateRuleSheet_();
+
+  SpreadsheetApp.getUi().alert('DB 세팅이 완료되었습니다! 30명의 샘플 학생 데이터가 생성되었습니다.\n(분리규칙 탭도 준비되었습니다.)');
 }
 
 /**
@@ -478,7 +530,7 @@ function getStudents() {
       students.push({
         id: Number(data[i][0]) || i,
         name: String(data[i][1]).trim(),
-        note: data[i][2] || ''
+        note: data[i][2] ? String(data[i][2]) : ''
       });
     }
   }
@@ -522,6 +574,169 @@ function getHistoryList() {
     });
   }
   return list;
+}
+
+// ==========================================================
+// ▼ 분리 규칙(고급설정) 관련 함수
+// ==========================================================
+
+/**
+ * [내부용] 분리규칙 시트를 찾고, 없으면 헤더와 함께 새로 만든다.
+ * - 학생번호목록 열은 '텍스트' 서식으로 고정
+ *   (예: "3, 7" 이 숫자 37 이나 소수 3.7 로 바뀌는 것을 방지)
+ */
+function getOrCreateRuleSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(RULE_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(RULE_SHEET_NAME);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, RULE_HEADERS.length).setValues([RULE_HEADERS])
+      .setBackground('#E11D48').setFontColor('#FFFFFF').setFontWeight('bold');
+    sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 130);
+    sheet.setColumnWidth(2, 240);
+    sheet.setColumnWidth(3, 150);
+    sheet.setColumnWidth(4, 150);
+  }
+  return sheet;
+}
+
+/**
+ * [내부용] "3, 7, 12" 같은 문자열에서 학생 번호만 뽑아 중복 없는 숫자 배열로 변환
+ */
+function parseIdList_(text) {
+  const ids = [];
+  String(text || '').split(/[^0-9]+/).forEach(function(t) {
+    const n = Number(t);
+    if (t !== '' &amp;&amp; !isNaN(n) &amp;&amp; ids.indexOf(n) === -1) ids.push(n);
+  });
+  return ids;
+}
+
+/**
+ * 저장된 분리 규칙 목록 가져오기 (웹 앱 랜덤 배치 + 고급설정 화면 공용)
+ * @return {Array&lt;{ids:number[], dirs:string[]}&gt;}
+ *   dirs 는 방향 코드 배열 ('v'=상하, 'h'=좌우, 'd'=대각선)
+ * - 학생 '번호'만 내보내고 이름은 보내지 않음
+ * - 사용자가 시트에서 직접 '상하, 대각선' 처럼 수정해도 읽을 수 있음
+ */
+function getSeparationRules() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RULE_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() &lt;= 1) return [];
+
+  // 화면에 보이는 그대로(문자열) 읽어 숫자 자동 변환 문제를 피함
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, RULE_HEADERS.length).getDisplayValues();
+
+  // 한글 라벨 → 방향 코드 역변환표
+  const labelToCode = {};
+  Object.keys(DIR_LABELS).forEach(function(code) { labelToCode[DIR_LABELS[code]] = code; });
+  labelToCode['대각'] = 'd';
+
+  const rules = [];
+  data.forEach(function(row) {
+    const ids = parseIdList_(row[0]);
+    const dirs = [];
+    String(row[2] || '').split(/[,\/\s]+/).forEach(function(t) {
+      const code = labelToCode[t.trim()];
+      if (code &amp;&amp; dirs.indexOf(code) === -1) dirs.push(code);
+    });
+    if (ids.length &gt;= 2 &amp;&amp; dirs.length) rules.push({ ids: ids, dirs: dirs });
+  });
+  return rules;
+}
+
+/**
+ * 분리 규칙 전체 저장 (기존 규칙을 지우고 전달받은 목록으로 덮어씀)
+ * - 규칙이 바뀌었으므로 이전 랜덤 배치 결과 기록은 초기화
+ * @param {Array&lt;{ids:number[], dirs:string[]}&gt;} rules
+ * @return {number} 실제 저장된 규칙 수
+ */
+function saveSeparationRules(rules) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000); // 동시에 저장해도 데이터가 꼬이지 않도록 잠금
+  try {
+    const sheet = getOrCreateRuleSheet_();
+
+    // 시트에 이름도 같이 적어 두면 사람이 보기 편하므로 번호→이름 매핑 준비
+    const nameMap = {};
+    getStudents().forEach(function(s) { nameMap[s.id] = s.name; });
+
+    const now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    const rows = [];
+
+    (rules || []).forEach(function(r) {
+      const ids = parseIdList_((r.ids || []).join(','));
+      const dirs = ['v', 'h', 'd'].filter(function(code) { return (r.dirs || []).indexOf(code) !== -1; });
+      if (ids.length &lt; 2 || !dirs.length) return; // 잘못된 규칙은 건너뜀
+
+      rows.push([
+        ids.join(', '),
+        ids.map(function(id) { return nameMap[id] || ('#' + id); }).join(', '),
+        dirs.map(function(code) { return DIR_LABELS[code]; }).join(', '),
+        now
+      ]);
+    });
+
+    // 기존 규칙 행 비우기 (헤더는 유지)
+    const last = sheet.getLastRow();
+    if (last &gt; 1) sheet.getRange(2, 1, last - 1, RULE_HEADERS.length).clearContent();
+
+    if (rows.length) {
+      sheet.getRange(2, 1, rows.length, RULE_HEADERS.length).setNumberFormat('@').setValues(rows);
+    }
+
+    // 규칙이 바뀌었으니 예전 결과 기록은 의미가 없어 삭제
+    PropertiesService.getScriptProperties().deleteProperty(LAST_CHECK_KEY);
+    return rows.length;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ==========================================================
+// ▼ 최근 랜덤 배치 결과 기록 (교사 전용 확인용)
+// ==========================================================
+
+/**
+ * 웹 앱이 랜덤 배치를 마친 뒤 '조용히' 호출하는 함수
+ * - 웹 앱 화면에는 아무것도 표시하지 않고, 결과만 서버에 기록
+ * - 기록은 구글 시트 [⚙️ 고급설정] 창에서만 확인 가능
+ * @param {{ruleCount:number, unmet:Array&lt;{a:number, b:number, dir:string}&gt;}} result
+ *   unmet : 지키지 못한 학생 쌍 (학생 번호 + 방향 코드)
+ */
+function reportPlacementResult(result) {
+  result = result || {};
+  const nameMap = {};
+  getStudents().forEach(function(s) { nameMap[s.id] = s.name; });
+
+  const data = {
+    time: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm'),
+    ruleCount: Number(result.ruleCount) || 0,
+    unmet: (result.unmet || []).slice(0, 30).map(function(u) {
+      return {
+        a: nameMap[u.a] || ('#' + u.a),
+        b: nameMap[u.b] || ('#' + u.b),
+        dir: DIR_LABELS[u.dir] || ''
+      };
+    })
+  };
+  PropertiesService.getScriptProperties().setProperty(LAST_CHECK_KEY, JSON.stringify(data));
+  return true;
+}
+
+/**
+ * [내부용] 최근 랜덤 배치 결과 읽기 (기록이 없으면 null)
+ */
+function getLastPlacementCheck_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(LAST_CHECK_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
 }</code></pre>
                                 </div>
                             </div>
@@ -567,7 +782,7 @@ function getHistoryList() {
     /* 자석으로 붙은 면은 각지게 처리하여 한 덩어리처럼 보이게 함 */
     .seat-card.jl { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
     .seat-card.jr { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
-    .seat-card.jt { border-top-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+    .seat-card.jt { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
     .seat-card.jb { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
 
     /* 책상 내부 컨텐츠 (학생 시점에서는 역회전시켜 글자를 똑바로 세움) */
@@ -887,6 +1102,14 @@ function getHistoryList() {
     const BORDER = 2;     // 책상 테두리 두께 (붙을 때 겹치는 양)
 
     // ==========================================================
+    // 상수 : 배치 조건 (교사가 구글 시트 [고급설정]에서 관리)
+    // ※ 이 화면은 학생들이 함께 볼 수 있으므로, 조건과 관련된 내용은
+    //    어떠한 문구·표시·알림으로도 화면에 드러내지 않습니다.
+    // ==========================================================
+    // 두 책상의 중심 거리가 '책상 크기 × 이 값' 이내이면 이웃으로 판정
+    const NEIGHBOR_RANGE = 1.6;
+
+    // ==========================================================
     // 전역 상태
     // ==========================================================
     let students = [];
@@ -901,6 +1124,9 @@ function getHistoryList() {
     let renderOffset = { x: 0, y: 0 };  // 인쇄 시 여백을 잘라내기 위한 렌더 오프셋
     let deskEls = {};           // id -&gt; DOM 요소 (드래그 중 직접 조작용)
     let dragState = null;
+
+    let separationRules = [];   // 랜덤 배치 직전에 서버에서 받아오는 조건 (화면 표시 없음)
+    let isShuffling = false;    // 랜덤 배치 진행 중 (중복 클릭 방지)
 
     const BTN_IDLE = 'py-2 rounded-xl border border-slate-300 bg-white text-slate-600 font-bold text-xs flex items-center justify-center gap-1 transition';
     const BTN_ACTIVE = {
@@ -917,6 +1143,26 @@ function getHistoryList() {
       setToolMode('magnet');
       loadStudents();
     };
+
+    // ==========================================================
+    // 공용 유틸
+    // ==========================================================
+
+    // 이름 등에 들어간 특수문자가 HTML 로 해석되지 않도록 변환
+    function escapeHtml(t) {
+      return String(t == null ? '' : t).replace(/[&amp;&lt;&gt;"']/g, function(c) {
+        return { '&amp;': '&amp;amp;', '&lt;': '&amp;lt;', '&gt;': '&amp;gt;', '"': '&amp;quot;', "'": '&amp;#39;' }[c];
+      });
+    }
+
+    // 배열 무작위 섞기 (Fisher-Yates)
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i &gt; 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
 
     // ==========================================================
     // 커스텀 알림 모달
@@ -977,7 +1223,7 @@ function getHistoryList() {
         const bg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60';
         html += `&lt;tr class="${bg} border-b border-slate-200/80 whitespace-nowrap"&gt;
           &lt;td class="py-0.5 px-1 font-bold text-slate-400 text-center border-r border-slate-100"&gt;${s.id}&lt;/td&gt;
-          &lt;td class="py-0.5 px-1 font-bold text-slate-800"&gt;${s.name}&lt;/td&gt;&lt;/tr&gt;`;
+          &lt;td class="py-0.5 px-1 font-bold text-slate-800"&gt;${escapeHtml(s.name)}&lt;/td&gt;&lt;/tr&gt;`;
       });
       html += `&lt;/tbody&gt;&lt;/table&gt;`;
       container.innerHTML = html;
@@ -987,7 +1233,7 @@ function getHistoryList() {
       const select = document.getElementById('studentSelectForFix');
       select.innerHTML = '&lt;option value=""&gt;-- 고정할 학생 선택 --&lt;/option&gt;';
       students.forEach(s =&gt; {
-        select.innerHTML += `&lt;option value="${s.id}"&gt;${s.name} (${s.id}번)&lt;/option&gt;`;
+        select.innerHTML += `&lt;option value="${s.id}"&gt;${escapeHtml(s.name)} (${s.id}번)&lt;/option&gt;`;
       });
     }
 
@@ -1225,11 +1471,11 @@ function getHistoryList() {
       } else if (seat.status === 'fixed') {
         cls += ' bg-amber-50 border-amber-400 text-amber-900 shadow-sm';
         inner.innerHTML = `&lt;span class="absolute top-1 left-1 text-[8px] bg-amber-200 px-1 py-0.5 rounded font-bold no-print"&gt;고정&lt;/span&gt;
-          &lt;div class="seat-name text-sm md:text-base font-extrabold"&gt;${seat.student ? seat.student.name : ''}&lt;/div&gt;`;
+          &lt;div class="seat-name text-sm md:text-base font-extrabold"&gt;${seat.student ? escapeHtml(seat.student.name) : ''}&lt;/div&gt;`;
       } else {
         cls += ' bg-white border-indigo-200 hover:border-indigo-400 shadow-sm text-slate-700';
         if (seat.student) {
-          inner.innerHTML = `&lt;div class="seat-name text-base md:text-lg font-bold text-indigo-900"&gt;${seat.student.name}&lt;/div&gt;`;
+          inner.innerHTML = `&lt;div class="seat-name text-base md:text-lg font-bold text-indigo-900"&gt;${escapeHtml(seat.student.name)}&lt;/div&gt;`;
         } else {
           inner.innerHTML = `&lt;span class="text-xs text-slate-300 font-semibold"&gt;빈 책상&lt;/span&gt;`;
         }
@@ -1471,6 +1717,183 @@ function getHistoryList() {
     }
 
     // ==========================================================
+    // ★ 배치 조건 처리 (화면에는 어떤 표시도 하지 않음)
+    // ==========================================================
+
+    /**
+     * 두 책상의 위치 관계 판정 (자유 배치 좌표 기준)
+     * @return 'h'(좌우) | 'v'(상하) | 'd'(대각선) | null(이웃 아님)
+     * - 중심 좌표 차이가 책상 크기의 절반 미만이면 '같은 줄/같은 열'로 봄
+     * - 책상 크기 × NEIGHBOR_RANGE 이내면 '바로 옆'으로 봄
+     */
+    function getSeatRelation(a, b) {
+      const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+      const alignX = SEAT_W * 0.5, alignY = SEAT_H * 0.5;
+      const nearX = SEAT_W * NEIGHBOR_RANGE, nearY = SEAT_H * NEIGHBOR_RANGE;
+
+      if (dx &lt; alignX &amp;&amp; dy &lt; alignY) return null;          // 거의 겹친 경우는 무시
+      if (dy &lt; alignY) return dx &lt; nearX ? 'h' : null;      // 같은 줄 → 좌우
+      if (dx &lt; alignX) return dy &lt; nearY ? 'v' : null;      // 같은 열 → 상하
+      return (dx &lt; nearX &amp;&amp; dy &lt; nearY) ? 'd' : null;       // 비스듬히 → 대각선
+    }
+
+    // 학생 두 명을 순서 상관없이 같은 키로 묶음 (예: 7|3 → "3|7")
+    function pairKey(a, b) {
+      a = Number(a); b = Number(b);
+      return a &lt; b ? a + '|' + b : b + '|' + a;
+    }
+
+    /**
+     * 조건을 '학생 쌍 → 금지 방향' 지도로 변환
+     * 3명 이상 묶인 조건은 그 안의 모든 쌍에 같은 방향 금지를 적용
+     */
+    function buildRuleMap() {
+      const map = {};
+      separationRules.forEach(r =&gt; {
+        for (let i = 0; i &lt; r.ids.length; i++) {
+          for (let j = i + 1; j &lt; r.ids.length; j++) {
+            if (r.ids[i] == r.ids[j]) continue;
+            const k = pairKey(r.ids[i], r.ids[j]);
+            if (!map[k]) map[k] = {};
+            r.dirs.forEach(d =&gt; { map[k][d] = true; });
+          }
+        }
+      });
+      return map;
+    }
+
+    function isBlocked(map, a, b, dir) {
+      const entry = map[pairKey(a, b)];
+      return !!(entry &amp;&amp; entry[dir]);
+    }
+
+    // 현재 배치에서 조건을 지키지 못한 쌍 목록 (서버 기록용, 화면 표시 없음)
+    function findViolations() {
+      const map = buildRuleMap();
+      if (!Object.keys(map).length) return [];
+      const seats = gridData.filter(s =&gt; s.status !== 'disabled' &amp;&amp; s.student);
+      const list = [];
+      for (let i = 0; i &lt; seats.length; i++) {
+        for (let j = i + 1; j &lt; seats.length; j++) {
+          const dir = getSeatRelation(seats[i], seats[j]);
+          if (dir &amp;&amp; isBlocked(map, seats[i].student.id, seats[j].student.id, dir)) {
+            list.push({ a: seats[i].student.id, b: seats[j].student.id, dir: dir });
+          }
+        }
+      }
+      return list;
+    }
+
+    /**
+     * 조건을 지키는 랜덤 배치 탐색 (Min-Conflict 지역 탐색 + 재시작)
+     * 1) 학생을 무작위로 앉힌다
+     * 2) 조건을 어긴 학생 하나를 골라, 다른 자리(빈 책상 포함)와 맞바꿨을 때
+     *    위반이 가장 줄어드는 자리로 옮긴다 (동점이면 무작위)
+     * 3) 막히면 가끔 무작위로 흔들어 빠져나오고, 그래도 안 되면 처음부터 다시
+     * - 고정석 학생은 움직이지 않지만 이웃 검사에는 포함
+     * - 최대 약 1.2초 탐색 후 가장 좋았던 결과를 반환
+     * @return {{assign: Array, violations: number}} assign[i] = seats[i] 에 앉을 학생
+     */
+    function solveSeparation(pool, seats) {
+      const slotIds = seats.map(s =&gt; s.id);
+      const base = pool.slice();
+      while (base.length &lt; slotIds.length) base.push(null); // 남는 책상은 빈자리(null)
+      shuffleArray(base);
+
+      const map = buildRuleMap();
+      if (!Object.keys(map).length) return { assign: base, violations: 0 }; // 조건 없으면 단순 셔플
+
+      // 사용 가능한 모든 책상(고정석 포함)의 이웃 지도 미리 계산
+      const active = gridData.filter(s =&gt; s.status !== 'disabled');
+      const neighbors = {};
+      active.forEach(s =&gt; { neighbors[s.id] = []; });
+      for (let i = 0; i &lt; active.length; i++) {
+        for (let j = i + 1; j &lt; active.length; j++) {
+          const dir = getSeatRelation(active[i], active[j]);
+          if (dir) {
+            neighbors[active[i].id].push({ id: active[j].id, dir: dir });
+            neighbors[active[j].id].push({ id: active[i].id, dir: dir });
+          }
+        }
+      }
+
+      // 고정석 학생 (움직이지 않음)
+      const fixedMap = {};
+      gridData.forEach(s =&gt; { if (s.status === 'fixed' &amp;&amp; s.student) fixedMap[s.id] = s.student; });
+
+      const cur = {}; // 움직일 수 있는 자리 → 학생
+      const who = id =&gt; (id in cur) ? cur[id] : (fixedMap[id] || null);
+
+      // 특정 자리에 앉은 학생이 이웃과 몇 건 충돌하는지
+      const seatCost = id =&gt; {
+        const st = who(id);
+        if (!st || !neighbors[id]) return 0;
+        let c = 0;
+        neighbors[id].forEach(n =&gt; {
+          const o = who(n.id);
+          if (o &amp;&amp; isBlocked(map, st.id, o.id, n.dir)) c++;
+        });
+        return c;
+      };
+      // 전체 위반 쌍 수 (각 쌍이 양쪽에서 두 번 세어지므로 / 2)
+      const totalCost = () =&gt; active.reduce((sum, s) =&gt; sum + seatCost(s.id), 0) / 2;
+      const swap = (a, b) =&gt; { const t = cur[a]; cur[a] = cur[b]; cur[b] = t; };
+      const pick = arr =&gt; arr[Math.floor(Math.random() * arr.length)];
+
+      let best = null, bestCost = Infinity;
+      const deadline = Date.now() + 1200;
+      let attempt = 0;
+
+      while (bestCost &gt; 0 &amp;&amp; (attempt === 0 || Date.now() &lt; deadline)) {
+        if (attempt++ &gt; 0) shuffleArray(base);     // 재시작 시 새로 섞기
+        slotIds.forEach((id, i) =&gt; { cur[id] = base[i]; });
+
+        for (let it = 0; it &lt; 400; it++) {
+          if ((it &amp; 31) === 0 &amp;&amp; Date.now() &gt; deadline) break;
+          const conflicted = slotIds.filter(id =&gt; seatCost(id) &gt; 0);
+          if (!conflicted.length) break;           // 움직일 수 있는 자리 중 충돌 없음
+
+          const s1 = pick(conflicted);
+          let bestDelta = Infinity, cands = [];
+          slotIds.forEach(s2 =&gt; {
+            if (s2 === s1 || cur[s1] === cur[s2]) return;
+            const before = seatCost(s1) + seatCost(s2);
+            swap(s1, s2);
+            const after = seatCost(s1) + seatCost(s2);
+            swap(s1, s2);
+            const d = after - before;
+            if (d &lt; bestDelta) { bestDelta = d; cands = [s2]; }
+            else if (d === bestDelta) cands.push(s2);
+          });
+          if (!cands.length) break;
+
+          if (bestDelta &lt;= 0) swap(s1, pick(cands));                 // 개선(또는 동점)이면 이동
+          else if (Math.random() &lt; 0.3) swap(s1, pick(slotIds.filter(id =&gt; id !== s1))); // 막혔을 때 흔들기
+        }
+
+        const c = totalCost();
+        if (c &lt; bestCost) { bestCost = c; best = slotIds.map(id =&gt; cur[id]); }
+      }
+
+      return { assign: best, violations: bestCost };
+    }
+
+    /**
+     * 랜덤 배치 결과를 서버에 '조용히' 기록
+     * - 화면에는 아무것도 띄우지 않음
+     * - 교사는 구글 시트 [⚙️ 고급설정] 창에서 결과를 확인
+     */
+    function reportResultSilently() {
+      if (!separationRules.length) return;
+      google.script.run
+        .withFailureHandler(function() { /* 기록 실패는 화면에 알리지 않음 */ })
+        .reportPlacementResult({
+          ruleCount: separationRules.length,
+          unmet: findViolations()
+        });
+    }
+
+    // ==========================================================
     // 배치 알고리즘
     // ==========================================================
 
@@ -1498,10 +1921,18 @@ function getHistoryList() {
       return result;
     }
 
-    // 무작위 셔플 (Fisher-Yates)
+    /**
+     * [랜덤 배치 시작!]
+     * - 버튼을 누르면 이름이 돌아가는 연출을 '즉시' 시작하고,
+     *   그동안 서버에서 최신 조건을 받아 최종 배치를 계산한다.
+     * - 연출이 최소 횟수(약 1초) 이상 돌았고 계산도 끝났으면 결과로 확정.
+     * - 화면상으로는 평범한 무작위 배치와 완전히 똑같이 보인다.
+     */
     function randomizeSeats() {
+      if (isShuffling) return;
+
       const fixedIds = gridData.filter(s =&gt; s.status === 'fixed' &amp;&amp; s.student).map(s =&gt; s.student.id);
-      let pool = students.filter(s =&gt; fixedIds.indexOf(s.id) === -1);
+      const pool = students.filter(s =&gt; fixedIds.indexOf(s.id) === -1);
       const availableSeats = gridData.filter(s =&gt; s.status === 'normal');
 
       if (pool.length &gt; availableSeats.length) {
@@ -1509,24 +1940,40 @@ function getHistoryList() {
         return;
       }
 
-      for (let i = pool.length - 1; i &gt; 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
-      }
+      isShuffling = true;
+      let result = null;
 
-      // 돌아가는 연출 후 최종 확정
+      // ① 최신 조건을 받아 최종 배치 계산 (연출과 동시에 진행)
+      google.script.run
+        .withSuccessHandler(function(rules) {
+          separationRules = (rules || []).map(r =&gt; ({ ids: r.ids.map(Number), dirs: r.dirs.slice() }));
+          result = solveSeparation(pool, availableSeats);
+        })
+        .withFailureHandler(function() {
+          result = solveSeparation(pool, availableSeats); // 실패 시 기존 조건(없으면 일반 셔플)
+        })
+        .getSeparationRules();
+
+      // ② 돌아가는 연출
       let step = 0;
       const interval = setInterval(() =&gt; {
+        // 서버 응답이 너무 늦으면(약 5초) 기존 조건으로 바로 계산
+        if (!result &amp;&amp; step &gt; 60) result = solveSeparation(pool, availableSeats);
+
+        if (step &gt; 10 &amp;&amp; result) {
+          clearInterval(interval);
+          availableSeats.forEach((seat, idx) =&gt; { seat.student = result.assign[idx] || null; });
+          isShuffling = false;
+          renderGrid();
+          reportResultSilently();
+          return;
+        }
+
         availableSeats.forEach(seat =&gt; {
-          seat.student = pool[Math.floor(Math.random() * pool.length)];
+          seat.student = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
         });
         renderGrid();
         step++;
-        if (step &gt; 10) {
-          clearInterval(interval);
-          availableSeats.forEach((seat, idx) =&gt; { seat.student = pool[idx] || null; });
-          renderGrid();
-        }
       }, 80);
     }
 
@@ -1640,7 +2087,7 @@ function getHistoryList() {
           div.className = 'p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl flex justify-between items-center transition cursor-pointer';
           div.onclick = () =&gt; loadHistoryData(item);
           div.innerHTML = `&lt;div&gt;
-              &lt;div class="font-bold text-slate-800 text-sm"&gt;${item.title}&lt;/div&gt;
+              &lt;div class="font-bold text-slate-800 text-sm"&gt;${escapeHtml(item.title)}&lt;/div&gt;
               &lt;div class="text-xs text-slate-400"&gt;${item.date}&lt;/div&gt;
             &lt;/div&gt;
             &lt;span class="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg"&gt;불러오기&lt;/span&gt;`;
@@ -1686,6 +2133,565 @@ function getHistoryList() {
 
     function closeHistoryModal() {
       document.getElementById('historyModal').classList.add('hidden');
+    }
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+                                </div>
+                            </div>
+                            <!-- advanced.html -->
+                            <div class="tab-pane fade" id="advancedhtml-pane" role="tabpanel">
+                                <div class="code-box-wrapper shadow-sm">
+                                    <div class="code-box-header">
+                                        <span class="text-light small fw-bold font-monospace">
+                                            <i class="bi bi-file-earmark-code me-1 text-info"></i> advanced.html
+                                        </span>
+                                        <button type="button" class="btn btn-sm btn-dark border border-secondary text-white fw-semibold rounded-pill px-3 py-1" onclick="copySourceCode('advancedHtmlContent', this)">
+                                            <i class="bi bi-clipboard me-1"></i> 코드 복사
+                                        </button>
+                                    </div>
+                                    <pre class="code-box-pre"><code id="advancedHtmlContent">&lt;!DOCTYPE html&gt;
+&lt;html lang="ko"&gt;
+&lt;head&gt;
+  &lt;base target="_top"&gt;
+  &lt;meta charset="UTF-8"&gt;
+  &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+  &lt;!-- Tailwind CSS &amp; FontAwesome CDN --&gt;
+  &lt;script src="https://cdn.tailwindcss.com"&gt;&lt;/script&gt;
+  &lt;link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"&gt;
+  &lt;style&gt;
+    html, body { height: 100%; margin: 0; }
+    /* 얇은 세로 스크롤바 */
+    .thin-scroll::-webkit-scrollbar { width: 6px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+    .thin-scroll::-webkit-scrollbar-track { background: transparent; }
+  &lt;/style&gt;
+&lt;/head&gt;
+&lt;body class="bg-white text-slate-800 font-sans"&gt;
+
+  &lt;div class="h-full flex flex-col"&gt;
+
+    &lt;!-- ================= 상단 안내 ================= --&gt;
+    &lt;div class="px-5 pt-3 pb-3 border-b border-slate-100 flex items-center gap-3"&gt;
+      &lt;div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center text-lg shrink-0"&gt;
+        &lt;i class="fa-solid fa-people-arrows"&gt;&lt;/i&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;p class="text-sm font-bold text-slate-800 leading-tight"&gt;함께 앉으면 곤란한 친구들을 자연스럽게 떨어뜨립니다&lt;/p&gt;
+        &lt;p class="text-[11px] text-slate-400 mt-0.5 leading-snug"&gt;
+          웹 앱의 [랜덤 배치 시작!]에만 조용히 적용되며,&lt;br&gt;
+          &lt;span class="text-emerald-600 font-semibold"&gt;&lt;i class="fa-solid fa-eye-slash"&gt;&lt;/i&gt; 웹 앱 화면에는 규칙이나 결과가 전혀 표시되지 않습니다.&lt;/span&gt;
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;!-- ================= 로딩 화면 ================= --&gt;
+    &lt;div id="loadingView" class="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 text-sm"&gt;
+      &lt;i class="fa-solid fa-spinner fa-spin text-2xl text-rose-500"&gt;&lt;/i&gt;
+      학생 명단과 규칙을 불러오는 중...
+    &lt;/div&gt;
+
+    &lt;!-- ================= 본문 (스크롤) ================= --&gt;
+    &lt;div id="mainView" class="hidden flex-1 overflow-y-auto thin-scroll px-5 py-4 space-y-5"&gt;
+
+      &lt;!-- 최근 랜덤 배치 결과 (교사만 보는 곳) --&gt;
+      &lt;section id="lastCheckCard" class="hidden"&gt;&lt;/section&gt;
+
+      &lt;!-- 새 규칙 만들기 --&gt;
+      &lt;section class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4"&gt;
+        &lt;div class="flex items-center gap-1.5 text-xs font-extrabold text-slate-700"&gt;
+          &lt;i class="fa-solid fa-plus text-rose-500"&gt;&lt;/i&gt; 새 규칙 만들기
+        &lt;/div&gt;
+
+        &lt;!-- ① 학생 선택 --&gt;
+        &lt;div&gt;
+          &lt;div class="flex justify-between items-center mb-1.5"&gt;
+            &lt;label class="text-xs font-bold text-slate-600"&gt;① 서로 떨어뜨릴 학생 &lt;span class="text-slate-400 font-medium"&gt;(2명 이상)&lt;/span&gt;&lt;/label&gt;
+            &lt;span class="text-[11px] font-bold text-rose-600"&gt;&lt;span id="ruleSelCount"&gt;0&lt;/span&gt;명 선택&lt;/span&gt;
+          &lt;/div&gt;
+          &lt;div id="ruleSelectedSummary" class="flex flex-wrap gap-1 mb-2 min-h-[24px] items-center"&gt;&lt;/div&gt;
+          &lt;div class="relative mb-2"&gt;
+            &lt;i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"&gt;&lt;/i&gt;
+            &lt;input type="text" id="ruleStudentSearch" oninput="renderStudentChips()" placeholder="이름 또는 번호로 검색"
+              class="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-medium bg-white focus:ring-2 focus:ring-rose-400 focus:outline-none"&gt;
+          &lt;/div&gt;
+          &lt;div id="ruleStudentChips" class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto thin-scroll p-0.5"&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;!-- ② 금지 방향 (알약 다중 선택 + 미니 미리보기) --&gt;
+        &lt;div&gt;
+          &lt;label class="block text-xs font-bold text-slate-600 mb-1.5"&gt;② 붙어 앉으면 안 되는 방향 &lt;span class="text-slate-400 font-medium"&gt;(여러 개 선택 가능)&lt;/span&gt;&lt;/label&gt;
+          &lt;div class="flex items-center gap-3"&gt;
+            &lt;div id="ruleDirPills" class="flex flex-wrap gap-1.5 flex-1"&gt;&lt;/div&gt;
+            &lt;div class="shrink-0 text-center"&gt;
+              &lt;div id="ruleDirPreview" class="grid grid-cols-3 gap-[3px]"&gt;&lt;/div&gt;
+              &lt;div class="text-[9px] text-slate-400 mt-1"&gt;빨간 칸 = 금지&lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;p id="ruleFormMsg" class="hidden"&gt;&lt;/p&gt;
+
+        &lt;button onclick="addRuleFromForm()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-sm flex items-center justify-center gap-2"&gt;
+          &lt;i class="fa-solid fa-plus"&gt;&lt;/i&gt; 규칙 추가
+        &lt;/button&gt;
+      &lt;/section&gt;
+
+      &lt;!-- 등록된 규칙 목록 --&gt;
+      &lt;section&gt;
+        &lt;div class="flex justify-between items-center mb-2"&gt;
+          &lt;h4 class="text-xs font-extrabold text-slate-700 flex items-center gap-1.5"&gt;
+            &lt;i class="fa-solid fa-list-check text-indigo-600"&gt;&lt;/i&gt; 등록된 분리 규칙 (&lt;span id="ruleListCount"&gt;0&lt;/span&gt;)
+          &lt;/h4&gt;
+          &lt;span class="text-[10px] text-slate-400"&gt;방향 알약을 눌러 바로 수정&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div id="ruleListContainer" class="space-y-2"&gt;&lt;/div&gt;
+      &lt;/section&gt;
+    &lt;/div&gt;
+
+    &lt;!-- ================= 하단 버튼 ================= --&gt;
+    &lt;div class="px-5 py-3 border-t border-slate-100 bg-white"&gt;
+      &lt;p id="dirtyHint" class="hidden text-[11px] text-amber-600 font-semibold mb-2 text-center"&gt;
+        &lt;i class="fa-solid fa-circle-exclamation"&gt;&lt;/i&gt; 저장하지 않은 변경사항이 있습니다
+      &lt;/p&gt;
+      &lt;div class="flex gap-2"&gt;
+        &lt;button onclick="requestClose()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm transition"&gt;닫기&lt;/button&gt;
+        &lt;button id="btnSave" onclick="saveRules()" class="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2"&gt;
+          &lt;i class="fa-solid fa-floppy-disk"&gt;&lt;/i&gt; 저장하기
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;!-- ================= 공용 커스텀 모달 (알림 / 확인) ================= --&gt;
+  &lt;div id="dialogModal" class="fixed inset-0 bg-slate-900/40 hidden z-50 flex items-center justify-center p-5"&gt;
+    &lt;div id="dialogBox" class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center transform scale-95 transition-all duration-200"&gt;
+      &lt;div id="dialogIcon" class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl"&gt;&lt;/div&gt;
+      &lt;h3 id="dialogTitle" class="text-lg font-bold text-slate-800 mb-1"&gt;&lt;/h3&gt;
+      &lt;p id="dialogMessage" class="text-xs text-slate-500 leading-relaxed mb-6 whitespace-pre-line"&gt;&lt;/p&gt;
+      &lt;div id="dialogButtons" class="flex gap-2"&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;!-- 하단 토스트 --&gt;
+  &lt;div id="toast" class="hidden"&gt;&lt;/div&gt;
+
+  &lt;script&gt;
+    // ==========================================================
+    // 상수 / 상태
+    // ==========================================================
+    const DIR_ORDER = ['v', 'h', 'd'];
+    const DIR_META = {
+      v: { label: '상하',   icon: 'fa-arrows-up-down' },
+      h: { label: '좌우',   icon: 'fa-arrows-left-right' },
+      d: { label: '대각선', icon: 'fa-up-right-and-down-left-from-center' }
+    };
+
+    let students = [];          // 학생명단 시트의 학생
+    let rules = [];             // 편집 중인 규칙 [{ids:[번호...], dirs:['v','h','d']}]
+    let savedSnapshot = '[]';   // 마지막으로 저장된 상태 (변경 여부 비교용)
+    let lastCheck = null;       // 최근 랜덤 배치 결과 {time, ruleCount, unmet:[{a,b,dir}]}
+    let ruleSelectIds = [];     // [새 규칙 만들기]에서 고른 학생 번호
+    let ruleDirs = ['v', 'h'];  // [새 규칙 만들기]에서 고른 방향 (기본: 상하·좌우)
+    let toastTimer = null;
+    let dialogActions = [];
+
+    // ==========================================================
+    // 초기 진입 : 학생 + 규칙 + 최근 결과 불러오기
+    // ==========================================================
+    window.onload = function() {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          students = data.students || [];
+          rules = (data.rules || []).map(r =&gt; ({ ids: r.ids.map(Number), dirs: r.dirs.slice() }));
+          savedSnapshot = JSON.stringify(rules);
+          lastCheck = data.lastCheck || null;
+
+          document.getElementById('loadingView').classList.add('hidden');
+          document.getElementById('mainView').classList.remove('hidden');
+          renderLastCheck();
+          renderStudentChips();
+          renderDirPills();
+          renderRuleList();
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('loadingView').innerHTML = `
+            &lt;i class="fa-solid fa-triangle-exclamation text-2xl text-amber-500"&gt;&lt;/i&gt;
+            &lt;div class="text-center px-6"&gt;데이터를 불러오지 못했습니다.&lt;br&gt;
+            &lt;span class="text-[11px]"&gt;${escapeHtml(err &amp;&amp; err.message ? err.message : '')}&lt;/span&gt;&lt;/div&gt;`;
+        })
+        .getAdvancedSettingsData();
+    };
+
+    // ==========================================================
+    // 공용 유틸
+    // ==========================================================
+    function escapeHtml(t) {
+      return String(t == null ? '' : t).replace(/[&amp;&lt;&gt;"']/g, function(c) {
+        return { '&amp;': '&amp;amp;', '&lt;': '&amp;lt;', '&gt;': '&amp;gt;', '"': '&amp;quot;', "'": '&amp;#39;' }[c];
+      });
+    }
+
+    function findStudent(id) {
+      return students.find(s =&gt; s.id == id) || null;
+    }
+
+    function studentLabel(id) {
+      const st = findStudent(id);
+      return st ? st.name : ('#' + id);
+    }
+
+    // 저장된 상태와 달라졌는지 확인해 하단 안내 표시
+    function updateDirty() {
+      const dirty = JSON.stringify(rules) !== savedSnapshot;
+      document.getElementById('dirtyHint').classList.toggle('hidden', !dirty);
+      return dirty;
+    }
+
+    // ==========================================================
+    // 최근 랜덤 배치 결과 카드 (교사만 보는 곳)
+    // ==========================================================
+    function renderLastCheck() {
+      const card = document.getElementById('lastCheckCard');
+      const savedCount = JSON.parse(savedSnapshot).length;
+
+      // 저장된 규칙이 없으면 결과 카드를 보여줄 필요 없음
+      if (!savedCount) { card.className = 'hidden'; card.innerHTML = ''; return; }
+
+      if (!lastCheck) {
+        card.className = 'rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-500 flex items-start gap-2';
+        card.innerHTML = `&lt;i class="fa-solid fa-clock mt-0.5 text-slate-400"&gt;&lt;/i&gt;
+          &lt;div&gt;아직 현재 규칙으로 랜덤 배치한 기록이 없습니다.&lt;br&gt;
+          &lt;span class="text-[11px] text-slate-400"&gt;웹 앱에서 [랜덤 배치 시작!]을 누른 뒤 이 창을 다시 열면 결과를 확인할 수 있어요.&lt;/span&gt;&lt;/div&gt;`;
+        return;
+      }
+
+      const unmet = lastCheck.unmet || [];
+      if (!unmet.length) {
+        card.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-800 flex items-start gap-2';
+        card.innerHTML = `&lt;i class="fa-solid fa-circle-check mt-0.5 text-emerald-600"&gt;&lt;/i&gt;
+          &lt;div&gt;&lt;b&gt;최근 랜덤 배치 (${escapeHtml(lastCheck.time)})&lt;/b&gt;&lt;br&gt;
+          분리 규칙 ${lastCheck.ruleCount}개를 모두 지켜 배치했습니다.&lt;/div&gt;`;
+      } else {
+        const lines = unmet.map(u =&gt;
+          `&lt;li&gt;${escapeHtml(u.a)} ↔ ${escapeHtml(u.b)} &lt;span class="text-amber-600"&gt;(${escapeHtml(u.dir)})&lt;/span&gt;&lt;/li&gt;`).join('');
+        card.className = 'rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2';
+        card.innerHTML = `&lt;i class="fa-solid fa-triangle-exclamation mt-0.5 text-amber-500"&gt;&lt;/i&gt;
+          &lt;div class="flex-1"&gt;&lt;b&gt;최근 랜덤 배치 (${escapeHtml(lastCheck.time)})&lt;/b&gt;&lt;br&gt;
+          아래 ${unmet.length}쌍은 조건을 지키지 못했습니다.
+          &lt;ul class="list-disc pl-4 my-1.5 font-semibold space-y-0.5"&gt;${lines}&lt;/ul&gt;
+          &lt;span class="text-[11px] text-amber-700"&gt;고정석·삭제한 책상·책상 간격을 조정하거나 금지 방향을 줄인 뒤, 웹 앱에서 [랜덤 배치]를 다시 눌러 주세요.&lt;/span&gt;&lt;/div&gt;`;
+      }
+    }
+
+    // ==========================================================
+    // 커스텀 모달 / 토스트 (alert, confirm 대체)
+    // ==========================================================
+    /**
+     * @param {object} o { type:'success'|'warning'|'info', title, message,
+     *                     buttons:[{label, style:'primary'|'secondary'|'danger', onClick}] }
+     */
+    function showDialog(o) {
+      const iconBox = document.getElementById('dialogIcon');
+      const styles = {
+        success: ['bg-emerald-100 text-emerald-600', 'fa-check'],
+        warning: ['bg-amber-100 text-amber-600', 'fa-triangle-exclamation'],
+        info:    ['bg-indigo-100 text-indigo-600', 'fa-circle-info']
+      };
+      const st = styles[o.type] || styles.info;
+      iconBox.className = 'w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl ' + st[0];
+      iconBox.innerHTML = `&lt;i class="fa-solid ${st[1]}"&gt;&lt;/i&gt;`;
+      document.getElementById('dialogTitle').innerText = o.title || '알림';
+      document.getElementById('dialogMessage').innerText = o.message || '';
+
+      const btnStyle = {
+        primary:   'bg-slate-900 hover:bg-slate-800 text-white shadow-md',
+        secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-700',
+        danger:    'bg-red-600 hover:bg-red-700 text-white shadow-md'
+      };
+      const buttons = o.buttons &amp;&amp; o.buttons.length ? o.buttons : [{ label: '확인', style: 'primary' }];
+      dialogActions = buttons.map(b =&gt; b.onClick || null);
+      document.getElementById('dialogButtons').innerHTML = buttons.map((b, i) =&gt;
+        `&lt;button onclick="onDialogButton(${i})" class="flex-1 font-bold py-2.5 rounded-xl text-sm transition ${btnStyle[b.style || 'primary']}"&gt;${escapeHtml(b.label)}&lt;/button&gt;`
+      ).join('');
+
+      const modal = document.getElementById('dialogModal');
+      const box = document.getElementById('dialogBox');
+      modal.classList.remove('hidden');
+      setTimeout(() =&gt; { box.classList.remove('scale-95'); box.classList.add('scale-100'); }, 10);
+    }
+
+    function onDialogButton(i) {
+      const fn = dialogActions[i];
+      closeDialog();
+      if (fn) fn();
+    }
+
+    function closeDialog() {
+      const modal = document.getElementById('dialogModal');
+      const box = document.getElementById('dialogBox');
+      box.classList.remove('scale-100'); box.classList.add('scale-95');
+      setTimeout(() =&gt; { modal.classList.add('hidden'); }, 150);
+    }
+
+    function showToast(msg, type) {
+      const t = document.getElementById('toast');
+      const color = type === 'success' ? 'bg-emerald-600' : (type === 'warning' ? 'bg-amber-500' : 'bg-slate-800');
+      const icon = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-info');
+      t.className = 'fixed left-1/2 bottom-20 -translate-x-1/2 z-[70] px-4 py-2.5 rounded-xl shadow-lg text-xs font-bold text-white flex items-center gap-2 max-w-[90vw] ' + color;
+      t.innerHTML = `&lt;i class="fa-solid ${icon}"&gt;&lt;/i&gt;&lt;span&gt;${escapeHtml(msg)}&lt;/span&gt;`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() =&gt; { t.classList.add('hidden'); }, 2400);
+    }
+
+    // ==========================================================
+    // ① 학생 선택 알약
+    // ==========================================================
+    function renderStudentChips() {
+      const box = document.getElementById('ruleStudentChips');
+      const q = document.getElementById('ruleStudentSearch').value.trim();
+
+      if (!students.length) {
+        box.innerHTML = `&lt;div class="text-xs text-slate-400 py-3 w-full text-center leading-relaxed"&gt;
+          학생명단 탭이 비어 있습니다.&lt;br&gt;학생명단 탭에 명단을 입력한 뒤 이 창을 다시 열어 주세요.&lt;/div&gt;`;
+      } else {
+        const list = students.filter(s =&gt; !q || s.name.indexOf(q) !== -1 || String(s.id).indexOf(q) === 0);
+        box.innerHTML = list.length ? list.map(s =&gt; {
+          const on = ruleSelectIds.indexOf(s.id) !== -1;
+          const cls = on
+            ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+            : 'bg-white border-slate-300 text-slate-600 hover:border-rose-300 hover:text-rose-600';
+          return `&lt;button type="button" onclick="toggleRuleStudent(${s.id})"
+              class="px-2.5 py-1 rounded-full border text-[11px] font-bold transition flex items-center gap-1 ${cls}"&gt;
+              ${on ? '&lt;i class="fa-solid fa-check text-[9px]"&gt;&lt;/i&gt;' : `&lt;span class="text-slate-400 font-semibold"&gt;${s.id}&lt;/span&gt;`}
+              ${escapeHtml(s.name)}
+            &lt;/button&gt;`;
+        }).join('') : '&lt;div class="text-xs text-slate-400 py-3 w-full text-center"&gt;검색 결과가 없습니다.&lt;/div&gt;';
+      }
+      renderSelectedSummary();
+    }
+
+    // 선택된 학생 요약 (× 로 빼기)
+    function renderSelectedSummary() {
+      const box = document.getElementById('ruleSelectedSummary');
+      document.getElementById('ruleSelCount').innerText = ruleSelectIds.length;
+      if (!ruleSelectIds.length) {
+        box.innerHTML = '&lt;span class="text-[11px] text-slate-400"&gt;아래에서 학생을 눌러 선택하세요.&lt;/span&gt;';
+        return;
+      }
+      box.innerHTML = ruleSelectIds.map(id =&gt; `
+        &lt;span class="inline-flex items-center gap-1 bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold pl-2 pr-1 py-0.5 rounded-full"&gt;
+          ${escapeHtml(studentLabel(id))}
+          &lt;button type="button" onclick="toggleRuleStudent(${id})" class="w-4 h-4 rounded-full hover:bg-rose-200 flex items-center justify-center"&gt;
+            &lt;i class="fa-solid fa-xmark text-[9px]"&gt;&lt;/i&gt;
+          &lt;/button&gt;
+        &lt;/span&gt;`).join('');
+    }
+
+    function toggleRuleStudent(id) {
+      const i = ruleSelectIds.indexOf(id);
+      if (i === -1) ruleSelectIds.push(id); else ruleSelectIds.splice(i, 1);
+      hideFormMsg();
+      renderStudentChips();
+    }
+
+    // ==========================================================
+    // ② 방향 알약 + 3×3 미리보기
+    // ==========================================================
+    // 방향 알약 HTML (small=true 면 규칙 목록용 작은 크기)
+    function dirPillHtml(code, on, handler, small) {
+      const m = DIR_META[code];
+      const size = small ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1.5 text-xs';
+      const cls = on
+        ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+        : 'bg-white border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400';
+      return `&lt;button type="button" onclick="${handler}" class="rounded-full border font-bold transition flex items-center gap-1 ${size} ${cls}"&gt;
+        &lt;i class="fa-solid ${m.icon}"&gt;&lt;/i&gt; ${m.label}&lt;/button&gt;`;
+    }
+
+    function renderDirPills() {
+      document.getElementById('ruleDirPills').innerHTML =
+        DIR_ORDER.map(code =&gt; dirPillHtml(code, ruleDirs.indexOf(code) !== -1, `toggleRuleDir('${code}')`, false)).join('');
+      renderDirPreview();
+    }
+
+    function toggleRuleDir(code) {
+      const i = ruleDirs.indexOf(code);
+      if (i === -1) ruleDirs.push(code); else ruleDirs.splice(i, 1);
+      hideFormMsg();
+      renderDirPills();
+    }
+
+    // 가운데 '나'를 기준으로 금지되는 칸을 빨갛게 표시
+    function renderDirPreview() {
+      const layout = ['d', 'v', 'd', 'h', 'me', 'h', 'd', 'v', 'd'];
+      document.getElementById('ruleDirPreview').innerHTML = layout.map(k =&gt; {
+        if (k === 'me') {
+          return '&lt;div class="w-7 h-5 rounded-[4px] bg-slate-800 text-white text-[9px] font-bold flex items-center justify-center"&gt;나&lt;/div&gt;';
+        }
+        const blocked = ruleDirs.indexOf(k) !== -1;
+        return `&lt;div class="w-7 h-5 rounded-[4px] flex items-center justify-center text-[9px] transition ${blocked ? 'bg-rose-500 text-white' : 'bg-slate-200'}"&gt;
+          ${blocked ? '&lt;i class="fa-solid fa-xmark"&gt;&lt;/i&gt;' : ''}&lt;/div&gt;`;
+      }).join('');
+    }
+
+    function showFormMsg(msg, type) {
+      const el = document.getElementById('ruleFormMsg');
+      el.className = 'text-[11px] font-semibold ' + (type === 'info' ? 'text-indigo-600' : 'text-red-500');
+      el.innerHTML = `&lt;i class="fa-solid ${type === 'info' ? 'fa-circle-info' : 'fa-circle-exclamation'}"&gt;&lt;/i&gt; ${escapeHtml(msg)}`;
+    }
+
+    function hideFormMsg() {
+      document.getElementById('ruleFormMsg').className = 'hidden';
+    }
+
+    // ==========================================================
+    // 규칙 추가 / 수정 / 삭제
+    // ==========================================================
+    /**
+     * [규칙 추가] : 검증 후 목록 맨 위에 추가
+     * 같은 학생 묶음이 이미 있으면 새로 만들지 않고 방향만 합침
+     */
+    function addRuleFromForm() {
+      if (ruleSelectIds.length &lt; 2) { showFormMsg('떨어뜨릴 학생을 2명 이상 선택해 주세요.'); return false; }
+      if (!ruleDirs.length) { showFormMsg('피해야 할 방향을 하나 이상 선택해 주세요.'); return false; }
+
+      const ids = ruleSelectIds.slice().sort((a, b) =&gt; a - b);
+      const dirs = DIR_ORDER.filter(d =&gt; ruleDirs.indexOf(d) !== -1);
+      const key = ids.join(',');
+      const dup = rules.find(r =&gt; r.ids.slice().sort((a, b) =&gt; a - b).join(',') === key);
+
+      if (dup) {
+        dup.dirs = DIR_ORDER.filter(d =&gt; dup.dirs.indexOf(d) !== -1 || dirs.indexOf(d) !== -1);
+        showFormMsg('이미 있는 학생 묶음이라 방향만 합쳐 두었어요.', 'info');
+      } else {
+        rules.unshift({ ids: ids, dirs: dirs });
+        hideFormMsg();
+        showToast('규칙을 추가했어요. [저장하기]를 눌러 마무리하세요.', 'info');
+      }
+
+      ruleSelectIds = [];
+      document.getElementById('ruleStudentSearch').value = '';
+      renderStudentChips();
+      renderRuleList();
+      return true;
+    }
+
+    function renderRuleList() {
+      const box = document.getElementById('ruleListContainer');
+      document.getElementById('ruleListCount').innerText = rules.length;
+
+      if (!rules.length) {
+        box.innerHTML = `&lt;div class="text-center py-6 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl"&gt;
+          아직 등록된 분리 규칙이 없습니다.&lt;/div&gt;`;
+        updateDirty();
+        return;
+      }
+
+      box.innerHTML = rules.map((r, idx) =&gt; {
+        const names = r.ids.map(id =&gt; {
+          const st = findStudent(id);
+          return st
+            ? `&lt;span class="bg-slate-100 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full"&gt;${escapeHtml(st.name)}&lt;/span&gt;`
+            : `&lt;span class="bg-slate-50 text-slate-400 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-dashed border-slate-300"&gt;#${id} (명단 없음)&lt;/span&gt;`;
+        }).join('');
+        const pills = DIR_ORDER.map(code =&gt;
+          dirPillHtml(code, r.dirs.indexOf(code) !== -1, `toggleRuleDirInList(${idx}, '${code}')`, true)).join('');
+
+        return `&lt;div class="border border-slate-200 rounded-xl p-3 bg-white"&gt;
+          &lt;div class="flex justify-between items-start gap-2 mb-2"&gt;
+            &lt;div class="flex flex-wrap items-center gap-1"&gt;
+              &lt;span class="text-[10px] font-extrabold text-rose-500 mr-0.5"&gt;#${idx + 1}&lt;/span&gt;${names}
+            &lt;/div&gt;
+            &lt;button type="button" onclick="removeRule(${idx})" class="w-7 h-7 shrink-0 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition"&gt;
+              &lt;i class="fa-solid fa-trash-can text-xs"&gt;&lt;/i&gt;
+            &lt;/button&gt;
+          &lt;/div&gt;
+          &lt;div class="flex flex-wrap items-center gap-1.5"&gt;
+            &lt;span class="text-[10px] text-slate-400 font-semibold mr-0.5"&gt;금지 방향&lt;/span&gt;${pills}
+          &lt;/div&gt;
+        &lt;/div&gt;`;
+      }).join('');
+      updateDirty();
+    }
+
+    // 목록에서 방향 알약 토글 (최소 1개는 유지)
+    function toggleRuleDirInList(idx, code) {
+      const r = rules[idx];
+      if (!r) return;
+      const i = r.dirs.indexOf(code);
+      if (i !== -1) {
+        if (r.dirs.length === 1) { showToast('방향은 최소 1개 이상 선택되어 있어야 해요.', 'warning'); return; }
+        r.dirs.splice(i, 1);
+      } else {
+        r.dirs.push(code);
+        r.dirs = DIR_ORDER.filter(d =&gt; r.dirs.indexOf(d) !== -1);
+      }
+      renderRuleList();
+    }
+
+    function removeRule(idx) {
+      rules.splice(idx, 1);
+      renderRuleList();
+      showToast('규칙을 삭제했어요. [저장하기]를 눌러야 반영됩니다.', 'info');
+    }
+
+    // ==========================================================
+    // 저장 / 닫기
+    // ==========================================================
+    function saveRules() {
+      // 학생을 골라 놓고 [규칙 추가]를 깜빡한 경우 자동으로 추가
+      if (ruleSelectIds.length &gt;= 2 &amp;&amp; ruleDirs.length) addRuleFromForm();
+
+      const btn = document.getElementById('btnSave');
+      btn.disabled = true;
+      btn.innerHTML = `&lt;i class="fa-solid fa-spinner fa-spin"&gt;&lt;/i&gt; 저장 중...`;
+      const payload = rules.map(r =&gt; ({ ids: r.ids.slice(), dirs: r.dirs.slice() }));
+
+      google.script.run
+        .withSuccessHandler(function(count) {
+          btn.disabled = false;
+          btn.innerHTML = `&lt;i class="fa-solid fa-floppy-disk"&gt;&lt;/i&gt; 저장하기`;
+          savedSnapshot = JSON.stringify(rules);
+          lastCheck = null;          // 규칙이 바뀌었으므로 이전 결과는 초기화됨
+          updateDirty();
+          renderLastCheck();
+          showDialog({
+            type: 'success',
+            title: '저장 완료',
+            message: count
+              ? `분리 규칙 ${count}개가 [분리규칙] 탭에 저장되었습니다.\n웹 앱에서 [랜덤 배치 시작!]을 누르면 화면에 아무 표시 없이 조용히 적용됩니다.`
+              : '분리 규칙이 모두 비워졌습니다.\n이제 [랜덤 배치]는 조건 없이 섞습니다.',
+            buttons: [
+              { label: '계속 편집', style: 'secondary' },
+              { label: '창 닫기', style: 'primary', onClick: () =&gt; google.script.host.close() }
+            ]
+          });
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = `&lt;i class="fa-solid fa-floppy-disk"&gt;&lt;/i&gt; 저장하기`;
+          showDialog({
+            type: 'warning',
+            title: '저장 실패',
+            message: '분리 규칙을 저장하는 중 문제가 발생했습니다.\n잠시 후 다시 시도해 주세요.\n\n' + (err &amp;&amp; err.message ? err.message : '')
+          });
+        })
+        .saveSeparationRules(payload);
+    }
+
+    // 저장하지 않은 변경이 있으면 한 번 더 확인 후 닫기
+    function requestClose() {
+      if (!updateDirty()) { google.script.host.close(); return; }
+      showDialog({
+        type: 'warning',
+        title: '저장하지 않고 닫을까요?',
+        message: '추가·수정·삭제한 규칙이 아직 저장되지 않았습니다.\n닫으면 변경 내용이 사라집니다.',
+        buttons: [
+          { label: '계속 편집', style: 'secondary' },
+          { label: '저장 안 하고 닫기', style: 'danger', onClick: () =&gt; google.script.host.close() }
+        ]
+      });
     }
   &lt;/script&gt;
 &lt;/body&gt;
