@@ -365,6 +365,9 @@ function goToReviewSystemPage() {
 function goToFormBuilderPage() {
     window.open(`${getRootPathForAuth()}pages/admin/formbuilder.html`, '_blank');
 }
+function goToRelationMapPage() {
+    window.open(`${getRootPathForAuth()}pages/admin/relationmap.html`, '_blank');
+}
 
 function notifyAuthChanged() {
     window.dispatchEvent(new CustomEvent('teacherAuthChanged', {
@@ -450,6 +453,7 @@ function renderNavbarAuth(retryCount = 0) {
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoReviews"><i class="bi bi-journal-text me-2"></i>소감문 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoFormBuilder"><i class="bi bi-ui-checks-grid me-2"></i>설문조사 관리</a></li>
+                        <li><a class="dropdown-item" href="#" id="btnGoRelationMap"><i class="bi bi-diagram-3 me-2"></i>우리반 관계지도</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정 (학교명)</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
@@ -460,6 +464,7 @@ function renderNavbarAuth(retryCount = 0) {
                 document.getElementById('btnGoStudents').onclick = (e) => { e.preventDefault(); goToStudentManagerPage(); };
                 document.getElementById('btnGoReviews').onclick = (e) => { e.preventDefault(); goToReviewSystemPage(); };
                 document.getElementById('btnGoFormBuilder').onclick = (e) => { e.preventDefault(); goToFormBuilderPage(); };
+                document.getElementById('btnGoRelationMap').onclick = (e) => { e.preventDefault(); goToRelationMapPage(); };
                 document.getElementById('btnEditInfo').onclick = (e) => { e.preventDefault(); showTeacherInfoModal(user, data); };
                 document.getElementById('btnTeacherLogout').onclick = (e) => { e.preventDefault(); signOut(auth); };
             }, 0);
@@ -477,6 +482,7 @@ function renderNavbarAuth(retryCount = 0) {
                         <li><a class="dropdown-item" href="#" id="btnGoStudents"><i class="bi bi-people-fill me-2"></i>학생 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoReviews"><i class="bi bi-journal-text me-2"></i>소감문 관리</a></li>
                         <li><a class="dropdown-item" href="#" id="btnGoFormBuilder"><i class="bi bi-ui-checks-grid me-2"></i>설문조사 관리</a></li>
+                        <li><a class="dropdown-item" href="#" id="btnGoRelationMap"><i class="bi bi-diagram-3 me-2"></i>우리반 관계지도</a></li>
                         <li><a class="dropdown-item" href="#" id="btnEditInfo"><i class="bi bi-person-fill-gear me-2"></i>정보수정</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="btnTeacherLogout"><i class="bi bi-box-arrow-right me-2"></i>로그아웃</a></li>
@@ -486,6 +492,7 @@ function renderNavbarAuth(retryCount = 0) {
                 document.getElementById('btnGoStudents').onclick = (e) => { e.preventDefault(); goToStudentManagerPage(); };
                 document.getElementById('btnGoReviews').onclick = (e) => { e.preventDefault(); goToReviewSystemPage(); };
                 document.getElementById('btnGoFormBuilder').onclick = (e) => { e.preventDefault(); goToFormBuilderPage(); };
+                document.getElementById('btnGoRelationMap').onclick = (e) => { e.preventDefault(); goToRelationMapPage(); };
                 document.getElementById('btnEditInfo').onclick = (e) => { e.preventDefault(); showTeacherInfoModal(user, data); };
                 document.getElementById('btnTeacherLogout').onclick = (e) => { e.preventDefault(); signOut(auth); };
             }, 0);
