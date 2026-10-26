@@ -1,0 +1,2764 @@
+<!DOCTYPE html>
+<!--
+  우리반 관계지도 (Firestore 버전)
+  앱스스크립트 index.html의 화면(칠판 디자인 · vis-network 관계지도 · 학생 상세 Drawer · 제출 도장)을 따르고,
+  로그인과 저장만 이 사이트 방식으로 바꿨습니다.
+   - 학생: 반 코드 → 학번 · 4자리 PIN (room-auth.js) → 한 장짜리 관계 설문
+   - 교사: 구글 로그인(승인된 교사) → 관계지도 · 학생 응답 · 관리(반 · 설문 달 · 명단)
+  데이터: relation_maps/{반 코드} — 보안 규칙은 assets/template/firebase/가이드북.md 13장을 콘솔에 추가해야 동작합니다.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#24493d">
+  <title>우리반 관계지도</title>
+  <link rel="icon" href="../../assets/images/mainPage/동동이.jpg">
+
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <script>
+    // ── 디자인 토큰: 교실의 칠판 · 분필 · 선생님 도장에서 가져온 색 ──
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Pretendard', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'sans-serif'] },
+          colors: {
+            board: { DEFAULT: '#24493D', deep: '#1B3A30', soft: '#E1EBE6' },  // 칠판
+            chalk: { DEFAULT: '#F3F0E4', yellow: '#F0CF5C' },                // 분필(흰색 · 노랑)
+            stamp: { DEFAULT: '#CF3A2E', soft: '#FBEAE7' },                  // 도장 인주
+            ink:   { DEFAULT: '#1D2B26', muted: '#5F706A' },                 // 글자
+            amber: { soft: '#FDF3E1', DEFAULT: '#B4690E' },                   // 도움이 필요해 보이는 친구
+            page: '#E9EFEC',                                                  // 바탕
+            line: '#D5DEDA'                                                   // 테두리
+          }
+        }
+      }
+    };
+  </script>
+  <!-- 관계망 그래프 · 엑셀 내보내기 · 학생 인증 창(room-auth.js가 쓰는 Bootstrap 모달) -->
+  <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @layer components {
+      .field { @apply mt-1.5 block w-full rounded-lg border border-line bg-white px-3.5 py-3 text-base text-ink transition placeholder:text-ink-muted/60 focus:border-board focus:outline-none focus:ring-4 focus:ring-chalk-yellow/60 disabled:bg-page; }
+      .field-label { @apply block text-sm font-semibold text-ink; }
+      .btn { @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-chalk-yellow/70; }
+      .btn-primary { @apply bg-board text-chalk hover:bg-board-deep; }
+      .btn-danger { @apply bg-stamp text-white hover:brightness-95; }
+      .btn-ghost { @apply bg-white text-ink ring-1 ring-inset ring-line hover:bg-page; }
+      .btn-yellow { @apply bg-chalk-yellow text-ink hover:brightness-95; }
+      .btn-chalk { @apply bg-white/10 text-chalk ring-1 ring-inset ring-chalk/30 hover:bg-white/20; }
+      .btn-sm { @apply rounded-md px-3 py-1.5 text-xs; }
+      .panel { @apply rounded-2xl border border-line bg-white; }
+      .tab-item { @apply rounded-md py-2.5 text-sm font-bold text-ink-muted transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-chalk-yellow/70 disabled:opacity-40; }
+      .tab-item.is-active { @apply bg-board text-chalk shadow-sm; }
+      .seg { @apply inline-grid gap-1 rounded-lg bg-white p-1 ring-1 ring-line; }
+      .seg .tab-item { @apply px-3 py-1.5; }
+      .chip { @apply inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-ink-muted ring-1 ring-inset ring-line transition; }
+      .chip-on { @apply bg-board text-chalk ring-board; }
+      .name-chip { @apply inline-flex items-center rounded-full bg-page px-3 py-1 text-sm font-semibold text-ink ring-1 ring-inset ring-line hover:ring-board; }
+      .pred { @apply rounded-full bg-board-soft px-2.5 py-0.5 text-xs font-bold text-board; }
+      .pred-neg { @apply bg-stamp-soft text-stamp; }
+      .pred-warn { @apply bg-amber-soft text-amber; }
+      .src-badge { @apply whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold text-ink-muted ring-1 ring-inset ring-line; }
+      .h-section { @apply mb-3 mt-10 text-lg font-extrabold; }
+      .stat { @apply rounded-xl border border-line bg-white px-4 py-3; }
+      .th { @apply whitespace-nowrap border-b border-line bg-page/60 px-3 py-2.5 text-left text-xs font-bold text-ink-muted; }
+      .td { @apply border-b border-line/70 px-3 py-3 align-top; }
+    }
+  </style>
+
+  <style>
+    /* ── 칠판 띠 (헤더) ── */
+    .board {
+      background-color: #24493D;
+      background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.6px), radial-gradient(rgba(255,255,255,.035) 1px, transparent 1.6px);
+      background-size: 9px 9px, 17px 17px; background-position: 0 0, 4px 6px;
+      border-bottom: 6px solid #B8C3BE;   /* 분필 받침대 */
+    }
+    .board-title { font-weight: 800; color: #F3F0E4; letter-spacing: -.02em; }
+    /* ── 관계지도 칠판 ── */
+    .board-canvas {
+      background-color: #24493D;
+      background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.6px), radial-gradient(rgba(255,255,255,.035) 1px, transparent 1.6px);
+      background-size: 9px 9px, 17px 17px; background-position: 0 0, 4px 6px;
+      box-shadow: inset 0 0 0 6px #6B5A45, inset 0 0 0 8px #4D4032;   /* 나무 칠판 틀 */
+    }
+    .board-tray { background: #B8C3BE; }
+    /* ── 설문지의 친구 이름 버튼 ── */
+    .pill { border: 1px solid #D5DEDA; border-radius: 999px; padding: .5rem .9rem; background: #fff; font-weight: 600; transition: .15s; }
+    .pill:hover:not(:disabled) { border-color: #24493D; }
+    .pill[aria-pressed="true"] { background: #24493D; color: #fff; border-color: #24493D; }
+    .pill:disabled { opacity: .35; cursor: not-allowed; }
+    .pill:focus-visible { outline: 3px solid rgba(240,207,92,.8); outline-offset: 2px; }
+    /* ── 교사 작업 탭 (밑줄형 탭) ── */
+    .ws-tabs { display: flex; gap: .25rem; border-bottom: 1px solid #D5DEDA; overflow-x: auto; scrollbar-width: none; }
+    .ws-tabs::-webkit-scrollbar { display: none; }
+    .ws-tab { flex: 0 0 auto; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #5F706A; padding: .8rem 1rem; font-weight: 700; }
+    .ws-tab[aria-selected="true"] { color: #24493D; border-bottom-color: #24493D; }
+    .ws-tab:focus-visible { outline: 3px solid rgba(36,73,61,.22); outline-offset: -3px; }
+    /* ── 도장 ── */
+    .stamp { display: inline-flex; align-items: center; justify-content: center; width: 108px; height: 108px; border-radius: 9999px;
+      border: 5px solid #CF3A2E; color: #CF3A2E; font-size: 28px; font-weight: 800; letter-spacing: -.02em; transform: rotate(-12deg);
+      box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 7px rgba(207,58,46,.35); }
+    .stamp-press { animation: press .5s cubic-bezier(.2,.9,.3,1.25) both; }
+    @keyframes press { 0% { transform: scale(1.9) rotate(-12deg); opacity: 0; } 60% { transform: scale(.94) rotate(-12deg); opacity: 1; } 100% { transform: scale(1) rotate(-12deg); opacity: 1; } }
+    .spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 9999px; display: inline-block; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .chip-scroll { overflow-x: auto; scrollbar-width: none; } .chip-scroll::-webkit-scrollbar { display: none; }
+    input, select, textarea { font-size: 16px; }
+    [hidden] { display: none !important; }
+    /* ── 오른쪽 Drawer (학생 상세정보) ── */
+    .drawer { transform: translateX(100%); transition: transform .25s ease; }
+    .drawer.open { transform: translateX(0); }
+    div.vis-tooltip { background: #fff !important; color: #1D2B26 !important; border: 1px solid #D5DEDA !important; border-radius: 8px !important;
+      font-family: Pretendard, sans-serif !important; padding: 6px 10px !important; max-width: 260px; white-space: normal !important; box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+    /* ── room-auth.js 공통 창(Bootstrap 모달)이 이 페이지에서도 제 모양으로 뜨도록 ── */
+    .d-none { display: none !important; }
+    .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important;
+      overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+    .modal { position: fixed; top: 0; left: 0; z-index: 80; display: none; width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; outline: 0; }
+    .modal.fade .modal-dialog { transition: transform .2s ease-out; transform: translateY(-16px); }
+    .modal.show .modal-dialog { transform: none; }
+    .modal-dialog { position: relative; width: auto; margin: 1rem; pointer-events: none; }
+    @media (min-width: 640px) { .modal-dialog { max-width: 480px; margin: 2rem auto; } }
+    .modal-dialog-centered { display: flex; align-items: center; min-height: calc(100% - 3.5rem); }
+    .modal-content { position: relative; display: flex; flex-direction: column; width: 100%; pointer-events: auto; background: #fff; outline: 0;
+      border: 1px solid #D5DEDA; border-radius: 1rem; padding: 1.25rem; box-shadow: 0 20px 35px rgba(29,43,38,.18); }
+    .modal-header { display: flex !important; align-items: center !important; justify-content: space-between !important; border: 0 !important; padding: 0 0 .5rem 0 !important; }
+    .modal-title { margin: 0 !important; font-weight: 800 !important; color: #1D2B26 !important; }
+    .modal-footer { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; border: 0 !important; padding-top: 1rem; }
+    .modal-backdrop { position: fixed; top: 0; left: 0; z-index: 70; width: 100vw; height: 100vh; background-color: #1D2B26; }
+    .modal-backdrop.fade { opacity: 0; transition: opacity .15s linear; }
+    .modal-backdrop.show { opacity: .5; }
+    .btn-close { display: inline-grid; width: 2rem; height: 2rem; place-items: center; border: 0; background: transparent; color: #5F706A; cursor: pointer; }
+    .btn-close::before { content: "×"; font-size: 1.5rem; line-height: 1; }
+    .btn-secondary { background: #fff; color: #1D2B26; box-shadow: inset 0 0 0 1px #D5DEDA; }
+    .alert { border-radius: .65rem; padding: .6rem .8rem; }
+    .alert-info { background: #E1EBE6; color: #24493D; }
+    .alert-warning { background: #FDF3E1; color: #8A5A0D; }
+    #customModal .modal-body { color: #5F706A; line-height: 1.6; }
+    #customModal #customModalInput { box-sizing: border-box; width: 100%; border: 1px solid #D5DEDA; border-radius: .625rem; padding: .75rem 1rem; color: #1D2B26; }
+    #studentAuthModal .modal-content, #studentConfirmModal .modal-content { border-radius: 1.25rem !important; padding: 1.5rem !important; }
+    #studentAuthModal .form-control, #studentConfirmModal .form-control, #newPinModal .form-control {
+      box-sizing: border-box; width: 100%; border-radius: .625rem !important; border: 1.5px solid #DCE5E1 !important; background-color: #F7F8FA !important;
+      color: #1F2925 !important; font-size: 1.15rem !important; padding: .75rem 1rem !important; }
+    #studentAuthModal .form-control:focus, #studentConfirmModal .form-control:focus { border-color: #24493D !important; box-shadow: 0 0 0 3px rgba(36,73,61,.15) !important; outline: none !important; }
+    #btnConfirmStudentAuth, #btnConfirmStudentInfo { background-color: #24493D !important; color: #F3F0E4 !important; border-radius: .625rem !important; padding: .75rem 1.5rem !important; font-weight: 700 !important; border: none !important; }
+
+    /* ── 첫 화면: room-auth.js 입장 카드를 로그인 카드 모양으로 ── */
+    #login-student #room-entrance-card { background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
+    #login-student #room-entrance-card > h5, #login-student #btnOpenDashboard { display: none !important; }
+    #login-student #roomCodeInput { display: block; box-sizing: border-box; width: 100% !important; margin: .375rem 0 .5rem !important; border-radius: .5rem !important;
+      border: 1px solid #D5DEDA !important; background: #fff !important; padding: .75rem .875rem !important; color: #1D2B26 !important;
+      font-size: 1.25rem !important; font-weight: 800 !important; letter-spacing: .3em; text-align: center !important; box-shadow: none !important; }
+    #login-student #roomCodeInput::placeholder { letter-spacing: normal; font-weight: 600; color: rgba(95,112,106,.6); }
+    #login-student #roomCodeInput:focus { border-color: #24493D !important; outline: none !important; box-shadow: 0 0 0 4px rgba(240,207,92,.6) !important; }
+    #login-student #roomEntranceHint { min-height: 1.2rem; margin-bottom: .5rem; color: #5F706A; font-size: .8125rem; text-align: center; }
+    #login-student .form-check { display: flex !important; align-items: center !important; justify-content: center !important; gap: .5rem !important; }
+    #login-student .form-check-label { color: #1D2B26; font-size: .875rem; font-weight: 700; cursor: pointer; }
+    #login-student .form-check + .text-center { margin: .25rem 0 0; color: #5F706A; font-size: .75rem !important; line-height: 1.45; }
+    #login-student #guestModeCheck { appearance: none; position: relative; flex: 0 0 auto; width: 2.25rem; height: 1.25rem; margin: 0; border: 1px solid #AEB8C4;
+      border-radius: 999px; background: #C8D0D9; cursor: pointer; transition: background-color .16s ease, border-color .16s ease; }
+    #login-student #guestModeCheck::before { content: ""; position: absolute; top: .125rem; left: .125rem; width: .875rem; height: .875rem; border-radius: 50%;
+      background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.22); transition: transform .16s ease; }
+    #login-student #guestModeCheck:checked { border-color: #24493D; background: #24493D; }
+    #login-student #guestModeCheck:checked::before { transform: translateX(1rem); }
+    #login-student #btnJoinRoom { display: flex; align-items: center; justify-content: center; width: 100% !important; margin-top: 1.25rem !important;
+      border: 0 !important; border-radius: .5rem !important; background: #24493D !important; color: #F3F0E4 !important; padding: .75rem 1rem !important;
+      font-size: 1rem !important; font-weight: 700 !important; }
+    #login-student #btnJoinRoom:hover { background: #1B3A30 !important; }
+  </style>
+</head>
+
+<body class="min-h-screen break-keep bg-page font-sans text-ink antialiased">
+
+  <!-- ================================================================== -->
+  <!-- 1. 첫 화면: 학생(반 코드 · 학번 · PIN) / 교사(구글 로그인)            -->
+  <!-- ================================================================== -->
+  <section id="view-home">
+    <div class="board px-5 pb-14 pt-12 text-center">
+      <p class="text-sm font-semibold text-chalk/70">한 달에 한 번, 우리 반 친구 사이를 그려요</p>
+      <h1 class="board-title mt-2 text-3xl leading-tight sm:text-4xl">🏫 우리반 관계지도</h1>
+    </div>
+    <div class="mx-auto -mt-6 w-full max-w-md px-4 pb-12">
+      <div class="panel p-6 shadow-sm">
+        <div class="grid grid-cols-2 gap-1 rounded-lg bg-page p-1" role="tablist" aria-label="로그인 대상">
+          <button type="button" class="tab-item" data-role="student" role="tab">학생</button>
+          <button type="button" class="tab-item" data-role="teacher" role="tab">교사</button>
+        </div>
+        <div id="login-student" class="mt-5">
+          <label for="roomCodeInput" class="field-label">반 코드</label>
+          <div id="room-entrance-container"></div>
+        </div>
+        <div id="login-teacher" class="mt-5 hidden">
+          <p class="text-sm leading-relaxed text-ink-muted">관계지도와 학생 응답은 승인된 선생님만 볼 수 있어요. 구글 계정으로 로그인해 주세요.</p>
+          <p id="teacher-login-note" class="mt-3 hidden rounded-lg bg-stamp-soft px-3 py-2.5 text-sm font-semibold text-stamp" role="alert"></p>
+          <button id="teacher-google-btn" type="button" class="btn btn-primary mt-5 w-full py-3 text-base">구글 계정으로 로그인</button>
+          <button id="teacher-signout-btn" type="button" class="btn btn-ghost mt-2 hidden w-full py-3">로그아웃</button>
+        </div>
+        <p id="login-help" class="mt-4 text-center text-xs leading-relaxed text-ink-muted"></p>
+      </div>
+      <p class="mt-6 text-center text-xs leading-relaxed text-ink-muted">설문 답변은 선생님만 볼 수 있어요. 친구들에게는 절대 보이지 않아요.</p>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <!-- 2. 학생 설문: 한 장짜리 설문지                                       -->
+  <!-- ================================================================== -->
+  <section id="view-survey" class="hidden">
+    <div class="board px-4 pb-12 pt-6">
+      <div class="mx-auto flex max-w-2xl items-center justify-between gap-3">
+        <h1 class="board-title text-xl leading-tight sm:text-2xl">🏫 우리반 관계 설문</h1>
+        <button id="sv-exit" type="button" class="btn btn-chalk btn-sm shrink-0">나가기</button>
+      </div>
+    </div>
+    <div class="mx-auto -mt-8 max-w-2xl px-4 pb-16">
+      <div id="sv-panel" class="panel p-5 shadow-sm sm:p-7"></div>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <!-- 3. 교사 화면                                                         -->
+  <!-- ================================================================== -->
+  <section id="view-teacher" class="hidden">
+    <div class="board px-4 py-4">
+      <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+        <h1 class="board-title whitespace-nowrap text-xl sm:text-2xl">🏫 우리반 관계지도</h1>
+        <div class="flex items-center gap-2">
+          <span class="rounded-full bg-chalk-yellow px-2.5 py-0.5 text-xs font-bold text-ink">👩‍🏫 교사 모드</span>
+          <span id="teacher-name" class="hidden text-sm font-semibold text-chalk/80 sm:inline"></span>
+          <button id="btn-logout" type="button" class="btn btn-chalk btn-sm">로그아웃</button>
+        </div>
+      </div>
+    </div>
+    <div class="mx-auto max-w-6xl space-y-2 px-4 pt-4">
+      <!-- 반 줄: 반 선택 · 새 반 · 예시 · 새로고침 -->
+      <div class="panel flex flex-wrap items-center gap-2 p-3 shadow-sm">
+        <select id="admin-school" class="field mt-0 w-auto py-2 text-sm" aria-label="학교별 반 필터" hidden><option value="">전체 학교</option></select>
+        <label for="roomSelect" class="text-sm font-bold">반</label>
+        <select id="roomSelect" class="field mt-0 w-auto min-w-0 flex-1 py-2 text-sm font-bold sm:max-w-xs"><option value="">반을 선택하세요</option></select>
+        <button id="btn-new-room" type="button" class="btn btn-primary btn-sm">＋ 새 반</button>
+        <button id="btn-demo" type="button" class="btn btn-ghost btn-sm">예시로 미리보기</button>
+        <span class="flex-1"></span>
+        <span id="room-count" class="text-xs font-semibold text-ink-muted"></span>
+        <button id="btn-refresh" type="button" class="btn btn-ghost btn-sm" disabled>↻ 새로고침</button>
+      </div>
+      <!-- 도구 줄: 달 선택 · 상태 · 마감 · 응답 수 · 삭제 -->
+      <div id="month-bar" class="panel flex flex-wrap items-center gap-2 p-3 shadow-sm" hidden>
+        <span class="text-sm font-bold">설문 달</span>
+        <div class="flex items-center gap-1">
+          <button id="m-prev" type="button" class="btn btn-ghost btn-sm px-2.5" aria-label="이전 달">‹</button>
+          <select id="month-select" class="field mt-0 w-auto py-2 text-sm font-bold" aria-label="달 선택"></select>
+          <button id="m-next" type="button" class="btn btn-ghost btn-sm px-2.5" aria-label="다음 달">›</button>
+        </div>
+        <span id="tb-status" class="rounded-full px-3 py-1 text-xs font-bold"></span>
+        <button id="tb-toggle" type="button" class="btn btn-ghost btn-sm" hidden></button>
+        <span id="tb-count" class="rounded-lg border border-line bg-page px-3 py-1.5 text-xs font-bold text-ink-muted"></span>
+        <span class="flex-1"></span>
+        <span id="tb-time" class="text-xs text-ink-muted"></span>
+        <button id="tb-delete" type="button" class="btn btn-ghost btn-sm text-stamp" disabled>🗑️ 설문 삭제</button>
+      </div>
+      <div id="demo-banner" class="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-chalk-yellow/30 px-4 py-3 text-sm font-semibold" hidden>
+        <span>예시 데이터로 보는 중이에요. 화면 확인용이라 아무것도 저장되지 않아요.</span>
+        <button id="btn-demo-close" type="button" class="btn btn-ghost btn-sm">예시 닫기</button>
+      </div>
+      <div id="guest-box" class="rounded-xl bg-amber-soft p-3 ring-1 ring-inset ring-amber/30" hidden></div>
+    </div>
+    <div id="teacher-empty" class="mx-auto max-w-6xl px-4 pt-5"></div>
+
+    <div id="workspace" hidden>
+      <div class="sticky top-0 z-30 mt-3 bg-page/95 backdrop-blur">
+        <div class="mx-auto max-w-6xl px-4">
+          <div id="tabbar" class="ws-tabs" role="tablist" aria-label="교사 작업 영역"></div>
+        </div>
+      </div>
+      <main class="mx-auto max-w-6xl px-4 pb-16 pt-5">
+        <!-- 지도 탭 -->
+        <div id="tab-map" class="tab-panel" role="tabpanel">
+          <div id="map-empty" class="panel p-8 text-center text-sm leading-relaxed text-ink-muted" hidden></div>
+          <div id="map-body">
+            <div id="map-stats" class="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4"></div>
+            <div class="mb-3 flex flex-wrap items-center gap-2">
+              <div class="seg grid-cols-2" role="group" aria-label="보기 방식">
+                <button type="button" data-mode="month" class="tab-item">이번 달 지도</button>
+                <button type="button" data-mode="diff" class="tab-item">지난달과 비교</button>
+              </div>
+              <span id="map-caption" class="text-xs text-ink-muted"></span>
+            </div>
+            <div id="map-filters" class="chip-scroll -mx-4 mb-3 flex gap-2 px-4"></div>
+            <div class="overflow-hidden rounded-2xl">
+              <div class="relative">
+                <div id="network" class="board-canvas h-[58vh] min-h-[360px] lg:h-[68vh]" role="region"
+                  aria-label="우리 반 관계지도. 학생을 누르면 자세한 정보가 열려요. 같은 내용은 아래 살펴볼 점과 학생 응답 탭에서도 볼 수 있어요."></div>
+                <div class="absolute right-3 top-3 flex gap-1.5">
+                  <button id="btn-relayout" type="button" class="btn btn-chalk btn-sm bg-board-deep/80">배치 다시 하기</button>
+                  <button id="btn-fit" type="button" class="btn btn-chalk btn-sm bg-board-deep/80">전체 보기</button>
+                </div>
+              </div>
+              <div id="map-legend" class="board-tray flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2.5 text-xs font-semibold text-ink"></div>
+            </div>
+            <div class="mt-8">
+              <h2 id="below-title" class="mb-3 text-lg font-extrabold">살펴볼 점</h2>
+              <div id="map-alerts" class="space-y-2"></div>
+            </div>
+            <div class="grid gap-x-4 lg:grid-cols-2">
+              <section>
+                <h2 class="h-section">학급 분위기</h2>
+                <div id="map-climate" class="panel p-4"></div>
+              </section>
+              <section>
+                <h2 class="h-section">월별 추이</h2>
+                <div id="map-trend" class="panel overflow-x-auto"></div>
+              </section>
+            </div>
+          </div>
+        </div>
+        <div id="tab-responses" class="tab-panel hidden" role="tabpanel"></div>
+        <div id="tab-manage" class="tab-panel hidden" role="tabpanel"></div>
+      </main>
+    </div>
+  </section>
+
+  <!-- 공용 레이어 -->
+  <div id="modal-root"></div>
+  <!-- 학생 상세정보 Drawer (오른쪽에서 열림 · ESC / 닫기 버튼으로 닫힘) -->
+  <aside id="drawer" class="drawer fixed inset-y-0 right-0 z-[60] hidden w-full overflow-y-auto border-l border-line bg-white shadow-2xl sm:w-[460px]" role="dialog" aria-label="학생 상세정보"></aside>
+  <div id="toast-root" class="pointer-events-none fixed inset-x-0 bottom-5 z-[95] flex flex-col items-center gap-2 px-4" aria-live="polite"></div>
+  <div id="loading" class="fixed inset-0 z-[90] hidden items-center justify-center bg-ink/40 p-4">
+    <div class="flex items-center gap-3 rounded-xl bg-white px-5 py-4 text-sm font-bold text-board shadow-xl"><span class="spinner"></span><span id="loading-text">불러오는 중</span></div>
+  </div>
+
+<script type="module">
+import { auth, db, googleProvider } from '../../js/firebase-config.js';
+import {
+  escapeHtml, getDeviceId, getPhoneOwnerAuth, makeStudentKey, renderRoomEntrance, resetStudentPin, safeNumber, STUDENT_ID_PATTERN
+} from '../../js/room-auth.js?v=4.2';
+import { deriveDeviceFingerprint, derivePinProof } from '../../js/student-crypto.js';
+import { closeQrPanel, openQrPanel } from '../../js/qr-modal.js';
+import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
+import {
+  collection, deleteDoc, deleteField, doc, FieldPath, getDoc, getDocs, onSnapshot, query, runTransaction,
+  serverTimestamp, setDoc, Timestamp, updateDoc, where, writeBatch
+} from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js';
+
+/* ═══════════════════════════════════════════════════════════════
+ *  0. 전역 상태
+ * ═══════════════════════════════════════════════════════════════ */
+const S = {
+  user: null, teacher: null, rooms: [],                  // 로그인한 선생님과 그 선생님의 반 목록
+  roomCode: '', room: null, responses: [], receipts: {}, demo: false, loadedAt: 0,
+  model: null, ctx: null, trend: [], month: '', tab: 'map',
+  mode: 'month',                                         // 지도: month(이번 달) | diff(지난달과 비교)
+  filters: { pos: true, neg: true, mutualOnly: false },
+  diffFilters: { added: true, removed: true, kept: true },
+  focusId: null,                                         // 지도에서 강조 중인 학생
+  net: null, nodesDS: null, edgesDS: null, netDirty: true,
+  positions: {},                                         // 반마다 학생 자리 (끌어 옮긴 자리도 기억)
+  sv: null, loginRole: 'student', loginRequested: false
+};
+let drawerId = null;
+let unsubRoomStudents = null;
+let guestProof = null;        // 게스트가 입장할 때 입력한 PIN으로 만든 증명값 — 메모리에만 둡니다
+let surveyCloseTimer = null;
+let authSequence = 0;
+
+/* ═══════════════════════════════════════════════════════════════
+ *  1. 기본 상수
+ * ═══════════════════════════════════════════════════════════════ */
+const COLLECTION = 'relation_maps';         // ★ 보안 규칙(가이드북 13장)의 컬렉션 이름과 같아야 합니다
+const ADMIN_EMAIL = 'jjes0107@gmail.com';   // 화면 표시용. 실제 권한은 보안 규칙이 정합니다
+const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+// 응답의 '구분' 값
+const POL = { POS: '긍정', NEG: '부정' };
+const RANK_MARKS = ['①', '②', '③', '④', '⑤'];
+
+/**
+ * 설문 문항 — 여기만 고치면 학생 화면이 바뀝니다.
+ *  climate   : 1번 학급 분위기 5점 척도 (이유는 선택)
+ *  questions : 친구를 고르고, 고른 친구마다 분류 태그(1개 이상)와 자세한 이유를 받는 문항 (2~3번)
+ *  alertTags / alertWords: 이 태그를 고르거나 글에 이 낱말이 있으면 '살펴볼 점'에 올라옵니다.
+ *  ★ max(3명·2명)와 분위기 이유 글자 수(300자)를 바꾸면 보안 규칙의 같은 숫자도 함께 고치세요.
+ */
+const SURVEY_CONFIG = {
+  questions: [
+    {
+      key: 'positive', pol: POL.POS, max: 3,
+      title: '요즘 나와 즐겁게 지내는 친구는 누구인가요?',
+      help: '함께 놀거나, 도와주거나, 이야기가 잘 통하는 친구를 골라요.',
+      tags: ['함께 놀아요', '잘 도와줘요', '이야기가 잘 통해요', '친절하고 배려해요', '같이 있으면 즐거워요', '공부를 함께해요', '기타'],
+      reasonLabel: '{name} 친구와 즐겁게 지낸다고 생각한 이유',
+      placeholder: '예: 쉬는 시간마다 같이 놀고 이야기가 잘 통해요'
+    },
+    {
+      key: 'negative', pol: POL.NEG, max: 2,
+      title: '요즘 함께 있을 때 마음이 불편하거나 속상한 친구가 있나요?',
+      help: '없다면 고르지 않고 넘어가도 괜찮아요.',
+      note: '이 답은 선생님만 볼 수 있어요. 친구를 탓하려는 질문이 아니라, 모두가 편안한 교실을 만들기 위한 질문이에요.',
+      tags: ['말 때문에 속상했어요', '놀리거나 장난이 심해요', '다툰 일이 있었어요', '나를 따돌리는 것 같아요', '함께 있으면 불편해요', '약속을 잘 안 지켜요', '기타'],
+      reasonLabel: '{name} 친구와 있을 때 불편하거나 속상했던 이유',
+      placeholder: '어떤 일이 있었는지 편하게 적어 주세요'
+    }
+  ],
+  climate: {
+    question: '지금까지 우리 반의 전반적인 분위기는 몇 점인가요?',
+    scale: [
+      { v: 5, label: '마음에 들고 활기차다' },
+      { v: 4, label: '대체로 괜찮은 편이다' },
+      { v: 3, label: '그저 그렇다' },
+      { v: 2, label: '마음에 별로 안든다' },
+      { v: 1, label: '교실에 있으면 불편하거나 불안하다' }
+    ],
+    reasonLabel: '그렇게 생각한 이유 (선택)',
+    placeholder: '쓰지 않아도 괜찮아요'
+  },
+  reasonMax: 200,
+  climateReasonMax: 300,
+  alertTags: ['나를 따돌리는 것 같아요', '말 때문에 속상했어요'],
+  alertWords: ['따돌', '왕따', '괴롭', '때리', '때려', '맞았', '욕을', '욕해', '놀려', '놀림', '협박', '빼앗', '뺏', '죽고', '죽을', '자해', '사라지고']
+};
+
+/** 칠판 위 분필 색 (관계지도 전용) — 파랑·노랑·빨강은 색약 구분 검사를 통과한 조합, 회색은 '변화 없음' 배경용 */
+const CH = { chalk: '#F3F0E4', yellow: '#F0CF5C', red: '#FF5A5A', posBlue: '#4FA8F7', orange: '#F6B26B', gray: '#A9B8B1', muted: '#8FA39A', board: '#24493D', deep: '#1B3A30' };
+/** 흰 바탕 차트 색 */
+const UI = { good: '#2F8A5F', bad: '#CF3A2E', same: '#9AA9A3' };
+const TABS = [['map', '🗺️ 관계지도'], ['responses', '📋 학생 응답'], ['manage', '⚙️ 관리']];
+
+/* ═══════════════════════════════════════════════════════════════
+ *  2. 공통 도구
+ * ═══════════════════════════════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const esc = escapeHtml;
+const pad2 = n => String(n).padStart(2, '0');
+const round1 = n => Math.round(n * 10) / 10;
+const monthLabel = m => m ? `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월` : '';
+const shortMonth = m => m ? `${Number(m.slice(5, 7))}월` : '';
+const compareStudentNo = (a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true });
+const questionOf = key => SURVEY_CONFIG.questions.find(q => q.key === key);
+const climateLabel = v => { const c = SURVEY_CONFIG.climate.scale.find(x => x.v === Number(v)); return c ? `${c.v}점 ${c.label}` : ''; };
+/** 번호 → 학번 순 (표·명단에서 보기 좋은 순서) */
+const byNumber = (a, b) => ((a.number || 99) - (b.number || 99)) || compareStudentNo(a.id, b.id);
+const activeStudents = () => (S.model ? S.model.students.filter(x => x.active) : []);
+const studentOf = id => (S.model && S.model.students.find(x => x.id === id)) || null;
+const studentName = id => (studentOf(id) || {}).name || `명단 밖(${id})`;
+/** 누르면 학생 상세정보가 열리는 이름 단추 */
+const nameChip = (id, label) => `<button type="button" class="name-chip" data-student="${esc(id)}">${esc(label || studentName(id))}</button>`;
+
+function currentMonthKey() { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; }
+function timestampMillis(value) {
+  if (value && typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  return Number(value) || 0;
+}
+/** ms → '10월 31일 18:00' */
+function scheduleLabel(ms) { if (!ms) return ''; const d = new Date(ms); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function toLocalDateTimeInput(ms) { if (!ms) return ''; return new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+function isPermissionError(err) { return String((err && (err.code || err.message)) || '').toLowerCase().includes('permission'); }
+/** 오류를 선생님께 보여 줄 문장으로 */
+function failText(err, fallback) {
+  if (isPermissionError(err)) return `${fallback}\n보안 규칙에 '${COLLECTION}' 권한이 있는지 확인해 주세요. (가이드북 13장)`;
+  return `${fallback}\n${(err && err.message) || '네트워크를 확인해 주세요.'}`;
+}
+function loading(on, text) {
+  $('#loading').classList.toggle('hidden', !on);
+  $('#loading').classList.toggle('flex', on);
+  if (text) $('#loading-text').textContent = text;
+}
+function toast(msg, isError) {
+  const el = document.createElement('div');
+  el.className = `rounded-full px-4 py-2.5 text-sm font-semibold shadow-lg transition-opacity duration-300 ${isError ? 'bg-stamp text-white' : 'bg-ink text-chalk'}`;
+  el.textContent = msg;
+  $('#toast-root').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2400);
+}
+function show(view) { ['home', 'survey', 'teacher'].forEach(v => $('#view-' + v).classList.toggle('hidden', v !== view)); window.scrollTo(0, 0); }
+/** 고친 내용이 있으면 창을 닫거나 새로고침할 때 경고 */
+function setDirty(on) { window.onbeforeunload = on ? (e => { e.preventDefault(); e.returnValue = ''; }) : null; }
+/** vis-network 말풍선 — 학생이 쓴 글이 들어가므로 HTML이 아니라 글자로만 넣습니다 */
+function tooltip(lines) {
+  const box = document.createElement('div');
+  lines.filter(Boolean).forEach((line, i) => {
+    const row = document.createElement('div');
+    row.textContent = line;
+    if (!i) row.style.fontWeight = '800';
+    box.appendChild(row);
+  });
+  return box;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  3. 커스텀 모달 (alert / confirm / prompt 대체)
+ * ═══════════════════════════════════════════════════════════════ */
+/** html을 담은 모달을 열고, data-close 버튼의 값으로 끝나는 Promise를 돌려줍니다. */
+function openModal(html, opts) {
+  opts = opts || {};
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.className = 'fixed inset-0 z-[90] flex items-end justify-center p-3 sm:items-center';
+    wrap.innerHTML = `<div class="absolute inset-0 bg-ink/50" data-backdrop></div>
+      <div class="relative max-h-[90vh] w-full ${opts.wide ? 'max-w-lg' : 'max-w-sm'} overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" role="dialog" aria-modal="true">${html}</div>`;
+    const onKey = e => { if (e.key === 'Escape') close(null); };
+    const close = v => { document.removeEventListener('keydown', onKey); wrap.remove(); resolve(v); };
+    document.addEventListener('keydown', onKey);
+    wrap.querySelector('[data-backdrop]').addEventListener('click', () => close(null));
+    wrap.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => {
+      const v = b.dataset.close; close(v === 'true' ? true : v === 'false' ? false : v);
+    }));
+    $('#modal-root').appendChild(wrap);
+    if (opts.onMount) opts.onMount(wrap, close);
+    const f = wrap.querySelector('input, textarea, select') || wrap.querySelector('[data-close="true"], button');
+    if (f) setTimeout(() => f.focus(), 60);
+  });
+}
+function mAlert(title, message) {
+  return openModal(`<h3 class="text-lg font-extrabold">${esc(title)}</h3>
+    <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-muted">${esc(message)}</p>
+    <div class="mt-6 flex"><button data-close="true" class="btn btn-primary flex-1 py-3">확인</button></div>`);
+}
+function mConfirm(title, message, o) {
+  o = o || {};
+  return openModal(`<h3 class="text-lg font-extrabold">${esc(title)}</h3>
+    <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-muted">${esc(message)}</p>
+    <div class="mt-6 flex gap-2"><button data-close="false" class="btn btn-ghost flex-1 py-3">${esc(o.cancel || '취소')}</button>
+    <button data-close="true" class="btn ${o.danger ? 'btn-danger' : 'btn-primary'} flex-1 py-3">${esc(o.ok || '확인')}</button></div>`).then(v => v === true);
+}
+/** 입력 모달: 글자·비밀번호·여러 줄·선택 상자. onSubmit이 {error}를 돌려주면 창 안에 빨간 글씨로 */
+function mForm(o) {
+  const field = f => {
+    if (f.type === 'textarea') return `<textarea name="${f.name}" rows="${f.rows || 5}" maxlength="${f.maxlength || 2000}" class="field resize-y" placeholder="${esc(f.placeholder || '')}">${esc(f.value || '')}</textarea>`;
+    if (f.type === 'select') return `<select name="${f.name}" class="field">${f.options.map(op => `<option value="${esc(op.v)}" ${String(op.v) === String(f.value == null ? '' : f.value) ? 'selected' : ''}>${esc(op.l)}</option>`).join('')}</select>`;
+    return `<input name="${f.name}" type="${f.type || 'text'}" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} maxlength="${f.maxlength || 100}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" spellcheck="false" class="field" value="${esc(f.value == null ? '' : f.value)}">`;
+  };
+  return openModal(`<h3 class="text-lg font-extrabold">${esc(o.title)}</h3>
+    ${o.message ? `<p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-muted">${esc(o.message)}</p>` : ''}
+    <div class="mt-2">${o.fields.map(f => `<label class="mt-3 block"><span class="field-label">${esc(f.label)}</span>${field(f)}${f.help ? `<span class="mt-1 block text-xs text-ink-muted">${esc(f.help)}</span>` : ''}</label>`).join('')}</div>
+    <p data-err class="mt-3 hidden whitespace-pre-line text-sm font-semibold text-stamp" role="alert"></p>
+    ${o.extra || ''}
+    <div class="mt-5 flex gap-2"><button data-close="" class="btn btn-ghost flex-1 py-3">취소</button><button data-submit class="btn btn-primary flex-1 py-3">${esc(o.submit || '확인')}</button></div>`, {
+    wide: o.wide,
+    onMount: (wrap, close) => {
+      const err = wrap.querySelector('[data-err]'), btn = wrap.querySelector('[data-submit]');
+      const submit = async () => {
+        const values = {};
+        o.fields.forEach(f => { values[f.name] = wrap.querySelector(`[name="${f.name}"]`).value.trim(); });
+        const label = btn.innerHTML;
+        btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>처리하는 중'; err.classList.add('hidden');
+        let res;
+        try { res = await o.onSubmit(values, wrap); } catch (e) { res = { error: String((e && e.message) || e) }; }
+        btn.disabled = false; btn.innerHTML = label;
+        if (res && res.error) { err.textContent = res.error; err.classList.remove('hidden'); return; }
+        close(res === undefined ? values : res);
+      };
+      btn.addEventListener('click', submit);
+      wrap.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
+      if (o.onMount) o.onMount(wrap, close);
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  4. 분석 — 데이터 모델 · 한 달 분석 · 지난달 비교 · 온톨로지 추론
+ *     (Apps Script 버전 loadModel_ · analyzeMonth_ · diffMonths_ · buildFacts_와 같은 규칙)
+ * ═══════════════════════════════════════════════════════════════ */
+
+/** Firestore 문서 → 분석용 모델 { students, months, answers, submits } */
+function buildModel(room, responses, receipts) {
+  const now = Date.now();
+  const roster = room?.roster && typeof room.roster === 'object' ? room.roster : {};
+  const students = Object.entries(roster).map(([id, value]) => ({
+    id, studentNo: id, number: safeNumber(value?.no, 0), name: String(value?.name || '').trim(), active: value?.active !== false
+  })).filter(student => STUDENT_ID_PATTERN.test(student.id) && student.name)
+    .sort((a, b) => compareStudentNo(a.studentNo, b.studentNo) || a.number - b.number);
+
+  // 마감 예약 시각이 지난 '진행 중' 달은 마감으로 봅니다.
+  const months = Object.entries(room?.months || {}).map(([month, value]) => {
+    const closeAt = timestampMillis(value?.closeAt);
+    const saved = value?.status === 'open' ? 'open' : 'closed';
+    return { month, saved, status: saved === 'open' && closeAt && closeAt <= now ? 'closed' : saved, closeAt, openedAt: timestampMillis(value?.openedAt) };
+  }).filter(item => MONTH_PATTERN.test(item.month)).sort((a, b) => a.month.localeCompare(b.month));
+
+  const answers = [];
+  const submits = [];
+  (responses || []).forEach(response => {
+    const month = String(response?.month || '');
+    const s = String(response?.studentId || '');
+    if (!MONTH_PATTERN.test(month) || !s) return;
+    SURVEY_CONFIG.questions.forEach(question => {
+      const list = Array.isArray(response[question.key]) ? response[question.key] : [];
+      const used = new Set();
+      list.slice(0, question.max).forEach(item => {
+        const o = String(item?.id || '');
+        if (!o || o === s || used.has(o)) return;
+        used.add(o);
+        answers.push({
+          month, s, o, pol: question.pol, rank: used.size,
+          tags: (Array.isArray(item.tags) ? item.tags : []).map(tag => String(tag).slice(0, 30)).slice(0, 10),
+          text: String(item.text || '').slice(0, SURVEY_CONFIG.reasonMax)
+        });
+      });
+    });
+    const climate = Number(response.climate);
+    submits.push({
+      month, s,
+      climate: climate >= 1 && climate <= 5 ? Math.round(climate) : '',
+      climateReason: String(response.climateReason || '').slice(0, SURVEY_CONFIG.climateReasonMax),
+      at: timestampMillis(response.submittedAt),
+      editAllowed: !!receipts?.[`${month}_${s}`]?.editAllowed
+    });
+  });
+  return { students, months, answers, submits };
+}
+
+/** 학생이 쓴 글에서 SURVEY_CONFIG.alertWords 낱말을 찾습니다. */
+function alertWordsIn(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ');
+  return SURVEY_CONFIG.alertWords.filter(word => word && normalized.includes(word));
+}
+
+function sensitiveHits(tags, text) {
+  return (tags || []).filter(tag => SURVEY_CONFIG.alertTags.includes(tag)).concat(alertWordsIn(text));
+}
+
+/**
+ * 한 달 분석: 관계 선, 학생별 통계, 학급 분위기, 서로 친구, 엇갈림, 그리고 '살펴볼 점' 5가지
+ *  watch.sensitive · climateLow · isolated · conflicts · missing
+ */
+function analyzeMonth(model, month) {
+  const students = model.students.filter(student => student.active);
+  const ids = new Set(students.map(student => student.id));
+  const edges = model.answers.filter(a => a.month === month && ids.has(a.s) && ids.has(a.o));
+  const subs = {};
+  model.submits.filter(item => item.month === month && ids.has(item.s)).forEach(item => { subs[item.s] = item; });
+  const responded = new Set(Object.keys(subs));
+  edges.forEach(e => responded.add(e.s));
+  const has = new Set(edges.map(e => `${e.s}|${e.o}|${e.pol}`));
+
+  const stats = {};
+  students.forEach(student => {
+    const sub = subs[student.id];
+    stats[student.id] = {
+      id: student.id, recvPos: 0, recvNeg: 0, givenPos: 0, givenNeg: 0, mutual: 0,
+      responded: responded.has(student.id), editAllowed: !!sub?.editAllowed, submittedAt: sub?.at || 0,
+      climate: sub ? sub.climate : '', climateReason: sub ? sub.climateReason : ''
+    };
+  });
+  edges.forEach(e => {
+    if (e.pol === POL.POS) { stats[e.s].givenPos++; stats[e.o].recvPos++; }
+    else { stats[e.s].givenNeg++; stats[e.o].recvNeg++; }
+  });
+
+  const mutualPairs = [], mutualNeg = [], mixed = [];
+  edges.forEach(e => {
+    if (e.pol === POL.POS && e.s < e.o && has.has(`${e.o}|${e.s}|${POL.POS}`)) {
+      mutualPairs.push([e.s, e.o]);
+      stats[e.s].mutual++;
+      stats[e.o].mutual++;
+    }
+    if (e.pol === POL.NEG && e.s < e.o && has.has(`${e.o}|${e.s}|${POL.NEG}`)) mutualNeg.push([e.s, e.o]);
+    if (e.pol === POL.POS && has.has(`${e.o}|${e.s}|${POL.NEG}`)) mixed.push([e.s, e.o]);
+  });
+
+  // 학급 분위기: 평균과 1~5점 분포
+  const scores = students.map(student => Number(stats[student.id].climate)).filter(v => v >= 1 && v <= 5);
+  const dist = [0, 0, 0, 0, 0];
+  scores.forEach(v => { dist[v - 1]++; });
+  const climate = { avg: scores.length ? round1(scores.reduce((a, b) => a + b, 0) / scores.length) : null, count: scores.length, dist };
+
+  // 살펴볼 점
+  const anyResponse = responded.size > 0;
+  const watch = { sensitive: [], climateLow: [], isolated: [], conflicts: [], missing: [] };
+  edges.filter(e => e.pol === POL.NEG).forEach(e => {
+    const hits = sensitiveHits(e.tags, e.text);
+    if (hits.length) watch.sensitive.push({ s: e.s, o: e.o, where: '불편한 친구', hits, tags: e.tags, text: e.text });
+  });
+  students.forEach(student => {
+    const st = stats[student.id];
+    const climateHits = alertWordsIn(st.climateReason);
+    if (climateHits.length) watch.sensitive.push({ s: student.id, o: '', where: '분위기 이유', hits: climateHits, tags: [], text: st.climateReason });
+    const score = Number(st.climate);
+    if (score && score <= 2) watch.climateLow.push({ id: student.id, score, reason: st.climateReason });
+    if (anyResponse && st.recvPos === 0) {
+      watch.isolated.push({ id: student.id, responded: st.responded, chose: edges.filter(e => e.s === student.id && e.pol === POL.POS).map(e => e.o) });
+    }
+  });
+  watch.climateLow.sort((a, b) => a.score - b.score);
+  const textOf = (s, o, pol) => edges.find(e => e.s === s && e.o === o && e.pol === pol)?.text || '';
+  mutualNeg.forEach(([a, b]) => watch.conflicts.push({ a, b, type: '서로 불편함', aText: textOf(a, b, POL.NEG), bText: textOf(b, a, POL.NEG) }));
+  mixed.forEach(([a, b]) => watch.conflicts.push({ a, b, type: '마음이 엇갈림', aText: textOf(a, b, POL.POS), bText: textOf(b, a, POL.NEG) }));
+  watch.missing = anyResponse ? students.filter(student => !responded.has(student.id)).map(student => student.id) : [];
+
+  return {
+    month, total: students.length, responded: responded.size, missing: watch.missing,
+    edges: edges.map(e => ({ s: e.s, o: e.o, pol: e.pol, rank: e.rank, tags: e.tags, text: e.text })),
+    stats, climate, mutualPairs, mutualNeg, mixed, watch
+  };
+}
+
+/** 지난달과 비교 — '두 달 모두 응답한 학생'이 한 선택만 견줘 착시를 막습니다. */
+function diffMonths(cur, prev) {
+  const both = new Set(Object.keys(cur.stats).filter(id => cur.stats[id].responded && prev.stats[id]?.responded));
+  const key = e => `${e.s}|${e.o}|${e.pol}`;
+  const curEdges = cur.edges.filter(e => both.has(e.s));
+  const prevEdges = prev.edges.filter(e => both.has(e.s) && cur.stats[e.o]);
+  const curKeys = new Set(curEdges.map(key));
+  const prevKeys = new Set(prevEdges.map(key));
+  const pick = (list, pol, otherKeys, want) => list.filter(e => e.pol === pol && otherKeys.has(key(e)) === want);
+  const pairsOf = analysis => {
+    const out = new Map();
+    analysis.mutualPairs.filter(([a, b]) => both.has(a) && both.has(b)).forEach(pair => out.set(pair.join('|'), pair));
+    return out;
+  };
+  const curPairs = pairsOf(cur), prevPairs = pairsOf(prev);
+  const count = (list, id, pol) => list.filter(e => e.o === id && e.pol === pol).length;
+
+  const students = Object.keys(cur.stats).map(id => ({
+    id, comparable: both.has(id),
+    prevPos: count(prevEdges, id, POL.POS), curPos: count(curEdges, id, POL.POS),
+    prevNeg: count(prevEdges, id, POL.NEG), curNeg: count(curEdges, id, POL.NEG),
+    prevClimate: prev.stats[id] ? prev.stats[id].climate : '', curClimate: cur.stats[id].climate
+  }));
+  const highlights = { escaped: [], grew: [], climateUp: [], newIsolated: [], shrank: [], newNegTarget: [], climateDown: [] };
+  students.forEach(x => {
+    const delta = x.curPos - x.prevPos;
+    if (x.prevPos === 0 && x.curPos > 0) highlights.escaped.push(x.id);
+    else if (delta >= 2) highlights.grew.push(x.id);
+    if (x.prevPos > 0 && x.curPos === 0) highlights.newIsolated.push(x.id);
+    else if (delta <= -2) highlights.shrank.push(x.id);
+    if (x.curNeg > x.prevNeg) highlights.newNegTarget.push(x.id);
+    const pc = Number(x.prevClimate), cc = Number(x.curClimate);
+    if (pc && cc && pc - cc >= 2) highlights.climateDown.push(x.id);
+    if (pc && cc && cc - pc >= 2) highlights.climateUp.push(x.id);
+  });
+  return {
+    prevMonth: prev.month, comparable: both.size,
+    newPos: pick(curEdges, POL.POS, prevKeys, false), keptPos: pick(curEdges, POL.POS, prevKeys, true), lostPos: pick(prevEdges, POL.POS, curKeys, false),
+    newNeg: pick(curEdges, POL.NEG, prevKeys, false), keptNeg: pick(curEdges, POL.NEG, prevKeys, true), resolvedNeg: pick(prevEdges, POL.NEG, curKeys, false),
+    newMutual: [...curPairs.keys()].filter(k => !prevPairs.has(k)).map(k => curPairs.get(k)),
+    lostMutual: [...prevPairs.keys()].filter(k => !curPairs.has(k)).map(k => prevPairs.get(k)),
+    mutualPrev: prev.mutualPairs.length, mutualCur: cur.mutualPairs.length,
+    climatePrev: prev.climate, climateCur: cur.climate,
+    students, highlights
+  };
+}
+
+/**
+ * 온톨로지: 사실(트리플) 만들기 + 추론 — 학생 정보창의 '규칙으로 찾은 관계'에 쓰입니다.
+ *  사실 = { s(주어), p(관계), o(대상), src(설문/추론), rule(추론 규칙) }
+ *  ① 역관계 ② 상호선택 ③ 엇갈림 ④ 공통 친구(다리 놓기) ⑤ 한방향 선택(연결 기회) ⑥ 지난달과 비교
+ */
+const REL_NAMES = { [POL.POS]: ['즐겁게 지냄', '즐거운 친구로 선택받음'], [POL.NEG]: ['불편함을 느낌', '불편하다고 지목됨'] };
+
+function buildFacts(cur, diff) {
+  const ids = cur.stats;
+  const facts = [];
+  const add = (s, p, o, src, rule, extra) => facts.push({ s, p, o, src, rule: rule || '', oIsStudent: !!ids[o], ...(extra || {}) });
+  const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const tone = pol => (pol === POL.NEG ? '부정' : '긍정');
+
+  // 기본 사실 + ① 역관계
+  cur.edges.forEach(e => {
+    const meta = { pol: tone(e.pol), tags: e.tags, text: e.text, rank: e.rank };
+    add(e.s, REL_NAMES[e.pol][0], e.o, '설문', '', meta);
+    add(e.o, REL_NAMES[e.pol][1], e.s, '추론', '역관계', meta);
+  });
+  // ② 상호선택 · ③ 엇갈림
+  const addPair = (list, p, rule, pol) => list.forEach(([a, b]) => {
+    add(a, p, b, '추론', rule, { pol, pair: true });
+    add(b, p, a, '추론', rule, { pol, pair: true });
+  });
+  addPair(cur.mutualPairs, '서로 친구', '상호선택', '긍정');
+  addPair(cur.mutualNeg, '서로 불편함', '상호선택', '부정');
+  addPair(cur.mixed, '마음이 엇갈림', '엇갈림', '부정');
+
+  // 연결망: 즐거운 관계는 무방향 연결(먼저 고를수록 가중치 큼), 불편 관계는 '부정 쌍'
+  const adj = {}, negPair = {}, posOut = {}, mutualSet = {};
+  Object.keys(ids).forEach(id => { adj[id] = {}; posOut[id] = {}; mutualSet[id] = {}; });
+  cur.edges.forEach(e => {
+    if (e.pol === POL.NEG) { negPair[pairKey(e.s, e.o)] = true; return; }
+    const weight = Math.max(1, 4 - e.rank);
+    posOut[e.s][e.o] = true;
+    adj[e.s][e.o] = (adj[e.s][e.o] || 0) + weight;
+    adj[e.o][e.s] = (adj[e.o][e.s] || 0) + weight;
+  });
+  cur.mutualPairs.forEach(([a, b]) => { mutualSet[a][b] = true; mutualSet[b][a] = true; });
+
+  // ④ 공통 친구 → 다리 놓기 후보 (선택받은 수가 적은 학생 쪽부터 15쌍)
+  const bridgeMap = {};
+  Object.keys(ids).forEach(bridge => {
+    const friends = Object.keys(mutualSet[bridge]);
+    for (let i = 0; i < friends.length; i++) {
+      for (let j = i + 1; j < friends.length; j++) {
+        const k = pairKey(friends[i], friends[j]);
+        if (adj[friends[i]][friends[j]] || negPair[k]) continue;
+        const [a, c] = k.split('|');
+        (bridgeMap[k] = bridgeMap[k] || { a, c, via: [] }).via.push(bridge);
+      }
+    }
+  });
+  Object.values(bridgeMap)
+    .map(x => ({ ...x, need: Math.min(ids[x.a].recvPos, ids[x.c].recvPos) }))
+    .sort((x, y) => x.need - y.need || y.via.length - x.via.length)
+    .slice(0, 15)
+    .forEach(x => {
+      add(x.a, '다리 놓기 후보', x.c, '추론', '공통 친구', { via: x.via, pair: true, pol: '긍정' });
+      add(x.c, '다리 놓기 후보', x.a, '추론', '공통 친구', { via: x.via, pair: true, pol: '긍정' });
+    });
+
+  // ⑤ 한방향 선택 → 연결 기회
+  Object.keys(ids).forEach(s => {
+    const st = ids[s];
+    if (!st.responded || (st.recvPos > 0 && st.mutual > 0)) return;
+    Object.keys(posOut[s]).forEach(o => {
+      if (!posOut[o][s] && !negPair[pairKey(s, o)]) add(s, '연결 기회', o, '추론', '한방향 선택', { pol: '긍정' });
+    });
+  });
+
+  // ⑥ 지난달과 비교
+  if (diff) {
+    const rule = '지난달과 비교';
+    diff.newPos.forEach(e => add(e.s, '새로 즐겁게 지냄', e.o, '추론', rule, { pol: '긍정', text: e.text }));
+    diff.lostPos.forEach(e => add(e.s, '즐거운 관계가 사라짐', e.o, '추론', rule, { pol: '부정', text: e.text }));
+    diff.newNeg.forEach(e => add(e.s, '새로 불편해짐', e.o, '추론', rule, { pol: '부정', text: e.text }));
+    diff.resolvedNeg.forEach(e => add(e.s, '불편함이 풀림', e.o, '추론', rule, { pol: '긍정', text: e.text }));
+    addPair(diff.newMutual, '새로 서로 친구', rule, '긍정');
+    addPair(diff.lostMutual, '서로 친구가 끊김', rule, '부정');
+  }
+  return facts;
+}
+
+/** 선택한 달 + 그 이전 달 분석과 비교·추론을 한 번에 만듭니다. */
+function buildContext(model, month) {
+  const list = model.months.map(item => item.month);
+  let selected = list.includes(month) ? month : '';
+  if (!selected) {
+    const open = model.months.filter(item => item.status === 'open');
+    selected = open.length ? open[open.length - 1].month : (list[list.length - 1] || '');
+  }
+  const index = list.indexOf(selected);
+  const prevMonth = index > 0 ? list[index - 1] : '';
+  const cur = selected ? analyzeMonth(model, selected) : null;
+  const prev = prevMonth ? analyzeMonth(model, prevMonth) : null;
+  const diff = cur && prev ? diffMonths(cur, prev) : null;
+  return { month: selected, prevMonth, cur, prev, diff, facts: cur ? buildFacts(cur, diff) : [] };
+}
+
+/** 월별 추이 (응답 · 서로 친구 · 불편 응답 · 선택받지 못한 학생 · 분위기 평균) */
+function buildTrend(model, ctx) {
+  return model.months.map(item => {
+    const analysis = item.month === ctx.month ? ctx.cur : item.month === ctx.prevMonth ? ctx.prev : analyzeMonth(model, item.month);
+    return {
+      month: item.month, status: item.status, closeAt: item.closeAt,
+      responded: analysis.responded, total: analysis.total,
+      mutual: analysis.mutualPairs.length,
+      neg: analysis.edges.filter(e => e.pol === POL.NEG).length,
+      isolated: analysis.responded ? Object.values(analysis.stats).filter(st => st.recvPos === 0).length : null,
+      climateAvg: analysis.climate.avg
+    };
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  5. 예시 데이터 — 9월(마감) · 10월(진행 중), 저장하지 않고 화면에서만 씁니다
+ *     10월 변화: 류현우(1619)에게 새 친구 · 전소율(1620)을 향한 불편 응답 감소
+ *               임수아(1610)의 속상함 해소 · 오지아(1612)↔강지우(1606) 새 갈등
+ * ═══════════════════════════════════════════════════════════════ */
+const DEMO = {
+  names: ['김민준', '이서연', '박지호', '최하윤', '정도윤', '강지우', '조서준', '윤하은', '장예준', '임수아',
+    '한시우', '오지아', '서주원', '신채원', '권건우', '황다은', '안우진', '송유나', '류현우', '전소율'],
+  posSep: {
+    S01: ['S05', 'S07', 'S17'], S02: ['S04', 'S08', 'S10'], S03: ['S09', 'S13', 'S01'], S04: ['S02', 'S10', 'S08'],
+    S05: ['S01', 'S11', 'S07'], S06: ['S12', 'S14', 'S17'], S07: ['S05', 'S01', 'S11'], S08: ['S02', 'S04', 'S17'],
+    S09: ['S03', 'S15', 'S13'], S10: ['S04', 'S02', 'S06'], S11: ['S07', 'S05', 'S01'], S12: ['S06', 'S16', 'S14'],
+    S13: ['S09', 'S03', 'S15'], S14: ['S16', 'S12', 'S06'], S15: ['S13', 'S09', 'S03'], S16: ['S14', 'S18', 'S12'],
+    S17: ['S01', 'S08', 'S06'], S18: ['S16', 'S14', 'S12'], S19: ['S03', 'S09'], S20: ['S17', 'S05', 'S01']
+  },
+  posText: [[['함께 놀아요'], '쉬는 시간마다 같이 놀아요'], [['잘 도와줘요'], '모르는 문제를 친절하게 알려줘요'],
+    [['이야기가 잘 통해요'], '좋아하는 게 같아서 이야기가 잘 통해요'], [['친절하고 배려해요'], '힘들 때 먼저 말을 걸어줘요'],
+    [['같이 있으면 즐거워요'], '같이 있으면 웃을 일이 많아요'], [['공부를 함께해요', '잘 도와줘요'], '모둠 활동을 할 때 손발이 잘 맞아요'],
+    [['함께 놀아요'], '점심시간에 같이 운동해요'], [['이야기가 잘 통해요', '친절하고 배려해요'], '내 이야기를 잘 들어줘요']],
+  negSep: [
+    ['S01', 'S20', '장난이 심하고 자꾸 놀려요'], ['S02', 'S20', '같이 있으면 말을 함부로 해서 불편해요'],
+    ['S03', 'S17', '제 말을 잘 안 들어줘요'], ['S05', 'S20', '체육 시간에 다퉜어요'], ['S07', 'S20', '장난이 너무 심해요'],
+    ['S10', 'S12', '체육 시간에 못한다고 놀려서 속상했어요'], ['S11', 'S20', '약속을 잘 안 지켜요'],
+    ['S12', 'S17', '자기 마음대로만 하려고 해요'], ['S14', 'S17', '같이 있으면 조금 불편해요'], ['S17', 'S20', '모둠 활동 때 다퉜어요']
+  ],
+  negOct: [
+    ['S02', 'S20', '아직 말을 함부로 할 때가 있어요'], ['S03', 'S17', '같이 있으면 조금 불편해요'], ['S07', 'S20', '장난이 심해요'],
+    ['S11', 'S20', '약속을 잘 안 지켜요'], ['S12', 'S17', '자기 마음대로만 하려고 해요'], ['S12', 'S06', '모둠 활동 때 의견이 달라서 싸웠어요'],
+    ['S14', 'S17', '같이 있으면 조금 불편해요'], ['S17', 'S20', '다툰 뒤로 어색해요']
+  ],
+  octSkip: ['S16', 'S18', 'S20'],
+  climateSep: [4, 4, 3, 4, 4, 4, 5, 4, 3, 2, 4, 3, 4, 4, 3, 4, 4, 3, 2, 1],
+  climateOct: [4, 5, 4, 4, 4, 2, 4, 4, 4, 4, 4, 3, 4, 4, 4, 0, 5, 0, 4, 0],
+  climateReason: {
+    '2026-09': { S10: '체육 시간에 놀림을 받아서 조금 싫어요', S19: '같이 놀 친구가 별로 없어요', S20: '쉬는 시간에 교실에 있으면 불편할 때가 많아요', S07: '다들 재미있게 지내요' },
+    '2026-10': { S06: '요즘 모둠에서 다툼이 있어서 교실이 불편해요', S19: '친구가 생겨서 좋아요', S02: '학급 회의 뒤로 분위기가 좋아졌어요' }
+  }
+};
+const demoStudentId = code => `16${code.slice(1)}`;   // 'S05' → '1605'
+
+/** 예시 이유 글에 어울리는 분류 태그 고르기 (예시 데이터 전용) */
+function demoNegativeTags(text) {
+  const rules = [['놀려', '놀리거나 장난이 심해요'], ['장난', '놀리거나 장난이 심해요'], ['다퉜', '다툰 일이 있었어요'], ['싸웠', '다툰 일이 있었어요'],
+    ['다툰', '다툰 일이 있었어요'], ['약속', '약속을 잘 안 지켜요'], ['함부로', '말 때문에 속상했어요'], ['못한다고', '말 때문에 속상했어요'], ['', '함께 있으면 불편해요']];
+  return [rules.find(([word]) => text.includes(word))[1]];
+}
+
+function demoOctoberPositive() {
+  const map = JSON.parse(JSON.stringify(DEMO.posSep));
+  DEMO.octSkip.forEach(code => delete map[code]);
+  Object.assign(map, {
+    S03: ['S09', 'S13', 'S19'], S09: ['S03', 'S19', 'S15'], S19: ['S03', 'S09', 'S15'],
+    S10: ['S04', 'S02', 'S12'], S06: ['S14', 'S17', 'S10']
+  });
+  return map;
+}
+
+function buildDemoData() {
+  const roster = {};
+  DEMO.names.forEach((name, index) => { roster[`16${pad2(index + 1)}`] = { no: index + 1, name, active: true }; });
+  const room = {
+    memo: '예시 반 · 1학년 6반', creatorSchool: '예시중학교', creatorName: '예시', roomMode: 'auth', roster,
+    months: {
+      '2026-09': { status: 'closed', openedAt: Date.parse('2026-09-07T09:00:00+09:00'), closeAt: null },
+      '2026-10': { status: 'open', openedAt: Date.parse('2026-10-05T09:00:00+09:00'), closeAt: null }
+    }
+  };
+  const responses = [];
+  const addMonth = (month, positiveMap, negativeList, climates, day, skip) => {
+    const order = Object.keys(positiveMap);
+    DEMO.names.forEach((_, index) => {
+      const code = `S${pad2(index + 1)}`;
+      if (skip.includes(code)) return;
+      const positive = (positiveMap[code] || []).map((target, rank) => {
+        const [tags, text] = DEMO.posText[(order.indexOf(code) * 3 + rank) % DEMO.posText.length];
+        return { id: demoStudentId(target), tags, text };
+      });
+      const negative = negativeList.filter(([from]) => from === code)
+        .map(([, target, text]) => ({ id: demoStudentId(target), tags: demoNegativeTags(text), text }));
+      responses.push({
+        month, studentId: demoStudentId(code), climate: climates[index],
+        climateReason: DEMO.climateReason[month]?.[code] || '', positive, negative,
+        submittedAt: Date.parse(`${day}T09:${pad2(30 + index)}:00+09:00`)
+      });
+    });
+  };
+  addMonth('2026-09', DEMO.posSep, DEMO.negSep, DEMO.climateSep, '2026-09-08', []);
+  addMonth('2026-10', demoOctoberPositive(), DEMO.negOct, DEMO.climateOct, '2026-10-06', DEMO.octSkip);
+  return { room, responses, receipts: {} };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  6. 첫 화면 (학생: 반 코드 → 학번 · PIN / 교사: 구글 로그인)
+ * ═══════════════════════════════════════════════════════════════ */
+function setLoginRole(role) {
+  S.loginRole = role;
+  document.querySelectorAll('[data-role]').forEach(el => {
+    const on = el.dataset.role === role;
+    el.classList.toggle('is-active', on);
+    el.setAttribute('aria-selected', String(on));
+  });
+  $('#login-student').classList.toggle('hidden', role !== 'student');
+  $('#login-teacher').classList.toggle('hidden', role !== 'teacher');
+  $('#login-help').textContent = role === 'student'
+    ? '처음 들어오면 학번과 4자리 PIN을 정해요. PIN을 잊었다면 선생님께 말씀해 주세요.'
+    : '메인 화면의 교사 로그인에서 학교를 등록하고 관리자 승인을 받은 선생님만 쓸 수 있어요.';
+}
+document.querySelectorAll('[data-role]').forEach(b => b.addEventListener('click', () => setLoginRole(b.dataset.role)));
+
+/** 로그인했지만 승인된 선생님이 아닐 때의 안내 */
+function renderTeacherLoginNote() {
+  const pending = !!S.user && !S.teacher;
+  const note = $('#teacher-login-note');
+  note.classList.toggle('hidden', !pending);
+  note.textContent = pending ? `${S.user.email || '이 계정'}은(는) 아직 승인된 선생님 계정이 아니에요. 메인 화면의 [교사 로그인]에서 학교 정보를 등록하고 관리자 승인을 받아 주세요.` : '';
+  $('#teacher-google-btn').classList.toggle('hidden', !!S.user);
+  $('#teacher-signout-btn').classList.toggle('hidden', !S.user);
+}
+
+$('#teacher-google-btn').addEventListener('click', () => {
+  S.loginRequested = true;
+  signInWithPopup(auth, googleProvider).catch(err => {
+    S.loginRequested = false;
+    const code = (err && err.code) || '';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+    mAlert('로그인하지 못했어요', code === 'auth/popup-blocked'
+      ? '팝업이 차단되었어요. 브라우저의 팝업 차단을 풀고 다시 시도해 주세요.'
+      : `잠시 뒤 다시 시도해 주세요. (${code || (err && err.message) || '알 수 없는 오류'})`);
+  });
+});
+$('#teacher-signout-btn').addEventListener('click', () => signOut(auth).catch(() => {}));
+
+renderRoomEntrance('room-entrance-container', {
+  title: '반 코드 입력',
+  roomCodePlaceholder: '선생님이 알려 준 4자리',
+  joinBtnText: '설문 시작하기',
+  dashBtnText: '관계지도 관리 열기',
+  showGuestToggle: true,
+  useNicknameMarkers: false,
+  waitingDestination: '관계 설문 화면',
+  // 방 안의 열쇠로 학번을 씁니다 (students/{학번}). 게스트는 이때 입력한 PIN으로 제출용 증명값을 만들어 메모리에만 둡니다.
+  authenticatedRoomKey: async student => {
+    if (student && student.isGuest && /^\d{4}$/.test(String(student.pin || ''))) {
+      const key = makeStudentKey(student.school, student.studentId);
+      guestProof = { key, proof: await derivePinProof(student.pin, key) };
+    }
+    return student && student.studentId;
+  },
+  getRoomData: async roomCode => {
+    const snap = await getDoc(doc(db, COLLECTION, roomCode));
+    return snap.exists() ? snap.data() : null;
+  },
+  studentsCollectionRef: roomCode => collection(db, COLLECTION, roomCode, 'students'),
+  getRoomOwner: async (roomCode, data) => ({ school: String((data && data.creatorSchool) || '').trim(), teacherName: (data && data.creatorName) || '선생님' }),
+  onJoin: async (roomCode, nickname, authInfo) => { await openStudentSurvey(roomCode, authInfo); }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+ *  7. 학생 설문: 한 장짜리 설문지
+ *     1번: 우리 반 분위기 5점 척도(필수) + 이유(선택)
+ *     2~3번: 친구 이름 버튼을 눌러 고르면, 고른 친구마다 이유 분류와 자세한 이유를 받음
+ *     제출은 PIN 게이트 갱신과 같은 batch로 씁니다 — 보안 규칙이 같은 요청 안에서 학번의 PIN을 확인합니다.
+ *     제출한 답은 학생 본인도 다시 읽지 못합니다 (receipts에는 제출 여부만 있음).
+ * ═══════════════════════════════════════════════════════════════ */
+/** 진행 중인 달 가운데 가장 최근 달 (마감 예약 시각이 지난 달은 빼고) */
+function pickOpenMonth(months) {
+  const now = Date.now();
+  return Object.entries(months || {})
+    .map(([month, v]) => ({ month, status: v && v.status, closeAt: timestampMillis(v && v.closeAt) }))
+    .filter(x => MONTH_PATTERN.test(x.month) && x.status === 'open' && (!x.closeAt || x.closeAt > now))
+    .sort((a, b) => b.month.localeCompare(a.month))[0] || null;
+}
+
+async function openStudentSurvey(roomCode, authInfo) {
+  const studentId = String((authInfo && authInfo.studentId) || '').trim();
+  const stop = (title, message) => { window.releaseStudentPresence && window.releaseStudentPresence(); guestProof = null; return mAlert(title, message); };
+  if (!studentId) return stop('들어가지 못했어요', '학생 정보를 확인할 수 없어요. 다시 들어와 주세요.');
+  loading(true, '설문을 불러오는 중');
+  let room = null, open = null, receipt = null, failure = null;
+  try {
+    const snap = await getDoc(doc(db, COLLECTION, roomCode));
+    room = snap.exists() ? snap.data() : null;
+    open = room ? pickOpenMonth(room.months) : null;
+    const me = room && room.roster && room.roster[studentId];
+    if (open && me && me.active !== false) {
+      const r = await getDoc(doc(db, COLLECTION, roomCode, 'receipts', `${open.month}_${studentId}`));
+      receipt = r.exists() ? r.data() : null;
+    }
+  } catch (err) { failure = err; }
+  loading(false);
+  if (failure) {
+    console.error('설문 정보 불러오기 실패:', failure);
+    return stop('설문을 불러오지 못했어요', isPermissionError(failure) ? '설문 정보를 읽을 권한이 없어요. 선생님께 알려 주세요. (보안 규칙)' : '네트워크를 확인하고 다시 들어와 주세요.');
+  }
+  if (!room) return stop('들어가지 못했어요', '반 정보를 찾을 수 없어요. 반 코드를 확인해 주세요.');
+  const me = room.roster && room.roster[studentId];
+  if (!me || me.active === false) return stop('명단에서 찾지 못했어요', `학번 ${studentId}이(가) 이 반 명단에 없어요. 학번이 맞는지 확인하고, 맞다면 선생님께 명단 등록을 부탁해 주세요.`);
+  if (!open) return stop('지금은 설문 기간이 아니에요', '선생님이 설문을 시작하면 다시 들어와 주세요.');
+  if (receipt && !receipt.editAllowed) return stop('이미 제출한 설문이에요', `${monthLabel(open.month)} 설문은 이미 제출했어요. 친구들의 정보를 지키기 위해 제출한 답은 다시 불러오지 않아요. 고칠 내용이 있으면 선생님께 수정 권한을 요청해 주세요.`);
+  startSurvey(roomCode, room, studentId, authInfo, open, !!receipt);
+}
+
+function startSurvey(roomCode, room, studentId, authInfo, open, editing) {
+  const roster = room.roster || {}, answers = {};
+  SURVEY_CONFIG.questions.forEach(q => { answers[q.key] = []; });
+  S.sv = {
+    roomCode, room, studentId, isGuest: !!authInfo.isGuest,
+    studentKey: makeStudentKey(String(authInfo.school || room.creatorSchool || '').trim(), studentId),
+    month: open.month, closeAt: open.closeAt, editing,
+    me: { id: studentId, name: String(roster[studentId].name || '').trim(), studentNo: studentId },
+    classmates: Object.entries(roster)
+      .filter(([id, v]) => id !== studentId && v && v.active !== false && String(v.name || '').trim())
+      .map(([id, v]) => ({ id, number: safeNumber(v.no, 0), name: String(v.name).trim() }))
+      .sort((a, b) => compareStudentNo(a.id, b.id)),
+    answers, climate: '', climateReason: '', done: false, submitting: false
+  };
+  show('survey');
+  renderSurveyForm();
+  armSurveyClose();
+}
+
+$('#sv-exit').addEventListener('click', async () => {
+  if (S.sv && !S.sv.done && !(await mConfirm('설문을 그만둘까요?', '제출하지 않은 답은 저장되지 않아요.', { ok: '나가기', cancel: '계속 쓰기' }))) return;
+  goHomeFromSurvey();
+});
+
+function goHomeFromSurvey() {
+  setDirty(false);
+  clearTimeout(surveyCloseTimer);
+  S.sv = null;
+  guestProof = null;
+  if (window.releaseStudentPresence) window.releaseStudentPresence();
+  show('home');
+}
+
+function renderSurveyForm() {
+  const sv = S.sv, c = SURVEY_CONFIG;
+  $('#sv-panel').innerHTML = `
+    <div class="border-b border-line pb-5">
+      <h2 class="text-xl font-extrabold leading-snug sm:text-2xl">${esc(monthLabel(sv.month))} 우리 반 관계 설문</h2>
+      <div class="mt-2.5 flex flex-wrap items-center gap-2">
+        <span class="text-sm font-bold text-ink-muted">${esc(sv.me.studentNo)} ${esc(sv.me.name)}</span>
+        <span class="rounded-full bg-board-soft px-3 py-1 text-xs font-bold text-board">${sv.editing ? '수정 중' : '진행 중'}</span>
+        ${sv.closeAt ? `<span class="rounded-full bg-page px-3 py-1 text-xs font-bold text-ink-muted">${esc(scheduleLabel(sv.closeAt))} 마감</span>` : ''}
+      </div>
+      <p class="mt-3 text-sm leading-relaxed text-ink-muted">정답은 없어요. 평소 느낌 그대로 솔직하게 답해 주세요. 친구를 골랐다면 어떤 이유인지 고르고, 자세한 이유도 꼭 적어 주세요. 답은 선생님만 볼 수 있어요.</p>
+      ${sv.editing
+        ? '<p class="mt-3 rounded-lg bg-board-soft px-3 py-2.5 text-sm font-bold text-board">선생님이 수정 권한을 주셨어요. 친구들의 정보를 지키기 위해 지난번 답은 불러오지 않으니 처음부터 다시 적어 주세요. 다시 제출하면 지난번 답을 대신하고 수정 권한은 끝나요.</p>'
+        : '<p class="mt-3 rounded-lg bg-chalk-yellow/30 px-3 py-2.5 text-sm font-semibold">한 번 제출하면 답을 다시 불러올 수 없어요. 고칠 게 생기면 선생님께 수정 권한을 요청해야 해요.</p>'}
+    </div>
+    <div id="sv-questions">
+      ${climateBlockHtml(1)}
+      ${c.questions.map((q, i) => friendBlockHtml(q, i + 2)).join('')}
+    </div>
+    <button id="sv-submit" type="button" class="btn btn-primary mt-2 w-full py-3.5 text-base">응답 제출</button>`;
+  c.questions.forEach(q => { renderPills(q.key); renderReasons(q.key); });
+  bindSurveyEvents();
+  setDirty(false);
+}
+
+function friendBlockHtml(q, n) {
+  return `<div class="border-t border-dashed border-line py-6 first:border-t-0" data-q="${q.key}">
+    <p class="text-base font-bold leading-snug">${n}. ${esc(q.title)}</p>
+    <p class="mt-1 text-sm text-ink-muted">${esc(q.help)} <b class="text-ink">최대 ${q.max}명</b>까지 고를 수 있어요.</p>
+    ${q.note ? `<p class="mt-3 rounded-lg bg-stamp-soft text-stamp px-3 py-2.5 text-sm font-semibold leading-relaxed">${esc(q.note)}</p>` : ''}
+    <div class="mt-3 flex flex-wrap gap-2" data-pills="${q.key}" role="group" aria-label="${esc(q.title)}"></div>
+    <div class="mt-4 space-y-3" data-reasons="${q.key}"></div>
+    <p class="mt-2 hidden text-sm font-semibold text-stamp" data-qerr="${q.key}" role="alert"></p>
+  </div>`;
+}
+
+function climateBlockHtml(n) {
+  const sv = S.sv, c = SURVEY_CONFIG.climate;
+  return `<div class="border-t border-dashed border-line py-6 first:border-t-0" data-q="climate">
+    <p class="text-base font-bold leading-snug">${n}. ${esc(c.question)} <span class="text-stamp">*</span></p>
+    <div class="mt-3 overflow-hidden rounded-xl border border-line" role="radiogroup" aria-label="우리 반 분위기 점수" data-climate-group>
+      ${c.scale.map((s, i) => `<button type="button" role="radio" data-climate="${s.v}" class="flex w-full items-center gap-3 px-4 py-3 text-left transition ${i ? 'border-t border-line' : ''}">
+        <span data-score class="flex h-9 w-12 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold tabular-nums">${s.v}점</span>
+        <span class="font-semibold leading-snug">${esc(s.label)}</span></button>`).join('')}
+    </div>
+    <label class="mt-4 block"><span class="field-label">${esc(c.reasonLabel)}</span>
+      <textarea id="sv-climate-reason" rows="2" maxlength="${SURVEY_CONFIG.climateReasonMax}" class="field resize-y" placeholder="${esc(c.placeholder)}">${esc(sv.climateReason)}</textarea></label>
+    <p class="mt-2 hidden text-sm font-semibold text-stamp" data-qerr="climate" role="alert"></p>
+  </div>`;
+}
+
+function paintClimate() {
+  document.querySelectorAll('[data-climate]').forEach(b => {
+    const on = Number(b.dataset.climate) === Number(S.sv.climate);
+    b.setAttribute('aria-checked', on);
+    b.classList.toggle('bg-board', on); b.classList.toggle('text-chalk', on); b.classList.toggle('hover:bg-page', !on);
+    const score = b.querySelector('[data-score]');
+    score.className = `flex h-9 w-12 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold tabular-nums ${on ? 'bg-chalk-yellow text-ink' : 'bg-page text-ink'}`;
+  });
+}
+
+/** 친구 이름 버튼: 2번(즐거운)과 3번(불편한)에는 같은 친구를 함께 고를 수 없어요. */
+function renderPills(key) {
+  const sv = S.sv;
+  const picked = sv.answers[key];
+  const other = key === 'positive' ? sv.answers.negative : key === 'negative' ? sv.answers.positive : [];
+  document.querySelector(`[data-pills="${key}"]`).innerHTML = sv.classmates.map(c => {
+    const on = picked.some(x => x.id === c.id), blocked = !on && (other || []).some(x => x.id === c.id);
+    return `<button type="button" class="pill" data-pick="${key}" data-id="${esc(c.id)}" aria-pressed="${on}" ${blocked ? 'disabled title="다른 문항에서 이미 골랐어요"' : ''}>${esc(c.name)}</button>`;
+  }).join('') || '<p class="text-sm text-ink-muted">명단에 다른 친구가 아직 없어요.</p>';
+}
+
+/** 고른 친구마다: 이유 분류 태그(여러 개) + 자세한 이유(직접 입력) */
+function renderReasons(key) {
+  const sv = S.sv, q = questionOf(key);
+  document.querySelector(`[data-reasons="${key}"]`).innerHTML = sv.answers[key].map((x, i) => {
+    const c = sv.classmates.find(m => m.id === x.id);
+    return `<div class="rounded-xl border border-line bg-page/40 p-3" data-card="${key}|${esc(x.id)}">
+      <p class="text-sm font-bold"><span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-board text-[11px] text-chalk">${i + 1}</span>${esc(q.reasonLabel.replace('{name}', c ? c.name : ''))} <span class="text-stamp">*</span></p>
+      <p class="mt-2 text-xs font-semibold text-ink-muted">어떤 이유인가요? (여러 개 고를 수 있어요)</p>
+      <div class="mt-1.5 flex flex-wrap gap-1.5">${q.tags.map(t => `<button type="button" class="pill px-3 py-1 text-sm" data-tag="${esc(t)}" data-tq="${key}" data-id="${esc(x.id)}" aria-pressed="${x.tags.includes(t)}">${esc(t)}</button>`).join('')}</div>
+      <p class="mt-3 text-xs font-semibold text-ink-muted">자세히 적어 주세요</p>
+      <textarea rows="2" maxlength="${SURVEY_CONFIG.reasonMax}" data-reason="${key}" data-id="${esc(x.id)}" class="field mt-1 resize-y" aria-label="${esc(q.reasonLabel.replace('{name}', c ? c.name : ''))}" placeholder="${esc(q.placeholder)}">${esc(x.text)}</textarea>
+    </div>`;
+  }).join('');
+}
+
+function bindSurveyEvents() {
+  const sv = S.sv, root = $('#sv-questions');
+  paintClimate();
+  root.addEventListener('click', e => {
+    if (sv.done || sv.submitting) return;
+    const tag = e.target.closest('[data-tag]');
+    if (tag) {
+      const it = sv.answers[tag.dataset.tq].find(x => x.id === tag.dataset.id), t = tag.dataset.tag, k = it.tags.indexOf(t);
+      if (k >= 0) it.tags.splice(k, 1); else it.tags.push(t);
+      tag.setAttribute('aria-pressed', k < 0);
+      document.querySelector(`[data-qerr="${tag.dataset.tq}"]`).classList.add('hidden');
+      setDirty(true);
+      return;
+    }
+    const pill = e.target.closest('[data-pick]');
+    if (pill && !pill.disabled) {
+      const key = pill.dataset.pick, id = pill.dataset.id, q = questionOf(key);
+      const list = sv.answers[key], i = list.findIndex(x => x.id === id);
+      if (i >= 0) list.splice(i, 1);
+      else if (list.length >= q.max) return toast(`${q.max}명까지 고를 수 있어요`, true);
+      else list.push({ id, tags: [], text: '' });
+      renderPills(key); renderReasons(key);
+      if (key === 'positive') renderPills('negative');
+      if (key === 'negative') renderPills('positive');
+      document.querySelector(`[data-qerr="${key}"]`).classList.add('hidden');
+      // 다시 그린 뒤에도 키보드 위치를 잃지 않도록 같은 이름 버튼에 초점을 돌려줍니다
+      const again = document.querySelector(`[data-pick="${key}"][data-id="${CSS.escape(id)}"]`);
+      if (again) again.focus({ preventScroll: true });
+      setDirty(true);
+      return;
+    }
+    const cl = e.target.closest('[data-climate]');
+    if (cl) { sv.climate = Number(cl.dataset.climate); paintClimate(); document.querySelector('[data-qerr="climate"]').classList.add('hidden'); setDirty(true); }
+  });
+  root.addEventListener('input', e => {
+    const t = e.target;
+    if (t.dataset.reason) { const it = sv.answers[t.dataset.reason].find(x => x.id === t.dataset.id); if (it) it.text = t.value; }
+    if (t.id === 'sv-climate-reason') sv.climateReason = t.value;
+    setDirty(true);
+  });
+  $('#sv-submit').onclick = submitSurveyAnswers;
+}
+
+/** 제출 전 확인: 고른 친구마다 분류 태그와 자세한 이유가 있는지, 분위기 점수를 골랐는지 */
+function validateSurvey() {
+  const sv = S.sv, errs = [];
+  const nm = id => (sv.classmates.find(c => c.id === id) || {}).name;
+  const ce = document.querySelector('[data-qerr="climate"]');
+  if (!sv.climate) { ce.textContent = '우리 반 분위기 점수를 하나 골라 주세요.'; ce.classList.remove('hidden'); errs.push('climate'); }
+  else ce.classList.add('hidden');
+  SURVEY_CONFIG.questions.forEach(q => {
+    const noTag = sv.answers[q.key].filter(x => !x.tags.length).map(x => nm(x.id));
+    const noText = sv.answers[q.key].filter(x => !x.text.trim()).map(x => nm(x.id));
+    const el = document.querySelector(`[data-qerr="${q.key}"]`);
+    const msg = [noTag.length ? `${noTag.join(', ')}: 이유 분류를 하나 이상 골라 주세요.` : '', noText.length ? `${noText.join(', ')}: 자세한 이유를 적어 주세요.` : ''].filter(Boolean).join(' ');
+    if (msg) { el.textContent = msg; el.classList.remove('hidden'); errs.push(q.key); }
+    else el.classList.add('hidden');
+  });
+  if (errs.length) document.querySelector(`[data-q="${errs[0]}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return !errs.length;
+}
+
+async function submitSurveyAnswers() {
+  const sv = S.sv;
+  if (!sv || sv.submitting || sv.done) return;
+  if (!validateSurvey()) return toast('빠진 답이 있어요. 빨간 글씨를 확인해 주세요.', true);
+  const picked = SURVEY_CONFIG.questions.reduce((n, q) => n + sv.answers[q.key].length, 0);
+  if (!sv.answers.positive.length && !(await mConfirm('2번에서 친구를 고르지 않았어요', '요즘 함께 즐겁게 지내는 친구가 아직 없다면 그대로 제출해도 괜찮아요.', { ok: '그대로 제출', cancel: '다시 볼게요' }))) return;
+  if (!(await mConfirm('설문을 제출할까요?', `고른 친구 ${picked}명, 우리 반 분위기 ${climateLabel(sv.climate)}\n제출하면 답을 다시 불러올 수 없어요. 고칠 게 생기면 선생님께 수정 권한을 요청해야 해요.`, { ok: '제출하기' }))) return;
+  const btn = $('#sv-submit');
+  sv.submitting = true;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>제출하는 중';
+  $('#sv-exit').disabled = true;   // 제출하는 동안 나가면 학생 정보가 비어 버립니다
+  let outcome;
+  try { outcome = await submitWithProof(sv); }
+  finally {
+    sv.submitting = false;
+    $('#sv-exit').disabled = false;
+    if (btn.isConnected) { btn.disabled = false; btn.textContent = '응답 제출'; }
+  }
+  if (outcome === 'done') return showSurveyDone();
+  if (outcome === 'cancelled') return;
+  const [title, message] = SUBMIT_FAILURES[outcome] || SUBMIT_FAILURES.network;
+  await mAlert(title, message);
+  if (['closed', 'locked', 'roster'].includes(outcome)) endSurveyPanel(title, message);
+}
+
+const SUBMIT_FAILURES = {
+  closed: ['설문이 마감됐어요', '마감 시각이 지나 제출하지 못했어요.'],
+  roster: ['명단에서 찾지 못했어요', '반 명단에서 내 학번을 찾지 못해 제출하지 못했어요. 선생님께 알려 주세요.'],
+  locked: ['이미 제출한 설문이에요', '고치려면 선생님께 수정 권한을 요청해 주세요.'],
+  pin: ['PIN을 확인하지 못했어요', '선생님이 PIN을 초기화했다면 [나가기]를 누르고 다시 들어와 새 PIN을 정해 주세요.'],
+  network: ['제출하지 못했어요', '인터넷 연결을 확인하고 다시 [응답 제출]을 눌러 주세요.']
+};
+
+/** 저장된 증명값으로 제출하고, PIN 때문에 거부되면 PIN을 한 번 더 받아 다시 시도합니다 → 'done' | 'cancelled' | 실패 이유 */
+async function submitWithProof(sv) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const proof = await getSubmitProof(sv, attempt > 0);
+    if (!proof) return 'cancelled';
+    try {
+      await commitSurvey(sv, proof);
+      return 'done';
+    } catch (err) {
+      console.error('설문 제출 실패:', err);
+      const reason = await diagnoseSubmitError(sv, err);
+      if (reason !== 'pin' || attempt > 0) return reason;
+    }
+  }
+  return 'pin';
+}
+
+/** 제출용 PIN 증명값: 게스트는 입장 때 만든 값, 본인 기기는 room-auth가 저장한 값, 없으면 PIN을 한 번 더 받습니다 */
+async function getSubmitProof(sv, askAgain) {
+  const key = sv.studentKey;
+  if (!askAgain) {
+    if (guestProof && guestProof.key === key) return guestProof.proof;
+    const owner = getPhoneOwnerAuth();
+    if (!sv.isGuest && owner && makeStudentKey(owner.school, owner.studentId) === key) return owner.proof;
+  }
+  const r = await mForm({
+    title: 'PIN 확인',
+    message: askAgain ? 'PIN을 확인하지 못했어요. 이 학번의 4자리 PIN을 다시 입력해 주세요.' : '제출하려면 이 학번의 4자리 PIN을 한 번 더 입력해 주세요.',
+    fields: [{ name: 'pin', label: '4자리 PIN', type: 'password', inputmode: 'numeric', maxlength: 4 }],
+    submit: '확인',
+    onSubmit: async v => (/^\d{4}$/.test(v.pin) ? { pin: v.pin } : { error: 'PIN은 숫자 4자리예요.' })
+  });
+  if (!r || !r.pin) return null;
+  const proof = await derivePinProof(r.pin, key);
+  if (sv.isGuest) guestProof = { key, proof };
+  return proof;
+}
+
+async function commitSurvey(sv, proof) {
+  const deviceFp = await deriveDeviceFingerprint(getDeviceId());
+  const responseId = `${sv.month}_${sv.studentId}`;
+  const list = key => sv.answers[key].map(x => ({ id: x.id, tags: x.tags.slice(), text: x.text.trim().slice(0, SURVEY_CONFIG.reasonMax) }));
+  const batch = writeBatch(db);
+  // ① PIN 게이트 갱신 — 기존 student_auth 규칙이 증명값을 PIN 해시와 대조합니다
+  batch.set(doc(db, 'student_auth', sv.studentKey, 'gate', deviceFp), { proof, at: serverTimestamp() });
+  // ② 응답 — 선생님만 읽습니다
+  batch.set(doc(db, COLLECTION, sv.roomCode, 'responses', responseId), {
+    month: sv.month, studentId: sv.studentId, deviceFp,
+    climate: sv.climate, climateReason: sv.climateReason.trim().slice(0, SURVEY_CONFIG.climateReasonMax),
+    positive: list('positive'), negative: list('negative'),
+    submittedAt: serverTimestamp()
+  });
+  // ③ 제출 표시 — 학생 화면이 '이미 제출'을 알 수 있도록 내용 없이 여부만
+  batch.set(doc(db, COLLECTION, sv.roomCode, 'receipts', responseId), { month: sv.month, studentId: sv.studentId, submittedAt: serverTimestamp(), editAllowed: false });
+  await batch.commit();
+}
+
+/** 제출이 거부된 이유를 다시 읽어 구분합니다: closed · roster · locked · pin · network */
+async function diagnoseSubmitError(sv, err) {
+  if (!isPermissionError(err)) return 'network';
+  try {
+    const snap = await getDoc(doc(db, COLLECTION, sv.roomCode));
+    if (!snap.exists()) return 'closed';
+    const room = snap.data(), me = room.roster && room.roster[sv.studentId];
+    if (!me || me.active === false) return 'roster';
+    const period = room.months && room.months[sv.month], closeAt = timestampMillis(period && period.closeAt);
+    if (!period || period.status !== 'open' || (closeAt && closeAt <= Date.now())) return 'closed';
+    const receipt = await getDoc(doc(db, COLLECTION, sv.roomCode, 'receipts', `${sv.month}_${sv.studentId}`));
+    if (receipt.exists() && !receipt.data().editAllowed) return 'locked';
+  } catch (checkErr) {
+    console.warn('제출 실패 원인 확인 실패:', checkErr);
+    return 'network';
+  }
+  return 'pin';
+}
+
+function showSurveyDone() {
+  const sv = S.sv;
+  setDirty(false);
+  sv.done = true;
+  clearTimeout(surveyCloseTimer);
+  $('#sv-panel').innerHTML = `
+    <div class="px-2 py-10 text-center">
+      <span class="stamp stamp-press">제출</span>
+      <h2 class="mt-6 text-2xl font-extrabold">고마워요, ${esc(sv.me.name)}!</h2>
+      <p class="mt-2 leading-relaxed text-ink-muted">${esc(monthLabel(sv.month))} 설문을 잘 받았어요.<br>친구들의 정보를 지키기 위해 제출한 답은 다시 불러오지 않아요.</p>
+      <button id="sv-home" type="button" class="btn btn-ghost mt-8 px-6 py-3">처음으로</button>
+    </div>`;
+  window.scrollTo(0, 0);
+  $('#sv-home').onclick = goHomeFromSurvey;
+}
+
+/** 마감 · 이미 제출 · 명단 밖처럼 더 쓸 수 없을 때 설문지를 안내로 바꿉니다 */
+function endSurveyPanel(title, message) {
+  setDirty(false);
+  S.sv.done = true;
+  clearTimeout(surveyCloseTimer);
+  $('#sv-panel').innerHTML = `
+    <div class="px-2 py-10 text-center">
+      <p class="text-4xl" aria-hidden="true">🔒</p>
+      <h2 class="mt-4 text-xl font-extrabold">${esc(title)}</h2>
+      <p class="mt-2 leading-relaxed text-ink-muted">${esc(message)}</p>
+      <button id="sv-home" type="button" class="btn btn-ghost mt-8 px-6 py-3">처음으로</button>
+    </div>`;
+  $('#sv-home').onclick = goHomeFromSurvey;
+}
+
+/** 쓰는 도중 마감 예약 시각이 되면 설문지를 닫습니다 */
+function armSurveyClose() {
+  clearTimeout(surveyCloseTimer);
+  const sv = S.sv;
+  if (!sv || !sv.closeAt) return;
+  surveyCloseTimer = setTimeout(() => {
+    if (S.sv !== sv || sv.done) return;
+    if (Date.now() < sv.closeAt) return armSurveyClose();
+    if (sv.submitting) return;
+    endSurveyPanel('설문이 마감됐어요', '마감 시각이 지나 더 이상 제출할 수 없어요.');
+  }, Math.max(0, Math.min(sv.closeAt - Date.now(), 2147483647)));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  8. 교사: 진입 · 반 줄 · 도구 줄(달 선택 · 마감 · 삭제) · 탭
+ * ═══════════════════════════════════════════════════════════════ */
+const roomRef = (code = S.roomCode) => doc(db, COLLECTION, code);
+const monthPath = (month, field) => (field ? new FieldPath('months', month, field) : new FieldPath('months', month));
+
+async function enterTeacher() {
+  $('#teacher-name').textContent = `${S.teacher.name} 선생님 · ${S.teacher.school || '학교 미등록'}`;
+  show('teacher');
+  renderTabbar();
+  try { await loadTeacherRooms(); }
+  catch (err) { console.error('반 목록 조회 실패:', err); await mAlert('반 목록을 불러오지 못했어요', failText(err, '다시 시도해 주세요.')); }
+}
+
+async function leaveTeacherView() {
+  exitDemo(false);
+  await selectRoom('');
+  if (S.net) { S.net.destroy(); S.net = null; S.nodesDS = null; S.edgesDS = null; }
+  Object.assign(S, { rooms: [], tab: 'map', mode: 'month', focusId: null });
+  closeDrawer();
+  if (!$('#view-teacher').classList.contains('hidden')) show('home');
+}
+
+$('#btn-logout').addEventListener('click', async () => {
+  if (!(await mConfirm('로그아웃할까요?', '다시 들어오려면 구글 계정으로 로그인해야 해요.', { ok: '로그아웃' }))) return;
+  signOut(auth).catch(err => mAlert('로그아웃하지 못했어요', String((err && err.message) || err)));
+});
+
+function renderRoomOptions() {
+  const list = $('#roomSelect'), schoolSelect = $('#admin-school');
+  let visible = S.rooms;
+  if (S.teacher && S.teacher.isAdmin) {
+    const unspecified = '__unspecified__';
+    const schoolOf = r => String(r.data.creatorSchool || '').trim() || unspecified;
+    const schools = [...new Set(S.rooms.map(schoolOf))].sort((a, b) => a.localeCompare(b, 'ko'));
+    const selected = schoolSelect.value;
+    schoolSelect.innerHTML = '<option value="">전체 학교</option>' + schools.map(s => `<option value="${esc(s)}">${esc(s === unspecified ? '학교 미지정' : s)}</option>`).join('');
+    schoolSelect.value = schools.includes(selected) ? selected : '';
+    visible = S.rooms.filter(r => !schoolSelect.value || schoolOf(r) === schoolSelect.value);
+  }
+  list.innerHTML = '<option value="">반을 선택하세요</option>' + visible.map(r => `<option value="${esc(r.code)}">${esc(r.code)} | ${esc(r.data.memo || '이름 없음')}</option>`).join('');
+  list.value = !S.demo && visible.some(r => r.code === S.roomCode) ? S.roomCode : '';
+  $('#room-count').textContent = `${S.rooms.length}개 반`;
+  return visible.map(r => r.code);
+}
+
+async function loadTeacherRooms() {
+  const base = collection(db, COLLECTION);
+  const snap = S.teacher.isAdmin ? await getDocs(base) : await getDocs(query(base, where('createdBy', '==', S.user.uid)));
+  S.rooms = snap.docs.map(d => ({ code: d.id, data: d.data() })).sort((a, b) => timestampMillis(b.data.createdAt) - timestampMillis(a.data.createdAt));
+  $('#admin-school').hidden = !S.teacher.isAdmin;
+  renderRoomOptions();
+  renderTeacherEmpty();
+}
+
+function renderTeacherEmpty() {
+  const empty = !S.demo && !S.roomCode;
+  $('#teacher-empty').hidden = !empty;
+  if (empty) $('#workspace').hidden = true;
+  if (!empty) return;
+  $('#teacher-empty').innerHTML = `<div class="panel p-8 text-center text-sm leading-relaxed text-ink-muted">${S.rooms.length
+    ? '위에서 반을 고르면 관계지도와 학생 응답이 보여요.'
+    : '아직 만든 반이 없어요. <b class="text-ink">[＋ 새 반]</b>을 눌러 반을 만들고, [⚙️ 관리] 탭에서 학생 명단을 등록하세요.'}<br>처음이라면 <b class="text-ink">[예시로 미리보기]</b>로 화면을 먼저 둘러보세요.</div>`;
+}
+
+$('#roomSelect').addEventListener('change', e => { exitDemo(false); selectRoom(e.target.value); });
+$('#admin-school').addEventListener('change', () => {
+  const visible = renderRoomOptions();
+  if (S.roomCode && !visible.includes(S.roomCode)) selectRoom('');
+});
+$('#btn-refresh').addEventListener('click', () => loadRoomData());
+
+async function selectRoom(code) {
+  if (unsubRoomStudents) { unsubRoomStudents(); unsubRoomStudents = null; }
+  Object.assign(S, { roomCode: code || '', room: null, responses: [], receipts: {}, model: null, ctx: null, trend: [], month: '', focusId: null, loadedAt: 0, netDirty: true });
+  closeDrawer();
+  $('#roomSelect').value = code || '';
+  $('#btn-refresh').disabled = !code;
+  renderGuestApprovals([]);
+  renderToolbar();
+  if (!code) { $('#workspace').hidden = true; closeQrPanel(false); renderTeacherEmpty(); return; }
+  $('#teacher-empty').hidden = true;
+  openQrPanel().catch(err => console.error('QR 패널 표시 실패:', err));
+  await loadRoomData();
+  if (S.roomCode !== code) return;
+  unsubRoomStudents = onSnapshot(collection(db, COLLECTION, code, 'students'), snap => {
+    renderGuestApprovals(snap.docs.map(d => ({ nickname: d.id, ...d.data() })));
+  }, err => console.error('게스트 학생 목록 조회 실패:', err));
+}
+
+/** 반 문서 · 응답 · 제출 표시를 한 번에 읽습니다. 실시간이 아니라 반을 고를 때와 [새로고침]을 누를 때 읽습니다. */
+async function loadRoomData() {
+  const code = S.roomCode;
+  if (!code || S.demo) return;
+  loading(true, '관계지도를 그리는 중');
+  let failure = null;
+  try {
+    const [roomSnap, responseSnap, receiptSnap] = await Promise.all([
+      getDoc(roomRef(code)),
+      getDocs(collection(db, COLLECTION, code, 'responses')),
+      getDocs(collection(db, COLLECTION, code, 'receipts'))
+    ]);
+    if (S.roomCode === code) {
+      if (!roomSnap.exists()) throw new Error('선택한 반을 찾을 수 없어요.');
+      const room = roomSnap.data();
+      if (!S.teacher.isAdmin && room.createdBy !== S.user.uid) throw new Error('이 반을 관리할 권한이 없어요.');
+      S.room = room;
+      S.responses = responseSnap.docs.map(d => d.data());
+      S.receipts = Object.fromEntries(receiptSnap.docs.map(d => [d.id, d.data()]));
+      S.loadedAt = Date.now();
+    }
+  } catch (err) { failure = err; }
+  loading(false);
+  if (S.roomCode !== code) return;
+  if (failure) {
+    console.error('반 정보 불러오기 실패:', failure);
+    return mAlert('데이터를 불러오지 못했어요', failText(failure, '다시 시도해 주세요.'));
+  }
+  refreshDashboard();
+}
+
+function refreshDashboard() {
+  S.model = buildModel(S.room, S.responses, S.receipts);
+  S.ctx = buildContext(S.model, S.month);
+  S.month = S.ctx.month;
+  S.trend = buildTrend(S.model, S.ctx);
+  if (S.focusId && !(S.ctx.cur && S.ctx.cur.stats[S.focusId])) S.focusId = null;
+  S.netDirty = true;
+  $('#workspace').hidden = false;
+  $('#teacher-empty').hidden = true;
+  renderToolbar();
+  renderTab(S.tab);
+  if (drawerId) { if (S.ctx.cur && S.ctx.cur.stats[drawerId]) openDrawer(drawerId); else closeDrawer(); }
+}
+
+/** 도구 줄: ‹ 달 선택 › · 진행 상태 · [마감하기]/[다시 열기] · 응답 수 · [설문 삭제] */
+function renderToolbar() {
+  const ms = S.model ? S.model.months : [], i = ms.findIndex(x => x.month === S.month), cur = ms[i];
+  $('#month-bar').hidden = !S.room;
+  if (!S.room) return;
+  $('#month-select').innerHTML = ms.length
+    ? ms.map(x => `<option value="${x.month}" ${x.month === S.month ? 'selected' : ''}>${monthLabel(x.month)}</option>`).join('')
+    : '<option value="">설문 달 없음</option>';
+  $('#month-select').disabled = !ms.length;
+  $('#m-prev').disabled = i <= 0;
+  $('#m-next').disabled = i < 0 || i >= ms.length - 1;
+  $('#tb-time').textContent = S.demo ? '예시 데이터' : S.loadedAt ? `${scheduleLabel(S.loadedAt)} 기준` : '';
+  const st = $('#tb-status'), tg = $('#tb-toggle');
+  if (!cur) { st.textContent = ''; st.hidden = true; tg.hidden = true; $('#tb-count').hidden = true; $('#tb-delete').disabled = true; return; }
+  const open = cur.status === 'open';
+  st.hidden = false;
+  st.className = `rounded-full px-3 py-1 text-xs font-bold ${open ? 'bg-board-soft text-board' : 'bg-page text-ink-muted ring-1 ring-line'}`;
+  st.textContent = open ? (cur.closeAt ? `진행 중 · ${scheduleLabel(cur.closeAt)} 마감 예약` : '진행 중') : (cur.saved === 'open' && cur.closeAt ? '마감 (예약 시각 지남)' : '마감');
+  tg.hidden = S.demo;
+  tg.textContent = open ? '마감하기' : '다시 열기';
+  $('#tb-count').hidden = false;
+  $('#tb-count').textContent = `응답 ${S.ctx.cur.responded} / ${S.ctx.cur.total}명`;
+  $('#tb-delete').disabled = S.demo;
+}
+$('#month-select').addEventListener('change', e => { S.month = e.target.value; refreshDashboard(); });
+$('#m-prev').addEventListener('click', () => { const ms = S.model.months, i = ms.findIndex(x => x.month === S.month); if (i > 0) { S.month = ms[i - 1].month; refreshDashboard(); } });
+$('#m-next').addEventListener('click', () => { const ms = S.model.months, i = ms.findIndex(x => x.month === S.month); if (i < ms.length - 1) { S.month = ms[i + 1].month; refreshDashboard(); } });
+
+/** 반 문서의 여러 칸을 한 번에 고치고 다시 읽습니다 */
+async function updateRoomFields(changes, okMessage, failTitle) {
+  loading(true, '저장하는 중');
+  let failure = null;
+  try { await updateDoc(roomRef(), ...changes, 'updatedAt', serverTimestamp()); }
+  catch (err) { failure = err; }
+  loading(false);
+  if (failure) {
+    console.error(failTitle, failure);
+    await mAlert(failTitle, failText(failure, '다시 시도해 주세요.'));
+    return false;
+  }
+  if (okMessage) toast(okMessage);
+  await loadRoomData();
+  return true;
+}
+
+/** 이 달을 열고, 진행 중인 다른 달은 마감합니다 (학생은 한 번에 한 달만 응답) */
+function openMonthChanges(month, extra) {
+  const changes = [monthPath(month), Object.assign({ status: 'open', closeAt: null }, extra || {})];
+  S.model.months.filter(x => x.saved === 'open' && x.month !== month)
+    .forEach(x => changes.push(monthPath(x.month, 'status'), 'closed', monthPath(x.month, 'closeAt'), null));
+  return changes;
+}
+
+$('#tb-toggle').addEventListener('click', async () => {
+  const cur = S.model && S.model.months.find(x => x.month === S.month);
+  if (!cur || S.demo) return;
+  if (cur.status !== 'open') {
+    const other = S.model.months.find(x => x.status === 'open' && x.month !== cur.month);
+    if (!(await mConfirm(`${monthLabel(cur.month)} 설문을 다시 열까요?`, other ? `진행 중인 ${monthLabel(other.month)} 설문은 자동으로 마감돼요.` : '학생들이 다시 응답할 수 있어요. 이미 제출한 학생은 수정 권한이 있어야 다시 낼 수 있어요.', { ok: '다시 열기' }))) return;
+    const changes = openMonthChanges(cur.month);
+    changes.splice(0, 2, monthPath(cur.month, 'status'), 'open', monthPath(cur.month, 'closeAt'), null);   // 시작 시각은 그대로 둡니다
+    await updateRoomFields(changes, '설문을 다시 열었어요', '설문을 열지 못했어요');
+    return;
+  }
+  openCloseModal(cur);
+});
+
+/** 마감 창: 예약을 켜면 날짜·시간을 고르고, 끄면 바로 마감 */
+function openCloseModal(cur) {
+  const scheduled = cur.status === 'open' && cur.closeAt ? cur.closeAt : 0;
+  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+  tomorrow.setHours(18, 0, 0, 0);
+  openModal(`<h3 class="text-lg font-extrabold">${esc(monthLabel(cur.month))} 설문 마감</h3>
+    <label class="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5 text-sm font-bold">
+      <span>예약 마감 사용</span><input id="cs-toggle" type="checkbox" class="h-5 w-5 accent-[#24493D]" ${scheduled ? 'checked' : ''}></label>
+    <div id="cs-field" ${scheduled ? '' : 'hidden'} class="mt-3">
+      <label class="field-label" for="cs-when">마감 날짜와 시간</label>
+      <input id="cs-when" type="datetime-local" class="field" value="${esc(toLocalDateTimeInput(scheduled || tomorrow.getTime()))}">
+      <p class="mt-2 text-xs leading-relaxed text-ink-muted">예약 시각이 지나면 새 응답과 수정이 막혀요.</p>
+    </div>
+    <p id="cs-hint" ${scheduled ? 'hidden' : ''} class="mt-2 text-xs leading-relaxed text-ink-muted">예약을 끄면 확인 후 바로 마감돼요. 마감한 뒤에도 [다시 열기]로 열 수 있어요.</p>
+    <p id="cs-err" class="mt-2 hidden text-sm font-semibold text-stamp" role="alert"></p>
+    <div class="mt-6 flex flex-wrap gap-2">
+      ${scheduled ? '<button type="button" id="cs-clear" class="btn btn-ghost mr-auto">예약 취소</button>' : ''}
+      <button type="button" data-close="" class="btn btn-ghost">취소</button>
+      <button type="button" id="cs-save" class="btn btn-primary">${scheduled ? '예약 저장' : '바로 마감'}</button>
+    </div>`, {
+    onMount: (w, close) => {
+      const tog = w.querySelector('#cs-toggle'), save = w.querySelector('#cs-save'), err = w.querySelector('#cs-err');
+      const sync = () => { w.querySelector('#cs-field').hidden = !tog.checked; w.querySelector('#cs-hint').hidden = tog.checked; save.textContent = tog.checked ? '예약 저장' : '바로 마감'; };
+      tog.addEventListener('change', sync);
+      const done = async (changes, msg) => {
+        save.disabled = true;
+        const ok = await updateRoomFields(changes, msg, '마감 설정을 저장하지 못했어요');
+        save.disabled = false;
+        if (ok) close(true);
+      };
+      save.addEventListener('click', () => {
+        if (!tog.checked) return done([monthPath(cur.month, 'status'), 'closed', monthPath(cur.month, 'closeAt'), null], `${monthLabel(cur.month)} 설문을 마감했어요`);
+        const when = new Date(w.querySelector('#cs-when').value);
+        if (!Number.isFinite(when.getTime()) || when.getTime() <= Date.now()) { err.textContent = '마감 날짜와 시간은 지금보다 뒤로 정해 주세요.'; err.classList.remove('hidden'); return; }
+        done([monthPath(cur.month, 'status'), 'open', monthPath(cur.month, 'closeAt'), Timestamp.fromDate(when)], `${scheduleLabel(when.getTime())}에 마감되도록 예약했어요`);
+      });
+      const clear = w.querySelector('#cs-clear');
+      if (clear) clear.addEventListener('click', () => done([monthPath(cur.month, 'closeAt'), null], '마감 예약을 취소했어요'));
+    }
+  });
+}
+
+/** 설문 삭제: 이 달의 설문과 응답을 모두 지움 (달 이름을 그대로 입력해야 실행) */
+$('#tb-delete').addEventListener('click', async () => {
+  const month = S.month, label = monthLabel(month);
+  if (!month || S.demo) return;
+  const count = S.model.submits.filter(x => x.month === month).length;
+  const r = await mForm({
+    title: `${label} 설문을 삭제할까요?`,
+    message: `${label}의 설문과 학생 응답 ${count}명분이 모두 지워져요. 되돌릴 수 없으니 먼저 [📋 학생 응답] 탭의 [응답 엑셀]로 내려받아 두길 권해요. 계속하려면 아래 칸에 “${label}”을 그대로 입력하세요.`,
+    fields: [{ name: 'confirm', label: '확인 입력', placeholder: label, maxlength: 20 }],
+    submit: '설문 삭제',
+    onSubmit: async v => {
+      if (v.confirm.replace(/\s/g, '') !== label.replace(/\s/g, '')) return { error: `“${label}”을 정확히 입력하세요.` };
+      try { await deleteMonthData(month); return { ok: true }; }
+      catch (err) { console.error('설문 달 삭제 실패:', err); return { error: failText(err, '삭제하지 못했어요.') }; }
+    }
+  });
+  if (!r || !r.ok) return;
+  closeDrawer();
+  toast(`${label} 설문을 삭제했어요`);
+  S.month = '';
+  await loadRoomData();
+});
+
+async function deleteMonthData(month) {
+  for (const sub of ['responses', 'receipts']) {
+    const snap = await getDocs(query(collection(db, COLLECTION, S.roomCode, sub), where('month', '==', month)));
+    for (let start = 0; start < snap.docs.length; start += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(start, start + 400).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+  await updateDoc(roomRef(), monthPath(month), deleteField(), 'updatedAt', serverTimestamp());
+}
+
+/* ── 새 반 · 반 삭제 ── */
+function makeRoomCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+}
+
+async function createRoom(memo, startNow) {
+  const month = currentMonthKey();
+  const data = {
+    createdBy: S.user.uid,                  // ★ 보안 규칙 필수 필드
+    creatorName: S.teacher.name,
+    creatorSchool: S.teacher.school,        // ★ 규칙: 내 teachers 문서의 학교와 같아야 합니다 (관리자 제외)
+    roomMode: 'auth',                        // ★ 학번·PIN 인증만 씁니다
+    memo,
+    roster: {},
+    months: startNow ? { [month]: { status: 'open', openedAt: serverTimestamp(), closeAt: null } } : {},
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const code = makeRoomCode();
+    try {
+      await runTransaction(db, async tx => {
+        const ref = roomRef(code);
+        if ((await tx.get(ref)).exists()) throw new Error('ROOM_CODE_TAKEN');
+        tx.set(ref, data);
+      });
+      return code;
+    } catch (err) {
+      if (err.message !== 'ROOM_CODE_TAKEN') throw err;
+    }
+  }
+  throw new Error('반 코드를 만들지 못했어요. 다시 시도해 주세요.');
+}
+
+$('#btn-new-room').addEventListener('click', async () => {
+  if (!S.teacher) return;
+  const school = String(S.teacher.school || '').trim();
+  if (!S.teacher.isAdmin && (!school || school === '관리자')) return mAlert('학교명이 필요해요', '반을 만들려면 메인 화면 교사 메뉴의 [정보수정]에서 학교명을 먼저 등록해 주세요. 학생 인증이 학교를 기준으로 이루어져요.');
+  const r = await mForm({
+    title: '새 반 만들기',
+    message: '학생은 반 코드로 들어와 학번과 4자리 PIN으로 인증해요. 반을 만든 뒤 [⚙️ 관리] 탭에서 학생 명단을 먼저 등록해 주세요.',
+    fields: [{ name: 'memo', label: '반 이름', placeholder: '예: 2학년 3반', maxlength: 60 }],
+    extra: `<label class="mt-3 flex items-center gap-2 text-sm font-semibold"><input id="nr-start" type="checkbox" class="h-4 w-4 accent-[#24493D]" checked>${esc(monthLabel(currentMonthKey()))} 설문 바로 시작</label>`,
+    submit: '만들기',
+    onSubmit: async (v, wrap) => {
+      if (!v.memo) return { error: '반 이름을 적어 주세요.' };
+      try { return { code: await createRoom(v.memo.slice(0, 60), wrap.querySelector('#nr-start').checked) }; }
+      catch (err) { console.error('반 만들기 실패:', err); return { error: failText(err, '반을 만들지 못했어요.') }; }
+    }
+  });
+  if (!r || !r.code) return;
+  exitDemo(false);
+  S.roomCode = r.code;
+  if (S.teacher.isAdmin) $('#admin-school').value = '';
+  try { await loadTeacherRooms(); } catch (err) { console.error('반 목록 조회 실패:', err); }
+  S.tab = 'manage';
+  renderTabbar();
+  await selectRoom(r.code);
+  toast(`새 반을 만들었어요 · 반 코드 ${r.code}`);
+});
+
+async function removeRoom(code) {
+  // Firestore는 문서를 지워도 하위 컬렉션이 남으므로 하위 문서부터 지웁니다 (규칙이 반 문서를 읽으므로 반 문서는 마지막에)
+  for (const sub of ['responses', 'receipts', 'students', 'guests']) {
+    const snap = await getDocs(collection(db, COLLECTION, code, sub));
+    for (let start = 0; start < snap.docs.length; start += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(start, start + 400).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+  await deleteDoc(roomRef(code));
+}
+
+/* ── 예시로 미리보기 (저장하지 않음) ── */
+function enterDemo() {
+  if (unsubRoomStudents) { unsubRoomStudents(); unsubRoomStudents = null; }
+  const demo = buildDemoData();
+  Object.assign(S, { demo: true, roomCode: '', room: demo.room, responses: demo.responses, receipts: demo.receipts, month: '', focusId: null, loadedAt: Date.now(), netDirty: true });
+  closeDrawer();
+  $('#roomSelect').value = '';
+  closeQrPanel(false);
+  renderGuestApprovals([]);
+  $('#btn-refresh').disabled = true;
+  $('#demo-banner').hidden = false;
+  $('#btn-demo').hidden = true;
+  S.tab = 'map';
+  renderTabbar();
+  refreshDashboard();
+}
+function exitDemo(resetView = true) {
+  if (!S.demo) return;
+  S.demo = false;
+  $('#demo-banner').hidden = true;
+  $('#btn-demo').hidden = false;
+  if (resetView) selectRoom('');
+}
+$('#btn-demo').addEventListener('click', enterDemo);
+$('#btn-demo-close').addEventListener('click', () => exitDemo(true));
+
+/* ── 게스트 승인 (room-auth.js 공통 흐름) ── */
+function renderGuestApprovals(students) {
+  const box = $('#guest-box');
+  const pending = (students || []).filter(s => s && s.isGuest && s.status === 'pending');
+  box.hidden = !pending.length;
+  if (!pending.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="mb-2 flex items-center justify-between gap-2"><h2 class="text-sm font-extrabold">🙋 게스트 학생 승인 대기</h2><span class="pred pred-warn">${pending.length}명</span></div>
+    <div class="grid gap-2">${pending.map(s => {
+      const name = S.room && S.room.roster && S.room.roster[s.studentId] && S.room.roster[s.studentId].name;
+      return `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-inset ring-line">
+        <span class="text-sm"><b class="tabular-nums">${esc(s.studentId || '학번 정보 없음')}</b> ${esc(name || '(명단에 없는 학번)')}</span>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-primary btn-sm" data-guest-action="approve" data-nickname="${esc(s.nickname)}" data-student-key="${esc(s.studentKey || '')}">승인</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-guest-action="reject" data-nickname="${esc(s.nickname)}" data-student-key="${esc(s.studentKey || '')}">거절</button>
+        </div></div>`;
+    }).join('')}</div>`;
+}
+$('#guest-box').addEventListener('click', async e => {
+  const b = e.target.closest('[data-guest-action]'), code = S.roomCode;
+  if (!b || !code) return;
+  b.disabled = true;
+  const status = b.dataset.guestAction === 'approve' ? 'online' : 'rejected';
+  try {
+    await updateDoc(doc(db, COLLECTION, code, 'students', b.dataset.nickname), { status });
+    await setDoc(doc(db, COLLECTION, code, 'guests', b.dataset.nickname), { status }, { merge: true });
+  } catch (err) {
+    console.error('게스트 승인 처리 오류:', err);
+    b.disabled = false;
+    return mAlert('처리하지 못했어요', failText(err, '게스트 입장 요청을 처리하지 못했어요.'));
+  }
+  if (b.dataset.studentKey) {
+    updateDoc(doc(db, 'student_auth', b.dataset.studentKey), Object.assign({ presence: status === 'online' ? 'online' : 'offline' }, status === 'online' ? { lastActive: serverTimestamp() } : {}))
+      .catch(err => console.warn('학생 접속 상태 갱신 실패:', err));
+  }
+});
+
+/* ── 탭 ── */
+function renderTabbar() {
+  $('#tabbar').innerHTML = TABS.map(([key, label]) => `<button type="button" class="ws-tab" role="tab" data-tab="${key}" aria-controls="tab-${key}" aria-selected="${S.tab === key}" tabindex="${S.tab === key ? 0 : -1}">${label}</button>`).join('');
+}
+$('#tabbar').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) renderTab(b.dataset.tab); });
+$('#tabbar').addEventListener('keydown', e => {
+  const moves = { ArrowRight: 1, ArrowLeft: -1 };
+  if (!(e.key in moves)) return;
+  e.preventDefault();
+  const i = TABS.findIndex(([k]) => k === S.tab);
+  renderTab(TABS[(i + moves[e.key] + TABS.length) % TABS.length][0]);
+  const b = $(`#tabbar [data-tab="${S.tab}"]`);
+  if (b) b.focus();
+});
+function renderTab(tab) {
+  S.tab = TABS.some(([k]) => k === tab) ? tab : 'map';
+  document.querySelectorAll('#tabbar [data-tab]').forEach(b => { const on = b.dataset.tab === S.tab; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
+  TABS.forEach(([k]) => $(`#tab-${k}`).classList.toggle('hidden', k !== S.tab));
+  if (!S.model) return;
+  if (S.tab === 'map') renderMapTab();
+  if (S.tab === 'responses') renderResponsesTab();
+  if (S.tab === 'manage') renderManageTab();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  9. 교사: 관계지도 탭 (통계 · 보기 방식 · 필터 · 칠판 지도 · 범례 · 살펴볼 점)
+ * ═══════════════════════════════════════════════════════════════ */
+function renderMapTab() {
+  const cur = S.ctx && S.ctx.cur;
+  $('#map-empty').hidden = !!cur;
+  $('#map-body').hidden = !cur;
+  if (!cur) {
+    $('#map-empty').innerHTML = `${activeStudents().length ? '아직 시작한 설문이 없어요.' : '학생 명단과 설문이 아직 없어요. [⚙️ 관리] 탭에서 학생 명단부터 등록하세요.'}
+      ${S.demo ? '' : `<div class="mt-4"><button type="button" class="btn btn-primary" data-start-month>${esc(monthLabel(currentMonthKey()))} 설문 시작</button></div>`}`;
+    return;
+  }
+  if (S.mode === 'diff' && !S.ctx.diff) S.mode = 'month';
+  document.querySelectorAll('[data-mode]').forEach(b => {
+    const on = b.dataset.mode === S.mode;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-pressed', String(on));
+    if (b.dataset.mode === 'diff') { b.disabled = !S.ctx.diff; b.title = S.ctx.diff ? '' : '비교할 지난달 설문이 없어요'; }
+  });
+  $('#map-caption').textContent = S.mode === 'diff'
+    ? `${shortMonth(S.ctx.prevMonth)}과 ${shortMonth(S.ctx.month)}에 모두 응답한 ${S.ctx.diff.comparable}명의 선택을 견줘요`
+    : '학생을 누르면 자세한 정보가 열려요. 끌어서 자리를 옮길 수 있어요.';
+  renderMapStats();
+  renderFilters();
+  renderNetwork();
+  renderLegend();
+  renderAlerts();
+  renderClimatePanel();
+  renderTrendPanel();
+}
+$('#map-empty').addEventListener('click', e => { if (e.target.closest('[data-start-month]')) startMonth(currentMonthKey()); });
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  if (b.disabled || S.mode === b.dataset.mode) return;
+  S.mode = b.dataset.mode;
+  renderMapTab();
+}));
+
+/** 지난달과 견준 변화 (▲ 좋아짐 · ▼ 나빠짐) */
+function deltaOf(key, upIsGood, digits) {
+  const now = S.trend.find(t => t.month === S.ctx.month), before = S.ctx.prevMonth && S.trend.find(t => t.month === S.ctx.prevMonth);
+  if (!now || !before || now[key] == null || before[key] == null) return null;
+  const factor = 10 ** (digits || 0), diff = Math.round((now[key] - before[key]) * factor) / factor;
+  if (!diff) return { text: `${shortMonth(S.ctx.prevMonth)}과 같아요`, color: UI.same };
+  const good = upIsGood ? diff > 0 : diff < 0;
+  return { text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)} (${shortMonth(S.ctx.prevMonth)} 대비)`, color: good ? UI.good : UI.bad };
+}
+
+function renderMapStats() {
+  const now = S.trend.find(t => t.month === S.ctx.month) || {};
+  const stats = [
+    ['학급 분위기', now.climateAvg == null ? '–' : `${now.climateAvg}점`, deltaOf('climateAvg', true, 1), '5점 만점'],
+    ['서로 친구', `${now.mutual || 0}쌍`, deltaOf('mutual', true), '서로 고른 짝'],
+    ['불편 응답', `${now.neg || 0}건`, deltaOf('neg', false), '불편한 친구로 고른 수'],
+    ['선택받지 못한 학생', now.isolated == null ? '–' : `${now.isolated}명`, deltaOf('isolated', false), '즐거운 친구로 0명']
+  ];
+  $('#map-stats').innerHTML = stats.map(([label, value, d, note]) => `<div class="stat">
+    <p class="text-xs font-bold text-ink-muted">${label}</p>
+    <p class="mt-0.5 text-2xl font-extrabold">${value}</p>
+    <p class="mt-0.5 text-xs font-semibold" style="color:${d ? d.color : UI.same}">${esc(d ? d.text : note)}</p></div>`).join('');
+}
+
+function renderFilters() {
+  const cur = S.ctx.cur;
+  const chip = (key, group, label, on) => `<button type="button" class="chip ${on ? 'chip-on' : ''}" data-filter="${key}" data-group="${group}" aria-pressed="${on}">${label}</button>`;
+  let html;
+  if (S.mode === 'diff') {
+    const d = S.ctx.diff;
+    const added = d.newPos.length + d.newNeg.length;
+    const removed = d.lostPos.concat(d.resolvedNeg).filter(e => cur.stats[e.s] && cur.stats[e.o]).length;
+    html = chip('added', 'diff', `새로 생김 ${added}`, S.diffFilters.added) + chip('removed', 'diff', `사라짐 ${removed}`, S.diffFilters.removed) + chip('kept', 'diff', `변화 없음 ${cur.edges.length - added}`, S.diffFilters.kept);
+  } else {
+    const pos = cur.edges.filter(e => e.pol === POL.POS).length;
+    html = chip('pos', 'month', `즐거운 관계 ${pos}`, S.filters.pos) + chip('neg', 'month', `불편한 관계 ${cur.edges.length - pos}`, S.filters.neg) + chip('mutualOnly', 'month', '서로 선택만', S.filters.mutualOnly);
+  }
+  if (S.focusId) html += `<button type="button" class="chip chip-on" data-filter="focus">✕ ${esc(studentName(S.focusId))} 강조 풀기</button>`;
+  $('#map-filters').innerHTML = html;
+}
+$('#map-filters').addEventListener('click', e => {
+  const b = e.target.closest('[data-filter]');
+  if (!b) return;
+  if (b.dataset.filter === 'focus') return focusStudent(null);
+  const group = b.dataset.group === 'diff' ? S.diffFilters : S.filters;
+  group[b.dataset.filter] = !group[b.dataset.filter];
+  renderFilters();
+  renderNetwork();
+});
+
+/* ── 칠판 위 관계지도 (vis-network) ──
+ *  즐거운 관계만 보이지 않는 '배치용 선'으로 당겨 자리를 잡고(불편한 관계는 끌어당기지 않음),
+ *  자리를 잡은 뒤에는 물리 계산을 꺼서 보기 방식·필터를 바꿔도 학생 자리가 움직이지 않습니다. */
+const NETWORK_OPTIONS = {
+  autoResize: true,
+  layout: { improvedLayout: true, randomSeed: 11 },
+  interaction: { hover: true, tooltipDelay: 120, dragNodes: true, dragView: true, zoomView: true, keyboard: false, selectConnectedEdges: false },
+  physics: {
+    enabled: true, solver: 'forceAtlas2Based', minVelocity: 0.8,
+    forceAtlas2Based: { gravitationalConstant: -85, centralGravity: 0.01, springLength: 140, springConstant: 0.06, damping: 0.5, avoidOverlap: 0.8 },
+    stabilization: { enabled: true, iterations: 600, updateInterval: 40, fit: false }
+  },
+  nodes: {
+    shape: 'dot', borderWidth: 2, borderWidthSelected: 4,
+    font: { face: 'Pretendard, sans-serif', size: 15, color: CH.chalk, strokeWidth: 4, strokeColor: CH.board },
+    color: { background: CH.deep, border: CH.chalk, highlight: { background: CH.board, border: CH.yellow }, hover: { background: CH.board, border: CH.yellow } }
+  },
+  edges: { selectionWidth: 1, hoverWidth: 0.6, smooth: { enabled: true, type: 'curvedCW', roundness: 0.16 } }
+};
+
+function ensureNetwork() {
+  if (S.net) return S.net;
+  if (typeof vis === 'undefined') return null;
+  S.nodesDS = new vis.DataSet();
+  S.edgesDS = new vis.DataSet();
+  S.net = new vis.Network($('#network'), { nodes: S.nodesDS, edges: S.edgesDS }, NETWORK_OPTIONS);
+  S.net.on('click', p => {
+    if (p.nodes.length) { focusStudent(p.nodes[0]); openDrawer(p.nodes[0]); }
+    else if (!p.edges.length) focusStudent(null);
+  });
+  S.net.on('stabilizationIterationsDone', () => { S.net.setOptions({ physics: { enabled: false } }); savePositions(); fitNetwork(false); });
+  S.net.on('dragEnd', p => { if (p.nodes.length) savePositions(); });
+  return S.net;
+}
+/** 칠판을 채우도록 맞춤 (vis 기본값은 1배보다 크게 키우지 않아 그림이 작게 모입니다) */
+function fitNetwork(animate) {
+  if (S.net) S.net.fit({ maxZoomLevel: 1.4, animation: animate ? { duration: 400, easingFunction: 'easeInOutQuad' } : false });
+}
+
+const positionKey = () => (S.demo ? 'demo' : S.roomCode);
+function loadPositions() {
+  const key = positionKey();
+  if (!S.positions[key]) {
+    let saved = {};
+    if (!S.demo) { try { saved = JSON.parse(localStorage.getItem(`relationmap:pos:${key}`) || '{}') || {}; } catch (e) { saved = {}; } }
+    S.positions[key] = saved;
+  }
+  return S.positions[key];
+}
+function savePositions() {
+  if (!S.net) return;
+  const key = positionKey(), all = Object.assign({}, loadPositions(), S.net.getPositions());
+  S.positions[key] = all;
+  if (!S.demo) { try { localStorage.setItem(`relationmap:pos:${key}`, JSON.stringify(all)); } catch (e) { /* 저장 공간이 없어도 지도는 그대로 씁니다 */ } }
+}
+
+function renderNetwork() {
+  const net = ensureNetwork();
+  if (!net) { $('#network').innerHTML = '<p class="p-6 text-sm font-semibold text-chalk">관계지도 도구를 불러오지 못했어요. 페이지를 새로고침해 주세요.</p>'; return; }
+  const edges = buildLayoutEdges().concat(buildEdges());
+  if (S.netDirty) {
+    S.netDirty = false;
+    const nodes = buildNodes(loadPositions(), false);
+    const needsLayout = nodes.some(n => n.x === undefined);
+    net.setOptions({ physics: { enabled: needsLayout } });
+    S.nodesDS.clear(); S.edgesDS.clear();
+    S.nodesDS.add(nodes);
+    S.edgesDS.add(edges);
+    if (needsLayout) net.stabilize(600); else fitNetwork(false);
+    return;
+  }
+  S.nodesDS.update(buildNodes(null, true));   // 모양만 바꾸고 자리는 그대로
+  S.edgesDS.clear();
+  S.edgesDS.add(edges);
+}
+
+/** 강조 중인 학생과 선으로 이어진 학생 */
+function focusNeighbors() {
+  const set = new Set();
+  if (!S.focusId) return set;
+  const list = S.ctx.cur.edges.concat(S.mode === 'diff' ? S.ctx.diff.lostPos.concat(S.ctx.diff.resolvedNeg) : []);
+  list.forEach(e => { if (e.s === S.focusId) set.add(e.o); if (e.o === S.focusId) set.add(e.s); });
+  return set;
+}
+
+function buildNodes(positions, styleOnly) {
+  const cur = S.ctx.cur, anyResponse = cur.responded > 0, near = focusNeighbors();
+  return activeStudents().map(st0 => {
+    const st = cur.stats[st0.id], isolated = anyResponse && st.recvPos === 0, focused = S.focusId === st0.id;
+    const border = focused ? CH.yellow : isolated ? CH.orange : st.responded ? CH.chalk : CH.muted;
+    const node = {
+      id: st0.id,
+      label: isolated ? `${st0.name} ⚠` : st0.name,
+      title: tooltip([`${st0.number ? `${st0.number}번 ` : ''}${st0.name}`, `즐거운 친구로 ${st.recvPos}명에게 선택받음`, `서로 친구 ${st.mutual}명 · 불편 지목 ${st.recvNeg}명`,
+        st.responded ? `학급 분위기 ${st.climate || '–'}점` : '아직 응답하지 않았어요', isolated ? '⚠ 즐거운 친구로 선택받지 못했어요' : '']),
+      size: 13 + Math.min(st.recvPos, 6) * 2.2,
+      borderWidth: focused ? 5 : isolated ? 3 : 2,
+      color: { background: focused ? CH.board : CH.deep, border, highlight: { background: CH.board, border: CH.yellow }, hover: { background: CH.board, border: CH.yellow } },
+      shapeProperties: { borderDashes: st.responded ? false : [4, 4] },
+      font: { color: st.responded ? CH.chalk : CH.muted },
+      opacity: S.focusId && !focused && !near.has(st0.id) ? 0.22 : 1
+    };
+    if (!styleOnly && positions && positions[st0.id]) { node.x = positions[st0.id].x; node.y = positions[st0.id].y; }
+    return node;
+  });
+}
+
+/** 배치용 선: 즐거운 관계만, 서로 고르거나 먼저 고를수록 가깝게 (그리지는 않음) */
+function buildLayoutEdges() {
+  const weight = new Map();
+  S.ctx.cur.edges.forEach(e => {
+    if (e.pol !== POL.POS) return;
+    const key = e.s < e.o ? `${e.s}|${e.o}` : `${e.o}|${e.s}`;
+    weight.set(key, (weight.get(key) || 0) + Math.max(1, 4 - e.rank));
+  });
+  return [...weight.entries()].map(([key, w]) => { const [a, b] = key.split('|'); return { id: `L|${key}`, from: a, to: b, hidden: true, physics: true, length: Math.max(70, 150 - w * 14) }; });
+}
+
+/** 보이는 선: 이번 달(즐거움 파랑 · 서로 친구 노랑 · 불편 빨강 점선) / 비교(굵은 선 새로 생김 · 점선 사라짐 · 회색 변화 없음) */
+function buildEdges() {
+  const cur = S.ctx.cur, out = [];
+  const key = e => `${e.s}|${e.o}|${e.pol}`;
+  const why = e => [e.tags && e.tags.length ? `[${e.tags.join(', ')}]` : '', e.text ? `“${e.text}”` : ''].filter(Boolean).join(' ');
+  const push = (item, a, b, alpha) => {
+    const color = item.colorHex, faded = S.focusId && a !== S.focusId && b !== S.focusId;
+    delete item.colorHex;
+    item.color = { color, highlight: color, hover: color, opacity: (alpha == null ? 1 : alpha) * (faded ? 0.07 : 1) };
+    item.physics = false;
+    out.push(item);
+  };
+  if (S.mode === 'diff') {
+    const d = S.ctx.diff, added = new Set(d.newPos.concat(d.newNeg).map(key));
+    cur.edges.forEach(e => {
+      const isPos = e.pol === POL.POS, isNew = added.has(key(e));
+      if (!S.diffFilters[isNew ? 'added' : 'kept']) return;
+      push({
+        id: `d|${key(e)}`, from: e.s, to: e.o, colorHex: isNew ? (isPos ? CH.posBlue : CH.red) : CH.gray,
+        width: isNew ? 2.8 : 1.1, dashes: isPos ? false : [6, 5], arrows: { to: { enabled: true, scaleFactor: isNew ? 0.6 : 0.45 } },
+        title: tooltip([`${studentName(e.s)} → ${studentName(e.o)}`, `${isPos ? '즐겁게 지냄' : '불편함을 느낌'} · ${isNew ? '이번 달에 새로 생겼어요' : '지난달에도 있었거나 견줄 자료가 없어요'}`, why(e)])
+      }, e.s, e.o, isNew ? 1 : 0.55);
+    });
+    if (S.diffFilters.removed) {
+      d.lostPos.concat(d.resolvedNeg).forEach(e => {
+        if (!cur.stats[e.s] || !cur.stats[e.o]) return;
+        const isPos = e.pol === POL.POS;
+        push({
+          id: `r|${key(e)}`, from: e.s, to: e.o, colorHex: isPos ? CH.posBlue : CH.red, width: 1.5, dashes: [2, 6],
+          arrows: { to: { enabled: true, scaleFactor: 0.45 } },
+          title: tooltip([`${studentName(e.s)} → ${studentName(e.o)}`, isPos ? `${shortMonth(d.prevMonth)}에는 즐겁게 지냈는데 이번 달에는 고르지 않았어요` : `${shortMonth(d.prevMonth)}의 불편함이 이번 달에는 사라졌어요`, why(e)])
+        }, e.s, e.o, 0.8);
+      });
+    }
+    return out;
+  }
+  const mutualPos = new Set(cur.mutualPairs.map(p => p.join('|'))), mutualNeg = new Set(cur.mutualNeg.map(p => p.join('|')));
+  cur.edges.forEach(e => {
+    const isPos = e.pol === POL.POS;
+    if (isPos ? !S.filters.pos : !S.filters.neg) return;
+    const pairId = e.s < e.o ? `${e.s}|${e.o}` : `${e.o}|${e.s}`;
+    if ((isPos ? mutualPos : mutualNeg).has(pairId)) {
+      if (e.s > e.o) return;   // 서로 고른 관계는 굵은 선 하나로
+      const back = cur.edges.find(x => x.s === e.o && x.o === e.s && x.pol === e.pol);
+      push({
+        id: `m|${pairId}|${e.pol}`, from: e.s, to: e.o, colorHex: isPos ? CH.yellow : CH.red,
+        width: isPos ? 3.6 : 3.2, dashes: isPos ? false : [8, 5], arrows: { to: { enabled: false } }, smooth: { enabled: false },
+        title: tooltip([`${studentName(e.s)} ↔ ${studentName(e.o)}`, isPos ? '서로 즐겁게 지내는 친구' : '서로 불편함', `${studentName(e.s)}: ${why(e)}`, back ? `${studentName(e.o)}: ${why(back)}` : ''])
+      }, e.s, e.o);
+      return;
+    }
+    if (S.filters.mutualOnly) return;
+    push({
+      id: `e|${key(e)}`, from: e.s, to: e.o, colorHex: isPos ? CH.posBlue : CH.red,
+      width: isPos ? 1.7 : 2, dashes: isPos ? false : [6, 5], arrows: { to: { enabled: true, scaleFactor: 0.55 } },
+      title: tooltip([`${studentName(e.s)} → ${studentName(e.o)} (${e.rank}순위)`, isPos ? '즐겁게 지냄' : '불편함을 느낌', why(e)])
+    }, e.s, e.o);
+  });
+  return out;
+}
+
+$('#btn-fit').addEventListener('click', () => fitNetwork(true));
+$('#btn-relayout').addEventListener('click', () => {
+  if (!S.net || !S.ctx || !S.ctx.cur) return;
+  const key = positionKey();
+  S.positions[key] = {};
+  if (!S.demo) { try { localStorage.removeItem(`relationmap:pos:${key}`); } catch (e) { /* 무시 */ } }
+  S.net.setOptions({ layout: { randomSeed: Math.floor(Math.random() * 100000) } });
+  S.netDirty = true;
+  renderNetwork();
+});
+
+/** 지도에서 한 학생과 그 친구들만 또렷하게 */
+function focusStudent(id) {
+  S.focusId = id && S.ctx && S.ctx.cur && S.ctx.cur.stats[id] ? id : null;
+  if (S.tab === 'map' && S.ctx && S.ctx.cur) { renderFilters(); renderNetwork(); }
+}
+
+/** 범례 — 칠판 위 색과 같아 보이도록 작은 칠판 조각 위에 그립니다 */
+function renderLegend() {
+  const line = (color, o) => {
+    o = o || {};
+    const arrow = o.arrow !== false;
+    return `<span class="inline-flex items-center rounded bg-board px-1.5 py-1" aria-hidden="true"><svg width="30" height="10"><line x1="1" y1="5" x2="${arrow ? 22 : 29}" y2="5" stroke="${color}" stroke-opacity="${o.alpha || 1}" stroke-width="${o.width || 2}" ${o.dash ? `stroke-dasharray="${o.dash}"` : ''}/>${arrow ? `<path d="M21,1.5 L29,5 L21,8.5 z" fill="${color}" fill-opacity="${o.alpha || 1}"/>` : ''}</svg></span>`;
+  };
+  const node = (border, dash) => `<span class="inline-flex items-center rounded bg-board px-1.5 py-0.5" aria-hidden="true"><svg width="16" height="16"><circle cx="8" cy="8" r="5.5" fill="${CH.deep}" stroke="${border}" stroke-width="2" ${dash ? 'stroke-dasharray="3 2"' : ''}/></svg></span>`;
+  const items = S.mode === 'diff' ? [
+    [line(CH.posBlue, { width: 2.8 }), '새로 생긴 즐거운 관계'],
+    [line(CH.red, { width: 2.8, dash: '6 5' }), '새로 생긴 불편한 관계'],
+    [line(CH.posBlue, { width: 1.5, dash: '2 6', alpha: 0.8 }), '지난달에만 있던 관계 (점선)'],
+    [line(CH.gray, { width: 1.2, alpha: 0.6 }), '변화 없음']
+  ] : [
+    [line(CH.posBlue, { width: 1.7 }), '즐겁게 지냄 (고른 쪽 → 고른 친구)'],
+    [line(CH.yellow, { width: 3.6, arrow: false }), '서로 친구'],
+    [line(CH.red, { width: 2, dash: '6 5' }), '불편함을 느낌'],
+    [line(CH.red, { width: 3.2, dash: '8 5', arrow: false }), '서로 불편함']
+  ];
+  items.push([node(CH.chalk), '응답함'], [node(CH.muted, true), '아직 응답 안 함'], [node(CH.orange), '⚠ 즐거운 친구로 선택받지 못함']);
+  $('#map-legend').innerHTML = items.map(([k, label]) => `<span class="inline-flex items-center gap-1.5">${k}${esc(label)}</span>`).join('') +
+    '<span class="text-ink-muted">· 원이 클수록 즐거운 친구로 많이 선택받았어요</span>';
+}
+
+/** 살펴볼 점 (이번 달) · 지난달과 달라진 점 (비교) */
+function renderAlerts() {
+  const box = $('#map-alerts'), cur = S.ctx.cur;
+  const card = (pred, predClass, title, count, body) => `<div class="panel p-4">
+    <div class="flex flex-wrap items-center gap-2"><span class="${predClass}">${esc(pred)}</span><h3 class="text-sm font-extrabold">${esc(title)}</h3><span class="ml-auto text-xs font-bold text-ink-muted">${count}</span></div>
+    <div class="mt-3 space-y-2.5 text-sm">${body}</div></div>`;
+  if (S.mode === 'diff') {
+    $('#below-title').textContent = '지난달과 달라진 점';
+    const d = S.ctx.diff, h = d.highlights;
+    const pair = p => `<span class="inline-flex flex-wrap items-center gap-1">${nameChip(p[0])}<span class="text-ink-muted">↔</span>${nameChip(p[1])}</span>`;
+    const edge = e => `<span class="inline-flex flex-wrap items-center gap-1">${nameChip(e.s)}<span class="text-ink-muted">→</span>${nameChip(e.o)}</span>`;
+    const group = (pred, cls, title, items, render) => (items.length ? card(pred, cls, title, items.length, `<div class="flex flex-wrap gap-2">${items.map(render).join('')}</div>`) : '');
+    const html = [
+      group('좋아졌어요', 'pred', '새로 서로 친구가 됐어요', d.newMutual, pair),
+      group('좋아졌어요', 'pred', '선택받지 못하다가 선택받았어요', h.escaped, nameChip),
+      group('좋아졌어요', 'pred', '즐거운 친구로 2명 이상 더 선택받았어요', h.grew, nameChip),
+      group('좋아졌어요', 'pred', '불편함이 풀렸어요', d.resolvedNeg, edge),
+      group('좋아졌어요', 'pred', '분위기 점수가 2점 이상 올랐어요', h.climateUp, nameChip),
+      group('살펴봐요', 'pred pred-warn', '선택받다가 선택받지 못했어요', h.newIsolated, nameChip),
+      group('살펴봐요', 'pred pred-warn', '즐거운 친구로 2명 이상 덜 선택받았어요', h.shrank, nameChip),
+      group('살펴봐요', 'pred pred-neg', '불편하다고 지목받는 일이 늘었어요', h.newNegTarget, nameChip),
+      group('살펴봐요', 'pred pred-neg', '새로 불편해진 관계', d.newNeg, edge),
+      group('살펴봐요', 'pred pred-warn', '서로 친구가 끊겼어요', d.lostMutual, pair),
+      group('살펴봐요', 'pred pred-warn', '분위기 점수가 2점 이상 내려갔어요', h.climateDown, nameChip)
+    ].join('');
+    box.innerHTML = html || '<div class="panel p-5 text-sm text-ink-muted">눈에 띄는 변화가 없어요.</div>';
+    return;
+  }
+  $('#below-title').textContent = '살펴볼 점';
+  if (!cur.responded) { box.innerHTML = '<div class="panel p-5 text-sm text-ink-muted">아직 응답이 없어요. 학생들이 제출하면 여기에 살펴볼 점이 정리돼요.</div>'; return; }
+  const w = cur.watch;
+  const quote = text => (text ? `<p class="mt-1 leading-relaxed">“${esc(text)}”</p>` : '');
+  const html = [
+    w.sensitive.length ? card('세심한 확인', 'pred pred-neg', '세심한 확인이 필요한 표현', w.sensitive.length, w.sensitive.map(x => `<div>
+      <div class="flex flex-wrap items-center gap-1.5">${nameChip(x.s)}${x.o ? `<span class="text-ink-muted">→</span>${nameChip(x.o)}` : ''}<span class="src-badge">${esc(x.where)}</span>${x.hits.map(t => `<span class="pred pred-neg">${esc(t)}</span>`).join('')}</div>${quote(x.text)}</div>`).join('')) : '',
+    w.climateLow.length ? card('도움이 필요해 보여요', 'pred pred-warn', '학급 분위기를 1~2점으로 답한 학생', w.climateLow.length, w.climateLow.map(x => `<div>
+      <div class="flex flex-wrap items-center gap-1.5">${nameChip(x.id)}<span class="pred pred-warn">${x.score}점</span></div>${quote(x.reason)}</div>`).join('')) : '',
+    w.isolated.length ? card('도움이 필요해 보여요', 'pred pred-warn', '즐거운 친구로 선택받지 못한 학생', w.isolated.length, w.isolated.map(x => `<div class="flex flex-wrap items-center gap-1.5">
+      ${nameChip(x.id)}${x.responded ? '' : '<span class="src-badge">미응답</span>'}${x.chose.length ? `<span class="text-xs text-ink-muted">이 학생이 고른 친구: ${x.chose.map(o => esc(studentName(o))).join(', ')}</span>` : ''}</div>`).join('')) : '',
+    w.conflicts.length ? card('갈등', 'pred pred-neg', '서로 불편함 · 마음이 엇갈림', w.conflicts.length, w.conflicts.map(x => `<div>
+      <div class="flex flex-wrap items-center gap-1.5">${nameChip(x.a)}<span class="text-ink-muted">↔</span>${nameChip(x.b)}<span class="${x.type === '서로 불편함' ? 'pred pred-neg' : 'pred pred-warn'}">${esc(x.type)}</span></div>
+      ${x.aText ? `<p class="mt-1 text-xs leading-relaxed"><b>${esc(studentName(x.a))}</b> “${esc(x.aText)}”</p>` : ''}${x.bText ? `<p class="text-xs leading-relaxed"><b>${esc(studentName(x.b))}</b> “${esc(x.bText)}”</p>` : ''}</div>`).join('')) : '',
+    w.missing.length ? card('미응답', 'src-badge', '아직 응답하지 않은 학생', w.missing.length, `<div class="flex flex-wrap gap-1.5">${w.missing.map(id => nameChip(id)).join('')}</div>`) : ''
+  ].join('');
+  box.innerHTML = html || '<div class="panel p-5 text-sm text-ink-muted">눈에 띄게 살펴볼 점이 없어요.</div>';
+}
+
+function renderClimatePanel() {
+  const { dist, avg, count } = S.ctx.cur.climate;
+  if (!count) { $('#map-climate').innerHTML = '<p class="text-sm text-ink-muted">아직 응답이 없어요.</p>'; return; }
+  const max = Math.max(...dist, 1);
+  $('#map-climate').innerHTML = `<p class="text-sm">평균 <b class="text-2xl font-extrabold">${avg}</b>점 <span class="text-xs text-ink-muted">· ${count}명 응답 · 5점 만점</span></p>
+    <ul class="mt-3 space-y-2.5">${SURVEY_CONFIG.climate.scale.map(item => {
+      const n = dist[item.v - 1];
+      return `<li><p class="text-xs"><b>${item.v}점</b> ${esc(item.label)}</p>
+        <div class="mt-1 flex items-center gap-2">${n ? `<div class="h-3.5 rounded-r bg-board" style="width:${((n / max) * 82).toFixed(1)}%"></div>` : ''}<span class="text-xs font-bold tabular-nums">${n}명</span></div></li>`;
+    }).join('')}</ul>`;
+}
+
+function renderTrendPanel() {
+  const rows = [
+    ['응답', t => `${t.responded}/${t.total}명`],
+    ['학급 분위기', t => (t.climateAvg == null ? '–' : `${t.climateAvg}점`)],
+    ['서로 친구', t => `${t.mutual}쌍`],
+    ['불편 응답', t => `${t.neg}건`],
+    ['선택받지 못한 학생', t => (t.isolated == null ? '–' : `${t.isolated}명`)]
+  ];
+  const here = t => (t.month === S.ctx.month ? ' bg-board-soft/60 font-bold' : '');
+  $('#map-trend').innerHTML = `<table class="min-w-full text-sm">
+    <thead><tr><th class="th">항목</th>${S.trend.map(t => `<th class="th text-right${here(t)}">${monthLabel(t.month)}<span class="block text-[10px] font-semibold">${t.status === 'open' ? '진행 중' : '마감'}</span></th>`).join('')}</tr></thead>
+    <tbody>${rows.map(([label, value]) => `<tr><th scope="row" class="td text-left text-xs font-bold text-ink-muted">${label}</th>${S.trend.map(t => `<td class="td text-right tabular-nums${here(t)}">${value(t)}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  10. 학생 상세정보 Drawer
+ * ═══════════════════════════════════════════════════════════════ */
+const RULE_INFO = [
+  ['', '설문', '학생이 직접 고른 친구예요.'],
+  ['역관계', '① 역관계', '다른 친구가 이 학생을 고른 관계예요.'],
+  ['상호선택', '② 상호선택', '두 학생이 서로를 골랐어요.'],
+  ['엇갈림', '③ 엇갈림', '한쪽은 즐겁다고, 다른 쪽은 불편하다고 답했어요.'],
+  ['공통 친구', '④ 공통 친구', '서로 친구인 친구를 함께 둔 두 학생이에요. 다리를 놓아 주기 좋아요.'],
+  ['한방향 선택', '⑤ 한방향 선택', '이 학생은 골랐지만 상대는 아직 고르지 않았어요. 연결 기회예요.'],
+  ['지난달과 비교', '⑥ 지난달과 비교', '두 달 모두 응답한 학생끼리 견줬어요.']
+];
+const RULE_ORDER = RULE_INFO.map(r => r[0]);
+
+function factRow(f) {
+  const arrow = f.pair ? '↔' : f.rule === '역관계' ? '←' : '→';
+  const extra = [];
+  if (f.tags && f.tags.length) extra.push(f.tags.map(t => `<span class="src-badge">${esc(t)}</span>`).join(' '));
+  if (f.text) extra.push(`<span class="text-ink-muted">“${esc(f.text)}”</span>`);
+  if (f.via && f.via.length) extra.push(`<span class="text-ink-muted">공통 친구: ${f.via.map(v => esc(studentName(v))).join(', ')}</span>`);
+  const rule = (RULE_INFO.find(r => r[0] === f.rule) || RULE_INFO[0])[1];
+  return `<li class="rounded-xl border border-line p-3">
+    <div class="flex flex-wrap items-center gap-1.5"><span class="${f.pol === '부정' ? 'pred pred-neg' : 'pred'}">${esc(f.p)}</span><span class="text-ink-muted">${arrow}</span>${nameChip(f.o)}<span class="src-badge ml-auto">${esc(rule)}</span></div>
+    ${extra.length ? `<div class="mt-1.5 text-xs leading-relaxed">${extra.join(' ')}</div>` : ''}</li>`;
+}
+
+function drawerHtml(id) {
+  const ctx = S.ctx, st = ctx.cur.stats[id], who = studentOf(id) || { name: id };
+  const picks = pol => S.model.answers.filter(a => a.month === ctx.month && a.s === id && a.pol === pol).sort((a, b) => a.rank - b.rank);
+  const compare = ctx.diff && ctx.diff.students.find(x => x.id === id);
+  const facts = ctx.facts.filter(f => f.s === id && f.rule).sort((a, b) => RULE_ORDER.indexOf(a.rule) - RULE_ORDER.indexOf(b.rule));
+  const box = (label, value) => `<div class="rounded-xl bg-page px-3 py-2.5 text-center"><p class="text-[11px] font-bold text-ink-muted">${label}</p><p class="text-xl font-extrabold tabular-nums">${value}</p></div>`;
+  const pickList = (pol, cls) => {
+    const list = picks(pol);
+    if (!list.length) return '<p class="text-sm text-ink-muted">고른 친구가 없어요.</p>';
+    return `<ul class="space-y-2">${list.map(a => `<li class="rounded-xl border border-line p-3">
+      <div class="flex flex-wrap items-center gap-1.5"><span class="text-sm font-bold">${RANK_MARKS[a.rank - 1] || a.rank}</span>${nameChip(a.o)}</div>
+      ${a.tags.length ? `<div class="mt-1.5 flex flex-wrap gap-1">${a.tags.map(t => `<span class="${cls}">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${a.text ? `<p class="mt-1.5 text-sm leading-relaxed">“${esc(a.text)}”</p>` : ''}</li>`).join('')}</ul>`;
+  };
+  return `
+    <div class="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-white px-5 py-4">
+      <div class="min-w-0">
+        <p class="text-xs font-bold text-ink-muted">${who.number ? `${who.number}번 · ` : ''}학번 ${esc(id)}</p>
+        <h2 class="text-xl font-extrabold">${esc(who.name)}</h2>
+        <div class="mt-1.5 flex flex-wrap gap-1.5">
+          <span class="${st.responded ? 'pred' : 'src-badge'}">${st.responded ? `응답함${st.submittedAt ? ` · ${esc(scheduleLabel(st.submittedAt))}` : ''}` : '아직 응답하지 않음'}</span>
+          ${st.editAllowed ? '<span class="pred pred-warn">수정 권한 있음</span>' : ''}
+        </div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" data-drawer-close>닫기</button>
+    </div>
+    <div class="space-y-6 px-5 py-5">
+      <div class="grid grid-cols-3 gap-2">${box('받은 즐거움', st.recvPos)}${box('서로 친구', st.mutual)}${box('받은 불편', st.recvNeg)}</div>
+      <section>
+        <h3 class="text-sm font-extrabold">학급 분위기</h3>
+        <p class="mt-1 text-sm">${st.climate ? esc(climateLabel(st.climate)) : '–'}</p>
+        ${st.climateReason ? `<p class="mt-1 text-sm leading-relaxed text-ink-muted">“${esc(st.climateReason)}”</p>` : ''}
+      </section>
+      ${compare && compare.comparable ? `<section class="rounded-xl bg-board-soft/60 p-3 text-sm leading-relaxed">
+        <h3 class="font-extrabold text-board">${esc(shortMonth(ctx.prevMonth))}과 비교</h3>
+        <p class="mt-1">받은 즐거움 ${compare.prevPos} → ${compare.curPos} · 받은 불편 ${compare.prevNeg} → ${compare.curNeg} · 분위기 ${compare.prevClimate || '–'} → ${compare.curClimate || '–'}</p></section>` : ''}
+      <section><h3 class="mb-2 text-sm font-extrabold">이 학생이 고른 즐거운 친구</h3>${pickList(POL.POS, 'pred')}</section>
+      <section><h3 class="mb-2 text-sm font-extrabold">이 학생이 고른 불편한 친구</h3>${pickList(POL.NEG, 'pred pred-neg')}</section>
+      <section>
+        <h3 class="text-sm font-extrabold">규칙으로 찾은 관계</h3>
+        <details class="mt-1 text-xs text-ink-muted"><summary class="cursor-pointer font-semibold">규칙 설명</summary>
+          <ul class="mt-1 list-disc space-y-0.5 pl-4">${RULE_INFO.slice(1).map(r => `<li><b>${esc(r[1])}</b> ${esc(r[2])}</li>`).join('')}</ul></details>
+        ${facts.length ? `<ul class="mt-3 space-y-2">${facts.map(factRow).join('')}</ul>` : '<p class="mt-2 text-sm text-ink-muted">아직 찾은 관계가 없어요.</p>'}
+      </section>
+    </div>`;
+}
+
+function openDrawer(id) {
+  if (!S.ctx || !S.ctx.cur || !S.ctx.cur.stats[id]) return;
+  const el = $('#drawer'), wasOpen = drawerId !== null;
+  drawerId = id;
+  el.innerHTML = drawerHtml(id);
+  el.scrollTop = 0;
+  el.classList.remove('hidden');
+  requestAnimationFrame(() => el.classList.add('open'));
+  if (!wasOpen) { const btn = el.querySelector('[data-drawer-close]'); if (btn) btn.focus({ preventScroll: true }); }
+}
+function closeDrawer() {
+  const el = $('#drawer');
+  if (drawerId === null && el.classList.contains('hidden')) return;
+  drawerId = null;
+  el.classList.remove('open');
+  setTimeout(() => { if (drawerId === null) el.classList.add('hidden'); }, 260);
+}
+$('#drawer').addEventListener('click', e => {
+  if (e.target.closest('[data-drawer-close]')) return closeDrawer();
+  const chip = e.target.closest('[data-student]');
+  if (chip) { focusStudent(chip.dataset.student); openDrawer(chip.dataset.student); }
+});
+$('#view-teacher').addEventListener('click', e => {
+  const chip = e.target.closest('[data-student]');
+  if (chip) { focusStudent(chip.dataset.student); openDrawer(chip.dataset.student); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerId !== null && !$('#modal-root').children.length) closeDrawer(); });
+
+/* ═══════════════════════════════════════════════════════════════
+ *  11. 교사: 학생 응답 탭 (표 · 수정 권한 · 응답 삭제 · 응답 엑셀)
+ * ═══════════════════════════════════════════════════════════════ */
+function monthAnswers(id, pol) { return S.model.answers.filter(a => a.month === S.month && a.s === id && a.pol === pol).sort((a, b) => a.rank - b.rank); }
+
+function renderResponsesTab() {
+  const box = $('#tab-responses'), ctx = S.ctx;
+  if (!ctx.cur) { box.innerHTML = '<div class="panel p-8 text-center text-sm text-ink-muted">아직 시작한 설문이 없어요. [⚙️ 관리] 탭에서 설문을 시작하세요.</div>'; return; }
+  const students = activeStudents().sort(byNumber);
+  const submits = new Map(S.model.submits.filter(x => x.month === ctx.month).map(x => [x.s, x]));
+  const lock = S.demo ? 'disabled' : '';
+  const picksCell = (id, pol) => {
+    const list = monthAnswers(id, pol);
+    if (!list.length) return '<span class="text-ink-muted">–</span>';
+    return list.map(a => {
+      const alert = pol === POL.NEG && sensitiveHits(a.tags, a.text).length > 0;
+      return `<div class="mb-2 last:mb-0"><p class="font-bold">${RANK_MARKS[a.rank - 1] || a.rank} ${esc(studentName(a.o))}${alert ? ' <span class="pred pred-neg">확인 필요</span>' : ''}</p>
+        ${a.tags.length ? `<p class="mt-0.5 flex flex-wrap gap-1">${a.tags.map(t => `<span class="src-badge">${esc(t)}</span>`).join('')}</p>` : ''}
+        ${a.text ? `<p class="mt-0.5 text-xs leading-relaxed text-ink-muted">“${esc(a.text)}”</p>` : ''}</div>`;
+    }).join('');
+  };
+  const rows = students.map(s => {
+    const sub = submits.get(s.id), st = ctx.cur.stats[s.id];
+    const name = `<td class="td whitespace-nowrap">${nameChip(s.id, s.name)}<span class="mt-1 block text-[11px] text-ink-muted tabular-nums">${esc(s.id)}</span></td>`;
+    const counts = `<td class="td text-right tabular-nums">${st.recvPos}</td><td class="td text-right tabular-nums">${st.mutual}</td><td class="td text-right tabular-nums">${st.recvNeg}</td>`;
+    if (!sub) return `<tr><td class="td tabular-nums">${s.number || ''}</td>${name}<td class="td text-ink-muted" colspan="4">아직 제출하지 않았어요</td>${counts}<td class="td text-ink-muted">–</td><td class="td text-ink-muted">–</td></tr>`;
+    const reasonAlert = alertWordsIn(sub.climateReason).length > 0;
+    return `<tr>
+      <td class="td tabular-nums">${s.number || ''}</td>${name}
+      <td class="td whitespace-nowrap text-xs">${esc(scheduleLabel(sub.at))}</td>
+      <td class="td min-w-[9rem] text-xs"><b class="text-sm">${sub.climate ? `${sub.climate}점` : '–'}</b> ${esc(climateLabel(sub.climate).replace(/^\d점 /, ''))}
+        ${sub.climateReason ? `<p class="mt-1 leading-relaxed text-ink-muted">“${esc(sub.climateReason)}”${reasonAlert ? ' <span class="pred pred-neg">확인 필요</span>' : ''}</p>` : ''}</td>
+      <td class="td min-w-[13rem]">${picksCell(s.id, POL.POS)}</td>
+      <td class="td min-w-[13rem]">${picksCell(s.id, POL.NEG)}</td>
+      ${counts}
+      <td class="td whitespace-nowrap"><button type="button" class="btn btn-sm ${sub.editAllowed ? 'btn-yellow' : 'btn-ghost'}" data-edit-permission="${esc(s.id)}" aria-pressed="${sub.editAllowed}" ${lock}>${sub.editAllowed ? '허용 중 · 거두기' : '수정 권한 주기'}</button></td>
+      <td class="td whitespace-nowrap"><button type="button" class="btn btn-ghost btn-sm text-stamp" data-delete-response="${esc(s.id)}" ${lock}>응답 삭제</button></td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="mb-3 flex flex-wrap items-center gap-2">
+      <h2 class="text-lg font-extrabold">학생 응답</h2>
+      <span class="rounded-full bg-white px-3 py-1 text-xs font-bold text-ink-muted ring-1 ring-line">${esc(monthLabel(ctx.month))} · 제출 ${students.filter(s => submits.has(s.id)).length} / ${students.length}명</span>
+      <span class="flex-1"></span>
+      <button type="button" id="btn-excel" class="btn btn-ghost btn-sm">📥 응답 엑셀</button>
+    </div>
+    <p class="mb-3 text-xs leading-relaxed text-ink-muted">수정 권한을 주면 학생이 이번 달 설문을 처음부터 다시 낼 수 있어요. 친구들의 정보를 지키기 위해 학생 화면에는 지난번 답이 보이지 않고, 다시 제출하면 권한은 저절로 사라져요.</p>
+    <div class="panel overflow-x-auto"><table class="min-w-full text-sm">
+      <thead><tr><th class="th">번호</th><th class="th">이름</th><th class="th">제출</th><th class="th">학급 분위기</th><th class="th">즐거운 친구</th><th class="th">불편한 친구</th><th class="th text-right">받은 즐거움</th><th class="th text-right">서로 친구</th><th class="th text-right">받은 불편</th><th class="th">수정 권한</th><th class="th">관리</th></tr></thead>
+      <tbody>${rows || '<tr><td class="td text-center text-ink-muted" colspan="11">학생 명단이 비어 있어요. [⚙️ 관리] 탭에서 등록하세요.</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+$('#tab-responses').addEventListener('click', async e => {
+  if (e.target.closest('#btn-excel')) return downloadExcel();
+  const perm = e.target.closest('[data-edit-permission]'), del = e.target.closest('[data-delete-response]');
+  if (S.demo || !S.roomCode || (!perm && !del)) return;
+  const month = S.month;
+  if (perm) {
+    const id = perm.dataset.editPermission, allow = perm.getAttribute('aria-pressed') !== 'true';
+    if (allow && !(await mConfirm('수정 권한을 줄까요?', `${studentName(id)} 학생이 ${monthLabel(month)} 설문을 다시 낼 수 있어요.\n친구들의 정보를 지키기 위해 학생 화면에는 지난번 답이 보이지 않아요. 다시 제출하면 지금 응답을 대신하고, 권한은 저절로 사라져요.`, { ok: '권한 주기' }))) return;
+    perm.disabled = true;
+    try {
+      await updateDoc(doc(db, COLLECTION, S.roomCode, 'receipts', `${month}_${id}`), { editAllowed: allow });
+      toast(allow ? `${studentName(id)} 학생에게 수정 권한을 줬어요` : '수정 권한을 거뒀어요');
+      await loadRoomData();
+    } catch (err) {
+      console.error('수정 권한 변경 실패:', err);
+      perm.disabled = false;
+      mAlert('바꾸지 못했어요', failText(err, '수정 권한을 바꾸지 못했어요.'));
+    }
+    return;
+  }
+  const id = del.dataset.deleteResponse;
+  if (!(await mConfirm('응답을 삭제할까요?', `${studentName(id)} 학생의 ${monthLabel(month)} 응답을 지워요. 지우면 학생이 다시 제출할 수 있어요.\n되돌릴 수 없어요.`, { ok: '삭제', danger: true }))) return;
+  del.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, COLLECTION, S.roomCode, 'responses', `${month}_${id}`));
+    batch.delete(doc(db, COLLECTION, S.roomCode, 'receipts', `${month}_${id}`));
+    await batch.commit();
+    toast('응답을 삭제했어요');
+    await loadRoomData();
+  } catch (err) {
+    console.error('응답 삭제 실패:', err);
+    del.disabled = false;
+    mAlert('삭제하지 못했어요', failText(err, '응답을 삭제하지 못했어요.'));
+  }
+});
+
+function downloadExcel() {
+  const ctx = S.ctx;
+  if (!ctx || !ctx.cur) return;
+  if (typeof XLSX === 'undefined') return mAlert('엑셀을 만들지 못했어요', '엑셀 도구를 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요.');
+  const students = activeStudents().sort(byNumber);
+  const submits = new Map(S.model.submits.filter(x => x.month === ctx.month).map(x => [x.s, x]));
+  const posMax = questionOf('positive').max, negMax = questionOf('negative').max;
+  const header = ['번호', '학번', '이름', '제출 시각', '학급 분위기', '분위기 이유'];
+  for (let i = 1; i <= posMax; i++) header.push(`즐거운 친구${i}`, `분류${i}`, `이유${i}`);
+  for (let i = 1; i <= negMax; i++) header.push(`불편한 친구${i}`, `불편 분류${i}`, `불편 이유${i}`);
+  header.push('수정 권한');
+  const rows = students.map(s => {
+    const sub = submits.get(s.id);
+    const row = [s.number || '', s.id, s.name, sub ? new Date(sub.at).toLocaleString('ko-KR') : '미응답', (sub && sub.climate) || '', (sub && sub.climateReason) || ''];
+    const fill = (list, max) => { for (let i = 0; i < max; i++) row.push(list[i] ? studentName(list[i].o) : '', list[i] ? list[i].tags.join(', ') : '', list[i] ? list[i].text : ''); };
+    fill(sub ? monthAnswers(s.id, POL.POS) : [], posMax);
+    fill(sub ? monthAnswers(s.id, POL.NEG) : [], negMax);
+    row.push(sub && sub.editAllowed ? '허용' : '');
+    return row;
+  });
+  const relations = ctx.cur.edges.map(e => [monthLabel(ctx.month), studentName(e.s), e.s, studentName(e.o), e.o, e.pol === POL.POS ? '즐거움' : '불편', e.rank, e.tags.join(', '), e.text]);
+  const summary = students.map(s => { const st = ctx.cur.stats[s.id]; return [s.number || '', s.id, s.name, st.responded ? '응답' : '미응답', st.climate || '', st.recvPos, st.mutual, st.recvNeg, st.givenPos, st.givenNeg]; });
+  const sheet = (aoa, widths) => { const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = widths.map(wch => ({ wch })); return ws; };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet([header, ...rows], header.map((h, i) => (i < 3 ? 9 : /이유/.test(h) ? 36 : 14))), '응답');
+  XLSX.utils.book_append_sheet(wb, sheet([['달', '응답 학생', '응답 학번', '대상 학생', '대상 학번', '구분', '순서', '분류', '이유'], ...relations], [10, 10, 9, 10, 9, 8, 6, 26, 40]), '관계 목록');
+  XLSX.utils.book_append_sheet(wb, sheet([['번호', '학번', '이름', '응답', '분위기', '받은 즐거움', '서로 친구', '받은 불편', '고른 즐거움', '고른 불편'], ...summary], [6, 9, 10, 8, 8, 11, 10, 10, 11, 10]), '학생별 요약');
+  const roomName = String((S.room && S.room.memo) || S.roomCode || '예시').replace(/[\\/:*?"<>|]/g, '_');
+  XLSX.writeFile(wb, `관계지도_${roomName}_${ctx.month}.xlsx`);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  12. 교사: 관리 탭 (반 정보 · 설문 달 · 학생 명단)
+ * ═══════════════════════════════════════════════════════════════ */
+function renderManageTab() {
+  const room = S.room || {}, lock = S.demo ? 'disabled' : '';
+  const byMonth = {}, byStudent = {};
+  S.model.submits.forEach(x => { byMonth[x.month] = (byMonth[x.month] || 0) + 1; byStudent[x.s] = (byStudent[x.s] || 0) + 1; });
+  const months = S.model.months.slice().reverse();
+  const roster = S.model.students.slice().sort(byNumber);
+  const resting = roster.filter(s => !s.active).length;
+  $('#tab-manage').innerHTML = `
+    ${S.demo ? '<p class="mb-4 rounded-xl bg-chalk-yellow/30 px-4 py-3 text-sm font-semibold">예시 데이터에서는 관리 기능을 쓸 수 없어요. 실제 반을 만든 뒤 이용하세요.</p>' : ''}
+    <h2 class="h-section mt-0">반 정보</h2>
+    <div class="panel p-4">
+      <div class="grid gap-4 sm:grid-cols-[auto_1fr]">
+        <div>
+          <p class="text-xs font-bold text-ink-muted">반 코드</p>
+          <p class="font-mono text-3xl font-extrabold tracking-widest text-board">${esc(S.demo ? '예시' : S.roomCode)}</p>
+          <button type="button" class="btn btn-ghost btn-sm mt-2" data-action="qr" ${lock}>QR 보기</button>
+        </div>
+        <div>
+          <label class="field-label" for="mg-memo">반 이름</label>
+          <div class="flex gap-2"><input id="mg-memo" class="field" maxlength="60" value="${esc(room.memo || '')}" ${lock}><button type="button" class="btn btn-primary mt-1.5" data-action="save-memo" ${lock}>저장</button></div>
+          <p class="mt-2 text-xs leading-relaxed text-ink-muted">${esc(room.creatorSchool || '-')} · ${esc(room.creatorName || '-')} 선생님 · 학생은 반 코드를 입력하고 학번과 4자리 PIN으로 들어와요.</p>
+        </div>
+      </div>
+      <div class="mt-4 flex justify-end"><button type="button" class="btn btn-ghost btn-sm text-stamp" data-action="delete-room" ${lock}>🗑️ 반 삭제</button></div>
+    </div>
+
+    <h2 class="h-section">설문 달</h2>
+    <div class="panel p-4">
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="block"><span class="field-label">새로 설문할 달</span><input id="mg-month" type="month" class="field w-auto" value="${currentMonthKey()}" ${lock}></label>
+        <button type="button" class="btn btn-primary" data-action="start-month" ${lock}>설문 시작</button>
+      </div>
+      <p class="mt-2 text-xs leading-relaxed text-ink-muted">새 설문을 시작하면 진행 중인 다른 달은 자동으로 마감돼요. 마감 · 마감 예약 · 삭제는 위쪽 [설문 달] 줄에서 해요.</p>
+      ${months.length ? `<ul class="mt-3 divide-y divide-line">${months.map(m => `<li class="flex flex-wrap items-center gap-2 py-2.5">
+        <b>${monthLabel(m.month)}</b>
+        <span class="${m.status === 'open' ? 'pred' : 'src-badge'}">${m.status === 'open' ? (m.closeAt ? `진행 중 · ${esc(scheduleLabel(m.closeAt))} 마감 예약` : '진행 중') : '마감'}</span>
+        <span class="text-xs text-ink-muted">응답 ${byMonth[m.month] || 0}명</span>
+        <span class="flex-1"></span>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="view-month" data-month="${m.month}">${m.month === S.month ? '보는 중' : '지도 보기'}</button></li>`).join('')}</ul>` : '<p class="mt-3 rounded-lg bg-page p-3 text-sm text-ink-muted">아직 설문한 달이 없어요.</p>'}
+    </div>
+
+    <h2 class="h-section">학생 명단</h2>
+    <div class="panel p-4">
+      <p class="text-xs leading-relaxed text-ink-muted">학번은 학생이 로그인할 때 쓰는 번호예요 (1~3으로 시작하는 숫자 4~5자리). 명단에 있는 학생만 설문에 참여하고 친구 목록에도 나와요. 지금 ${roster.length - resting}명${resting ? ` · 참여 멈춤 ${resting}명` : ''}</p>
+      <div class="mt-3 grid gap-3 md:grid-cols-2">
+        <form id="mg-add" class="rounded-xl border border-line p-3">
+          <h3 class="text-sm font-extrabold">한 명 추가</h3>
+          <div class="mt-1 grid grid-cols-[4.5rem_6.5rem_1fr] gap-2">
+            <label class="text-xs font-bold">번호<input id="mg-add-no" type="number" min="0" max="99" class="field py-2" placeholder="1" ${lock}></label>
+            <label class="text-xs font-bold">학번<input id="mg-add-id" class="field py-2" inputmode="numeric" maxlength="5" placeholder="1601" ${lock}></label>
+            <label class="text-xs font-bold">이름<input id="mg-add-name" class="field py-2" maxlength="20" placeholder="김민준" ${lock}></label>
+          </div>
+          <button type="submit" class="btn btn-primary mt-3 w-full" ${lock}>추가</button>
+        </form>
+        <div class="rounded-xl border border-line p-3">
+          <h3 class="text-sm font-extrabold">여러 명 붙여넣기</h3>
+          <label for="mg-bulk" class="mt-1 block text-xs text-ink-muted">한 줄에 한 명씩 「번호 학번 이름」 또는 「학번 이름」. 엑셀에서 복사해 붙여넣어도 돼요.</label>
+          <textarea id="mg-bulk" rows="4" class="field font-mono text-sm" placeholder="1&#9;1601&#9;김민준&#10;2&#9;1602&#9;이서연" ${lock}></textarea>
+          <button type="button" class="btn btn-ghost mt-2 w-full" data-action="bulk-add" ${lock}>한꺼번에 추가</button>
+        </div>
+      </div>
+      ${roster.length ? `<div class="mt-4 overflow-x-auto rounded-xl ring-1 ring-line"><table class="min-w-full text-sm">
+        <thead><tr><th class="th">번호</th><th class="th">학번</th><th class="th">이름</th><th class="th">상태</th><th class="th text-right">응답한 달</th><th class="th">관리</th></tr></thead>
+        <tbody>${roster.map(s => `<tr class="${s.active ? '' : 'text-ink-muted'}">
+          <td class="td tabular-nums">${s.number || ''}</td><td class="td tabular-nums">${esc(s.id)}</td><td class="td font-bold">${esc(s.name)}</td>
+          <td class="td whitespace-nowrap">${s.active ? '참여' : '참여 멈춤'}</td><td class="td text-right tabular-nums">${byStudent[s.id] || 0}</td>
+          <td class="td"><div class="flex flex-wrap gap-1">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="edit" data-id="${esc(s.id)}" ${lock}>고치기</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="pin" data-id="${esc(s.id)}" ${lock}>PIN 초기화</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="toggle" data-id="${esc(s.id)}" ${lock}>${s.active ? '참여 멈추기' : '다시 참여'}</button>
+            <button type="button" class="btn btn-ghost btn-sm text-stamp" data-action="remove" data-id="${esc(s.id)}" ${lock}>삭제</button>
+          </div></td></tr>`).join('')}</tbody></table></div>` : '<p class="mt-4 rounded-lg bg-page p-4 text-center text-sm text-ink-muted">아직 등록한 학생이 없어요. 위에서 한 명씩 추가하거나 여러 명을 붙여넣으세요.</p>'}
+    </div>`;
+}
+
+$('#tab-manage').addEventListener('click', async e => {
+  const b = e.target.closest('[data-action]');
+  if (!b) return;
+  const action = b.dataset.action;
+  if (action === 'view-month') { S.month = b.dataset.month; refreshDashboard(); return renderTab('map'); }
+  if (S.demo || !S.roomCode) return;
+  if (action === 'qr') return openQrPanel();
+  if (action === 'save-memo') return saveRoomMemo();
+  if (action === 'delete-room') return deleteRoomFlow();
+  if (action === 'start-month') return startMonth($('#mg-month').value);
+  if (action === 'bulk-add') return bulkAddStudents();
+  const student = studentOf(b.dataset.id);
+  if (!student) return;
+  if (action === 'edit') return editStudent(student);
+  if (action === 'pin') return resetPinFor(student);
+  if (action === 'toggle') return changeRoster(roster => { roster[student.id] = Object.assign({}, roster[student.id], { active: !student.active }); }, student.active ? `${student.name} 학생의 참여를 멈췄어요` : `${student.name} 학생이 다시 참여해요`);
+  if (action === 'remove') {
+    const count = S.model.submits.filter(x => x.s === student.id).length;
+    if (!(await mConfirm('명단에서 지울까요?', `${student.name}(${student.id}) 학생을 명단에서 지워요.${count ? `\n이 학생의 응답 ${count}개는 남지만 관계지도에서 빠져요. 같은 학번으로 다시 추가하면 돌아와요. 잠시 빼려면 [참여 멈추기]를 쓰세요.` : ''}`, { ok: '지우기', danger: true }))) return;
+    return changeRoster(roster => { delete roster[student.id]; }, `${student.name} 학생을 명단에서 지웠어요`);
+  }
+});
+$('#tab-manage').addEventListener('submit', e => { if (e.target.id === 'mg-add') { e.preventDefault(); addStudent(); } });
+$('#tab-manage').addEventListener('input', e => { if (e.target.id === 'mg-add-id') e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5); });
+
+async function saveRoomMemo() {
+  const memo = $('#mg-memo').value.trim().slice(0, 60);
+  if (!memo) return mAlert('반 이름을 적어 주세요', '반 이름은 비워 둘 수 없어요.');
+  if (await updateRoomFields(['memo', memo], '반 이름을 저장했어요', '반 이름을 저장하지 못했어요')) {
+    try { await loadTeacherRooms(); } catch (err) { console.error('반 목록 조회 실패:', err); }
+  }
+}
+
+async function deleteRoomFlow() {
+  const code = S.roomCode;
+  const r = await mForm({
+    title: '반을 삭제할까요?',
+    message: `「${(S.room && S.room.memo) || code}」의 명단과 모든 달의 응답이 지워져요. 되돌릴 수 없으니 먼저 [📋 학생 응답] 탭의 [응답 엑셀]로 내려받아 두길 권해요. 계속하려면 아래 칸에 반 코드 “${code}”를 그대로 입력하세요.`,
+    fields: [{ name: 'confirm', label: '확인 입력', placeholder: code, maxlength: 4 }],
+    submit: '반 삭제',
+    onSubmit: async v => {
+      if (v.confirm.toUpperCase() !== code) return { error: `“${code}”를 정확히 입력하세요.` };
+      try { await removeRoom(code); return { ok: true }; }
+      catch (err) { console.error('반 삭제 실패:', err); return { error: failText(err, '반을 삭제하지 못했어요.') }; }
+    }
+  });
+  if (!r || !r.ok) return;
+  toast('반을 삭제했어요');
+  await selectRoom('');
+  try { await loadTeacherRooms(); } catch (err) { console.error('반 목록 조회 실패:', err); }
+}
+
+/** 설문 시작: 이 달을 열고 진행 중인 다른 달은 마감합니다 */
+async function startMonth(month) {
+  if (S.demo || !S.roomCode) return;
+  if (!MONTH_PATTERN.test(month || '')) return mAlert('달을 골라 주세요', '설문할 달을 골라 주세요.');
+  if (S.room.months && S.room.months[month]) return mAlert('이미 있는 달이에요', `${monthLabel(month)} 설문이 이미 있어요. 위쪽 [설문 달]에서 고른 뒤 [다시 열기]를 누르세요.`);
+  if (!activeStudents().length && !(await mConfirm('명단이 비어 있어요', '명단에 있는 학생만 응답할 수 있어요. 그래도 설문을 시작할까요?', { ok: '시작하기' }))) return;
+  const others = S.model.months.filter(x => x.saved === 'open').map(x => monthLabel(x.month));
+  if (others.length && !(await mConfirm(`${monthLabel(month)} 설문을 시작할까요?`, `진행 중인 ${others.join(', ')} 설문은 자동으로 마감돼요.`, { ok: '시작하기' }))) return;
+  const before = S.month;
+  S.month = month;
+  if (await updateRoomFields(openMonthChanges(month, { openedAt: serverTimestamp() }), `${monthLabel(month)} 설문을 시작했어요`, '설문을 시작하지 못했어요')) renderTab('map');
+  else S.month = before;
+}
+
+/* ── 학생 명단 ── */
+const defaultNumber = id => Number(String(id).slice(-2)) || 0;   // 학번 끝 두 자리 = 번호
+
+function validateRosterEntry({ id, number, name }) {
+  if (!STUDENT_ID_PATTERN.test(id)) return `학번 ${id || '(빈칸)'}: 1~3으로 시작하는 숫자 4~5자리로 적어 주세요.`;
+  if (!Number.isInteger(number) || number < 0 || number > 99) return `학번 ${id}: 번호는 0~99 사이의 정수로 적어 주세요.`;
+  if (!name || name.length > 20) return `학번 ${id}: 이름은 1~20자로 적어 주세요.`;
+  return '';
+}
+
+/** 최신 명단을 트랜잭션으로 읽어 바꿉니다 (mutator가 Error를 던지면 저장하지 않음) */
+function mutateRoster(mutator) {
+  const ref = roomRef();
+  return runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('반 정보를 찾을 수 없어요.');
+    const roster = Object.assign({}, snap.data().roster || {});
+    const result = mutator(roster);
+    tx.update(ref, { roster, updatedAt: serverTimestamp() });
+    return result;
+  });
+}
+
+async function changeRoster(mutator, okMessage) {
+  loading(true, '명단을 저장하는 중');
+  let failure = null, result;
+  try { result = await mutateRoster(mutator); } catch (err) { failure = err; }
+  loading(false);
+  if (failure) {
+    console.error('명단 변경 실패:', failure);
+    await mAlert('명단을 바꾸지 못했어요', failText(failure, '다시 시도해 주세요.'));
+    return null;
+  }
+  if (okMessage) toast(typeof okMessage === 'function' ? okMessage(result) : okMessage);
+  await loadRoomData();
+  return result || true;
+}
+
+async function addStudent() {
+  const id = $('#mg-add-id').value.trim(), name = $('#mg-add-name').value.trim();
+  const number = $('#mg-add-no').value === '' ? defaultNumber(id) : Number($('#mg-add-no').value);
+  const problem = validateRosterEntry({ id, number, name });
+  if (problem) return mAlert('명단에 넣지 못했어요', problem);
+  const ok = await changeRoster(roster => {
+    if (roster[id]) throw new Error(`학번 ${id}은(는) 이미 명단에 있어요.`);
+    roster[id] = { no: number, name, active: true };
+  }, `${name} 학생을 추가했어요`);
+  if (ok && $('#mg-add-no')) $('#mg-add-no').focus();
+}
+
+/** 붙여넣은 줄 → 명단 항목 (「번호 학번 이름」·「학번 이름」·「이름 학번」, 탭·쉼표·띄어쓰기 구분) */
+function parseRosterLines(text) {
+  const entries = [], problems = [];
+  String(text || '').split(/\r?\n/).forEach((line, index) => {
+    const tokens = line.trim().split(/[\s,;]+/).filter(Boolean);
+    if (!tokens.length) return;
+    let number = null, id = '', nameTokens = [];
+    if (tokens.length >= 3 && /^\d{1,2}$/.test(tokens[0]) && STUDENT_ID_PATTERN.test(tokens[1])) { number = Number(tokens[0]); id = tokens[1]; nameTokens = tokens.slice(2); }
+    else if (tokens.length >= 2 && STUDENT_ID_PATTERN.test(tokens[0])) { id = tokens[0]; nameTokens = tokens.slice(1); }
+    else if (tokens.length >= 2 && STUDENT_ID_PATTERN.test(tokens[tokens.length - 1])) { id = tokens[tokens.length - 1]; nameTokens = tokens.slice(0, -1); }
+    else { problems.push(`${index + 1}번째 줄: 학번을 찾지 못했어요 (${line.trim().slice(0, 30)})`); return; }
+    const entry = { id, number: number == null ? defaultNumber(id) : number, name: nameTokens.join(' ').trim() };
+    const problem = validateRosterEntry(entry);
+    if (problem) problems.push(`${index + 1}번째 줄: ${problem}`); else entries.push(entry);
+  });
+  return { entries, problems };
+}
+
+async function bulkAddStudents() {
+  const { entries, problems } = parseRosterLines($('#mg-bulk').value);
+  if (!entries.length) return mAlert('명단에 넣지 못했어요', problems.length ? problems.slice(0, 8).join('\n') : '추가할 학생을 한 줄에 한 명씩 적어 주세요.');
+  const result = await changeRoster(roster => {
+    const added = [], skipped = [];
+    entries.forEach(x => {
+      if (roster[x.id]) { skipped.push(x.id); return; }
+      roster[x.id] = { no: x.number, name: x.name, active: true };
+      added.push(x.id);
+    });
+    return { added, skipped };
+  }, r => `${r.added.length}명을 추가했어요`);
+  if (!result || !result.added) return;
+  if (result.skipped.length || problems.length) {
+    const lines = [];
+    if (result.skipped.length) lines.push(`이미 있는 학번 ${result.skipped.length}개는 건너뛰었어요: ${result.skipped.slice(0, 10).join(', ')}`);
+    if (problems.length) lines.push(`읽지 못한 줄 ${problems.length}개\n${problems.slice(0, 6).join('\n')}`);
+    await mAlert(`${result.added.length}명을 추가했어요`, lines.join('\n\n'));
+  }
+}
+
+async function editStudent(student) {
+  const r = await mForm({
+    title: '학생 정보 고치기',
+    message: `학번 ${student.id} · 학번은 학생이 로그인할 때 쓰는 값이라 고칠 수 없어요. 학번이 틀렸다면 바른 학번으로 새로 추가하고 이 학생은 지우세요.`,
+    fields: [
+      { name: 'no', label: '번호', inputmode: 'numeric', maxlength: 2, value: student.number || '' },
+      { name: 'name', label: '이름', maxlength: 20, value: student.name }
+    ],
+    submit: '저장',
+    onSubmit: async v => {
+      const number = v.no === '' ? defaultNumber(student.id) : Number(v.no);
+      const problem = validateRosterEntry({ id: student.id, number, name: v.name });
+      return problem ? { error: problem } : { number, name: v.name };
+    }
+  });
+  if (!r || !r.name) return;
+  await changeRoster(roster => {
+    if (!roster[student.id]) throw new Error('명단에서 학생을 찾을 수 없어요.');
+    roster[student.id] = Object.assign({}, roster[student.id], { no: r.number, name: r.name });
+  }, '학생 정보를 고쳤어요');
+}
+
+/** PIN 초기화 — 이 반에 들어와 담당 선생님으로 등록된 학생만 (보안 규칙의 '내 학생' 판정과 같음) */
+async function resetPinFor(student) {
+  const key = makeStudentKey(String(S.room.creatorSchool || '').trim(), student.id);
+  try {
+    const snap = await getDoc(doc(db, 'student_auth', key));
+    if (!snap.exists()) return mAlert('아직 들어온 적 없는 학생이에요', `${student.name} 학생은 아직 한 번도 들어오지 않았어요. 처음 들어올 때 PIN을 정해요.`);
+    const teachers = Array.isArray(snap.data().teachers) ? snap.data().teachers : [];
+    if (!S.teacher.isAdmin && !teachers.includes(S.teacher.name)) return mAlert('초기화할 수 없어요', '이 반에 들어온 적이 있는 학생만 PIN을 초기화할 수 있어요.');
+    if (!(await mConfirm('PIN을 초기화할까요?', `${student.name}(${student.id}) 학생은 다음에 들어올 때 새 4자리 PIN을 정해요.`, { ok: '초기화', danger: true }))) return;
+    await resetStudentPin(key);
+    toast(`${student.name} 학생의 PIN을 초기화했어요`);
+  } catch (err) {
+    console.error('PIN 초기화 실패:', err);
+    mAlert('초기화하지 못했어요', isPermissionError(err) ? 'PIN을 초기화할 권한이 없어요. 내 학교 학생인지, 교사 정보의 학교명이 맞는지 확인해 주세요.' : String((err && err.message) || err));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  13. 로그인 상태 (승인된 교사 → 교사 화면, 그 밖에는 첫 화면)
+ *      로그인 상태가 빠르게 바뀌면 앞선 처리가 늦게 끝날 수 있어, 가장 최근 변경만 화면에 반영합니다.
+ * ═══════════════════════════════════════════════════════════════ */
+onAuthStateChanged(auth, async user => {
+  const sequence = ++authSequence;
+  const wasTeacher = !!S.teacher;
+  S.user = user;
+  S.teacher = null;
+  if (!user) {
+    if (wasTeacher) await leaveTeacherView();
+    renderTeacherLoginNote();
+    return;
+  }
+  const isAdmin = String(user.email || '').trim().toLowerCase() === ADMIN_EMAIL;
+  let record = {};
+  try {
+    const snap = await getDoc(doc(db, 'teachers', user.uid));
+    if (snap.exists()) record = snap.data() || {};
+  } catch (err) {
+    console.warn('교사 정보 조회 실패:', err);
+  }
+  if (sequence !== authSequence) return;
+  if (!isAdmin && record.status !== 'approved') {
+    if (wasTeacher) await leaveTeacherView();
+    renderTeacherLoginNote();
+    if (S.loginRequested) setLoginRole('teacher');
+    S.loginRequested = false;
+    return;
+  }
+  S.loginRequested = false;
+  const school = String(record.school || '');
+  S.teacher = {
+    name: record.name || (isAdmin ? '관리자' : '교사'),
+    // 관리자 계정은 학교가 비어 있거나 '관리자'라 학생 인증 학교로 '동동쌤'을 씁니다 (설문 템플릿과 같음)
+    school: isAdmin && (!school.trim() || school.trim() === '관리자') ? '동동쌤' : school,
+    isAdmin
+  };
+  renderTeacherLoginNote();
+  if (S.sv && !S.sv.done) return;   // 이 기기에서 학생이 설문을 쓰는 중이면 화면을 바꾸지 않습니다
+  await enterTeacher();
+});
+
+setLoginRole('student');
+</script>
+</body>
+</html>

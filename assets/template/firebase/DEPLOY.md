@@ -12,6 +12,7 @@
 - 기존 기기 초기화로 부모 문서에서 지워진 지문에 해당하는 고아 `gate` 문서는 클라이언트 삭제 대상에서 찾을 수 없습니다. 전체 정리가 필요하면 관리자 콘솔 또는 서버 측 정리 작업을 사용하세요. PIN 증명값을 보기 위해 교사 list/read 권한을 추가하지 마세요.
 - 통합 설문 템플릿에서 교사 검토를 저장하려면 `custom_forms/{room}/responses/{studentId}`의 `feedback`, `feedbackUpdatedAt`, `teacherView`, `teacherViewUpdatedAt` 필드 갱신을 교사 규칙에 허용하세요.
 - Gemini 초안 생성에 쓰는 API 키는 선택적으로 이 기기의 localStorage에 저장됩니다. 학생 답변을 Gemini API로 전송하는 데 동의하는 내용만 입력하세요.
+- 우리반 관계지도(`pages/admin/relationmap.html`)는 새 컬렉션 `relation_maps`를 씁니다. 가이드북 13장의 규칙 블록을 Firestore 규칙에 **추가**해야 동작하며, 기존 규칙(특히 `student_auth`의 `gate`)은 바꾸지 않습니다.
 
 공통 모듈 주소는 `room-auth.js?v=4.2`, `game-kit.js?v=4.2`, `dashboard-header.js?v=4.2`로 맞춥니다.
 순서가 바뀌면 예전 학생 관리 화면이 새 규칙에 막힙니다.

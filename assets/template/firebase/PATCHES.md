@@ -14,6 +14,7 @@
 | `gridgomoku.html` | 좌표평면 오목 | D 익명 대전형 | RTDB `gridgomoku` + FS `gomoku_records`(이름표만) |
 | `blottogame.html` | 블로토 | D 익명 대전형 | RTDB `blottogame` + FS `blotto_records`(이름표만) |
 | `설문-소감문-통합형.html` | 문항형 설문 + 교사 검토 | 통합 설문형 | FS `custom_forms` |
+| `pages/admin/relationmap.html` | 우리반 관계지도 (관계 설문 · 관계지도) | 관계 설문형 | FS `relation_maps` (가이드북 13장 규칙 필요) |
 
 **블로토는 유형 D입니다.** 매칭 대신 전원이 같은 라운드에 동시 제출하는 방식이지만,
 학생 정보를 쓰지 않고 이름표만 Firestore에 두는 점이 오목과 같습니다.
