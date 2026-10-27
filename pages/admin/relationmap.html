@@ -187,22 +187,14 @@
       <h1 class="board-title mt-2 text-3xl leading-tight sm:text-4xl">🏫 우리반 관계지도</h1>
     </div>
     <div class="mx-auto -mt-6 w-full max-w-md px-4 pb-12">
-      <div class="panel p-6 shadow-sm">
-        <div class="grid grid-cols-2 gap-1 rounded-lg bg-page p-1" role="tablist" aria-label="로그인 대상">
-          <button type="button" class="tab-item" data-role="student" role="tab">학생</button>
-          <button type="button" class="tab-item" data-role="teacher" role="tab">교사</button>
-        </div>
-        <div id="login-student" class="mt-5">
-          <label for="roomCodeInput" class="field-label">반 코드</label>
-          <div id="room-entrance-container"></div>
-        </div>
-        <div id="login-teacher" class="mt-5 hidden">
-          <p class="text-sm leading-relaxed text-ink-muted">관계지도와 학생 응답은 승인된 선생님만 볼 수 있어요. 구글 계정으로 로그인해 주세요.</p>
-          <p id="teacher-login-note" class="mt-3 hidden rounded-lg bg-stamp-soft px-3 py-2.5 text-sm font-semibold text-stamp" role="alert"></p>
-          <button id="teacher-google-btn" type="button" class="btn btn-primary mt-5 w-full py-3 text-base">구글 계정으로 로그인</button>
-          <button id="teacher-signout-btn" type="button" class="btn btn-ghost mt-2 hidden w-full py-3">로그아웃</button>
-        </div>
-        <p id="login-help" class="mt-4 text-center text-xs leading-relaxed text-ink-muted"></p>
+      <!-- 처음에는 계정 권한을 확인하고, 승인된 선생님이면 교사 화면으로, 아니면 반 코드 입력 화면을 보여 줍니다 -->
+      <div id="auth-loading" class="panel flex items-center justify-center gap-2 p-6 text-sm font-semibold text-ink-muted shadow-sm" role="status" aria-live="polite">
+        <span class="spinner"></span>계정 권한을 확인하고 있어요.
+      </div>
+      <div id="login-student" class="panel p-6 shadow-sm" hidden>
+        <label for="roomCodeInput" class="field-label">반 코드</label>
+        <div id="room-entrance-container"></div>
+        <p class="mt-4 text-center text-xs leading-relaxed text-ink-muted">처음 들어오면 학번과 4자리 PIN을 정해요. PIN을 잊었다면 선생님께 말씀해 주세요.</p>
       </div>
       <p class="mt-6 text-center text-xs leading-relaxed text-ink-muted">설문 답변은 선생님만 볼 수 있어요. 친구들에게는 절대 보이지 않아요.</p>
     </div>
@@ -318,13 +310,13 @@
   </div>
 
 <script type="module">
-import { auth, db, googleProvider } from '../../js/firebase-config.js';
+import { auth, db } from '../../js/firebase-config.js';
 import {
   escapeHtml, getDeviceId, getPhoneOwnerAuth, makeStudentKey, renderRoomEntrance, resetStudentPin, safeNumber, STUDENT_ID_PATTERN
 } from '../../js/room-auth.js?v=4.2';
 import { deriveDeviceFingerprint, derivePinProof } from '../../js/student-crypto.js';
 import { closeQrPanel, openQrPanel } from '../../js/qr-modal.js';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
+import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
 import {
   collection, deleteDoc, deleteField, doc, FieldPath, getDoc, getDocs, onSnapshot, query, runTransaction,
   serverTimestamp, setDoc, Timestamp, updateDoc, where, writeBatch
@@ -344,7 +336,7 @@ const S = {
   net: null, nodesDS: null, edgesDS: null, netDirty: true, netKey: '', netReady: null, edgeInfo: {},
   positions: {},                                         // 반마다 학생 자리 (끌어 옮긴 자리도 기억)
   pinStates: {},                                         // 관리 탭 명단의 PIN 상태 (학번 → set · reset · none)
-  sv: null, loginRole: 'student', loginRequested: false
+  sv: null
 };
 let drawerId = null;
 let roomUnsubs = [];          // 고른 반의 실시간 구독을 끊는 함수들
@@ -847,45 +839,14 @@ function buildTrend(model, ctx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- *  5. 첫 화면 (학생: 반 코드 → 학번 · PIN / 교사: 구글 로그인)
+ *  5. 첫 화면 — 계정 권한 확인 → 승인된 교사는 교사 화면, 그 밖에는 반 코드 입력 (설문 관리 페이지와 같은 흐름)
+ *     교사 로그인은 메인 화면의 [교사 로그인]에서 합니다.
  * ═══════════════════════════════════════════════════════════════ */
-function setLoginRole(role) {
-  S.loginRole = role;
-  document.querySelectorAll('[data-role]').forEach(el => {
-    const on = el.dataset.role === role;
-    el.classList.toggle('is-active', on);
-    el.setAttribute('aria-selected', String(on));
-  });
-  $('#login-student').classList.toggle('hidden', role !== 'student');
-  $('#login-teacher').classList.toggle('hidden', role !== 'teacher');
-  $('#login-help').textContent = role === 'student'
-    ? '처음 들어오면 학번과 4자리 PIN을 정해요. PIN을 잊었다면 선생님께 말씀해 주세요.'
-    : '메인 화면의 교사 로그인에서 학교를 등록하고 관리자 승인을 받은 선생님만 쓸 수 있어요.';
+/** 권한 확인이 끝나면 '확인 중' 창을 반 코드 입력 화면으로 바꿉니다 */
+function showStudentEntry() {
+  $('#auth-loading').hidden = true;
+  $('#login-student').hidden = false;
 }
-document.querySelectorAll('[data-role]').forEach(b => b.addEventListener('click', () => setLoginRole(b.dataset.role)));
-
-/** 로그인했지만 승인된 선생님이 아닐 때의 안내 */
-function renderTeacherLoginNote() {
-  const pending = !!S.user && !S.teacher;
-  const note = $('#teacher-login-note');
-  note.classList.toggle('hidden', !pending);
-  note.textContent = pending ? `${S.user.email || '이 계정'}은(는) 아직 승인된 선생님 계정이 아니에요. 메인 화면의 [교사 로그인]에서 학교 정보를 등록하고 관리자 승인을 받아 주세요.` : '';
-  $('#teacher-google-btn').classList.toggle('hidden', !!S.user);
-  $('#teacher-signout-btn').classList.toggle('hidden', !S.user);
-}
-
-$('#teacher-google-btn').addEventListener('click', () => {
-  S.loginRequested = true;
-  signInWithPopup(auth, googleProvider).catch(err => {
-    S.loginRequested = false;
-    const code = (err && err.code) || '';
-    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
-    mAlert('로그인하지 못했어요', code === 'auth/popup-blocked'
-      ? '팝업이 차단되었어요. 브라우저의 팝업 차단을 풀고 다시 시도해 주세요.'
-      : `잠시 뒤 다시 시도해 주세요. (${code || (err && err.message) || '알 수 없는 오류'})`);
-  });
-});
-$('#teacher-signout-btn').addEventListener('click', () => signOut(auth).catch(() => {}));
 
 renderRoomEntrance('room-entrance-container', {
   title: '반 코드 입력',
@@ -2103,8 +2064,9 @@ function showEdgeInfo(info) {
 /* ═══════════════════════════════════════════════════════════════
  *  9. 지도 아래 표: '살펴볼 점'(이번 달) / '지난달과 달라진 점'(비교 모드)
  * ═══════════════════════════════════════════════════════════════ */
-/** 표 하나 = 소주제 하나 (count를 주면 줄 수 대신 그 수를 보여 줍니다) */
+/** 표 하나 = 소주제 하나 (count를 주면 줄 수 대신 그 수를 보여 줍니다). 0건인 표는 그리지 않습니다. */
 function sectionTable(icon, title, note, tone, head, rows, unit, count) {
+  if (!rows.length) return '';
   const toneBox = tone === 'neg' ? 'border-stamp/40' : tone === 'good' ? 'border-board/40' : '';
   const toneHead = tone === 'neg' ? 'bg-stamp-soft' : tone === 'good' ? 'bg-board-soft' : 'bg-page/50';
   const toneText = tone === 'neg' ? 'text-stamp' : tone === 'good' ? 'text-board' : '';
@@ -2114,11 +2076,13 @@ function sectionTable(icon, title, note, tone, head, rows, unit, count) {
       ${unit === false ? '' : `<span class="text-sm font-bold text-ink-muted">${count == null ? rows.length : count}${unit || '건'}</span>`}
       ${note ? `<span class="basis-full text-xs text-ink-muted">${note}</span>` : ''}
     </div>
-    ${rows.length ? `<div class="overflow-x-auto"><table class="w-full min-w-[520px] text-sm">
+    <div class="overflow-x-auto"><table class="w-full min-w-[520px] text-sm">
       <thead><tr>${head.map(h => `<th class="th">${h}</th>`).join('')}</tr></thead>
-      <tbody>${rows.join('')}</tbody></table></div>` : '<p class="px-4 py-3 text-sm text-ink-muted">해당하는 학생이 없어요.</p>'}
+      <tbody>${rows.join('')}</tbody></table></div>
   </section>`;
 }
+/** 표들을 붙이고, 모두 0건이면 한 줄 안내만 */
+const tablesOrNote = (tables, note) => tables.join('') || `<div class="panel p-5 text-sm text-ink-muted">${note}</div>`;
 const trCells = cells => `<tr>${cells.map(c => `<td class="td">${c}</td>`).join('')}</tr>`;
 const whoLink = id => `<button type="button" data-student="${esc(id)}" class="font-bold text-board underline underline-offset-4">${esc(studentName(id))}</button>`;
 const dash = '<span class="text-ink-muted/60">-</span>';
@@ -2133,8 +2097,8 @@ function renderBelowMap() {
 
 /** 살펴볼 점: 소주제별 표 */
 function renderAlerts() {
-  const w = S.ctx.cur.watch;
-  $('#map-alerts').innerHTML = [
+  const cur = S.ctx.cur, w = cur.watch;
+  $('#map-alerts').innerHTML = tablesOrNote([
     sectionTable('🚨', '세심한 확인이 필요한 응답', '따돌림·속상함을 뜻하는 분류를 골랐거나, 이유 글에 위험한 낱말이 들어 있어요.', 'neg', ['쓴 학생', '대상', '어디에서', '걸린 분류·낱말', '내용'],
       w.sensitive.map(x => trCells([whoLink(x.s), x.o ? whoLink(x.o) : dash, esc(x.where), `<span class="font-bold text-stamp">${esc(x.hits.join(', '))}</span>`, `“${esc(x.text)}”`]))),
     sectionTable('🌧️', '학급 분위기를 낮게 매긴 학생', '1점 교실에 있으면 불편하거나 불안하다 · 2점 마음에 별로 안든다', '', ['학생', '점수', '이유'],
@@ -2144,7 +2108,7 @@ function renderAlerts() {
     sectionTable('⚡', '서로 불편함 · 마음이 엇갈림', '마음이 엇갈림: 앞 학생은 즐거운 친구로 골랐지만 뒤 학생은 불편하다고 답했어요.', '', ['구분', '학생 A', 'A가 쓴 이유', '학생 B', 'B가 쓴 이유'],
       w.conflicts.map(x => trCells([`<b>${esc(x.type)}</b>`, whoLink(x.a), x.aText ? `“${esc(x.aText)}”` : '-', whoLink(x.b), x.bText ? `“${esc(x.bText)}”` : '-']))),
     sectionTable('⏳', '아직 응답하지 않은 학생', '', '', ['학생'], w.missing.length ? [trCells([w.missing.map(whoLink).join(', ')])] : [], '명', w.missing.length)
-  ].join('');
+  ], cur.responded ? '눈에 띄게 살펴볼 점이 없어요.' : '아직 응답이 없어요. 학생들이 제출하면 여기에 살펴볼 점이 정리돼요.');
 }
 
 /** 지난달과 달라진 점 (표 2개) */
@@ -2167,10 +2131,10 @@ function renderDiffTables() {
   addRel('새로 생긴 불편한 관계', d.newNeg, 'neg');
   addRel('풀린 불편한 관계', d.resolvedNeg, 'good');
   addRel('사라진 즐거운 관계', d.lostPos, '');
-  $('#map-alerts').innerHTML = [
+  $('#map-alerts').innerHTML = tablesOrNote([
     sectionTable('🌱', '좋아진 점 · 살펴볼 점', `두 달 모두 응답한 ${d.comparable}명의 답을 기준으로 비교했어요.`, '', ['구분', '내용', '학생'], hlRows),
     sectionTable('🔗', '관계 변화 목록', '“고른 학생 → 대상”이에요. 사라진 관계의 분류·이유는 지난달에 쓴 내용이에요.', '', ['구분', '관계', '분류', '이유'], rel)
-  ].join('');
+  ], `눈에 띄는 변화가 없어요. (두 달 모두 응답한 학생 ${d.comparable}명 기준)`);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2233,7 +2197,8 @@ function openDrawer(id) {
   d.innerHTML = detailHtml(id);
   d.scrollTop = same ? top : 0;   // 실시간으로 다시 그릴 때는 읽던 자리를 지킵니다
   d.classList.remove('hidden');
-  requestAnimationFrame(() => d.classList.add('open'));
+  void d.offsetWidth;   // 숨김을 푼 자리를 먼저 계산해야 미끄러져 들어오는 효과가 보여요
+  d.classList.add('open');
   if (!wasOpen) setTimeout(() => { const c = d.querySelector('[data-drawer-close]'); if (c) c.focus(); }, 80);
 }
 function closeDrawer() {
@@ -2732,7 +2697,7 @@ onAuthStateChanged(auth, async user => {
   S.teacher = null;
   if (!user) {
     if (wasTeacher) await leaveTeacherView();
-    renderTeacherLoginNote();
+    showStudentEntry();
     return;
   }
   const isAdmin = String(user.email || '').trim().toLowerCase() === ADMIN_EMAIL;
@@ -2746,12 +2711,9 @@ onAuthStateChanged(auth, async user => {
   if (sequence !== authSequence) return;
   if (!isAdmin && record.status !== 'approved') {
     if (wasTeacher) await leaveTeacherView();
-    renderTeacherLoginNote();
-    if (S.loginRequested) setLoginRole('teacher');
-    S.loginRequested = false;
+    showStudentEntry();
     return;
   }
-  S.loginRequested = false;
   const school = String(record.school || '');
   S.teacher = {
     name: record.name || (isAdmin ? '관리자' : '교사'),
@@ -2759,12 +2721,10 @@ onAuthStateChanged(auth, async user => {
     school: isAdmin && (!school.trim() || school.trim() === '관리자') ? '동동쌤' : school,
     isAdmin
   };
-  renderTeacherLoginNote();
+  showStudentEntry();   // 로그아웃하면 바로 반 코드 입력 화면이 보이도록
   if (S.sv && !S.sv.done) return;   // 이 기기에서 학생이 설문을 쓰는 중이면 화면을 바꾸지 않습니다
   await enterTeacher();
 });
-
-setLoginRole('student');
 </script>
 </body>
 </html>
