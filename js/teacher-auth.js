@@ -253,7 +253,7 @@ async function showTeacherInfoModal(user, docData) {
         : '이름은 변경할 수 없습니다.';
     note.classList.toggle('d-none', !isAdminUser);
     if (isAdminUser) {
-        note.innerHTML = '학교명이 <b>관리자</b>로 되어 있으면 학생 화면의 학교 목록에 나타나지 않습니다.<br>' +
+        note.innerHTML = '학교명이 <b>관리자</b>로 되어 있으면 학생 화면의 학교 목록에 나타나지 않고, <b>학생 인증 방을 만들 수 없습니다.</b><br>' +
             '실제 학교명과 이름으로 바꾸면 학생이 선택할 수 있습니다.';
     }
 
@@ -279,9 +279,10 @@ async function showTeacherInfoModal(user, docData) {
         }
 
         // 이전 학교로 만든 방은 들어오는 학생을 이전 학교로 등록하므로, 학교를 바꾸기 전에 지웁니다.
-        //  ★ 관리자는 제외합니다 (인증 방을 학교명과 무관한 '동동쌤'으로 만듭니다).
+        //  ★ 이전 학교가 비어 있거나 '관리자'(관리자 계정의 처음 값)이면 실제 학교가 아니므로 건너뜁니다.
         //  ★ 방 목록(room_registry)은 학교를 바꿀 때만 불러옵니다 — 모든 페이지가 읽을 필요는 없습니다.
-        if (school !== prevSchool && docData.status === 'approved' && !isAdminUser) {
+        const hadRealSchool = prevSchool && prevSchool !== '관리자';
+        if (school !== prevSchool && hadRealSchool && (docData.status === 'approved' || isAdminUser)) {
             let registry, staleRooms;
             try {
                 registry = await import('./room-registry.js');

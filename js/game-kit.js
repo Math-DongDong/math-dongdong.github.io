@@ -229,17 +229,13 @@ export function firestoreRoom(collectionName, { subs = GAME_SUBS } = {}) {
             const finalMode = mode || (askMode ? await promptRoomMode() : 'quick');
             if (!finalMode) return null;
 
-            // v4: 인증 방 학생의 학교는 방을 만든 선생님을 따릅니다 → 학교명이 꼭 있어야 합니다.
-            let teacherSchool = String(window.currentTeacherSchool || '').trim();
+            // v4: 인증 방 학생의 학교는 방을 만든 선생님을 따릅니다 → 학교명이 꼭 있어야 합니다 (관리자 포함).
+            const teacherSchool = String(window.currentTeacherSchool || '').trim();
             if (finalMode === 'auth' && (!teacherSchool || teacherSchool === '관리자')) {
-                if (window.isAdmin) {
-                    teacherSchool = '동동쌤';
-                } else {
-                    await customAlert("학교명이 필요해요",
-                        "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
-                        "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
-                    return null;
-                }
+                await customAlert("학교명이 필요해요",
+                    "학생 인증 방의 학생은 <b>방을 만든 선생님의 학교</b>로 등록됩니다.<br>" +
+                    "상단 메뉴 → <b>정보수정</b>에서 실제 학교명을 먼저 등록해주세요.");
+                return null;
             }
 
             // 메모 입력 (선택 사항)
