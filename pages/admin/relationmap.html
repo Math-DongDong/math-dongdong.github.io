@@ -145,9 +145,6 @@
       .room-select-heading-actions > label { flex: 1 1 auto; }
       .room-select-heading-actions > button, .room-select-secondary-actions > button { flex: 0 0 auto; padding-inline: .5rem; font-size: .7rem; }
     }
-    /* ── 실시간 표시 ── */
-    .live-dot { width: 8px; height: 8px; border-radius: 9999px; background: #2F8A5F; animation: live 1.8s ease-out infinite; }
-    @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(47,138,95,.55); } 80%, 100% { box-shadow: 0 0 0 7px rgba(47,138,95,0); } }
     div.vis-tooltip { background: #fff !important; color: #1D2B26 !important; border: 1px solid #D5DEDA !important; border-radius: 8px !important;
       font-family: Pretendard, sans-serif !important; padding: 6px 10px !important; max-width: 260px; white-space: normal !important; box-shadow: 0 4px 12px rgba(0,0,0,.12); }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
@@ -283,7 +280,6 @@
           <div class="room-select-secondary-actions">
             <button id="btn-reset-pin" type="button" class="btn btn-ghost btn-sm" disabled><i class="bi bi-key" aria-hidden="true"></i> PIN 초기화</button>
             <span id="active-room-info"></span>
-            <span id="live-badge" role="status" hidden></span>
           </div>
         </div>
       </div>
@@ -299,6 +295,7 @@
         <button id="tb-toggle" type="button" class="btn btn-ghost btn-sm" hidden></button>
         <span id="tb-count" class="rounded-lg border border-line bg-page px-3 py-1.5 text-xs font-bold text-ink-muted"></span>
         <span class="flex-1"></span>
+        <button id="tb-excel" type="button" class="btn btn-ghost btn-sm" disabled>📊 응답 엑셀</button>
         <button id="tb-delete" type="button" class="btn btn-ghost btn-sm text-stamp" disabled>🗑️ 설문 삭제</button>
       </div>
       <div id="guest-box" class="rounded-xl bg-amber-soft p-3 ring-1 ring-inset ring-amber/30" hidden></div>
@@ -359,7 +356,7 @@
 <script type="module">
 import { auth, db } from '../../js/firebase-config.js';
 import {
-  escapeHtml, getDeviceId, getPhoneOwnerAuth, makeStudentKey, renderRoomEntrance, resetStudentPin, safeNumber, STUDENT_ID_PATTERN
+  customAlert, customConfirm, escapeHtml, getDeviceId, getPhoneOwnerAuth, makeStudentKey, renderRoomEntrance, resetStudentPin, safeNumber, STUDENT_ID_PATTERN
 } from '../../js/room-auth.js?v=4.2';
 import { deriveDeviceFingerprint, derivePinProof } from '../../js/student-crypto.js';
 import { closeQrPanel, openQrPanel } from '../../js/qr-modal.js';
@@ -1349,9 +1346,12 @@ function leaveTeacherView() {
   if (!$('#view-teacher').classList.contains('hidden')) show('home');
 }
 
+// 로그아웃: 학생 소감문 관리와 같은 흐름 (확인 → 로그아웃 → 새로고침)
 $('#btn-logout').addEventListener('click', async () => {
-  if (!(await mConfirm('로그아웃할까요?', '다시 들어오려면 구글 계정으로 로그인해야 해요.', { ok: '로그아웃' }))) return;
-  signOut(auth).catch(err => mAlert('로그아웃하지 못했어요', String((err && err.message) || err)));
+  const ok = await customConfirm('로그아웃', '교사 모드에서 로그아웃 하시겠습니까?');
+  if (!ok) return;
+  try { await signOut(auth); location.reload(); }
+  catch (err) { console.error('교사 로그아웃 실패:', err); customAlert('로그아웃 실패', '잠시 후 다시 시도해 주세요.'); }
 });
 
 /** 드롭다운 이름: 반을 만든 선생님 이름 (예: 김동우 선생님) + 반 코드 */
@@ -1361,7 +1361,7 @@ const ownRooms = () => S.rooms.filter(r => r.data.createdBy === (S.user && S.use
 /**
  * 반 드롭다운
  *  - 선생님: 내 반 (선생님마다 1개)
- *  - 관리자: 승인된 선생님 전체 — 반이 없는 선생님은 '반 없음'으로 보이고 고를 수 없어요. 학교 필터로 좁힙니다.
+ *  - 관리자: 승인된 선생님들의 반을 선생님 이름으로 (반이 없는 선생님은 보이지 않아요). 학교 필터로 좁힙니다.
  */
 function renderRoomOptions() {
   const list = $('#roomSelect'), schoolSelect = $('#admin-school');
@@ -1379,8 +1379,7 @@ function renderRoomOptions() {
     const teacherUids = new Set(S.teachers.map(t => t.uid));
     const teacherRows = S.teachers.filter(t => inSchool(t.school)).map(t => {
       const rooms = visible.filter(r => r.data.createdBy === t.uid);
-      return rooms.length ? rooms.map(r => `<option value="${esc(r.code)}">${esc(`${t.name || '이름 없는'} 선생님${t.school ? ` · ${t.school}` : ''} (${r.code})`)}</option>`).join('')
-        : `<option value="" disabled>${esc(`${t.name || '이름 없는'} 선생님${t.school ? ` · ${t.school}` : ''} — 반 없음`)}</option>`;
+      return rooms.map(r => `<option value="${esc(r.code)}">${esc(`${t.name || '이름 없는'} 선생님${t.school ? ` · ${t.school}` : ''} (${r.code})`)}</option>`).join('');
     }).join('');
     const others = visible.filter(r => !teacherUids.has(r.data.createdBy));   // 관리자 반 등 승인 목록 밖의 반
     html = teacherRows + (others.length ? `<optgroup label="그 밖의 반">${others.map(option).join('')}</optgroup>` : '');
@@ -1454,23 +1453,10 @@ function selectRoom(code) {
 }
 
 /* ── 실시간 동기화: 학생이 제출하면 응답 · 제출 표시가 바뀌고, 그 변화가 곧바로 교사 화면에 반영돼요 ── */
-function setLive(state) {
-  const badge = $('#live-badge');
-  if (badge.dataset.state === state) return;   // 화면낭독기가 같은 말을 되풀이하지 않도록 바뀔 때만 씁니다
-  badge.dataset.state = state;
-  badge.hidden = state === 'off';
-  if (state === 'off') return;
-  const error = state === 'error';
-  badge.className = `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${error ? 'bg-stamp-soft text-stamp' : 'bg-board-soft text-board'}`;
-  badge.innerHTML = error ? '연결 끊김' : '<span class="live-dot" aria-hidden="true"></span>실시간';
-  badge.title = error ? '반을 다시 고르면 다시 연결돼요' : '학생이 제출하면 바로 반영돼요';
-}
-
 function stopRoomSync() {
   roomUnsubs.forEach(unsub => unsub());
   roomUnsubs = [];
   clearTimeout(syncTimer);
-  setLive('off');
 }
 
 /**
@@ -1491,7 +1477,6 @@ function startRoomSync(code, quiet) {
     syncTimer = setTimeout(() => {
       if (!current()) return;
       loading(false);
-      setLive('live');
       refreshDashboard();
     }, 120);
   };
@@ -1500,7 +1485,6 @@ function startRoomSync(code, quiet) {
     failed = true;
     stopRoomSync();
     loading(false);
-    setLive('error');
     console.error('실시간 동기화 실패:', err);
     mAlert('데이터를 불러오지 못했어요', failText(err, '반을 다시 골라 주세요.'));
   };
@@ -1576,7 +1560,7 @@ function renderToolbar() {
   $('#m-prev').disabled = i <= 0;
   $('#m-next').disabled = i < 0 || i >= ms.length - 1;
   const st = $('#tb-status'), tg = $('#tb-toggle'), count = $('#tb-count');
-  if (!cur) { st.hidden = true; tg.hidden = true; count.hidden = true; $('#tb-delete').disabled = true; return; }
+  if (!cur) { st.hidden = true; tg.hidden = true; count.hidden = true; $('#tb-delete').disabled = true; $('#tb-excel').disabled = true; return; }
   const open = cur.status === 'open';
   st.hidden = false;
   st.className = `rounded-full px-3 py-1 text-xs font-bold ${open ? 'bg-board-soft text-board' : 'bg-page text-ink-muted ring-1 ring-line'}`;
@@ -1594,6 +1578,7 @@ function renderToolbar() {
   }
   countMemo = { key, n };
   $('#tb-delete').disabled = false;
+  $('#tb-excel').disabled = false;
 }
 $('#month-select').addEventListener('change', e => { S.month = e.target.value; refreshDashboard(); });
 $('#m-prev').addEventListener('click', () => { const ms = S.model.months, i = ms.findIndex(x => x.month === S.month); if (i > 0) { S.month = ms[i - 1].month; refreshDashboard(); } });
@@ -2355,13 +2340,9 @@ async function toggleEditPermission(id, allow) {
 
 function renderResponses() {
   const el = $('#tab-responses'), qs = SURVEY_CONFIG.questions;
-  if (!$('#rs-body')) {   // 틀은 한 번만 그리고, 실시간 갱신 때는 표 내용만 바꿔 검색어를 지킵니다
+  if (!$('#rs-body')) {   // 틀은 한 번만 그리고, 실시간 갱신 때는 표 내용만 바꿉니다
     el.innerHTML = `
-      <div class="flex flex-wrap items-end gap-2">
-        <div class="min-w-[200px] flex-1"><label class="field-label" for="rs-q">이름이나 이유로 찾기</label><input id="rs-q" type="search" class="field" placeholder="예: 김민준, 혼자"></div>
-        <button type="button" id="rs-excel" class="btn btn-ghost">📊 응답 엑셀</button>
-      </div>
-      <p class="mt-2 text-xs leading-relaxed text-ink-muted">이름을 누르면 학생 정보가 열려요. 이미 제출한 학생은 답을 다시 불러올 수 없어서, 고칠 게 있으면 이름 밑의 [수정 권한 주기]를 눌러 주세요. 다시 제출하면 권한은 자동으로 끝나요. 표가 넓으면 좌우로 밀어 보세요.</p>
+      <p class="text-xs leading-relaxed text-ink-muted">이름을 누르면 학생 정보가 열려요. 이미 제출한 학생은 답을 다시 불러올 수 없어서, 고칠 게 있으면 이름 밑의 [수정 권한 주기]를 눌러 주세요. 다시 제출하면 권한은 자동으로 끝나요. 표가 넓으면 좌우로 밀어 보세요.</p>
       <div class="panel mt-3 overflow-x-auto">
         <table class="w-full min-w-[880px] text-sm">
           <thead><tr>
@@ -2372,21 +2353,18 @@ function renderResponses() {
           <tbody id="rs-body"></tbody>
         </table>
       </div>`;
-    $('#rs-q').addEventListener('input', fillResponses);
-    $('#rs-excel').addEventListener('click', downloadResponsesXlsx);
   }
   fillResponses();
 }
 
 function fillResponses() {
-  const cur = S.ctx.cur, qs = SURVEY_CONFIG.questions, q = $('#rs-q').value.trim();
+  const cur = S.ctx.cur, qs = SURVEY_CONFIG.questions;
   const cell = (id, pol) => {
     const list = cur.edges.filter(e => e.s === id && e.pol === pol).sort((a, b) => a.rank - b.rank);
     return list.length ? list.map(e => `<div class="mb-1.5 last:mb-0"><span class="font-bold">${esc(studentName(e.o))}</span>
       <span class="text-xs text-board">[${esc((e.tags || []).join(', '))}]</span> <span class="text-ink-muted">${esc(e.text)}</span></div>`).join('') : dash;
   };
-  const text = id => cur.edges.filter(e => e.s === id).map(e => studentName(e.o) + ' ' + (e.tags || []).join(' ') + ' ' + e.text).join(' ') + ' ' + (cur.stats[id].climateReason || '');
-  const rows = activeStudents().filter(s => !q || s.name.includes(q) || text(s.id).includes(q));
+  const rows = activeStudents();
   $('#rs-body').innerHTML = rows.length ? rows.map(s => {
     const st = cur.stats[s.id], c = Number(st.climate);
     // 이름 밑: 제출한 학생은 [수정 권한] 버튼, 아직 안 낸 학생은 '미제출'
@@ -2402,8 +2380,9 @@ function fillResponses() {
         ${st.climateReason ? `<p class="mt-1 text-ink-muted">${esc(st.climateReason)}</p>` : ''}</td>
       ${qs.map(qq => `<td class="td">${cell(s.id, qq.pol)}</td>`).join('')}
     </tr>`;
-  }).join('') : `<tr><td class="td py-10 text-center text-ink-muted" colspan="${qs.length + 2}">조건에 맞는 학생이 없어요.</td></tr>`;
+  }).join('') : `<tr><td class="td py-10 text-center text-ink-muted" colspan="${qs.length + 2}">아직 학생이 없어요. 관리 탭에서 학생 명단을 등록해 주세요.</td></tr>`;
 }
+$('#tb-excel').addEventListener('click', downloadResponsesXlsx);
 $('#tab-responses').addEventListener('click', e => {
   const b = e.target.closest('[data-perm]');
   if (b) toggleEditPermission(b.dataset.perm, b.dataset.allow === 'on');
@@ -2467,11 +2446,7 @@ function renderManage() {
     <div class="grid gap-5 lg:grid-cols-[320px_1fr]">
       <aside class="space-y-3">
         <div class="panel p-4">
-          <div class="flex items-center justify-between gap-3">
-            <div><p class="text-xs font-bold text-ink-muted">반 코드</p><p class="font-mono text-3xl font-extrabold tracking-widest text-board">${esc(S.roomCode)}</p></div>
-            <button type="button" class="btn btn-ghost btn-sm" data-action="qr">QR 보기</button>
-          </div>
-          <label class="field-label mt-3" for="mg-memo">반 이름</label>
+          <label class="field-label" for="mg-memo">반 이름</label>
           <div class="flex gap-2"><input id="mg-memo" class="field" maxlength="60" value="${esc(room.memo || '')}"><button type="button" class="btn btn-primary mt-1.5" data-action="save-memo">저장</button></div>
           <p class="mt-2 text-xs leading-relaxed text-ink-muted">${esc(room.creatorSchool || '-')} · ${esc(room.creatorName || '-')} 선생님</p>
           <button type="button" class="btn btn-ghost btn-sm mt-3 w-full text-stamp" data-action="delete-room">🗑️ 반 삭제</button>
@@ -2561,7 +2536,6 @@ $('#tab-manage').addEventListener('click', e => {
   const b = e.target.closest('[data-action]');
   if (!b || !S.roomCode || !S.model) return;
   const action = b.dataset.action;
-  if (action === 'qr') return openQrPanel();
   if (action === 'save-memo') return saveRoomMemo();
   if (action === 'delete-room') return deleteRoomFlow();
   if (action === 'close-month') return closeMonthNow(b.dataset.month);
@@ -2586,28 +2560,26 @@ async function saveRoomMemo() {
   }
 }
 
+/** 반 삭제: 설문조사 Form의 [설문 삭제]와 같은 흐름 (확인 → 삭제 → 선택 해제 → 완료 안내) */
 async function deleteRoomFlow() {
   const code = S.roomCode;
-  const r = await mForm({
-    title: '반을 삭제할까요?',
-    message: `「${(S.room && S.room.memo) || code}」의 명단과 모든 달의 응답이 지워져요. 되돌릴 수 없으니 먼저 [📋 학생 응답] 탭의 [응답 엑셀]로 내려받아 두길 권해요. 계속하려면 아래 칸에 반 코드 “${code}”를 그대로 입력하세요.`,
-    fields: [{ name: 'confirm', label: '확인 입력', placeholder: code, maxlength: 4 }],
-    submit: '반 삭제',
-    onSubmit: async v => {
-      if (v.confirm.toUpperCase() !== code) return { error: `“${code}”를 정확히 입력하세요.` };
-      stopRoomSync();   // 지우는 동안 반쯤 지워진 데이터를 그리지 않도록
-      try { await removeRoom(code); return { ok: true }; }
-      catch (err) {
-        console.error('반 삭제 실패:', err);
-        if (S.roomCode === code) startRoomSync(code, true);
-        return { error: failText(err, '반을 삭제하지 못했어요.') };
-      }
-    }
-  });
-  if (!r || !r.ok) return;
-  toast('반을 삭제했어요');
-  selectRoom('');
-  try { await loadTeacherRooms(); } catch (err) { console.error('반 목록 조회 실패:', err); }
+  if (!code) return;
+  const ok = await customConfirm('반 삭제', `[<strong>${esc(code)}</strong>] 반과 모든 응답을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`);
+  if (!ok) return;
+  stopRoomSync();   // 지우는 동안 반쯤 지워진 데이터를 그리지 않도록
+  loading(true, '반을 삭제하는 중');
+  try {
+    await removeRoom(code);
+    loading(false);
+    selectRoom('');
+    try { await loadTeacherRooms(); } catch (err) { console.error('반 목록 조회 실패:', err); }
+    await customAlert('삭제 완료', '반과 응답을 삭제했습니다.');
+  } catch (err) {
+    loading(false);
+    console.error('반 삭제 실패:', err);
+    if (S.roomCode === code) startRoomSync(code, true);
+    await customAlert('반 삭제 실패', (err && err.message) || '권한과 네트워크를 확인해주세요.');
+  }
 }
 
 /* 반 줄의 [반 삭제] · [PIN 초기화] (학번을 입력받아 초기화) */

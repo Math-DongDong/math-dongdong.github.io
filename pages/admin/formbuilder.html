@@ -918,8 +918,9 @@
                             <span id="responseCountBadge"
                                 class="rounded-full bg-page px-3 py-1 text-sm font-bold"></span>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full border-collapse text-left text-sm">
+                        <!-- 우리반 관계지도 '학생 응답' 표와 같은 서식: 학생 한 명 = 한 줄, 이름 칸 아래에 관리 단추 -->
+                        <div class="overflow-x-auto rounded-2xl border border-line bg-white">
+                            <table class="w-full min-w-[880px] border-collapse text-left text-sm">
                                 <thead id="responseTableHead"></thead>
                                 <tbody id="responseTableBody"></tbody>
                             </table>
@@ -2411,14 +2412,17 @@
             const schema = currentRoomData.formSchema || [];
             const showStudentId = !isQuickRoom(currentRoomData);
             $('responseCountBadge').textContent = `${Math.max(Number(currentRoomData.responseCount) || 0, responses.length)}명 응답`;
-            $('responseTableHead').innerHTML = `<tr>${showStudentId ? '<th class="border-b border-line p-2">학번</th>' : ''}<th class="border-b border-line p-2">${showStudentId ? '수정일' : '제출일'}</th>${schema.map(question => {
+            // 표 서식은 우리반 관계지도의 .th / .td 와 같습니다
+            const th = 'whitespace-nowrap border-b border-line bg-page/60 px-3 py-2.5 text-left text-xs font-bold text-muted';
+            const td = 'border-b border-line/70 px-3 py-3 align-top';
+            $('responseTableHead').innerHTML = `<tr><th class="${th} w-32">${showStudentId ? '학생' : '응답'}</th>${schema.map((question, index) => {
                 const branchTag = question.branchOption && question.branchOption !== '__merge__'
                     ? `<div class="text-[10px] text-blue-600 font-normal">🌿[${escapeHtml(question.branchOption)}]</div>`
                     : '';
-                return `<th class="border-b border-line p-2">${escapeHtml(stripTags(question.title))}${branchTag}</th>`;
-            }).join('')}<th class="border-b border-line p-2">관리</th></tr>`;
+                return `<th class="${th}">${index + 1}. ${escapeHtml(stripTags(question.title))}${branchTag}</th>`;
+            }).join('')}</tr>`;
             if (!responses.length) {
-                $('responseTableBody').innerHTML = `<tr><td class="p-4 text-center text-muted" colspan="${schema.length + (showStudentId ? 3 : 2)}">아직 제출된 응답이 없습니다.</td></tr>`;
+                $('responseTableBody').innerHTML = `<tr><td class="${td} py-10 text-center text-muted" colspan="${schema.length + 1}">아직 제출된 응답이 없습니다.</td></tr>`;
                 return;
             }
             if (showStudentId) responses.sort((a, b) => String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }));
@@ -2431,11 +2435,16 @@
                     dateStr = d.toLocaleDateString('ko-KR');
                     timeStr = d.toLocaleTimeString('ko-KR');
                 }
-                const formattedDate = dateStr
-                    ? `${escapeHtml(dateStr)}<br><span class="text-xs text-muted">${escapeHtml(timeStr)}</span>`
-                    : '';
                 const responseLabel = showStudentId ? response.studentId : '익명';
-                return `<tr>${showStudentId ? `<td class="border-b border-line/60 p-2 font-medium">${escapeHtml(response.studentId)}</td>` : ''}<td class="border-b border-line/60 p-2 whitespace-nowrap leading-tight text-xs">${formattedDate}</td>${schema.map(question => `<td class="max-w-xs whitespace-pre-wrap break-words border-b border-line/60 p-2">${escapeHtml(formatAnswer(response.answers?.[question.id]))}</td>`).join('')}<td class="border-b border-line/60 p-2"><div class="flex flex-wrap justify-center gap-1"><button type="button" class="btn btn-light text-xs" data-edit-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(responseLabel)} 응답 수정"><i class="bi bi-pencil"></i> 수정</button><button type="button" class="btn btn-light text-xs text-red-700" data-delete-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(responseLabel)} 응답 삭제"><i class="bi bi-trash"></i> 삭제</button></div></td></tr>`;
+                const answer = value => {
+                    const text = formatAnswer(value);
+                    return text ? escapeHtml(text) : '<span class="text-muted/60">-</span>';
+                };
+                // 첫 칸: 학번(또는 익명) · 제출 시각 · 관리 단추 (관계지도의 이름 칸과 같은 배치)
+                const who = `<td class="${td}"><div class="font-bold tabular-nums">${escapeHtml(responseLabel)}</div>
+                    ${dateStr ? `<div class="text-xs tabular-nums text-muted">${escapeHtml(dateStr)} ${escapeHtml(timeStr)}</div>` : ''}
+                    <div class="mt-1.5 flex flex-wrap gap-1"><button type="button" class="btn btn-light !px-2 !py-1 text-xs" data-edit-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(responseLabel)} 응답 수정"><i class="bi bi-pencil"></i> 수정</button><button type="button" class="btn btn-light !px-2 !py-1 text-xs text-red-700" data-delete-response="${escapeHtml(response.id)}" aria-label="${escapeHtml(responseLabel)} 응답 삭제"><i class="bi bi-trash"></i> 삭제</button></div></td>`;
+                return `<tr>${who}${schema.map(question => `<td class="${td} max-w-xs whitespace-pre-wrap break-words">${answer(response.answers?.[question.id])}</td>`).join('')}</tr>`;
             }).join('');
 
             $('responseTableBody').querySelectorAll('[data-edit-response]').forEach(button => {
@@ -3622,8 +3631,11 @@
         });
 
 
+        // 로그아웃: 학생 소감문 관리와 같은 흐름 (확인 → 로그아웃 → 새로고침)
         $('btnTeacherLogoutHeader')?.addEventListener('click', async () => {
-            try { await signOut(auth); }
+            const ok = await customConfirm('로그아웃', '교사 모드에서 로그아웃 하시겠습니까?');
+            if (!ok) return;
+            try { await signOut(auth); location.reload(); }
             catch (error) {
                 console.error('교사 로그아웃 실패:', error);
                 showNotice('로그아웃하지 못했습니다. 잠시 후 다시 시도해주세요.', true);
