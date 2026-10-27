@@ -341,7 +341,7 @@
             rememberEntrance, saveGameNickname, generateRandomNickname,
             getDeviceId, setRoomNickname
         } from "../../../js/room-auth.js?v=4.2";
-        import { rtdbRoom, statusBadge as kitStatusBadge, bindDeleteRoomButton } from "../../../js/game-kit.js?v=4.3";
+        import { rtdbRoom, statusBadge as kitStatusBadge, bindDeleteRoomButton, renderRoomOptions } from "../../../js/game-kit.js?v=4.3";
         import { registerRoom, unregisterRoom } from "../../../js/room-registry.js";
         import {
             ref, set, get, onValue, update, remove, serverTimestamp,
@@ -752,6 +752,9 @@
                 });
                 await registerRoom(roomCode, roomKit.parts, { creatorSchool: window.currentTeacherSchool, memo });
 
+                // 관리자 학교 필터가 다른 학교로 걸려 있어도 새 방이 선택되도록 지정합니다 (game-kit)
+                const roomSelect = $('admin-room-select');
+                if (roomSelect) roomSelect.dataset.targetCode = roomCode;
                 await loadAdminRooms();
                 await customAlert("방 생성 완료",
                     `게임 방이 개설되었습니다.<br>방 코드: [ <b class="text-primary fs-3">${escapeHtml(roomCode)}</b> ]` +
@@ -768,14 +771,34 @@
             }
         });
 
+        /**
+         * 학교 필터용 학교명 채우기.
+         * ★ 블로토 방 노드에는 학교가 없어(RTDB 규칙을 건드리지 않으려고 넣지 않음)
+         *   만든 선생님의 공개 학교(teacher_directory)로 채웁니다. 못 찾으면 '학교 미지정'으로 보입니다.
+         */
+        async function fillCreatorSchools(rooms) {
+            if (!rooms.some(room => !room.data.creatorSchool && room.data.createdBy)) return;
+            try {
+                const schools = {};
+                (await getDocs(collection(fsdb, 'teacher_directory'))).forEach(d => {
+                    schools[d.id] = String((d.data() || {}).school || '').trim();
+                });
+                rooms.forEach(room => {
+                    if (!room.data.creatorSchool) {
+                        room.data = { ...room.data, creatorSchool: schools[room.data.createdBy] || '' };
+                    }
+                });
+            } catch (e) {
+                console.warn('선생님 학교 정보를 불러오지 못했습니다:', e);
+            }
+        }
+
         async function loadAdminRooms() {
             const select = $('admin-room-select');
             if (!select) return;
             if (!window.isApprovedTeacher && !window.isAdmin) return;
             try {
                 const snapshot = await get(ref(db, "blotto_rooms"));
-                const keep = select.value;
-                select.innerHTML = '<option value="">방을 선택하세요</option>';
                 const rooms = [];
                 if (snapshot.exists()) {
                     snapshot.forEach(docSnap => {
@@ -783,21 +806,18 @@
                         if (!window.isAdmin) {
                             if (data.createdBy !== window.currentTeacherUid) return;
                         }
-                        rooms.push({ id: docSnap.key, data });
+                        rooms.push({ code: docSnap.key, data });
                     });
                     rooms.sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
-                    rooms.forEach(room => {
-                        const option = document.createElement('option');
-                        option.value = room.id;
-                        const memo = room.data.memo || '';
-                        option.textContent = memo ? `${room.id} | ${memo}` : room.id;
-                        select.appendChild(option);
-                    });
-                    if (rooms.length === 0 && !window.isAdmin) {
-                        select.innerHTML = '<option value="">생성한 방이 없습니다 (새 방을 만드세요)</option>';
-                    }
-                    if (keep && rooms.some(r => r.id === keep)) select.value = keep;
                 }
+                if (window.isAdmin) await fillCreatorSchools(rooms);
+                // 관리자에게는 '전체 학교' 필터가 함께 나옵니다 (좀비헌터 등과 같은 game-kit 렌더러)
+                renderRoomOptions(
+                    select,
+                    rooms,
+                    (code, data) => data.memo ? `${code} | ${data.memo}` : code,
+                    '생성한 방이 없습니다 (새 방을 만드세요)'
+                );
             } catch (e) {
                 console.error("방 목록 로드 오류:", e);
                 await customAlert("오류", "방 목록을 불러오지 못했습니다.<br>네트워크와 접근 권한을 확인해주세요.");

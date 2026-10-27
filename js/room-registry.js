@@ -20,13 +20,11 @@
  *    { fs: '컬렉션', subs: ['students', ...] }          Firestore {컬렉션}/{코드} 문서 + 하위 컬렉션
  *    { rtdb: 'https://…', paths: ['rooms', 'room_index'] }  RTDB {경로}/{코드}
  */
+import { app, db, auth } from './firebase-config.js';
 import {
-    app, db, auth, rtdbBlotto, rtdbGridGomoku, rtdbRelativeFrequency, rtdbSentiment
-} from './firebase-config.js';
-import {
-    collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, writeBatch, serverTimestamp
+    collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
-import { getDatabase, ref, get, remove } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+import { getDatabase, ref, remove } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
 export const REGISTRY_COLLECTION = 'room_registry';
 
@@ -116,73 +114,4 @@ export async function purgeRooms(entries, onProgress) {
         await deleteDoc(doc(db, REGISTRY_COLLECTION, entries[i].id));
         if (typeof onProgress === 'function') onProgress(i + 1, entries.length);
     }
-}
-
-// =====================================================================
-// 기존 방 1회 등록 (관리자 전용)
-//
-//  이 파일이 생기기 전에 만든 방을 목록에 채웁니다.
-//  ★ 1회용입니다. 새 앱은 여기에 추가하지 않아도 됩니다 (만들 때 자동 등록).
-//    createdBy가 없는 아주 옛 방은 주인을 알 수 없어 건너뜁니다.
-//    다시 실행해도 같은 ID에 덮어쓰므로 겹치지 않습니다.
-// =====================================================================
-const LEGACY_STORES = [
-    { fs: 'plus_minus_records', subs: GAME_SUBS },
-    { fs: 'multiply_divide_records', subs: GAME_SUBS },
-    { fs: 'zombiehunter_records', subs: GAME_SUBS },
-    { fs: 'similar_triangle_records', subs: GAME_SUBS },
-    { fs: 'studentsreview_records', subs: GAME_SUBS },
-    { fs: 'custom_forms', subs: ['responses', 'students', 'guests'] },
-    { fs: 'relation_maps', subs: ['responses', 'receipts', 'students', 'guests'] },
-    { rtdb: rtdbGridGomoku, paths: ['gomoku_rooms', 'gomoku_room_index'], linked: [{ fs: 'gomoku_records', subs: ['nicknames'] }] },
-    { rtdb: rtdbRelativeFrequency, paths: ['rooms', 'room_index'], linked: [{ fs: 'rps_records', subs: ['students', 'nicknames', 'guests'] }] },
-    { rtdb: rtdbSentiment, paths: ['rooms', 'room_index'] },
-    { rtdb: rtdbBlotto, paths: ['blotto_rooms'], linked: [{ fs: 'blotto_records', subs: ['nicknames'] }] }   // 목록 인덱스 없음
-];
-
-/** @returns {number} 등록한 방 수 */
-export async function backfillRegistry() {
-    // 학교명이 비어 있는 옛 방(블로토 등)은 선생님의 지금 학교로 채웁니다.
-    const teacherSchools = {};
-    (await getDocs(collection(db, 'teachers'))).forEach(d => {
-        teacherSchools[d.id] = String((d.data() || {}).school || '').trim();
-    });
-
-    const entries = [];
-    const add = (code, parts, data) => {
-        const createdBy = String(data.createdBy || data.creatorUid || '');
-        if (!createdBy) return;
-        entries.push({
-            id: registryId(code, parts),
-            data: {
-                code, parts, createdBy,
-                creatorSchool: String(data.creatorSchool || '').trim() || teacherSchools[createdBy] || '',
-                memo: String(data.memo || '').slice(0, 40),
-                createdAt: serverTimestamp()
-            }
-        });
-    };
-
-    for (const store of LEGACY_STORES) {
-        if (store.fs) {
-            const parts = [{ fs: store.fs, subs: store.subs }];
-            (await getDocs(collection(db, store.fs))).forEach(d => add(d.id, parts, d.data() || {}));
-        } else {
-            const url = rtdbUrl(store.rtdb);
-            // 인덱스가 있으면 인덱스만, 없으면(블로토) 방 노드를 읽습니다.
-            const listPath = store.paths[1] || store.paths[0];
-            const snap = await get(ref(store.rtdb, listPath));
-            const rooms = snap.exists() ? snap.val() : {};
-            Object.keys(rooms).forEach(code => {
-                add(code, [{ rtdb: url, paths: store.paths }, ...(store.linked || [])], rooms[code] || {});
-            });
-        }
-    }
-
-    for (let start = 0; start < entries.length; start += 400) {
-        const batch = writeBatch(db);
-        entries.slice(start, start + 400).forEach(e => batch.set(doc(db, REGISTRY_COLLECTION, e.id), e.data));
-        await batch.commit();
-    }
-    return entries.length;
 }

@@ -120,7 +120,12 @@ export function bindStudentIdToggle(checkbox, targets) {
 
 const adminRoomOptionRenderers = new WeakMap();
 
-function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '') {
+/**
+ * 방 드롭다운 그리기. 관리자에게는 dashboard-header의 학교 필터(전체 학교)를 함께 보여 줍니다.
+ * firestoreRoom·rtdbRoom을 쓰지 않고 방 목록을 직접 읽는 페이지(블로토)도 이 함수로 그립니다.
+ * @param {Array} rooms [{ code, data }] — 학교 필터는 data.creatorSchool 로 나눕니다
+ */
+export function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '') {
     const schoolFilter = document.getElementById('admin-school-select');
     const schoolFilterWrap = document.getElementById('admin-school-filter');
     const isAdmin = Boolean(window.isAdmin && schoolFilter && schoolFilterWrap);
