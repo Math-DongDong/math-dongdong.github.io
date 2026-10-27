@@ -137,12 +137,31 @@ function ensureStyle() {
             background:
                 linear-gradient(135deg, transparent 0 55%, #cbd5e1 55% 62%, transparent 62% 70%, #cbd5e1 70% 77%, transparent 77%);
         }
+        /* 페이지마다 .btn 정의가 달라도 같은 크기로 보이도록 버튼 모양을 여기서 모두 정합니다 */
         #${CHIP_ID} {
             position: fixed;
             right: 16px;
             bottom: 16px;
             z-index: 1030;
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            margin: 0;
+            border: 0;
+            border-radius: 999px;
+            padding: .5rem 1rem;
+            background: #212529;
+            color: #fff;
+            font-family: Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            font-size: .875rem;
+            line-height: 1.25rem;
+            font-weight: 700;
+            white-space: nowrap;
+            box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
+            cursor: pointer;
         }
+        #${CHIP_ID}:hover { background: #424649; }
+        #${CHIP_ID}:focus-visible { outline: 3px solid rgba(240, 207, 92, .8); outline-offset: 2px; }
     `;
     document.head.appendChild(style);
 }
@@ -317,7 +336,7 @@ function showChip() {
     if (document.getElementById(CHIP_ID)) return;
     ensureStyle();
     document.body.insertAdjacentHTML('beforeend', `
-        <button type="button" id="${CHIP_ID}" class="btn btn-dark btn-sm rounded-pill shadow fw-bold px-3 py-2">
+        <button type="button" id="${CHIP_ID}">
             <i class="bi bi-qr-code"></i> QR 다시 보기
         </button>`);
     document.getElementById(CHIP_ID).addEventListener('click', () => {
