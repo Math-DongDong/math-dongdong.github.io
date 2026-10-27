@@ -341,7 +341,8 @@
             rememberEntrance, saveGameNickname, generateRandomNickname,
             getDeviceId, setRoomNickname
         } from "../../../js/room-auth.js?v=4.2";
-        import { rtdbRoom, statusBadge as kitStatusBadge, bindDeleteRoomButton } from "../../../js/game-kit.js?v=4.2";
+        import { rtdbRoom, statusBadge as kitStatusBadge, bindDeleteRoomButton } from "../../../js/game-kit.js?v=4.3";
+        import { registerRoom, unregisterRoom } from "../../../js/room-registry.js";
         import {
             ref, set, get, onValue, update, remove, serverTimestamp,
             runTransaction, onDisconnect
@@ -416,7 +417,11 @@
         function $(id) { return document.getElementById(id); }
         function serverNow() { return Date.now() + serverOffset; }
         function roomRef(code) { return ref(db, `blotto_rooms/${code}`); }
-        const roomKit = rtdbRoom(db, { roomsPath: 'blotto_rooms' });   // 방 코드 발급에만 사용 (목록 인덱스 없음)
+        // 방 코드 발급과 방 목록(room_registry) 위치에만 사용 (목록 인덱스 없음)
+        const roomKit = rtdbRoom(db, {
+            roomsPath: 'blotto_rooms', indexPath: null,
+            linked: [{ fs: 'blotto_records', subs: ['nicknames'] }]
+        });
         function playerRef(code, nick) { return ref(db, `blotto_rooms/${code}/players/${nick}`); }
         function submissionRef(code, round, nick) {
             return ref(db, `blotto_rooms/${code}/submissions/${round}/${nick}`);
@@ -745,6 +750,7 @@
                     creatorName: window.currentTeacherName || '',
                     memo
                 });
+                await registerRoom(roomCode, roomKit.parts, { creatorSchool: window.currentTeacherSchool, memo });
 
                 await loadAdminRooms();
                 await customAlert("방 생성 완료",
@@ -879,6 +885,7 @@
                 await remove(roomRef(code));                           // ① RTDB (하위 경로 포함)
                 const nickSnap = await getDocs(nicknameCollRef(code));  // ② Firestore 닉네임 이름표
                 await Promise.all(nickSnap.docs.map(d => deleteDoc(d.ref)));
+                await unregisterRoom(code, roomKit.parts);              // ③ 방 목록
             },
             onDone: async () => {
                 currentRoomCode = null;

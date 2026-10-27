@@ -1100,6 +1100,7 @@
         import { auth, db } from '../../js/firebase-config.js';
         import { customAlert, customConfirm, renderRoomEntrance } from '../../js/room-auth.js?v=4.2';
         import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
+        import { registerRoom, unregisterRoom } from '../../js/room-registry.js';
         import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
         import {
             arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, runTransaction,
@@ -1655,6 +1656,7 @@
                     }
                 }
                 if (!createdCode) throw new Error('룸 코드를 발급하지 못했습니다. 다시 시도해주세요.');
+                await registerRoom(createdCode, SURVEY_ROOM_PARTS, { creatorSchool, memo: configuration.memo });
                 if (teacher.isAdmin) {
                     $('adminSchoolSelect').value = String(creatorSchool || '').trim() || '__unspecified__';
                 }
@@ -1787,8 +1789,11 @@
             }
         }
 
+        // 방 목록(room_registry)에 적는 저장 위치 — removeSurveyRoom()이 비우는 하위 컬렉션과 같아야 합니다
+        const SURVEY_ROOM_PARTS = [{ fs: 'custom_forms', subs: ['responses', 'students', 'guests'] }];
+
         async function removeSurveyRoom(roomCode) {
-            for (const subcollection of ['responses', 'students', 'guests']) {
+            for (const subcollection of SURVEY_ROOM_PARTS[0].subs) {
                 const snapshot = await getDocs(collection(db, 'custom_forms', roomCode, subcollection));
                 for (let start = 0; start < snapshot.docs.length; start += 400) {
                     const batch = writeBatch(db);
@@ -1797,6 +1802,7 @@
                 }
             }
             await deleteDoc(doc(db, 'custom_forms', roomCode));
+            await unregisterRoom(roomCode, SURVEY_ROOM_PARTS);
         }
 
         $('deleteRoomButton').addEventListener('click', async () => {

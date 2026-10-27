@@ -31,6 +31,7 @@ import {
 import {
     escapeHtml, safeNumber, customAlert, customConfirm, customPrompt, promptRoomMode
 } from "./room-auth.js?v=4.1";
+import { GAME_SUBS, rtdbUrl, registerRoom, unregisterRoom } from "./room-registry.js";
 
 // =====================================================================
 // 1. 작은 도구들
@@ -194,8 +195,11 @@ function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '') {
 //  컬렉션 이름은 반드시 '..._records' 로 끝나야 합니다.
 //  보안 규칙이 그 패턴으로 걸려 있어서, 새 게임을 만들어도
 //  규칙을 고칠 필요가 없습니다.
+//
+//  subs: 방을 지울 때 비울 하위 컬렉션. 기본 4개 밖의 하위 컬렉션을 쓰면 여기에 더하세요.
+//        (방 목록 room_registry에도 그대로 적혀, 학교를 바꿀 때 같은 순서로 지웁니다)
 // =====================================================================
-export function firestoreRoom(collectionName) {
+export function firestoreRoom(collectionName, { subs = GAME_SUBS } = {}) {
     if (!/_records$/.test(collectionName)) {
         console.warn(`[game-kit] 컬렉션 이름은 '_records'로 끝나야 보안 규칙이 적용됩니다: ${collectionName}`);
     }
@@ -205,9 +209,10 @@ export function firestoreRoom(collectionName) {
     const nicknames = (code) => collection(fsdb, collectionName, code, "nicknames");
     const guests = (code) => collection(fsdb, collectionName, code, "guests");
     const records = (code) => collection(fsdb, collectionName, code, "records");
+    const parts = [{ fs: collectionName, subs }];
 
     return {
-        collectionName, roomDoc, students, nicknames, guests, records,
+        collectionName, roomDoc, students, nicknames, guests, records, parts,
 
         /** renderRoomEntrance 의 getRoomData 로 그대로 넘기면 됩니다. */
         getRoomData: async (code) => {
@@ -260,6 +265,7 @@ export function firestoreRoom(collectionName) {
                 memo,
                 ...extra
             });
+            await registerRoom(code, parts, { creatorSchool: teacherSchool, memo });
             const roomSelect = document.getElementById(window.dashboardSelectId || 'roomSelect');
             if (roomSelect) roomSelect.dataset.targetCode = code;
 
@@ -274,15 +280,16 @@ export function firestoreRoom(collectionName) {
         /**
          * 방 삭제.
          * ★ Firestore는 문서를 지워도 하위 컬렉션이 남습니다.
-         *   students·records·nicknames·guests 를 먼저 비워야 고아 문서가 생기지 않습니다.
+         *   subs(기본 students·records·nicknames·guests)를 먼저 비워야 고아 문서가 생기지 않습니다.
          * ★ await 없이 흘려보내면 중간에 끊겼을 때 일부만 지워집니다.
          */
         async deleteRoom(code) {
-            for (const collRef of [students, records, nicknames, guests]) {
-                const snap = await getDocs(collRef(code));
+            for (const sub of subs) {
+                const snap = await getDocs(collection(fsdb, collectionName, code, sub));
                 await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
             }
             await deleteDoc(roomDoc(code));
+            await unregisterRoom(code, parts);
         },
 
         /** 소유권 확인 — 옛 방(createdBy 없음)도 지울 수 있게 빈 값을 허용합니다. */
@@ -330,15 +337,20 @@ export function firestoreRoom(collectionName) {
 //
 //  ★ 방 목록은 반드시 인덱스 노드에서 읽습니다.
 //    rooms 전체를 읽으면 모든 방의 참가자·기록·의견까지 통째로 내려받습니다.
+//
+//  indexPath: null — 목록 인덱스가 없는 게임(블로토). 방 코드 발급(newCode)만 씁니다.
+//  linked: 같은 방 코드로 함께 쓰는 Firestore 위치 (예: [{ fs: 'rps_records', subs: ['students', 'nicknames', 'guests'] }])
+//          방 목록 room_registry에 함께 적혀, 학교를 바꿀 때 RTDB 방과 같이 지워집니다.
 // =====================================================================
-export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } = {}) {
+export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index', linked = [] } = {}) {
 
     const roomRef = (code) => ref(db, `${roomsPath}/${code}`);
     const indexRef = (code) => ref(db, code ? `${indexPath}/${code}` : indexPath);
     const childRef = (code, path) => ref(db, `${roomsPath}/${code}/${path}`);
+    const parts = [{ rtdb: rtdbUrl(db), paths: indexPath ? [roomsPath, indexPath] : [roomsPath] }, ...linked];
 
     return {
-        db, roomsPath, indexPath, roomRef, indexRef, childRef,
+        db, roomsPath, indexPath, roomRef, indexRef, childRef, parts,
 
         /**
          * 방이 살아 있는지 확인 — 학생이 읽어도 되는 한 칸만 봅니다.
@@ -370,15 +382,20 @@ export function rtdbRoom(db, { roomsPath = 'rooms', indexPath = 'room_index' } =
             };
             await set(roomRef(code), { createdAt: rtTimestamp(), ...owner, ...roomData });
             await set(indexRef(code), { createdAt: Date.now(), ...owner, ...indexData });
+            await registerRoom(code, parts, { creatorSchool: owner.creatorSchool, memo: indexData.memo });
             const roomSelect = document.getElementById(window.dashboardSelectId || 'roomSelect');
             if (roomSelect) roomSelect.dataset.targetCode = code;
             return code;
         },
 
-        /** 방 삭제 — RTDB는 부모를 지우면 하위 경로도 함께 지워집니다. */
+        /**
+         * 방 삭제 — RTDB는 부모를 지우면 하위 경로도 함께 지워집니다.
+         * ★ linked(Firestore) 쪽은 페이지가 지웁니다. 여기서는 방 목록에서만 뺍니다.
+         */
         async deleteRoom(code) {
             await remove(roomRef(code));
             await remove(indexRef(code));
+            await unregisterRoom(code, parts);
         },
 
         async canDelete(code) {

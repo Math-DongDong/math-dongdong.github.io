@@ -372,10 +372,12 @@
             isValidRtdbKey, rememberEntrance, getDeviceId, rerollRoomNickname,
             promptRoomMode, showPinResetModal
         } from "../../../js/room-auth.js?v=4.2";
-        import { rtdbRoom, statusBadge as kitStatusBadge, buildSidMap, renderGuestApproval } from "../../../js/game-kit.js?v=4.2";
+        import { rtdbRoom, statusBadge as kitStatusBadge, buildSidMap, renderGuestApproval } from "../../../js/game-kit.js?v=4.3";
+        import { unregisterRoom } from "../../../js/room-registry.js";
 
         const db = rtdbRelativeFrequency;
-        const roomKit = rtdbRoom(db);   // rooms / room_index
+        // rooms / room_index + 방 목록(room_registry)에 함께 적힐 Firestore 인증 부분
+        const roomKit = rtdbRoom(db, { linked: [{ fs: 'rps_records', subs: ['students', 'nicknames', 'guests'] }] });
 
         // =====================================================================
         // 설정값
@@ -1542,6 +1544,9 @@
                     await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
                 }
                 await deleteDoc(fsRoomDocRef(roomToDelete)).catch(() => { });
+
+                // ③ 방 목록
+                await unregisterRoom(roomToDelete, roomKit.parts);
             } catch (e) {
                 console.error(e);
                 return await customAlert("오류", "방을 삭제하지 못했습니다.");

@@ -14,7 +14,7 @@
 - Gemini 초안 생성에 쓰는 API 키는 선택적으로 이 기기의 localStorage에 저장됩니다. 학생 답변을 Gemini API로 전송하는 데 동의하는 내용만 입력하세요.
 - 우리반 관계지도(`pages/admin/relationmap.html`)는 새 컬렉션 `relation_maps`를 씁니다. 가이드북 13장의 규칙 블록을 Firestore 규칙에 **추가**해야 동작하며, 기존 규칙(특히 `student_auth`의 `gate`)은 바꾸지 않습니다.
 
-공통 모듈 주소는 `room-auth.js?v=4.2`, `game-kit.js?v=4.2`, `dashboard-header.js?v=4.2`로 맞춥니다.
+공통 모듈 주소는 `room-auth.js?v=4.2`, `game-kit.js?v=4.3`, `dashboard-header.js?v=4.2`로 맞춥니다.
 순서가 바뀌면 예전 학생 관리 화면이 새 규칙에 막힙니다.
 
 ## 과거 최초 전환 안내 (v3 → v4.1)

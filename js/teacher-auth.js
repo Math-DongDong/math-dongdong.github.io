@@ -125,7 +125,7 @@ function ensureTeacherInfoModalDOM() {
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="editTeacherSchoolInput">학교명</label>
                         <input type="text" class="form-control" id="editTeacherSchoolInput" placeholder="예: 동동중학교" maxlength="30">
-                        <small class="text-muted">담당 학생이 있으면 학교를 바꿀 수 없습니다. (학생의 학교가 선생님을 따릅니다)</small>
+                        <small class="text-muted">담당 학생이 있으면 학교를 바꿀 수 없습니다. (학생의 학교가 선생님을 따릅니다)<br>학교를 바꾸면 이전 학교로 만든 방은 확인 후 삭제됩니다.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="editTeacherNameInput">이름</label>
@@ -275,6 +275,38 @@ async function showTeacherInfoModal(user, docData) {
             } catch (e) {
                 console.error(e);
                 return fail("담당 학생을 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+            }
+        }
+
+        // 이전 학교로 만든 방은 들어오는 학생을 이전 학교로 등록하므로, 학교를 바꾸기 전에 지웁니다.
+        //  ★ 관리자는 제외합니다 (인증 방을 학교명과 무관한 '동동쌤'으로 만듭니다).
+        //  ★ 방 목록(room_registry)은 학교를 바꿀 때만 불러옵니다 — 모든 페이지가 읽을 필요는 없습니다.
+        if (school !== prevSchool && docData.status === 'approved' && !isAdminUser) {
+            let registry, staleRooms;
+            try {
+                registry = await import('./room-registry.js');
+                staleRooms = (await registry.findMyRooms())
+                    .filter(r => String(r.creatorSchool || '').trim() !== school);
+            } catch (e) {
+                console.error(e);
+                return fail("만든 방 목록을 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+            }
+            if (staleRooms.length) {
+                if (!confirm(`이전 학교(${prevSchool})로 만든 방 ${staleRooms.length}개와 그 안의 기록이 모두 삭제됩니다.\n되돌릴 수 없습니다. 계속할까요?`)) return;
+
+                const saveBtn = document.getElementById('btnSaveInfo');
+                saveBtn.disabled = true;
+                try {
+                    await registry.purgeRooms(staleRooms, (done, total) => {
+                        saveBtn.textContent = `방 삭제 중 (${done}/${total})`;
+                    });
+                } catch (e) {
+                    console.error(e);
+                    return fail("방을 모두 지우지 못해 학교를 바꾸지 않았습니다. 다시 저장하면 남은 방만 지웁니다.");
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '저장';
+                }
             }
         }
 

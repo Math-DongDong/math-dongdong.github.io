@@ -360,6 +360,7 @@ import {
 } from '../../js/room-auth.js?v=4.2';
 import { deriveDeviceFingerprint, derivePinProof } from '../../js/student-crypto.js';
 import { closeQrPanel, openQrPanel } from '../../js/qr-modal.js';
+import { registerRoom, unregisterRoom } from '../../js/room-registry.js';
 import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
 import {
   collection, deleteDoc, deleteField, doc, FieldPath, getDoc, getDocs, onSnapshot, query, runTransaction,
@@ -393,6 +394,8 @@ let authSequence = 0;
  *  1. 기본 상수
  * ═══════════════════════════════════════════════════════════════ */
 const COLLECTION = 'relation_maps';         // ★ 보안 규칙(가이드북 13장)의 컬렉션 이름과 같아야 합니다
+// 방 목록(room_registry)에 적는 저장 위치 — removeRoom()이 비우는 하위 컬렉션과 같아야 합니다
+const ROOM_PARTS = [{ fs: COLLECTION, subs: ['responses', 'receipts', 'students', 'guests'] }];
 const ADMIN_EMAIL = 'jjes0107@gmail.com';   // 화면 표시용. 실제 권한은 보안 규칙이 정합니다
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 // 응답의 '구분' 값
@@ -1726,6 +1729,7 @@ async function createRoom(memo, startNow) {
         if ((await tx.get(ref)).exists()) throw new Error('ROOM_CODE_TAKEN');
         tx.set(ref, data);
       });
+      await registerRoom(code, ROOM_PARTS, { creatorSchool: data.creatorSchool, memo });
       return code;
     } catch (err) {
       if (err.message !== 'ROOM_CODE_TAKEN') throw err;
@@ -1766,7 +1770,7 @@ $('#btn-new-room').addEventListener('click', async () => {
 
 async function removeRoom(code) {
   // Firestore는 문서를 지워도 하위 컬렉션이 남으므로 하위 문서부터 지웁니다 (규칙이 반 문서를 읽으므로 반 문서는 마지막에)
-  for (const sub of ['responses', 'receipts', 'students', 'guests']) {
+  for (const sub of ROOM_PARTS[0].subs) {
     const snap = await getDocs(collection(db, COLLECTION, code, sub));
     for (let start = 0; start < snap.docs.length; start += 400) {
       const batch = writeBatch(db);
@@ -1775,6 +1779,7 @@ async function removeRoom(code) {
     }
   }
   await deleteDoc(roomRef(code));
+  await unregisterRoom(code, ROOM_PARTS);
 }
 
 /* ── 게스트 승인 (room-auth.js 공통 흐름) ── */
