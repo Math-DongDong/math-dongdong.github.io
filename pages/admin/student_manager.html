@@ -53,6 +53,22 @@
         </div>
     </div>
 
+    <!-- 진행 표시 모달 (학생 삭제·일괄 작업 중에는 닫을 수 없습니다) -->
+    <div class="modal fade" id="progressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-body text-center py-4">
+                    <div class="spinner-border text-primary mb-3" role="status"><span class="visually-hidden">처리 중</span></div>
+                    <div class="fw-bold mb-2" id="progressTitle">처리 중</div>
+                    <div class="progress mb-1" role="progressbar" aria-label="진행률" style="height: 8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" style="width: 0%;"></div>
+                    </div>
+                    <div class="small text-muted" id="progressText"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <main class="container py-4">
         <header class="d-flex align-items-center gap-2 mb-4">
             <div class="fs-3">🧑‍🎓</div>
@@ -405,6 +421,35 @@
             }
         }
 
+        // ── 진행 표시 모달 ─────────────────────────────────────────
+        //  ★ 열리는 중에 hide()를 부르면 Bootstrap이 무시해 모달이 남으므로, shown을 기다린 뒤 닫습니다.
+        //  ★ 닫힌(hidden) 뒤에 결과 알림을 띄워야 배경이 겹치지 않습니다.
+        const progressEl = document.getElementById('progressModal');
+        let progressShown = Promise.resolve();
+
+        function openProgress(title, total) {
+            document.getElementById('progressTitle').textContent = title;
+            updateProgress(0, total);
+            progressShown = new Promise(r => progressEl.addEventListener('shown.bs.modal', r, { once: true }));
+            bootstrap.Modal.getOrCreateInstance(progressEl).show();
+        }
+
+        function updateProgress(done, total) {
+            // 한 명 작업은 진행률 대신 가득 찬 줄무늬 막대만 움직입니다
+            document.getElementById('progressBar').style.width = total > 1 ? `${Math.round(done / total * 100)}%` : '100%';
+            document.getElementById('progressText').textContent = total > 1
+                ? `${done} / ${total}명 처리됨`
+                : '잠시만 기다려 주세요';
+        }
+
+        async function closeProgress() {
+            await progressShown;
+            await new Promise(r => {
+                progressEl.addEventListener('hidden.bs.modal', r, { once: true });
+                bootstrap.Modal.getOrCreateInstance(progressEl).hide();
+            });
+        }
+
         async function handleAction(act, id) {
             const student = allStudents.find(s => s.id === id);
             if (!student) return;
@@ -422,14 +467,17 @@
             if (!p) return;
             if (!await customConfirm(p[0], p[1])) return;
 
+            openProgress(`${p[0]} 중`, 1);
             try {
                 await runOne(act, id);
                 applyLocal(act, id);
                 renderTable();
+                await closeProgress();
             } catch (e) {
                 // ★ v2에는 이 catch가 없었습니다. 권한 오류가 나도 화면에는
                 //   아무 변화가 없어 '되었는데 표시만 안 되나' 싶게 만들었습니다.
                 console.error(e);
+                await closeProgress();
                 await customAlert("처리 실패",
                     "작업을 완료하지 못했습니다.<br>교사 승인 상태와 네트워크를 확인해주세요.<br>" +
                     `<span class="text-muted small">${escapeHtml(e?.code || e?.message || '')}</span>`);
@@ -448,11 +496,14 @@
 
             let done = 0;
             const failed = [];
+            openProgress(`${kind === 'delete' ? '학생 삭제' : '일괄 작업'} 중`, ids.length);
             for (const id of ids) {
                 try { await runOne(kind, id); applyLocal(kind, id); done++; }
                 catch (e) { console.error(id, e); failed.push(id); }
+                updateProgress(done + failed.length, ids.length);
             }
             renderTable();
+            await closeProgress();
             await customAlert("완료",
                 `${done}명 처리되었습니다.` +
                 (failed.length ? `<br><span class="text-danger">실패 ${failed.length}명</span><br><span class="text-muted small">교사 승인 상태와 네트워크를 확인해주세요.</span>` : ''));

@@ -172,7 +172,112 @@ function ensureAdminAlertModalDOM() {
     </div>`);
 }
 
+function ensureRoomPurgeModalDOM() {
+    if (document.getElementById('roomPurgeModal')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal fade" id="roomPurgeModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>이전 학교 방 삭제</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex align-items-center justify-content-center flex-wrap gap-2 bg-light rounded-3 py-2 px-3 mb-3 fw-bold">
+                        <span class="text-secondary text-decoration-line-through" id="purgePrevSchool"></span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="text-primary" id="purgeNewSchool"></span>
+                    </div>
+                    <p class="mb-2">이전 학교로 만든 방 <b class="text-danger" id="purgeCount"></b>개와 그 안의 기록이 <b>모두 삭제</b>됩니다.</p>
+                    <ul class="list-group small mb-2 overflow-auto" id="purgeRoomList" style="max-height: 180px;"></ul>
+                    <small class="text-muted"><i class="bi bi-info-circle me-1"></i>삭제한 방과 기록은 되돌릴 수 없습니다.</small>
+                    <div class="mt-3 d-none" id="purgeProgressWrap">
+                        <div class="progress" role="progressbar" aria-label="방 삭제 진행률" style="height: 10px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-danger" id="purgeProgressBar" style="width: 0%;"></div>
+                        </div>
+                        <div class="small text-muted text-center mt-1" id="purgeProgressText"></div>
+                    </div>
+                    <div class="alert alert-danger small py-2 mt-3 mb-0 d-none" id="purgeError"></div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary rounded-3" id="btnPurgeCancel">취소</button>
+                    <button type="button" class="btn btn-danger rounded-3" id="btnPurgeConfirm"></button>
+                </div>
+            </div>
+        </div>
+    </div>`);
+}
+
 function modalFor(el) { return bootstrap.Modal.getOrCreateInstance(el); }
+
+/** 모달이 완전히 닫힌 뒤 이어 갑니다 — 닫히는 중에 다른 모달을 열면 배경이 남습니다. */
+function hideModalAsync(el) {
+    return new Promise(resolve => {
+        if (!el.classList.contains('show')) return resolve();
+        el.addEventListener('hidden.bs.modal', () => resolve(), { once: true });
+        modalFor(el).hide();
+    });
+}
+
+/**
+ * 학교 변경 전 '이전 학교 방 삭제' 확인 모달.
+ * 확인하면 모달 안에서 진행률을 보이며 지우고, 모두 지워야 true로 끝납니다.
+ * 실패하면 [다시 시도]로 남은 방만 이어서 지웁니다. 취소하면 false.
+ */
+function confirmRoomPurge(registry, rooms, prevSchool, school) {
+    ensureRoomPurgeModalDOM();
+    const el = document.getElementById('roomPurgeModal');
+    const $p = (id) => document.getElementById(id);
+    const confirmBtn = $p('btnPurgeConfirm');
+    const cancelBtn = $p('btnPurgeCancel');
+    const errEl = $p('purgeError');
+    const confirmLabel = '<i class="bi bi-trash3 me-1"></i>삭제하고 학교 변경';
+
+    $p('purgePrevSchool').textContent = prevSchool;
+    $p('purgeNewSchool').textContent = school;
+    $p('purgeCount').textContent = rooms.length;
+    $p('purgeRoomList').innerHTML = rooms.map(r => {
+        const first = (r.parts || [])[0] || {};
+        const store = first.fs || (first.rtdb ? new URL(first.rtdb).hostname.split('.')[0] : '');
+        return `<li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                    <span><b>${esc(r.code)}</b>${r.memo ? ` <span class="text-muted">· ${esc(r.memo)}</span>` : ''}</span>
+                    <span class="badge text-bg-light border fw-normal">${esc(store)}</span>
+                </li>`;
+    }).join('');
+    $p('purgeProgressWrap').classList.add('d-none');
+    errEl.classList.add('d-none');
+    confirmBtn.innerHTML = confirmLabel;
+    confirmBtn.disabled = cancelBtn.disabled = false;
+
+    return new Promise(resolve => {
+        let done = 0;   // 지금까지 지운 방 수 — 다시 시도하면 여기부터 이어 갑니다
+        const finish = (ok) => hideModalAsync(el).then(() => resolve(ok));
+
+        cancelBtn.onclick = () => finish(false);
+        confirmBtn.onclick = async () => {
+            confirmBtn.disabled = cancelBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>삭제 중';
+            errEl.classList.add('d-none');
+            $p('purgeProgressWrap').classList.remove('d-none');
+            const showProgress = () => {
+                $p('purgeProgressBar').style.width = `${Math.round(done / rooms.length * 100)}%`;
+                $p('purgeProgressText').textContent = `${done} / ${rooms.length}개 삭제`;
+            };
+            showProgress();
+            try {
+                await registry.purgeRooms(rooms.slice(done), () => { done++; showProgress(); });
+                finish(true);
+            } catch (e) {
+                console.error(e);
+                errEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>방을 모두 지우지 못해 <b>학교는 바뀌지 않았습니다.</b> [다시 시도]를 누르면 남은 방만 지웁니다.';
+                errEl.classList.remove('d-none');
+                confirmBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>다시 시도';
+                confirmBtn.disabled = cancelBtn.disabled = false;
+            }
+        };
+
+        modalFor(el).show();
+    });
+}
 
 async function showRegistrationModal(user) {
     ensureTeacherModalDOM();
@@ -293,20 +398,11 @@ async function showTeacherInfoModal(user, docData) {
                 return fail("만든 방 목록을 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
             }
             if (staleRooms.length) {
-                if (!confirm(`이전 학교(${prevSchool})로 만든 방 ${staleRooms.length}개와 그 안의 기록이 모두 삭제됩니다.\n되돌릴 수 없습니다. 계속할까요?`)) return;
-
-                const saveBtn = document.getElementById('btnSaveInfo');
-                saveBtn.disabled = true;
-                try {
-                    await registry.purgeRooms(staleRooms, (done, total) => {
-                        saveBtn.textContent = `방 삭제 중 (${done}/${total})`;
-                    });
-                } catch (e) {
-                    console.error(e);
-                    return fail("방을 모두 지우지 못해 학교를 바꾸지 않았습니다. 다시 저장하면 남은 방만 지웁니다.");
-                } finally {
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = '저장';
+                // 정보수정 창 위에 겹쳐 띄우면 배경이 꼬이므로 잠시 닫고, 취소하면 다시 엽니다.
+                await hideModalAsync(modalEl);
+                if (!(await confirmRoomPurge(registry, staleRooms, prevSchool, school))) {
+                    bsModal.show();
+                    return;
                 }
             }
         }
@@ -328,6 +424,7 @@ async function showTeacherInfoModal(user, docData) {
             renderNavbarAuth();
         } catch (e) {
             console.error(e);
+            if (!modalEl.classList.contains('show')) bsModal.show();   // 방 삭제 모달을 거쳐 닫혀 있을 수 있습니다
             fail("저장 중 오류가 발생했습니다.");
         }
     };
