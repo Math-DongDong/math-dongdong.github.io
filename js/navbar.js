@@ -21,6 +21,7 @@
                         { "name": "좌표평면 오목", "path": "pages/middleschool/1/gridgomoku.html" },
                         { "name": "좀비 헌터", "path": "pages/middleschool/1/zombiehunter.html" },
                         { "name": "도형의 작도", "path": "pages/middleschool/1/construction.html" },
+                        { "name": "원과 부채꼴의 넓이", "path": "pages/middleschool/1/circle_sector_area.html" },
                         { "name": "회전체 탐구", "path": "pages/middleschool/1/rotation.html" },
                         { "name": "가위바위보", "path": "pages/middleschool/1/relativefrequency.html" }
                     ]
