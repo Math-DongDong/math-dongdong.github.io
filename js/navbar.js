@@ -164,6 +164,13 @@
         document.head.appendChild(iconsLink);
     }
 
+    // 드롭다운 및 토글 동작을 위한 Bootstrap JS가 페이지에 없으면 자동 추가
+    if (typeof bootstrap === 'undefined' && !document.querySelector('script[src*="bootstrap"]')) {
+        const bsScript = document.createElement('script');
+        bsScript.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js';
+        document.head.appendChild(bsScript);
+    }
+
     // 4. HTML 동적 생성
     let menuHtml = '';
     navData.menu.forEach((group, index) => {

@@ -9,6 +9,7 @@
     <!-- Bootstrap 5 CSS CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <!-- 네비게이션바 공통 CSS 연결 -->
     <link rel="stylesheet" href="../../../css/navbar.css">
 
@@ -86,6 +87,7 @@
 </head>
 <body>
     <!-- 공통 네비게이션바 로드 -->
+    <div id="navbar-placeholder"></div>
     <script src="../../../js/navbar.js"></script>
 
     <main class="main-content">
@@ -156,7 +158,8 @@
         const rearrangeButton = document.getElementById('rearrangeButton');
 
         let scene, camera, renderer, pieceGroup;
-        let viewHalfHeight = 3.2;
+        let viewWidth = 8;   // 화면에 담아야 하는 가로 크기(월드 단위)
+        let viewHeight = 6;  // 화면에 담아야 하는 세로 크기(월드 단위)
 
         // ===== 2D 장면 초기화 =====
         function initScene() {
@@ -187,10 +190,11 @@
         // 도형 전체가 화면에 들어오도록 직교 카메라 범위 조정
         function updateCameraFrustum() {
             const aspect = wrapper.clientWidth / Math.max(wrapper.clientHeight, 1);
-            camera.top = viewHalfHeight;
-            camera.bottom = -viewHalfHeight;
-            camera.left = -viewHalfHeight * aspect;
-            camera.right = viewHalfHeight * aspect;
+            const halfHeight = Math.max(viewHeight / 2, (viewWidth / 2) / aspect);
+            camera.top = halfHeight;
+            camera.bottom = -halfHeight;
+            camera.left = -halfHeight * aspect;
+            camera.right = halfHeight * aspect;
             camera.updateProjectionMatrix();
         }
 
@@ -230,6 +234,15 @@
             const pieceHeight = WORLD_RADIUS * Math.cos(pieceAngle / 2); // 재배열 시 세로 높이
             const startAngle = Math.PI / 2 - totalAngle / 2;             // 부채꼴을 +Y축 대칭으로 배치
 
+            // 중심(꼭짓점) 기준 부채꼴 전체의 범위 → 화면 중앙에 오도록 보정
+            const halfTotalAngle = totalAngle / 2;
+            const sectorTop = WORLD_RADIUS;
+            const sectorBottom = Math.min(0, WORLD_RADIUS * Math.cos(halfTotalAngle));
+            const sectorHalfWidth = (halfTotalAngle >= Math.PI / 2)
+                ? WORLD_RADIUS
+                : WORLD_RADIUS * Math.sin(halfTotalAngle);
+            const sectorCenterY = (sectorTop + sectorBottom) / 2;
+
             const geometry = new THREE.ShapeGeometry(createPieceShape(pieceAngle), ARC_SEGMENTS);
             const edgeGeometry = new THREE.EdgesGeometry(geometry);
 
@@ -249,7 +262,7 @@
                 const startRotation = (startAngle + (i + 0.5) * pieceAngle) - Math.PI / 2;
                 const isUpward = (i % 2 === 0);
 
-                mesh.userData.startPosition = new THREE.Vector3(0, -WORLD_RADIUS * 0.45, 0);
+                mesh.userData.startPosition = new THREE.Vector3(0, -sectorCenterY, 0);
                 mesh.userData.endPosition = new THREE.Vector3(
                     i * halfChord - (pieceCount - 1) * halfChord / 2,
                     (isUpward ? 0 : pieceHeight) - pieceHeight / 2,
@@ -261,16 +274,14 @@
                 pieceGroup.add(mesh);
             }
 
-            updateViewSize(pieceCount, halfChord);
-            applyProgress();
-        }
-
-        function updateViewSize(pieceCount, halfChord) {
-            const aspect = wrapper.clientWidth / Math.max(wrapper.clientHeight, 1);
-            const neededWidth = Math.max(2 * WORLD_RADIUS, (pieceCount + 1) * halfChord) * 1.2;
-            const neededHeight = 2 * WORLD_RADIUS * 1.25;
-            viewHalfHeight = Math.max(neededHeight / 2, (neededWidth / 2) / aspect);
+            // 부채꼴 상태와 재배열 상태 중 더 큰 쪽에 맞춰 화면 범위 결정
+            const rearrangedWidth = (pieceCount + 1) * halfChord;
+            const rearrangedHeight = pieceHeight;
+            viewWidth = Math.max(2 * sectorHalfWidth, rearrangedWidth) * 1.2;
+            viewHeight = Math.max(sectorTop - sectorBottom, rearrangedHeight) * 1.25;
             updateCameraFrustum();
+
+            applyProgress();
         }
 
         // ===== 진행도에 따른 위치/회전 보간 =====
@@ -286,16 +297,24 @@
         }
 
         // ===== 슬라이더 및 버튼 이벤트 =====
+        // 슬라이더를 조작하면 부채꼴 상태로 되돌려 새 조건의 도형을 다시 그린다
+        function resetToSector() {
+            state.progress = 0;
+            state.direction = 0;
+            buildPieces();
+            updateButtonLabel();
+        }
+
         document.getElementById('angleSlider').addEventListener('input', function () {
             state.angle = Number(this.value);
             document.getElementById('angleValue').textContent = state.angle;
-            buildPieces();
+            resetToSector();
         });
 
         document.getElementById('piecesSlider').addEventListener('input', function () {
             state.pieces = Number(this.value);
             document.getElementById('piecesValue').textContent = state.pieces;
-            buildPieces();
+            resetToSector();
         });
 
         rearrangeButton.addEventListener('click', function () {
