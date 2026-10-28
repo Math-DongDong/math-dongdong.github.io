@@ -164,8 +164,13 @@
         document.head.appendChild(iconsLink);
     }
 
-    // 드롭다운 및 토글 동작을 위한 Bootstrap JS가 페이지에 없으면 자동 추가
-    if (typeof bootstrap === 'undefined' && !document.querySelector('script[src*="bootstrap"]')) {
+    // 드롭다운 및 토글 동작을 위한 Bootstrap JS 확인 (문서 전체 파싱 후 1회만 주입)
+    // 주의: 이 스크립트는 body 상단에서 실행되므로, 페이지 하단에 작성된 Bootstrap
+    // 태그를 이 시점에 발견할 수 없다. 즉시 주입하면 번들이 2번 로드되어
+    // 드롭다운 data-api 핸들러가 중복 등록되고, 열림/닫힘이 상쇄되어 동작하지 않는다.
+    function ensureBootstrapLoaded() {
+        if (typeof bootstrap !== 'undefined') return;
+        if (document.querySelector('script[src*="bootstrap"][src*=".js"]')) return;
         const bsScript = document.createElement('script');
         bsScript.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js';
         document.head.appendChild(bsScript);
@@ -330,6 +335,8 @@
         if (fsMobile) fsMobile.addEventListener('click', toggleFullscreen);
         if (fsDesktop) fsDesktop.addEventListener('click', toggleFullscreen);
         document.addEventListener('fullscreenchange', updateFullscreenUI);
+
+        ensureBootstrapLoaded();
     }
 
     if (document.readyState === 'loading') {
