@@ -283,7 +283,7 @@
           </div>
         </div>
       </div>
-      <!-- 도구 줄: 달 선택 · 상태 · 마감 · 응답 수 · 삭제 -->
+      <!-- 도구 줄: 달 선택 · 마감 · 응답 수 · 삭제 -->
       <div id="month-bar" class="panel flex flex-wrap items-center gap-2 p-3 shadow-sm" hidden>
         <span class="text-sm font-bold">설문 달</span>
         <div class="flex items-center gap-1">
@@ -291,7 +291,6 @@
           <select id="month-select" class="field mt-0 w-auto py-2 text-sm font-bold" aria-label="달 선택"></select>
           <button id="m-next" type="button" class="btn btn-ghost btn-sm px-2.5" aria-label="다음 달">›</button>
         </div>
-        <span id="tb-status" class="rounded-full px-3 py-1 text-xs font-bold"></span>
         <button id="tb-toggle" type="button" class="btn btn-ghost btn-sm" hidden></button>
         <span id="tb-count" class="rounded-lg border border-line bg-page px-3 py-1.5 text-xs font-bold text-ink-muted"></span>
         <span class="flex-1"></span>
@@ -320,7 +319,11 @@
                 <button type="button" data-mode="diff" class="tab-item">지난달과 비교</button>
               </div>
             </div>
-            <div id="map-filters" class="chip-scroll -mx-4 mb-3 flex gap-2 px-4"></div>
+            <div class="mb-3 flex items-center gap-2">
+              <div id="map-filters" class="chip-scroll flex min-w-0 flex-1 gap-2"></div>
+              <select id="map-student-filter" class="field mt-0 w-auto shrink-0 py-1.5 text-sm font-semibold"
+                aria-label="학생으로 관계 걸러 보기"></select>
+            </div>
             <div class="overflow-hidden rounded-2xl">
               <div class="relative">
                 <div id="network" class="board-canvas h-[58vh] min-h-[360px] lg:h-[68vh]" role="region"
@@ -378,6 +381,7 @@ const S = {
   filters: { pos: true, neg: true, mutualOnly: false },
   diffFilters: { added: true, removed: true, kept: true },
   focusId: null,                                         // 지도에서 강조 중인 학생
+  studentFilter: '',                                     // 고른 학생의 관계만 남겨 보기 ('' = 전체)
   net: null, nodesDS: null, edgesDS: null, netDirty: true, netKey: '', netReady: null, edgeInfo: {},
   positions: {},                                         // 반마다 학생 자리 (끌어 옮긴 자리도 기억)
   pinStates: {},                                         // 관리 탭 명단의 PIN 상태 (학번 → set · reset · none)
@@ -1537,6 +1541,7 @@ function refreshDashboard() {
   S.trend = buildTrend(S.model, S.ctx);
   if (!S.ctx.diff && S.mode === 'diff') S.mode = 'month';
   if (S.focusId && !(S.ctx.cur && S.ctx.cur.stats[S.focusId])) S.focusId = null;
+  if (S.studentFilter && !activeStudents().some(x => x.id === S.studentFilter)) S.studentFilter = '';
   // 달이나 학생이 바뀔 때만 지도를 새로 만들고, 그 밖에는 선과 색만 고칩니다
   const netKey = S.ctx.cur ? `${S.roomCode}|${S.month}|${Object.keys(S.ctx.cur.stats).join(',')}` : '';
   if (netKey !== S.netKey) { S.netKey = netKey; S.netDirty = true; }
@@ -1551,7 +1556,7 @@ function refreshDashboard() {
 let monthOptions = '';
 let countMemo = { key: '', n: 0 };
 let countFlashTimer = null;
-/** 도구 줄: ‹ 달 선택 › · 진행 상태 · [마감하기]/[다시 열기] · 응답 수 · [설문 삭제] */
+/** 도구 줄: ‹ 달 선택 › · [마감하기]/[다시 열기] · 응답 수 · [설문 삭제] */
 function renderToolbar() {
   const ms = S.model ? S.model.months : [], i = ms.findIndex(x => x.month === S.month), cur = ms[i];
   $('#month-bar').hidden = !S.room;
@@ -1562,12 +1567,9 @@ function renderToolbar() {
   $('#month-select').disabled = !ms.length;
   $('#m-prev').disabled = i <= 0;
   $('#m-next').disabled = i < 0 || i >= ms.length - 1;
-  const st = $('#tb-status'), tg = $('#tb-toggle'), count = $('#tb-count');
-  if (!cur) { st.hidden = true; tg.hidden = true; count.hidden = true; $('#tb-delete').disabled = true; $('#tb-excel').disabled = true; return; }
+  const tg = $('#tb-toggle'), count = $('#tb-count');
+  if (!cur) { tg.hidden = true; count.hidden = true; $('#tb-delete').disabled = true; $('#tb-excel').disabled = true; return; }
   const open = cur.status === 'open';
-  st.hidden = false;
-  st.className = `rounded-full px-3 py-1 text-xs font-bold ${open ? 'bg-board-soft text-board' : 'bg-page text-ink-muted ring-1 ring-line'}`;
-  st.textContent = open ? (cur.closeAt ? `진행 중 · ${scheduleLabel(cur.closeAt)} 마감 예약` : '진행 중') : (cur.saved === 'open' && cur.closeAt ? '마감 (예약 시각 지남)' : '마감');
   tg.hidden = false;
   tg.textContent = open ? '마감하기' : '다시 열기';
   count.hidden = false;
@@ -1902,7 +1904,28 @@ function renderMapControls() {
   $('#map-filters').innerHTML = S.mode === 'month'
     ? chip('pos', S.filters.pos, '즐거운 관계', CH.posBlue) + chip('neg', S.filters.neg, '불편한 관계', CH.red) + chip('mutualOnly', S.filters.mutualOnly, '서로 친구만', CH.yellow)
     : chip('added', S.diffFilters.added, '새로 생김', CH.green) + chip('removed', S.diffFilters.removed, '사라지거나 풀림', CH.gray) + chip('kept', S.diffFilters.kept, '그대로', CH.posBlue);
+  renderStudentFilter();
 }
+
+/** 알약 태그 오른쪽 끝의 학생 드롭다운: 고른 학생과 이어진 관계만 남겨 봅니다 */
+let studentFilterOptions = '';
+function renderStudentFilter() {
+  const sel = $('#map-student-filter'), list = activeStudents();
+  const options = '<option value="">전체 학생 보기</option>'
+    + list.map(x => `<option value="${esc(x.id)}">${esc(x.name)}만 보기</option>`).join('');
+  if (options !== studentFilterOptions) { sel.innerHTML = options; studentFilterOptions = options; }   // 펼쳐 둔 목록이 실시간 갱신으로 닫히지 않도록
+  if (S.studentFilter && !list.some(x => x.id === S.studentFilter)) S.studentFilter = '';
+  sel.value = S.studentFilter;
+  sel.disabled = !list.length;
+  sel.classList.toggle('ring-2', !!S.studentFilter);
+  sel.classList.toggle('ring-board', !!S.studentFilter);
+}
+$('#map-student-filter').addEventListener('change', e => {
+  S.studentFilter = e.target.value;
+  renderStudentFilter();
+  refreshGraph();
+  fitNetwork(true);
+});
 document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
   if (b.disabled || !S.ctx || !S.ctx.cur) return;
   S.mode = b.dataset.mode; renderMapControls(); renderLegend(); refreshGraph(); renderBelowMap();
@@ -2036,6 +2059,11 @@ function makeLayoutEdges() {
  */
 function graphData() {
   const nodes = makeNodes(), edges = makeEdges(), f = S.focusId;
+  const sf = nodes.some(nd => nd.id === S.studentFilter) ? S.studentFilter : '';
+  const shown = new Set([sf]);
+  if (sf) edges.forEach(e => { if (e.from === sf) shown.add(e.to); else if (e.to === sf) shown.add(e.from); });
+  edges.forEach(e => { e.hidden = !!sf && e.from !== sf && e.to !== sf; });
+  nodes.forEach(nd => { nd.hidden = !!sf && !shown.has(nd.id); });   // 필터를 풀 때 되살아나도록 항상 지정
   if (!f) return { nodes, edges };
   const near = new Set([f]);
   edges.forEach(e => { if (e.from === f) near.add(e.to); if (e.to === f) near.add(e.from); });
@@ -2109,7 +2137,13 @@ function buildNetwork() {
 
 /** 칠판을 채우도록 맞춤 (vis 기본값은 1배보다 크게 키우지 않아 그림이 작게 모입니다) */
 function fitNetwork(animate) {
-  if (S.net) S.net.fit({ maxZoomLevel: 1.4, animation: animate ? { duration: 400, easingFunction: 'easeInOutQuad' } : false });
+  if (!S.net) return;
+  const opts = { maxZoomLevel: 1.4, animation: animate ? { duration: 400, easingFunction: 'easeInOutQuad' } : false };
+  if (S.studentFilter && S.nodesDS) {
+    const visible = S.nodesDS.get({ filter: nd => !nd.hidden }).map(nd => nd.id);
+    if (visible.length) opts.nodes = visible;
+  }
+  S.net.fit(opts);
 }
 
 /* 학생 자리는 반마다 이 기기에 기억합니다 (끌어 옮긴 자리도) */
