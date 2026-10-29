@@ -974,7 +974,7 @@
       roomCode: '', room: null, responses: [], receipts: {}, roomStudents: [],   // 고른 반의 실시간 데이터
       model: null, ctx: null, trend: [], month: '', pendingMonth: '', tab: 'map',
       mode: 'month',                                         // 지도: month(이번 달) | diff(지난달과 비교)
-      filters: { pos: true, neg: true, mutualOnly: false },
+      filters: { pos: true, neg: true, mutualOnly: false, mutualNegOnly: false },
       diffFilters: { added: true, removed: true, kept: true },
       focusId: null,                                         // 지도에서 강조 중인 학생
       studentFilter: '',                                     // 고른 학생의 관계만 남겨 보기 ('' = 전체)
@@ -2498,7 +2498,7 @@
       });
       const chip = (key, on, label, color) => `<button type="button" data-filter="${key}" class="chip ${on ? 'chip-on' : ''}" aria-pressed="${on}"><span class="h-2.5 w-2.5 rounded-full ring-1 ring-black/20" style="background:${color}"></span>${label}</button>`;
       $('#map-filters').innerHTML = S.mode === 'month'
-        ? chip('pos', S.filters.pos, '즐거운 관계', CH.posBlue) + chip('neg', S.filters.neg, '불편한 관계', CH.red) + chip('mutualOnly', S.filters.mutualOnly, '서로인 관계만', CH.yellow)
+        ? chip('pos', S.filters.pos, '즐거운 관계', CH.posBlue) + chip('neg', S.filters.neg, '불편한 관계', CH.red) + chip('mutualOnly', S.filters.mutualOnly, '서로 즐거운 관계만', CH.yellow) + chip('mutualNegOnly', S.filters.mutualNegOnly, '서로 불편한 관계만', CH.red)
         : chip('added', S.diffFilters.added, '새로 생김', CH.green) + chip('removed', S.diffFilters.removed, '사라지거나 풀림', CH.gray) + chip('kept', S.diffFilters.kept, '그대로', CH.posBlue);
       renderStudentFilter();
     }
@@ -2606,21 +2606,22 @@
         es.forEach(e => {
           const rev = has[e.o + '|' + e.s + '|' + e.pol];
           const pairKey = e.pol + '|' + [e.s, e.o].sort().join('|');
+          const mutualOnlyMode = S.filters.mutualOnly || S.filters.mutualNegOnly;   // ‘서로 ~만’ 알약을 하나라도 켜면 상호선택만 보여줘요
           if (e.pol === POL.POS) {
             if (rev) {
               if (done[pairKey]) return; done[pairKey] = 1;
-              if (!S.filters.pos && !S.filters.mutualOnly) return;
+              if (!(mutualOnlyMode ? S.filters.mutualOnly : S.filters.pos)) return;
               push({ from: e.s, to: e.o, width: 3.6, color: edgeColor(CH.yellow, 0.95), title: tooltip([`${studentName(e.s)} ↔ ${studentName(e.o)}: 서로 즐거운 관계`]) }, { title: '서로 즐거운 관계예요', list: [e, rev] });
-            } else if (S.filters.pos && !S.filters.mutualOnly) {
+            } else if (S.filters.pos && !mutualOnlyMode) {
               push({ from: e.s, to: e.o, arrows: arrow, width: [0, 2.2, 1.6, 1.2][e.rank] || 1.2, color: edgeColor(CH.posBlue, 0.85), title: tooltip([`${studentName(e.s)} → ${studentName(e.o)}: ${short(e)}`]) }, { title: '즐겁게 지내는 친구로 골랐어요', list: [e] });
             }
           } else if (e.pol === POL.NEG) {
             // 서로 불편한 관계: 서로 즐거운 관계와 같은 굵은 실선, 색만 빨강
             if (rev) {
               if (done[pairKey]) return; done[pairKey] = 1;
-              if (!S.filters.neg && !S.filters.mutualOnly) return;
+              if (!(mutualOnlyMode ? S.filters.mutualNegOnly : S.filters.neg)) return;
               push({ from: e.s, to: e.o, width: 3.6, color: edgeColor(CH.red, 0.95), title: tooltip([`${studentName(e.s)} ↔ ${studentName(e.o)}: 서로 불편한 관계`]) }, { title: '서로 불편한 관계예요', list: [e, rev] });
-            } else if (S.filters.neg && !S.filters.mutualOnly) {
+            } else if (S.filters.neg && !mutualOnlyMode) {
               push({ from: e.s, to: e.o, arrows: arrow, width: 2, dashes: [6, 5], color: edgeColor(CH.red, 1), title: tooltip([`${studentName(e.s)} → ${studentName(e.o)}: ${short(e)}`]) }, { title: '마음이 불편하다고 답했어요', list: [e] });
             }
           }
