@@ -402,13 +402,14 @@
 
     // ======================= 규칙 기반 생성기 + 판정 (PRD 6장) =======================
     const CFG = {
-      1: { ang: [30, 40, 50, 60, 70, 80], sc: [[2, 1], [3, 1], [4, 1]], tp: ['SSS', 'SSS', 'SA', 'SA', 'AA'], sd: [3, 8], th: [40, 50, 60, 70, 80] },
-      2: { ang: [30, 40, 50, 60, 70, 80, 90], sc: [[2, 1], [3, 1], [3, 2], [4, 3]], tp: ['SSS', 'SSS', 'SA', 'SA', 'AA'], sd: [3, 9], th: [40, 50, 60, 70, 80, 90, 100] },
-      3: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100], sc: [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2]], tp: ['SSS', 'SA', 'AA', 'SSS', 'SA'], sd: [3, 10], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110] },
-      4: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], sc: [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2], [5, 3]], tp: null, sd: [3, 11], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110, 120] },
-      5: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], sc: [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2], [5, 3], [5, 4]], tp: null, sd: [3, 12], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110, 120] }
+      1: { ang: [30, 40, 50, 60, 70, 80], sc: [[2, 1], [3, 1], [4, 1]], cong: ['SSS', 'SA'],   // 이 중 하나를 매 보드마다 뽑아 1:1 합동 쌍으로 출제 tp: ['SSS', 'SA', 'SA', 'AA', 'AA'], sd: [3, 8], th: [40, 50, 60, 70, 80] },
+      2: { ang: [30, 40, 50, 60, 70, 80, 90], sc: [[2, 1], [3, 1], [3, 2], [4, 3]], tp: ['SSS', 'SA', 'SA', 'AA', 'AA'], sd: [3, 9], th: [40, 50, 60, 70, 80, 90, 100] },
+      3: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100], sc: [[2, 1], [3, 1], [4, 1], [3, 2], [4, 3]], tp: ['SSS', 'SA', 'AA', 'SSS', 'SA'], sd: [3, 9], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110] },
+      4: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], sc: [[2, 1], [3, 1], [4, 1], [3, 2], [4, 3]], tp: null, sd: [3, 9], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110, 120] },
+      5: { ang: [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110], sc: [[2, 1], [3, 1], [4, 1], [3, 2], [4, 3]], tp: null, sd: [3, 9], th: [35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 100, 110, 120] }
     };
     const TN = { SSS: 'SSS', SA: 'SAS', AA: 'AA' };
+    const CONN_RATE = 0.4;            // 대응점 연결 문제 출제 확률
     function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
     let R = Math.random;
     const pick = a => a[R() * a.length | 0];
@@ -444,22 +445,39 @@
     const deco = () => ({ L: shuf(LET).slice(0, 3), rot: R() * 360, mir: R() < .5 });
     function maskFor(ang, vals) { const m = [false, false, false]; if (vals) ang.forEach((x, i) => { if (vals.includes(x)) m[i] = true; }); else shuf([0, 1, 2]).slice(0, 2).forEach(i => m[i] = true); return m; }
 
-    function makePair(type, rnd) {
-      const c = CFG[rnd] || CFG[Math.min(5, Math.max(1, rnd))], [n, d] = pick(c.sc);
+    // 카드 12장 중 하나라도 uniq를 어기면 보드 전체를 버리므로, 쌍 단위로 먼저 재시도한다
+    function makePair(type, rnd, aaOrder = 0, isCong = false) {
+      let last;
+      for (let t = 0; t < 60; t++) { last = mkPair(type, rnd, aaOrder, isCong); if (uniq(last[0]) && uniq(last[1])) return last; }
+      return last;
+    }
+    function mkPair(type, rnd, aaOrder = 0, isCong = false) {
+      const c = CFG[rnd] || CFG[Math.min(5, Math.max(1, rnd))];
+      const [n, d] = isCong ? [1, 1] : pick(c.sc);             // 닮음비 1:1 → 합동 쌍
       if (type === 'AA') {
         let x, y, z; for (let t = 0; t < 200; t++) { x = pick(c.ang); y = pick(c.ang); z = 180 - x - y; if (z >= 20 && z <= 120 && Math.min(Math.abs(x - y), Math.abs(x - z), Math.abs(y - z)) >= 5) break; }
-        const A = { type, ang: shuf([x, y, z]), ...deco() }; A.show = maskFor(A.ang);
-        const B = { type, ang: shuf([x, y, z]), ...deco() }; B.show = rnd < 2 ? maskFor(B.ang, A.ang.filter((_, i) => A.show[i])) : maskFor(B.ang);   // R2부터: 나머지 한 각을 구해야 하는 경우 포함
+        const A = { type, cong: isCong, ang: shuf([x, y, z]), ...deco() }; A.show = maskFor(A.ang);
+        const B = { type, cong: isCong, ang: shuf([x, y, z]), ...deco() };
+        // R1: 두 삼각형에 같은 각 표시 / R2: 두 번째 AA만 나머지 각 계산형 / R3+: 절반 확률
+        const needsThirdAngle = rnd < 2 ? false : rnd === 2 ? aaOrder === 1 : R() < .5;
+        const shownA = A.ang.filter((_, i) => A.show[i]), key = v => [...v].sort((p, q) => p - q).join();
+        if (!needsThirdAngle) B.show = maskFor(B.ang, shownA);
+        else for (let t = 0; t < 30; t++) { B.show = maskFor(B.ang); if (key(B.ang.filter((_, i) => B.show[i])) !== key(shownA)) break; }
         return [A, B];
       }
       if (type === 'SSS') {
         let a, b, e; for (let t = 0; t < 200; t++) { a = rint(...c.sd); b = rint(...c.sd); e = rint(...c.sd); if (a + b > e && a + e > b && b + e > a && a !== b && b !== e && a !== e) break; }
-        return [{ type, s: shuf([a, b, e]).map(v => v * d), ...deco() }, { type, s: shuf([a, b, e]).map(v => v * n), ...deco() }];
+        return [{ type, cong: isCong, s: shuf([a, b, e]).map(v => v * d), ...deco() }, { type, cong: isCong, s: shuf([a, b, e]).map(v => v * n), ...deco() }];
       }
       const p = rint(...c.sd); let q = rint(...c.sd); while (q === p) q = rint(...c.sd); const th = pick(c.th), sw = R() < .5;
-      return [{ type, k: R() * 3 | 0, th, p: p * d, q: q * d, ...deco() }, { type, k: R() * 3 | 0, th, p: (sw ? q : p) * n, q: (sw ? p : q) * n, ...deco() }];
+      return [{ type, cong: isCong, k: R() * 3 | 0, th, p: p * d, q: q * d, ...deco() }, { type, cong: isCong, k: R() * 3 | 0, th, p: (sw ? q : p) * n, q: (sw ? p : q) * n, ...deco() }];
     }
     function makeDecoy(T, rnd) {
+      let last;
+      for (let t = 0; t < 40; t++) { last = mkDecoy(T, rnd); if (last && uniq(last)) return last; }
+      return last;
+    }
+    function mkDecoy(T, rnd) {
       if (T.type === 'AA') {
         const [x, y] = T.ang, y2 = y + pick(rnd < 3 ? [-10, 10] : [-5, 5, -10, 10]), z2 = 180 - x - y2; if (z2 < 15 || y2 < 15) return null;
         const ang = shuf([x, y2, z2]); return { type: 'AA', ang, show: maskFor(ang, rnd < 2 ? [x, y2] : null), ...deco(), role: 'decoy' };
@@ -478,7 +496,13 @@
         R = mulberry32(seed * 131 + t);
         const types = cfg.tp ? shuf([...cfg.tp]) : shuf(['SSS', 'SA', 'AA', pick(['SSS', 'SA', 'AA']), pick(['SSS', 'SA', 'AA'])]);
         const cards = [], twins = [];
-        types.forEach((ty, i) => { const [A, B] = makePair(ty, rnd); A.pid = B.pid = i; cards.push(A, B); twins.push(B); });
+        const congType = cfg.cong ? pick(cfg.cong) : null;     // SSS·SAS 중 하나만 합동 쌍으로 (각 50%)
+        let aaCount = 0, congDone = false;
+        types.forEach((ty, i) => {
+          const isCong = ty === congType && !congDone; if (isCong) congDone = true;
+          const [A, B] = makePair(ty, rnd, ty === 'AA' ? aaCount++ : 0, isCong);
+          A.pid = B.pid = i; cards.push(A, B); twins.push(B);
+        });
         // 닮지 않은 함정 쌍 1개: 같은 진짜 카드에서 파생한 두 장 (SSA끼리는 같은 모양이 되므로 제외)
         let ok = true; const T = pick(twins), D1 = makeDecoy(T, rnd), D2 = makeDecoy(T, rnd);
         if (!D1 || !D2 || (D1.ssa && D2.ssa)) continue;
@@ -533,7 +557,7 @@
     function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
     function startRound() {
       G.cards = genBoard(G.round, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board';
-      const task = G.round === 1 ? '닮음 조건을 맞혀 보세요.' : G.round === 2 ? '닮음 조건과 대응점 연결까지 맞혀 보세요.' : '닮음 조건, 대응점 연결, 대응변·대응각의 크기까지 맞혀 보세요.';
+      const task = G.round === 1 ? '닮음 조건을 맞혀 보세요. 닮음비가 1:1인 합동 쌍도 하나 숨어 있어요!' : G.round === 2 ? '닮음 조건을 맞혀 보세요. 가끔 대응점 연결 문제가 함께 나옵니다.' : '닮음 조건과 대응변·대응각의 크기를 맞혀 보세요. 가끔 대응점 연결 문제가 함께 나옵니다.';
       show('board-wrap', 1); msg(''); $('hint').textContent = `닮은 삼각형 카드 2장을 골라 ${task}`; updateUI(); renderBoard();
     }
     function renderBoard() {
@@ -596,13 +620,14 @@
         if (c === j) {
           G.st[jt + 'Tot']++; G.st[jt + 'Ok']++;
           G.sel = [];
-          if (G.round === 1) {          // 라운드 1: 닮음 조건만 판정
+          const askConn = Math.random() < CONN_RATE;   // 대응점 연결 단계는 40% 확률로만 출제
+          if (G.round === 1 || (!askConn && G.round < 3)) {
             gain(100, true); a.gone = b.gone = true;
-            msg(`🎉 정답! ${j} 닮음입니다. (+100점)`, 'text-success');
+            msg(`🎉 정답! ${j} 닮음입니다.${a.cong && b.cong ? ' 닮음비가 1:1이므로 두 삼각형은 합동입니다!' : ''} (+100점)`, 'text-success');
             afterAction();
             return;
           }
-          openConnModal(a, b);
+          openConnModal(a, b, !askConn);
           return;
         }
         G.st[jt + 'Tot']++;
@@ -614,11 +639,19 @@
     }
 
     // ---- 꼭짓점 기호 대응 순서 & 보너스 문제 ----
-    function openConnModal(a, b) {
+    function openConnModal(a, b, skipConn = false) {
       const m = match(a, b);
       const correctOrder = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
-      CN = { a, b, m, correctOrder, input: [], bonus: null, locked: false };
+      CN = { a, b, m, correctOrder, input: [], bonus: null, locked: false, skipped: skipConn };
       show('btn-conn-confirm', 1);
+      if (skipConn) {                 // 연결 단계를 건너뛰고 보너스 퀴즈만 출제
+        gain(100, true); a.gone = b.gone = true; updateUI();
+        $('connFeedback').innerHTML = '';
+        $('connMainSection').classList.add('d-none');
+        setupBonusSection(a, b, m);
+        bootstrap.Modal.getOrCreateInstance($('connModal')).show();
+        return;
+      }
 
       $('connCardsArea').innerHTML = `
     <div class="col-6">
@@ -716,7 +749,7 @@
       let q, ans, opts, ex, customA = {}, customB = {}, badgeA = '', badgeB = '';
 
       if (kind === 'Side') {
-        const scList = (G && G.round === 1) ? [[2, 1], [3, 1], [4, 1]] : [[2, 1], [3, 1], [3, 2], [4, 3], [5, 2]];
+        const scList = [[2, 1], [3, 1], [3, 2], [4, 3]];
         const [n, d] = scList[Math.floor(Math.random() * scList.length)];
         const b1 = rint(2, 5), b2 = rint(2, 5);
         const s1 = b1 * d, t1 = b1 * n, s2 = b2 * d, t2 = b2 * n;
@@ -782,7 +815,7 @@
   `;
 
       $('connBonusSection').classList.remove('d-none');
-      $('bonusQText').innerHTML = `<div class="mb-2"><span class="badge bg-warning text-dark me-2 fs-6">🎁 보너스 퀴즈! (+100점)</span><span class="text-success small fw-bold">대응 꼭짓점 정답 보너스!</span></div>${bonus.q}`;
+      $('bonusQText').innerHTML = `<div class="mb-2"><span class="badge bg-warning text-dark me-2 fs-6">🎁 보너스 퀴즈! (+100점)</span><span class="text-success small fw-bold">${CN.skipped ? '닮음 조건 정답 보너스!' : '대응 꼭짓점 정답 보너스!'}</span></div>${bonus.q}`;
       $('bonusOpts').innerHTML = bonus.opts.map((o, idx) => `
     <div class="col-6">
       <button class="btn btn-outline-primary w-100 py-3 fs-5 fw-bold bonus-opt-btn" data-idx="${idx}">${o.v}${bonus.kind === 'Ang' ? '°' : ''}</button>
