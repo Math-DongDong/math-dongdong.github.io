@@ -1919,8 +1919,22 @@
           if (status === 400) return '요청 형식이 올바르지 않습니다. 자료 크기를 줄이거나 다시 시도해 주세요.';
           if (status === 401 || status === 403) return 'API 키에 문제가 있습니다. AI 설정에서 키를 확인해 주세요.';
           if (status === 429) return 'Gemini 사용량 한도를 넘었습니다. 잠시 뒤 다시 시도해 주세요.';
-          if (status >= 500) return 'Gemini 서버가 응답하지 않습니다. 잠시 뒤 다시 시도해 주세요.';
-          return 'AI 호출에 실패했습니다 (코드 ' + status + ').';
+          let reason = '';
+          if (status === 503) reason = 'Gemini 서버가 지금 붐빕니다(503 과부하). 잠시 뒤 다시 보내거나 AI 설정에서 다른 모델로 바꿔 보세요.';
+          else if (status === 504) reason = 'Gemini 서버 처리 시간이 초과됐습니다(504). 첨부 자료를 줄이거나 다른 모델로 바꿔 보세요.';
+          else if (status >= 500) reason = 'Gemini 서버 오류입니다(' + status + '). 잠시 뒤 다시 시도해 주세요.';
+          else reason = 'AI 호출에 실패했습니다 (코드 ' + status + ').';
+          return reason + serverDetail(bodyText);
+        }
+
+        // Google이 돌려준 오류 원문(짧게). 혹시 모를 키 문자열은 지운다.
+        function serverDetail(bodyText) {
+          let message = '';
+          try { message = (JSON.parse(bodyText).error || {}).message || ''; } catch (err) { /* 무시 */ }
+          if (!message) return '';
+          const key = apiKey();
+          if (key) message = message.split(key).join('***');
+          return '\n(서버 응답: ' + message.slice(0, 200) + ')';
         }
 
         function buildBody(options, schemaStyle) {
@@ -2028,14 +2042,17 @@
           bump();
 
           let schemaStyle = 'modern';
+          let useStream = true;
+          let serverErrors = 0;
           let lastError = null;
 
           try {
-            for (let attempt = 0; attempt < 3; attempt++) {
+            for (let attempt = 0; attempt < 6; attempt++) {
               try {
                 const body = buildBody(options, schemaStyle);
-                bump();
-                const result = await postOnce(options.model, body, controller.signal, onProgress);
+                // 스트리밍일 때만 '응답 없음' 시간을 잰다(한 번에 받는 방식은 전체 시간 제한만).
+                if (useStream) bump(); else clearTimeout(idleTimer);
+                const result = await postOnce(options.model, body, controller.signal, useStream ? onProgress : null);
 
                 if (result.finishReason && !['STOP', 'MAX_TOKENS', null].includes(result.finishReason)) {
                   throw new Error('AI가 안전 정책으로 응답을 멈췄습니다 (' + result.finishReason + '). 요청 내용을 바꿔 보세요.');
@@ -2055,8 +2072,16 @@
                   schemaStyle = 'legacy';
                   continue;
                 }
-                if (err.status === 429 || (err.status >= 500 && err.status < 600)) {
-                  await sleep(1200 * Math.pow(2, attempt));
+                if (err.status >= 500 && err.status < 600) {
+                  // 서버 오류는 받는 방식(스트리밍↔한 번에)과 응답 형식 필드를 바꿔 가며 다시 시도한다.
+                  serverErrors++;
+                  useStream = !useStream;
+                  if (serverErrors === 2 && options.schema) schemaStyle = schemaStyle === 'modern' ? 'legacy' : 'modern';
+                  await sleep(Math.min(2000 * Math.pow(2, serverErrors - 1), 15000));
+                  continue;
+                }
+                if (err.status === 429) {
+                  await sleep(Math.min(3000 * Math.pow(2, attempt), 20000));
                   continue;
                 }
                 if (err.isJsonParse && attempt === 0) {
