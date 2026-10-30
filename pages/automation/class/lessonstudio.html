@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI 수업 교안 스튜디오</title>
+  <title>HTML 슬라이드 생성</title>
   <meta name="description"
     content="질문이나 PPT·PDF 자료로 Gemini AI가 수업 교안 슬라이드를 만들고, 편집·발표·PPTX 내려받기까지 하는 교사용 도구">
 
@@ -125,6 +125,44 @@
     .ls-quiz-explain { display: none; font-size: 24px; margin-top: 16px; color: var(--ls-muted); }
     .ls-stage.ls-reveal-answer .ls-quiz-explain { display: block; }
 
+    /* ===== 등장 효과 / 장 전환 ===== */
+    @keyframes ls-kf-fade { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes ls-kf-up { from { opacity: 0; transform: translateY(42px) } to { opacity: 1; transform: none } }
+    @keyframes ls-kf-down { from { opacity: 0; transform: translateY(-42px) } to { opacity: 1; transform: none } }
+    @keyframes ls-kf-left { from { opacity: 0; transform: translateX(-64px) } to { opacity: 1; transform: none } }
+    @keyframes ls-kf-right { from { opacity: 0; transform: translateX(64px) } to { opacity: 1; transform: none } }
+    @keyframes ls-kf-zoom { from { opacity: 0; transform: scale(.82) } to { opacity: 1; transform: none } }
+    @keyframes ls-kf-pop { 0% { opacity: 0; transform: scale(.6) } 60% { opacity: 1; transform: scale(1.06) } 100% { transform: none } }
+
+    .ls-stage.ls-animate [class*="ls-anim-"] {
+      animation-duration: .6s;
+      animation-fill-mode: both;
+      animation-timing-function: cubic-bezier(.22, .8, .3, 1);
+    }
+    .ls-stage.ls-animate .ls-anim-fade { animation-name: ls-kf-fade; }
+    .ls-stage.ls-animate .ls-anim-up { animation-name: ls-kf-up; }
+    .ls-stage.ls-animate .ls-anim-down { animation-name: ls-kf-down; }
+    .ls-stage.ls-animate .ls-anim-left { animation-name: ls-kf-left; }
+    .ls-stage.ls-animate .ls-anim-right { animation-name: ls-kf-right; }
+    .ls-stage.ls-animate .ls-anim-zoom { animation-name: ls-kf-zoom; }
+    .ls-stage.ls-animate .ls-anim-pop { animation-name: ls-kf-pop; }
+    .ls-stage.ls-animate .ls-delay-1 { animation-delay: .15s; }
+    .ls-stage.ls-animate .ls-delay-2 { animation-delay: .3s; }
+    .ls-stage.ls-animate .ls-delay-3 { animation-delay: .45s; }
+    .ls-stage.ls-animate .ls-delay-4 { animation-delay: .6s; }
+    .ls-stage.ls-animate .ls-delay-5 { animation-delay: .75s; }
+    .ls-stage.ls-animate .ls-delay-6 { animation-delay: .9s; }
+
+    .ls-stage-wrap.ls-trans-fade, .ls-slide.ls-trans-fade { animation: ls-kf-fade .45s both; }
+    .ls-stage-wrap.ls-trans-slide, .ls-slide.ls-trans-slide { animation: ls-kf-right .45s both; }
+    .ls-stage-wrap.ls-trans-zoom, .ls-slide.ls-trans-zoom { animation: ls-kf-zoom .45s both; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ls-stage.ls-animate [class*="ls-anim-"],
+      .ls-stage-wrap[class*="ls-trans-"],
+      .ls-slide[class*="ls-trans-"] { animation: none !important; }
+    }
+
     /* 이미지 자리 표시 */
     .ls-placeholder-box {
       display: flex; align-items: center; justify-content: center; text-align: center;
@@ -228,12 +266,16 @@
   <!-- ========== 화면 템플릿 ========== -->
   <template id="tpl-list">
     <section class="container py-3">
-      <header class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <div>
-          <h1 class="h3 fw-bold mb-1">AI 수업 교안</h1>
-          <p class="text-muted mb-0 small">질문이나 자료를 주면 Gemini가 수업 슬라이드를 만들어 줍니다.</p>
+      <header>
+        <div class="text-center mb-4">
+          <h1 class="fw-bold text-primary mt-2">
+            <i class="bi bi-easel2"></i> HTML 슬라이드 생성
+          </h1>
+          <p class="text-muted fs-6">
+            질문이나 PPT·PDF 자료를 주면 Gemini가 수업 슬라이드를 HTML로 만들어 줍니다.
+          </p>
         </div>
-        <div class="d-flex flex-wrap gap-2">
+        <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
           <button class="btn btn-primary" data-act="new"><i class="bi bi-magic"></i> 새 교안 만들기</button>
           <button class="btn btn-outline-primary" data-act="open-file"><i class="bi bi-folder2-open"></i> 파일 열어서 이어서 편집</button>
           <button class="btn btn-outline-secondary" data-act="settings"><i class="bi bi-gear"></i> 설정</button>
@@ -465,6 +507,7 @@
             </div>
             <span class="small text-muted" id="ls-slide-pos"></span>
             <button class="btn btn-sm btn-outline-secondary" data-act="to-abs">자유 배치로 바꾸기</button>
+            <button class="btn btn-sm btn-outline-secondary" data-act="preview-anim"><i class="bi bi-play-circle"></i> 효과 미리보기</button>
             <span class="small text-danger d-none" id="ls-overflow-flag"><i class="bi bi-exclamation-triangle"></i> 글이 넘칩니다</span>
           </div>
 
@@ -564,14 +607,18 @@
             <div class="small mt-1" id="ls-set-keystate"></div>
           </div>
 
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="ls-set-same-model">
+            <label class="form-check-label" for="ls-set-same-model">구조 잡기와 슬라이드 생성에 <b>같은 모델</b> 쓰기</label>
+          </div>
           <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label" for="ls-set-model-outline">구조 잡기용 모델</label>
-              <input class="form-control" id="ls-set-model-outline" list="ls-model-list" autocomplete="off">
-            </div>
             <div class="col-md-6">
               <label class="form-label" for="ls-set-model-slides">슬라이드 생성·수정용 모델</label>
               <input class="form-control" id="ls-set-model-slides" list="ls-model-list" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="ls-set-model-outline">구조 잡기용 모델</label>
+              <input class="form-control" id="ls-set-model-outline" list="ls-model-list" autocomplete="off">
             </div>
           </div>
           <datalist id="ls-model-list"></datalist>
@@ -592,7 +639,6 @@
           <p class="small text-muted mb-1" id="ls-set-usage"></p>
           <div class="alert alert-light border small mb-0">
             <p class="mb-1">키는 이 브라우저(localStorage)에만 저장됩니다. <b>학교 공용 PC에서는 사용 후 [키 지우기]를 눌러 주세요.</b></p>
-            <p class="mb-1">Google AI Studio에서 이 키에 <b>웹사이트 제한(https://math-dongdong.github.io/*)</b>과 사용량 한도를 걸어 두면 안전합니다.</p>
             <p class="mb-0">첨부 자료와 요청 내용은 Google Gemini API로 전송됩니다. 학생 개인정보가 담긴 자료는 첨부하지 마세요.</p>
           </div>
         </div>
@@ -758,7 +804,18 @@
       const KIT_CLASSES = ['ls-pad', 'ls-stack', 'ls-row', 'ls-center', 'ls-grid-2', 'ls-grid-3', 'ls-abs',
         'ls-kicker', 'ls-title', 'ls-subtitle', 'ls-body', 'ls-small', 'ls-muted', 'ls-accent-text',
         'ls-card', 'ls-callout', 'ls-badge', 'ls-number-big', 'ls-quote', 'ls-divider', 'ls-table',
-        'ls-quiz', 'ls-quiz-option', 'ls-quiz-explain'];
+        'ls-quiz', 'ls-quiz-option', 'ls-quiz-explain',
+        'ls-anim-fade', 'ls-anim-up', 'ls-anim-down', 'ls-anim-left', 'ls-anim-right', 'ls-anim-zoom', 'ls-anim-pop',
+        'ls-delay-1', 'ls-delay-2', 'ls-delay-3', 'ls-delay-4', 'ls-delay-5', 'ls-delay-6'];
+
+      // 등장 효과(요소)와 장 전환 효과(슬라이드)
+      const ANIM_CLASSES = ['ls-anim-fade', 'ls-anim-up', 'ls-anim-down', 'ls-anim-left',
+        'ls-anim-right', 'ls-anim-zoom', 'ls-anim-pop'];
+      const ANIM_LABELS = [['', '없음'], ['ls-anim-fade', '서서히 나타나기'], ['ls-anim-up', '아래에서 위로'],
+        ['ls-anim-down', '위에서 아래로'], ['ls-anim-left', '왼쪽에서'], ['ls-anim-right', '오른쪽에서'],
+        ['ls-anim-zoom', '확대되며'], ['ls-anim-pop', '톡 튀어나오기']];
+      const DELAY_CLASSES = ['ls-delay-1', 'ls-delay-2', 'ls-delay-3', 'ls-delay-4', 'ls-delay-5', 'ls-delay-6'];
+      const TRANSITIONS = [['none', '없음'], ['fade', '서서히'], ['slide', '옆으로 밀기'], ['zoom', '확대']];
 
       const PHASE_DEFAULT = [{ name: '도입', minutes: 5 }, { name: '전개', minutes: 30 }, { name: '정리', minutes: 10 }];
 
@@ -777,7 +834,7 @@
       };
 
       const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-      const DEFAULT_MODEL_OUTLINE = 'gemini-3.6-flash';
+      const DEFAULT_MODEL_OUTLINE = 'gemini-3.8-flash';
       const DEFAULT_MODEL_SLIDES = 'gemini-3.8-flash';
 
       /* ===== 2. Util ===== */
@@ -1244,7 +1301,7 @@
             schemaVersion: SCHEMA_VERSION,
             meta: Object.assign({
               title: '새 교안', subject: '', audience: settings.audience, minutes: settings.minutes,
-              language: 'ko', objectives: [], theme: settings.theme, tags: []
+              language: 'ko', objectives: [], theme: settings.theme, tags: [], transition: 'none'
             }, meta || {}),
             phases: JSON.parse(JSON.stringify(PHASE_DEFAULT)),
             slides: [],
@@ -1362,7 +1419,7 @@
         }
 
         // 선언부(declaration) 문자열에서 위험한 값을 뺀다.
-        function cleanDeclarations(text) {
+        function cleanDeclarations(text, keyframeMap) {
           return String(text)
             .split(';')
             .map(part => part.trim())
@@ -1376,6 +1433,12 @@
               if (/url\(/i.test(value) && !/url\(\s*['"]?data:image\//i.test(value)) return '';
               if (prop === 'position' && /fixed/i.test(value)) value = 'absolute';
               if (prop === 'behavior' || prop === '-moz-binding') return '';
+              if (keyframeMap && (prop === 'animation' || prop === 'animation-name')) {
+                Object.keys(keyframeMap).forEach(name => {
+                  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  value = value.replace(new RegExp('(^|[\\s,])' + escaped + '(?![\\w-])', 'g'), '$1' + keyframeMap[name]);
+                });
+              }
               return prop + ': ' + value;
             })
             .filter(Boolean)
@@ -1442,15 +1505,29 @@
           }).filter(Boolean).join(', ');
         }
 
-        function rulesToText(rules, scope, removed) {
+        // @keyframes 이름도 장 단위로 바꿔 다른 장과 섞이지 않게 한다.
+        function collectKeyframes(rules, sid, map) {
+          Array.from(rules || []).forEach(rule => {
+            if (rule.type === CSSRule.KEYFRAMES_RULE) map[rule.name] = 'ls-' + sid + '-' + rule.name;
+            else if (rule.type === CSSRule.MEDIA_RULE) collectKeyframes(rule.cssRules, sid, map);
+          });
+          return map;
+        }
+
+        function rulesToText(rules, scope, removed, keyframeMap) {
           let out = '';
           Array.from(rules || []).forEach(rule => {
             if (rule.type === CSSRule.STYLE_RULE) {
-              const body = cleanDeclarations(rule.style.cssText);
+              const body = cleanDeclarations(rule.style.cssText, keyframeMap);
               if (body) out += scopeSelector(rule.selectorText, scope) + ' { ' + body + ' }\n';
             } else if (rule.type === CSSRule.MEDIA_RULE) {
-              const inner = rulesToText(rule.cssRules, scope, removed);
+              const inner = rulesToText(rule.cssRules, scope, removed, keyframeMap);
               if (inner) out += '@media ' + rule.conditionText + ' {\n' + inner + '}\n';
+            } else if (rule.type === CSSRule.KEYFRAMES_RULE) {
+              const frames = Array.from(rule.cssRules || [])
+                .map(frame => frame.keyText + ' { ' + cleanDeclarations(frame.style.cssText) + ' }')
+                .join(' ');
+              out += '@keyframes ' + ((keyframeMap && keyframeMap[rule.name]) || rule.name) + ' { ' + frames + ' }\n';
             } else {
               removed.push('CSS ' + (rule.cssText || '').slice(0, 40));
             }
@@ -1463,7 +1540,8 @@
           const scope = '.ls-stage[data-ls-sid="' + sid + '"]';
           const sheet = parseSheet(css);
           if (!sheet) { removed.push('CSS(해석 실패)'); return ''; }
-          return rulesToText(sheet.cssRules, scope, removed);
+          const keyframeMap = collectKeyframes(sheet.cssRules, sid, {});
+          return rulesToText(sheet.cssRules, scope, removed, keyframeMap);
         }
 
         /* --- 공개 API --- */
@@ -1491,7 +1569,10 @@
             });
             (DOMPurify.removed || []).forEach(item => {
               const name = item.element ? item.element.nodeName : (item.attribute ? item.attribute.name : '요소');
-              removed.push(String(name).toLowerCase());
+              const lower = String(name).toLowerCase();
+              // DOMPurify가 보고하는 문서 껍데기는 사용자에게 알릴 내용이 아니다
+              if (['body', 'html', 'head', '#document', '#document-fragment'].includes(lower)) return;
+              removed.push(lower);
             });
           } else {
             clean = Util.escapeHtml(rawHtml);
@@ -1581,9 +1662,14 @@
           stage.dataset.lsSid = slide.sid;
           stage.dataset.lsMode = mode;
           if (mode === 'edit') stage.classList.add('ls-edit-mode');
+          const playAnim = !!opts.animate || mode === 'present';
+          if (playAnim) stage.classList.add('ls-animate');
           SlideRenderer.applyTheme(stage, LessonModel.theme(lesson));
           if (slide.background) stage.style.background = slide.background;
           stage.innerHTML = clean.html;
+
+          const transition = opts.transition || (lesson.meta && lesson.meta.transition);
+          if (playAnim && transition && transition !== 'none') wrap.classList.add('ls-trans-' + transition);
 
           wrap.append(styleEl, stage);
           container.append(wrap);
@@ -1759,9 +1845,11 @@
         '[슬라이드 HTML 규칙]',
         '- 크기 1280×720px 무대 하나에 들어가는 HTML 조각만 쓴다. <html>, <head>, <body>, <style>, <script> 태그를 쓰지 않는다. 장 전용 CSS는 css 필드에 따로 쓴다.',
         '- 사용할 수 있는 태그: div section header footer h1~h4 p span strong em u mark small sub sup br hr ul ol li table thead tbody tr th td img figure figcaption blockquote, 그리고 도식용 svg(path rect circle ellipse line polyline polygon text g defs linearGradient stop marker).',
-        '- 쓰지 않는 것: script, iframe, a, button, input, form, video, canvas, 이벤트 속성(onclick 등), 외부 URL(이미지·글꼴·CSS 모두), position:fixed, @import, @font-face, 애니메이션.',
+        '- 쓰지 않는 것: script, iframe, a, button, input, form, video, canvas, 이벤트 속성(onclick 등), 외부 URL(이미지·글꼴·CSS 모두), position:fixed, @import, @font-face.',
         '- 색은 CSS 변수만 쓴다: var(--ls-bg) var(--ls-fg) var(--ls-muted) var(--ls-accent) var(--ls-accent-2) var(--ls-accent-soft) var(--ls-card) var(--ls-border). (테마를 바꿔도 디자인이 유지되도록)',
         '- 공통 클래스를 우선 쓴다: ' + KIT_CLASSES.join(' ') + '.',
+        '- 등장 효과가 필요하면 요소에 ls-anim-fade / ls-anim-up / ls-anim-down / ls-anim-left / ls-anim-right / ls-anim-zoom / ls-anim-pop 중 하나를 주고, 순서를 두려면 ls-delay-1 ~ ls-delay-6 을 함께 준다. 꼭 필요하면 css 필드에 @keyframes를 직접 정의해도 된다(이름은 영문).',
+        '- 효과는 발표 화면에서만 재생되고 내보낸 PPTX·인쇄에는 마지막 모습만 남는다. 한 장에 효과는 4개 이하로 절제해서 쓴다.',
         '- 가장 바깥 요소에 ls-pad를 주고, 내용이 무대를 넘지 않게 한다. 본문 글자 24px 이상, 제목 44~60px. 한 장에 한 메시지, 본문은 60단어 이내, 목록은 3~5개.',
         '- 사진이 필요하면 <img data-ls-placeholder="들어갈 사진 설명" alt="설명"> 로 자리만 만든다(src 없음).',
         '- 도식·그래프·수직선·좌표평면·도형은 svg로 직접 그린다(viewBox 사용, 글자는 svg text).',
@@ -2480,6 +2568,9 @@
           el.querySelector('#ls-set-key').value = settings.apiKey;
           el.querySelector('#ls-set-model-outline').value = settings.modelOutline;
           el.querySelector('#ls-set-model-slides').value = settings.modelSlides;
+          const same = el.querySelector('#ls-set-same-model');
+          same.checked = settings.modelOutline === settings.modelSlides;
+          SettingsModal.syncModels(el);
           el.querySelector('#ls-set-minutes').value = settings.minutes;
           el.querySelector('#ls-set-audience').value = settings.audience;
           el.querySelector('#ls-set-pptxfont').value = settings.pptxFont;
@@ -2497,9 +2588,22 @@
           el.querySelector('#ls-set-keystate').textContent = '';
         },
 
+        // '같은 모델 쓰기'가 켜져 있으면 구조 잡기용 칸을 슬라이드용과 맞춘다.
+        syncModels(el) {
+          const same = el.querySelector('#ls-set-same-model');
+          const outline = el.querySelector('#ls-set-model-outline');
+          const slides = el.querySelector('#ls-set-model-slides');
+          outline.disabled = same.checked;
+          outline.closest('.col-md-6').classList.toggle('opacity-50', same.checked);
+          if (same.checked) outline.value = slides.value;
+        },
+
         wire(el) {
           if (SettingsModal._wired) return;
           SettingsModal._wired = true;
+
+          el.querySelector('#ls-set-same-model').addEventListener('change', () => SettingsModal.syncModels(el));
+          el.querySelector('#ls-set-model-slides').addEventListener('input', () => SettingsModal.syncModels(el));
 
           el.addEventListener('click', async event => {
             const button = event.target.closest('[data-act]');
@@ -2548,9 +2652,14 @@
 
             if (act === 'save-settings') {
               const K = SettingsStore.KEYS;
+              const slidesModel = el.querySelector('#ls-set-model-slides').value.trim() || DEFAULT_MODEL_SLIDES;
+              const sameModel = el.querySelector('#ls-set-same-model').checked;
+              const outlineModel = sameModel
+                ? slidesModel
+                : (el.querySelector('#ls-set-model-outline').value.trim() || DEFAULT_MODEL_OUTLINE);
               SettingsStore.write(K.apiKey, el.querySelector('#ls-set-key').value.trim());
-              SettingsStore.write(K.modelOutline, el.querySelector('#ls-set-model-outline').value.trim() || DEFAULT_MODEL_OUTLINE);
-              SettingsStore.write(K.modelSlides, el.querySelector('#ls-set-model-slides').value.trim() || DEFAULT_MODEL_SLIDES);
+              SettingsStore.write(K.modelOutline, outlineModel);
+              SettingsStore.write(K.modelSlides, slidesModel);
               SettingsStore.write(K.theme, el.querySelector('#ls-set-theme').value);
               SettingsStore.write(K.minutes, el.querySelector('#ls-set-minutes').value);
               SettingsStore.write(K.audience, el.querySelector('#ls-set-audience').value.trim());
@@ -3546,6 +3655,7 @@
             'prev-slide': () => EditorView.goSlide(EditorView.index - 1),
             'next-slide': () => EditorView.goSlide(EditorView.index + 1),
             'to-abs': () => EditorView.toAbsolute(),
+            'preview-anim': () => EditorView.previewAnimation(),
             'add-text': () => EditorView.addElement('text'),
             'add-image': () => document.getElementById('ls-file-image').click(),
             'add-shape': () => EditorView.chooseShape(button),
@@ -3896,6 +4006,29 @@
           EditorView.drawStage();
         },
 
+        // 등장 효과·장 전환을 그대로 한 번 재생해 본다.
+        previewAnimation() {
+          const host = document.getElementById('ls-stage-host');
+          if (!host) return;
+          EditorView.commitEditing();
+          SlideRenderer.render(EditorView.lesson, EditorView.current(), host, 'present',
+            { maxWidth: host.clientWidth || 800, animate: true });
+          clearTimeout(EditorView._previewTimer);
+          EditorView._previewTimer = setTimeout(() => {
+            if (EditorView.lesson) EditorView.drawStage();
+          }, 2400);
+        },
+
+        // 선택 요소의 효과 클래스를 하나만 남긴다.
+        setAnimClass(group, value) {
+          const element = EditorView.selectedElement();
+          if (!element) return;
+          group.forEach(name => element.classList.remove(name));
+          if (value) element.classList.add(value);
+          if (!element.getAttribute('class')) element.removeAttribute('class');
+          EditorView.commitStage();
+        },
+
         // 흐름 배치 요소를 현재 위치 그대로 절대 배치로 바꾼다.
         toAbsolute() {
           const element = EditorView.selectedElement();
@@ -4243,6 +4376,31 @@
             pane.append(fill);
           }
 
+          const anim = document.createElement('select');
+          anim.className = 'form-select form-select-sm';
+          ANIM_LABELS.forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            anim.append(option);
+          });
+          anim.value = ANIM_CLASSES.find(name => element.classList.contains(name)) || '';
+          anim.addEventListener('change', () => EditorView.setAnimClass(ANIM_CLASSES, anim.value));
+          pane.append(EditorView.field('등장 효과 (발표 중에만 재생)', anim));
+
+          const delay = document.createElement('select');
+          delay.className = 'form-select form-select-sm';
+          [['', '바로']].concat(DELAY_CLASSES.map((name, i) => [name, (i + 1) + '번째 (' + ((i + 1) * 0.15).toFixed(2) + '초 뒤)']))
+            .forEach(([value, label]) => {
+              const option = document.createElement('option');
+              option.value = value;
+              option.textContent = label;
+              delay.append(option);
+            });
+          delay.value = DELAY_CLASSES.find(name => element.classList.contains(name)) || '';
+          delay.addEventListener('change', () => EditorView.setAnimClass(DELAY_CLASSES, delay.value));
+          pane.append(EditorView.field('나타나는 순서', delay));
+
           const reset = document.createElement('button');
           reset.className = 'btn btn-sm btn-outline-danger w-100';
           reset.textContent = '서식 초기화';
@@ -4377,6 +4535,21 @@
             EditorView.drawThumbs();
           });
           pane.append(EditorView.field('테마', theme));
+
+          const transition = document.createElement('select');
+          transition.className = 'form-select form-select-sm';
+          TRANSITIONS.forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            transition.append(option);
+          });
+          transition.value = lesson.meta.transition || 'none';
+          transition.addEventListener('change', () => {
+            lesson.meta.transition = transition.value;
+            EditorView.markDirty();
+          });
+          pane.append(EditorView.field('장 전환 효과', transition));
 
           const phases = document.createElement('textarea');
           phases.className = 'form-control form-control-sm';
@@ -5189,7 +5362,7 @@
             const pptx = new PptxGenJS();
             pptx.layout = 'LAYOUT_WIDE';
             pptx.title = lesson.meta.title || '수업 교안';
-            pptx.company = 'AI 수업 교안 스튜디오';
+            pptx.company = 'HTML 슬라이드 생성';
             const fontFace = SettingsStore.all.pptxFont;
 
             for (let i = 0; i < slides.length; i++) {
@@ -5480,6 +5653,10 @@
             let rules;
             try { rules = sheet.cssRules; } catch (err) { return; }
             Array.from(rules || []).forEach(rule => {
+              if (rule.type === CSSRule.KEYFRAMES_RULE) {
+                if (/^ls-/.test(rule.name)) out += rule.cssText + '\n';
+                return;
+              }
               if (rule.type !== CSSRule.STYLE_RULE) return;
               if (!/\.ls-/.test(rule.selectorText)) return;
               if (/ls-thumb|ls-editor|ls-presenter|ls-screen|ls-handle|ls-guide|ls-path|ls-code|ls-swatch|ls-mini|ls-note|ls-print|ls-handout|ls-app|ls-fullscreen|ls-selected|ls-overflow/.test(rule.selectorText)) return;
@@ -5550,7 +5727,7 @@
             HtmlExporter.kitCss(),
             '</style></head><body>',
             '<div class="ls-bar"><span id="ls-pos"></span> · ← → 넘기기 · F 전체 화면' + (studentMode ? '' : ' · N 시나리오') + '</div>',
-            '<main class="ls-deck">', sections, '</main>',
+            '<main class="ls-deck" data-ls-transition="' + (lesson.meta.transition || 'none') + '">', sections, '</main>',
             '<script>',
             HtmlExporter.viewerScript(studentMode),
             '<\/script></body></html>'
@@ -5565,8 +5742,14 @@
             'function fit(){slides.forEach(function(s){var st=s.querySelector(".ls-stage");',
             'var k=Math.min(window.innerWidth/1280, window.innerHeight/720);st.style.transform="scale("+k+")";',
             'st.style.position="absolute";st.style.left=((window.innerWidth-1280)/2)+"px";st.style.top=((window.innerHeight-720)/2)+"px";});}',
+            'var trans=(document.querySelector(".ls-deck").getAttribute("data-ls-transition")||"none");',
             'function show(i){at=Math.max(0,Math.min(slides.length-1,i));',
-            'slides.forEach(function(s,n){s.classList.toggle("active",n===at);});',
+            'slides.forEach(function(s,n){s.classList.toggle("active",n===at);',
+            '["fade","slide","zoom"].forEach(function(t){s.classList.remove("ls-trans-"+t);});});',
+            'var cur=slides[at];',
+            'if(cur&&trans!=="none"){cur.classList.add("ls-trans-"+trans);}',
+            'var stg=cur&&cur.querySelector(".ls-stage");',
+            'if(stg){stg.classList.remove("ls-animate");void stg.offsetWidth;stg.classList.add("ls-animate");}',
             'var box=document.getElementById("ls-pos");if(box)box.textContent=(at+1)+" / "+slides.length;',
             'document.querySelectorAll(".ls-notes").forEach(function(n,k){n.hidden=!(notesOn&&k===at);});fit();}',
             'document.addEventListener("keydown",function(e){',
@@ -6333,10 +6516,10 @@
             title: '일차방정식, 왜 배울까?',
             phase: '도입',
             minutes: 4,
-            html: '<div class="ls-pad ls-stack ls-center"><p class="ls-kicker">중학교 1학년 · 수학</p>' +
-              '<h1 class="ls-title">엄마 나이가 내 나이의 3배가 되는 때는?</h1>' +
-              '<p class="ls-body ls-muted">모르는 값을 <span class="ls-accent-text">x</span>로 두면 문제가 식이 됩니다.</p>' +
-              '<div class="ls-callout ls-body">오늘의 목표 — 문장으로 된 문제를 일차방정식으로 세울 수 있다.</div></div>',
+            html: '<div class="ls-pad ls-stack ls-center"><p class="ls-kicker ls-anim-fade">중학교 1학년 · 수학</p>' +
+              '<h1 class="ls-title ls-anim-up ls-delay-1">엄마 나이가 내 나이의 3배가 되는 때는?</h1>' +
+              '<p class="ls-body ls-muted ls-anim-up ls-delay-2">모르는 값을 <span class="ls-accent-text">x</span>로 두면 문제가 식이 됩니다.</p>' +
+              '<div class="ls-callout ls-body ls-anim-up ls-delay-3">오늘의 목표 — 문장으로 된 문제를 일차방정식으로 세울 수 있다.</div></div>',
             script: '여러분, 지금 엄마 나이가 내 나이의 3배가 되는 때는 언제일까요? 머릿속으로 한번 세어 보세요. 세기 어렵죠? 오늘은 이런 문제를 식 하나로 푸는 방법을 배웁니다.',
             memo: '준비물: 없음. 오개념 — x를 엄마 나이로 두는 학생이 많음.'
           },
@@ -6346,9 +6529,9 @@
             minutes: 6,
             html: '<div class="ls-pad ls-stack"><p class="ls-kicker">전개</p><h2 class="ls-title">식 세우는 3단계</h2>' +
               '<div class="ls-grid-3">' +
-              '<div class="ls-card"><div class="ls-number-big">1</div><p class="ls-body">구하려는 값을 <b>x</b>로 둔다</p></div>' +
-              '<div class="ls-card"><div class="ls-number-big">2</div><p class="ls-body">문장을 <b>등식</b>으로 옮긴다</p></div>' +
-              '<div class="ls-card"><div class="ls-number-big">3</div><p class="ls-body">풀고 <b>말이 되는지</b> 확인</p></div>' +
+              '<div class="ls-card ls-anim-pop ls-delay-1"><div class="ls-number-big">1</div><p class="ls-body">구하려는 값을 <b>x</b>로 둔다</p></div>' +
+              '<div class="ls-card ls-anim-pop ls-delay-2"><div class="ls-number-big">2</div><p class="ls-body">문장을 <b>등식</b>으로 옮긴다</p></div>' +
+              '<div class="ls-card ls-anim-pop ls-delay-3"><div class="ls-number-big">3</div><p class="ls-body">풀고 <b>말이 되는지</b> 확인</p></div>' +
               '</div></div>',
             script: '식을 세우는 순서는 딱 세 단계예요. 첫째, 구하려는 값을 x로 둡니다. 둘째, 문장을 등식으로 옮깁니다. 셋째, 푼 뒤에 말이 되는지 확인합니다.',
             memo: '3단계를 판서로 함께 적게 하기.'
@@ -6393,7 +6576,7 @@
             title: '예시 교안 — 일차방정식의 활용',
             subject: '수학', audience: '중학교 1학년', minutes: 20,
             objectives: ['문장제를 일차방정식으로 세울 수 있다', '해가 문제 상황에 맞는지 확인할 수 있다'],
-            tags: ['예시', '일차방정식']
+            tags: ['예시', '일차방정식'], transition: 'fade'
           });
           SampleLesson.slides.forEach((item, index) => {
             const sid = 's' + Util.pad(index + 1, 2);
