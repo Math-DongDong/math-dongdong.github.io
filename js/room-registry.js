@@ -18,6 +18,7 @@
  *
  *  parts — 방 하나를 이루는 저장 위치 (적힌 순서대로 지웁니다)
  *    { fs: '컬렉션', subs: ['students', ...] }          Firestore {컬렉션}/{코드} 문서 + 하위 컬렉션
+ *      + storage: '폴더'                                  (선택) Storage {폴더}/{코드} 아래 파일 — Firestore보다 먼저 지웁니다
  *    { rtdb: 'https://…', paths: ['rooms', 'room_index'] }  RTDB {경로}/{코드}
  */
 import { app, db, auth } from './firebase-config.js';
@@ -78,9 +79,14 @@ export async function unregisterRoom(code, parts) {
  * 방 하나를 저장 위치마다 지웁니다.
  * ★ Firestore는 하위 컬렉션 → 방 문서 순서입니다 (하위 규칙이 방 문서를 읽습니다).
  * ★ 방 문서가 없는 위치(이름표만 두는 유형 D)도 있어, 있을 때만 지웁니다.
+ * ★ Storage 파일은 규칙이 방 문서로 소유자를 확인하므로 Firestore보다 먼저 지웁니다.
  */
 export async function purgeRoomParts(code, parts) {
     for (const part of parts || []) {
+        if (part.storage) {
+            const { deleteStorageFolder } = await import('./firebase-storage.js');
+            await deleteStorageFolder(`${part.storage}/${code}`);
+        }
         if (part.fs) {
             for (const sub of part.subs || []) {
                 const snap = await getDocs(collection(db, part.fs, code, sub));
