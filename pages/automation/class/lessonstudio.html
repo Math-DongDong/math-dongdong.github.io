@@ -367,34 +367,13 @@
           placeholder="어떤 슬라이드를 만들까요?"></textarea>
 
         <div class="border-top mt-2 pt-2 px-1 d-none" data-role="options">
-          <div class="row g-2">
-            <div class="col-6 col-sm-3">
-              <label class="form-label small mb-1">장 수</label>
-              <input type="number" class="form-control form-control-sm" data-opt="count" min="0" max="80" placeholder="자동">
-            </div>
-            <div class="col-6 col-sm-3">
-              <label class="form-label small mb-1">말투</label>
-              <select class="form-select form-select-sm" data-opt="tone">
-                <option value="설명형">설명형</option>
-                <option value="대화형">대화형</option>
-                <option value="질문형">질문형</option>
-              </select>
-            </div>
-          </div>
-          <div class="d-flex flex-wrap gap-3 mt-2 small">
-            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-opt="script" checked> <span class="form-check-label">발표 대본(시나리오) 생성</span></label>
-            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-opt="quiz"> <span class="form-check-label">확인 문제(퀴즈) 장 포함</span></label>
-            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-opt="summary"> <span class="form-check-label">마무리 요약 장 포함</span></label>
-            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-opt="math"> <span class="form-check-label">수식 사용</span></label>
-            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-opt="keep"> <span class="form-check-label">자료 보관(나중에 AI 수정에 재사용)</span></label>
-          </div>
-          <div class="small mt-2 mb-1">테마 <span class="text-muted">(고른 테마는 다음에도 기본으로 쓰입니다)</span></div>
+          <div class="small mb-1">테마 <span class="text-muted">(고른 테마는 다음에도 기본으로 쓰입니다)</span></div>
           <div data-opt="theme"></div>
         </div>
 
         <div class="d-flex align-items-center gap-1 mt-1">
           <button type="button" class="btn btn-sm btn-light" data-role="attach" title="자료 첨부 (PDF·PPTX·이미지·TXT/MD)"><i class="bi bi-paperclip"></i></button>
-          <button type="button" class="btn btn-sm btn-light" data-role="toggle-options"><i class="bi bi-sliders"></i> 옵션</button>
+          <button type="button" class="btn btn-sm btn-light" data-role="toggle-options"><i class="bi bi-palette"></i> 테마</button>
           <span class="small text-muted ms-2 d-none d-sm-inline">Enter 보내기 · Shift+Enter 줄바꿈</span>
           <button type="button" class="btn btn-primary rounded-circle ms-auto ls-send" data-role="send" title="보내기"><i class="bi bi-arrow-up"></i></button>
         </div>
@@ -1930,7 +1909,9 @@
       };
 
       const GeminiService = (function () {
-        const CALL_TIMEOUT_MS = 120000;
+        // 긴 응답도 글자가 계속 들어오는 동안은 기다리고, 아무 응답 없이 멈춘 경우만 끊는다.
+        const IDLE_TIMEOUT_MS = 180000;    // 첫 글자(생각하는 시간 포함) 또는 다음 글자까지
+        const TOTAL_TIMEOUT_MS = 900000;   // 한 번 호출의 최대 시간
 
         function apiKey() { return SettingsStore.apiKey(); }
 
@@ -2036,7 +2017,15 @@
             if (outerSignal.aborted) controller.abort();
             else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });
           }
-          const timer = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
+          let timedOut = '';
+          const totalTimer = setTimeout(() => { timedOut = 'total'; controller.abort(); }, TOTAL_TIMEOUT_MS);
+          let idleTimer = null;
+          const bump = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => { timedOut = 'idle'; controller.abort(); }, IDLE_TIMEOUT_MS);
+          };
+          const onProgress = length => { bump(); if (options.onProgress) options.onProgress(length); };
+          bump();
 
           let schemaStyle = 'modern';
           let lastError = null;
@@ -2045,15 +2034,18 @@
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const body = buildBody(options, schemaStyle);
-                const result = await postOnce(options.model, body, controller.signal, options.onProgress);
+                bump();
+                const result = await postOnce(options.model, body, controller.signal, onProgress);
 
                 if (result.finishReason && !['STOP', 'MAX_TOKENS', null].includes(result.finishReason)) {
                   throw new Error('AI가 안전 정책으로 응답을 멈췄습니다 (' + result.finishReason + '). 요청 내용을 바꿔 보세요.');
                 }
                 return parseJson(result.text);
               } catch (err) {
-                if (controller.signal.aborted && !(outerSignal && outerSignal.aborted)) {
-                  throw new Error('AI 응답이 120초를 넘겨 중단했습니다.');
+                if (timedOut && !(outerSignal && outerSignal.aborted)) {
+                  throw new Error(timedOut === 'idle'
+                    ? 'AI가 3분 동안 응답하지 않아 중단했습니다. 잠시 뒤 다시 시도하거나 더 빠른 모델(예: flash)로 바꿔 보세요.'
+                    : 'AI 응답이 15분을 넘겨 중단했습니다. 첨부 자료를 줄이거나 장 수를 나눠 요청해 보세요.');
                 }
                 if (err.name === 'AbortError') throw new Error('중단했습니다.');
                 lastError = err;
@@ -2078,7 +2070,8 @@
             }
             throw lastError || new Error('AI 호출에 실패했습니다.');
           } finally {
-            clearTimeout(timer);
+            clearTimeout(totalTimer);
+            clearTimeout(idleTimer);
           }
         }
 
@@ -2625,7 +2618,6 @@
           const optionsToggle = box.querySelector('[data-role="toggle-options"]');
           const sendButton = box.querySelector('[data-role="send"]');
           const themeHost = box.querySelector('[data-opt="theme"]');
-          const opt = name => box.querySelector('[data-opt="' + name + '"]');
           if (options.placeholder) input.placeholder = options.placeholder;
           // 고른 테마는 다음 새 슬라이드의 기본값으로 기억한다.
           ThemePicker.build(themeHost, SettingsStore.all.theme, name => SettingsStore.write(SettingsStore.KEYS.theme, name));
@@ -2708,27 +2700,11 @@
             },
 
             readMeta() {
-              return {
-                slideCount: parseInt(opt('count').value, 10) || 0,
-                tone: opt('tone').value,
-                theme: ThemePicker.value(themeHost),
-                withScript: opt('script').checked,
-                withQuiz: opt('quiz').checked,
-                withSummary: opt('summary').checked,
-                withMath: opt('math').checked,
-                keepSources: opt('keep').checked
-              };
+              return { theme: ThemePicker.value(themeHost) };
             },
 
             setMeta(meta) {
-              opt('count').value = meta.slideCount || '';
-              opt('tone').value = meta.tone || '설명형';
               ThemePicker.select(themeHost, THEMES[meta.theme] ? meta.theme : SettingsStore.all.theme);
-              opt('script').checked = meta.withScript !== false;
-              opt('quiz').checked = !!meta.withQuiz;
-              opt('summary').checked = !!meta.withSummary;
-              opt('math').checked = !!meta.withMath;
-              opt('keep').checked = !!meta.keepSources;
             },
 
             send() {
@@ -2936,13 +2912,9 @@
 
         metaText(meta) {
           return [
-            '- 장 수: ' + (meta.slideCount ? meta.slideCount + '장' : '요청 내용에 맞게 자동'),
-            '- 말투: ' + meta.tone,
+            '- 장 수·말투·확인 문제·요약 장·수식 사용: 요청에 적힌 대로 따르고, 없으면 내용에 맞게 정한다',
             '- 테마: ' + (THEMES[meta.theme] ? THEMES[meta.theme].label : meta.theme),
-            '- 발표 대본(시나리오) 생성: ' + (meta.withScript ? '예' : '아니오'),
-            '- 확인 문제(퀴즈) 장: ' + (meta.withQuiz ? '포함' : '요청에 있을 때만'),
-            '- 마무리 요약 장: ' + (meta.withSummary ? '포함' : '요청에 있을 때만'),
-            '- 수식 사용: ' + (meta.withMath ? '예' : '아니오')
+            '- 발표 대본(script): 장마다 작성'
           ].join('\n');
         },
 
@@ -3214,7 +3186,7 @@
                 phase: item.phase || chunk[i].phase,
                 html: clean.html,
                 css: clean.css,
-                script: meta.withScript ? (item.script || '') : '',
+                script: item.script || '',
                 memo: item.memo || '',
                 minutes: item.minutes || chunk[i].minutes,
                 sources: item.sources || [],
@@ -3246,13 +3218,6 @@
             root.querySelector('#ls-gen-card').classList.add('d-none');
             NewLessonView.setBusy(false);
             return;
-          }
-
-          if (meta.keepSources && NewLessonView.sources.length) {
-            lesson.keptSources = true;
-            for (const source of NewLessonView.sources) {
-              await LessonStore.saveAsset(lesson.id, source.file, {});
-            }
           }
 
           await LessonStore.putLesson(lesson);
@@ -4792,7 +4757,6 @@
             return wrap;
           };
           pane.append(makeCheck('ls-ai-keep-design', '디자인 유지(내용만 고치기)', false));
-          pane.append(makeCheck('ls-ai-use-sources', '첨부했던 자료 다시 참고', !!EditorView.lesson.keptSources));
 
           const run = document.createElement('button');
           run.className = 'btn btn-primary btn-sm w-100 mt-2';
