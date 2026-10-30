@@ -2177,13 +2177,33 @@
                     const d = btn.dataset.date;
                     const act = activityList.find(a => a.date === d);
                     const actTitle = act ? act.activity : '';
-                    const ok = await customConfirm("활동 삭제", `[${d} ${actTitle}] 활동을 삭제하시겠습니까?\n(등록된 소감문 데이터는 삭제되지 않으며 활동 목록에서 제외됩니다.)`);
+                    const reviewsToDelete = allReviews.filter(r => r.date === d);
+                    const ok = await customConfirm("활동 삭제", `[${d} ${actTitle}] 활동을 삭제하시겠습니까?
+(이 활동에 등록된 소감문 ${reviewsToDelete.length}건도 함께 삭제되며 되돌릴 수 없습니다.)`);
                     if (!ok) return;
 
-                    const updated = activityList.filter(a => a.date !== d);
-                    await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { activities: updated });
-                    if (selectedActivityDate === d) selectedActivityDate = '';
-                    customAlert("완료", "활동이 삭제되었습니다.");
+                    try {
+                        const updated = activityList.filter(a => a.date !== d);
+                        await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { activities: updated });
+
+                        if (reviewsToDelete.length) {
+                            await Promise.all(reviewsToDelete.map(r =>
+                                deleteDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", r.id))
+                            ));
+                        }
+
+                        if (selectedActivityDate === d) selectedActivityDate = '';
+
+                        // 로컬 상태 즉시 동기화
+                        activityList = updated;
+                        allReviews = allReviews.filter(r => r.date !== d);
+                        renderAll();
+
+                        customAlert("완료", `활동과 소감문 ${reviewsToDelete.length}건이 삭제되었습니다.`);
+                    } catch (err) {
+                        console.error("활동 삭제 오류:", err);
+                        customAlert("오류", "활동 삭제 중 오류가 발생했습니다.");
+                    }
                 });
             });
         }
