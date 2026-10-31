@@ -158,7 +158,6 @@
     body.edit-mode #slide-canvas * { animation-name: none !important; }
     #slide-canvas video, #slide-canvas iframe { pointer-events: none; }
     .iframe-drag-overlay { position: absolute; inset: 0; z-index: 5; background: transparent; cursor: move; }
-    .mode-badge { position: absolute; top: 8px; right: 12px; z-index: 6; pointer-events: none; }
     #slide-canvas { user-select: none; }
     #slide-canvas .draggable-box { cursor: move; }
     #slide-canvas .draggable-box:hover { outline: 2px dashed rgba(37, 99, 235, 0.6); outline-offset: 4px; }
@@ -239,12 +238,12 @@
                 <li><button type="button" class="dropdown-item" data-export="audience"><i class="bi bi-display"></i> 청중 화면만</button></li>
               </ul>
             </div>
-            <div class="input-group input-group-sm w-auto">
-              <select class="form-select form-select-sm" id="show-kind" aria-label="발표 방식" style="max-width: 9rem;">
-                <option value="audience" selected>청중 화면만</option>
-                <option value="presenter">발표자 보기</option>
-              </select>
-              <button type="button" class="btn btn-outline-primary" id="btn-mode" title="발표 모드 / 편집 모드 전환 (Ctrl+E)"><i class="bi bi-play-btn"></i> 발표 시작 <kbd class="small">Ctrl+E</kbd></button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-play-btn"></i> 발표 시작</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><button type="button" class="dropdown-item d-flex align-items-center gap-3" data-show="audience"><span class="me-auto"><i class="bi bi-display"></i> 청중 화면만</span><kbd class="small">Ctrl+E</kbd></button></li>
+                <li><button type="button" class="dropdown-item" data-show="presenter"><i class="bi bi-person-video3"></i> 발표자 보기</button></li>
+              </ul>
             </div>
             <button type="button" class="btn btn-sm btn-primary" id="btn-ai"><i class="bi bi-stars"></i> AI 슬라이드 생성</button>
           </div>
@@ -282,10 +281,6 @@
               <option value="1.5">1.5초 뒤</option><option value="2">2초 뒤</option>
             </select>
           </div>
-          <div class="tool-group">
-            <span class="group-label">배경</span>
-            <input type="color" class="form-control form-control-color" id="bg-color" value="#ffffff" title="슬라이드 배경색">
-          </div>
           <span class="small text-muted d-none d-xl-inline">더블클릭: 글자 수정·그림/영상 바꾸기 · 끌기: 이동 · 모서리: 크기</span>
         </div>
       </header>
@@ -303,7 +298,6 @@
 
         <section class="work-area">
           <div class="stage-host" id="stage-host">
-            <span class="badge text-bg-dark mode-badge">편집 모드</span>
             <div class="stage-scaler" id="stage-scaler">
               <div class="slide-canvas" id="slide-canvas"></div>
             </div>
@@ -324,41 +318,36 @@
         </section>
 
         <aside class="ai-panel" id="ai-panel" aria-label="AI 슬라이드 생성">
-          <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+          <div class="d-flex flex-wrap align-items-center gap-2 px-3 pt-2 pb-1">
             <i class="bi bi-stars text-primary"></i>
-            <strong class="me-auto">AI 슬라이드 생성</strong>
-            <button type="button" class="btn btn-sm btn-light" data-act="settings" title="AI 설정"><i class="bi bi-gear"></i></button>
-            <button type="button" class="btn btn-sm btn-light" id="ai-close" title="AI 창 닫기"><i class="bi bi-x-lg"></i></button>
+            <strong>AI 슬라이드 생성</strong>
+            <div class="form-check form-switch mb-0 small" title="한 번에 여러 장 만들기 (새 슬라이드 생성에서만)">
+              <input class="form-check-input" type="checkbox" role="switch" id="ai-multi">
+              <label class="form-check-label" for="ai-multi">여러 장</label>
+            </div>
+            <div class="input-group input-group-sm d-none" id="ai-count-wrap" style="width: 84px;">
+              <input type="number" class="form-control" id="ai-count" min="2" max="20" value="5" aria-label="만들 장 수">
+              <span class="input-group-text px-1">장</span>
+            </div>
+            <div class="ms-auto d-flex gap-1">
+              <button type="button" class="btn btn-sm btn-light" id="ai-new-chat" title="새 채팅 (이전 대화 맥락 지우기)"><i class="bi bi-chat-square-dots"></i> 새 채팅</button>
+              <button type="button" class="btn btn-sm btn-light" data-act="settings" title="AI 설정"><i class="bi bi-gear"></i></button>
+              <button type="button" class="btn btn-sm btn-light" id="ai-close" title="AI 창 닫기"><i class="bi bi-x-lg"></i></button>
+            </div>
           </div>
+          <ul class="nav nav-tabs nav-fill small px-2" id="ai-tabs" role="tablist">
+            <li class="nav-item" role="presentation"><button type="button" class="nav-link active" data-mode="new" role="tab"><i class="bi bi-plus-square"></i> 새 슬라이드 생성</button></li>
+            <li class="nav-item" role="presentation"><button type="button" class="nav-link" data-mode="revise" role="tab"><i class="bi bi-arrow-repeat"></i> 현재 슬라이드 재생성</button></li>
+          </ul>
           <div class="alert alert-warning small m-2 mb-0 d-none" id="ai-nokey">
             Gemini API 키가 필요합니다.
             <button type="button" class="btn btn-sm btn-warning ms-1" data-act="settings">AI 설정</button>
           </div>
-          <div class="ai-log" id="ai-log">
-            <div class="ai-msg ai">[새 슬라이드 생성]: 발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 [여러 장 생성]을 켜세요.
-[현재 슬라이드 재생성]: 지금 보고 있는 장을 고칠 점만 적어 보내면 그 장을 다시 만들어 줍니다.
-📎로 이미지·PDF·PPTX 같은 참고 자료를 붙이면 그 내용을 참고합니다.</div>
-          </div>
+          <div class="ai-log" id="ai-log"></div>
           <div class="border-top p-2">
-            <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="AI 작업 선택">
-              <input type="radio" class="btn-check" name="ai-mode" id="ai-mode-new" value="new" checked>
-              <label class="btn btn-outline-primary" for="ai-mode-new"><i class="bi bi-plus-square"></i> 새 슬라이드 생성</label>
-              <input type="radio" class="btn-check" name="ai-mode" id="ai-mode-revise" value="revise">
-              <label class="btn btn-outline-primary" for="ai-mode-revise"><i class="bi bi-arrow-repeat"></i> 현재 슬라이드 재생성</label>
-            </div>
             <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="ai-files"></div>
             <textarea class="form-control form-control-sm mb-2" id="ai-prompt" rows="4"
               placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
-            <div class="d-flex align-items-center flex-wrap gap-2 small mb-2" id="ai-new-options">
-              <div class="form-check form-switch mb-0">
-                <input class="form-check-input" type="checkbox" role="switch" id="ai-multi">
-                <label class="form-check-label" for="ai-multi">여러 장 생성</label>
-              </div>
-              <div class="input-group input-group-sm d-none" id="ai-count-wrap" style="width: 110px;">
-                <input type="number" class="form-control" id="ai-count" min="2" max="20" value="5" aria-label="만들 장 수">
-                <span class="input-group-text">장</span>
-              </div>
-            </div>
             <div class="d-flex gap-2">
               <button type="button" class="btn btn-light btn-sm" id="ai-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
               <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> <span id="ai-send-label">생성</span> <span class="opacity-75">Ctrl+Enter</span></button>
@@ -373,7 +362,7 @@
 
   <!-- 발표 모드 화면 -->
   <div id="show-overlay" aria-label="발표 화면">
-    <button type="button" class="btn btn-sm btn-light show-exit" id="show-exit">발표 모드 [Ctrl+E로 편집]</button>
+    <button type="button" class="btn btn-sm btn-light show-exit" id="show-exit">편집 모드로 (Esc)</button>
     <div id="show-scaler"><div class="slide-canvas" id="show-canvas"></div></div>
     <div class="show-counter" id="show-counter"></div>
   </div>
@@ -383,8 +372,7 @@
     <header class="pv-bar">
       <strong id="pv-title"></strong>
       <span id="pv-count"></span>
-      <span id="pv-timer">00:00</span>
-      <button type="button" data-pv="reset">타이머 다시</button>
+      <span id="pv-clock" title="현재 시각"></span>
       <button type="button" data-pv="prev">◀ 이전</button>
       <button type="button" data-pv="next">다음 ▶</button>
       <button type="button" class="pv-primary" data-pv="audience">청중 화면 열기</button>
@@ -1138,6 +1126,7 @@
           Editor.updateHistoryButtons();
           Editor.setStatus('자동 저장됨');
           AiPanel.syncKey();
+          AiPanel.renderLog();
         },
 
         async leave() {
@@ -1203,7 +1192,6 @@
           FloatBar.hide();
           SlideView.fill(canvas, slide, 'edit');
           $('notes-editor').innerHTML = slide.notes;
-          $('bg-color').value = Util.toHex(slide.bg, '#ffffff');
           Editor.markActiveThumb();
           Editor.syncBoxTools();
         },
@@ -1822,11 +1810,10 @@
         index: 0,
         kind: 'audience',
         popup: null,
-        started: 0,
         timer: null,
 
         isOn() { return document.body.classList.contains('presentation-mode'); },
-        toggle() { if (Show.isOn()) Show.exit(); else Show.enter($('show-kind').value); },
+        toggle() { if (Show.isOn()) Show.exit(); else Show.enter('audience'); },
 
         enter(kind) {
           if (!Editor.deck) return;
@@ -1839,7 +1826,6 @@
           document.body.classList.add('presentation-mode', 'show-' + Show.kind);
           if (Show.kind === 'presenter') {
             $('pv-title').textContent = Editor.deck.title;
-            Show.started = Date.now();
             Show.tick();
             Show.timer = setInterval(Show.tick, 1000);
           }
@@ -1866,8 +1852,7 @@
         },
 
         tick() {
-          const sec = Math.floor((Date.now() - Show.started) / 1000);
-          $('pv-timer').textContent = String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+          $('pv-clock').textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         },
 
         // 다시 넣어야 애니메이션이 처음부터 재생된다.
@@ -2070,7 +2055,8 @@
               try {
                 const body = {
                   systemInstruction: { parts: [{ text: options.system }] },
-                  contents: [{ role: 'user', parts: [{ text: options.prompt + extra }].concat(options.parts || []) }],
+                  contents: (options.history || []).map(turn => ({ role: turn.role, parts: [{ text: turn.text }] }))
+                    .concat([{ role: 'user', parts: [{ text: options.prompt + extra }].concat(options.parts || []) }]),
                   generationConfig: Object.assign({ responseMimeType: 'application/json' },
                     useSchema && options.schema ? { responseSchema: options.schema } : {})
                 };
@@ -2240,19 +2226,79 @@
           if (open) $('ai-prompt').focus();
         },
 
-        message(role, text) {
+        // 대화 내용은 프레젠테이션마다 저장해 두고, [새 채팅]을 누르기 전까지 AI에게 이전 맥락으로 함께 보낸다.
+        INTRO: '[새 슬라이드 생성]: 발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 제목 옆 [여러 장]을 켜세요.\n' +
+          '[현재 슬라이드 재생성]: 지금 보고 있는 장을 고칠 점만 적어 보내면 그 장을 다시 만들어 줍니다.\n' +
+          '📎로 이미지·PDF·PPTX 같은 참고 자료를 붙이면 그 내용을 참고합니다.\n' +
+          '앞에서 나눈 대화는 [새 채팅]을 누르기 전까지 기억합니다.',
+        HISTORY_LIMIT: 20, // AI에게 함께 보내는 이전 대화(요청·결과 각각 1개씩 센다)
+
+        chat(deck) {
+          const target = deck || Editor.deck;
+          if (!target) return null;
+          if (!target.chat || !Array.isArray(target.chat.log) || !Array.isArray(target.chat.history)) target.chat = { log: [], history: [] };
+          return target.chat;
+        },
+
+        drawMessage(entry) {
           const el = document.createElement('div');
-          el.className = 'ai-msg ' + role;
-          el.textContent = text;
+          el.className = 'ai-msg ' + entry.role + (entry.error ? ' error' : '');
+          el.textContent = entry.text;
           $('ai-log').append(el);
           el.scrollIntoView({ block: 'end' });
+          return el;
+        },
+
+        renderLog() {
+          $('ai-log').textContent = '';
+          AiPanel.drawMessage({ role: 'ai', text: AiPanel.INTRO });
+          const chat = AiPanel.chat();
+          if (chat) chat.log.forEach(AiPanel.drawMessage);
+        },
+
+        message(role, text) {
+          const deck = Editor.deck;
+          const entry = { role, text, error: false };
+          const chat = AiPanel.chat(deck);
+          if (chat) {
+            chat.log.push(entry);
+            if (chat.log.length > 100) chat.log.splice(0, chat.log.length - 100);
+          }
+          const el = AiPanel.drawMessage(entry);
           return {
             set(next, isError) {
+              entry.text = next;
+              entry.error = !!isError;
               el.textContent = next;
               el.classList.toggle('error', !!isError);
               el.scrollIntoView({ block: 'end' });
+              if (Editor.deck === deck) Editor.scheduleSave();
             }
           };
+        },
+
+        // 성공한 요청과 결과 요약을 대화 맥락으로 남긴다.
+        remember(deck, userText, modelText) {
+          const chat = AiPanel.chat(deck);
+          if (!chat) return;
+          chat.history.push({ role: 'user', text: userText }, { role: 'model', text: modelText });
+          if (chat.history.length > AiPanel.HISTORY_LIMIT) chat.history.splice(0, chat.history.length - AiPanel.HISTORY_LIMIT);
+          if (Editor.deck === deck) Editor.scheduleSave();
+        },
+
+        history(deck) {
+          const chat = AiPanel.chat(deck);
+          return chat ? chat.history.slice() : [];
+        },
+
+        async newChat() {
+          if (AiPanel.busy || !Editor.deck) return;
+          const chat = AiPanel.chat();
+          if (chat.log.length && !await Util.confirm('대화 내용을 지우고 새 채팅을 시작할까요?\nAI가 앞의 대화 맥락을 더 이상 참고하지 않습니다. (슬라이드는 그대로입니다)', '새 채팅')) return;
+          Editor.deck.chat = { log: [], history: [] };
+          AiPanel.renderLog();
+          Editor.scheduleSave();
+          $('ai-prompt').focus();
         },
 
         setBusy(on) {
@@ -2536,7 +2582,7 @@
           if (!topic) { Util.toast('발표 주제와 개요를 입력해 주세요.', 'warning'); $('ai-prompt').focus(); return; }
           if (!Settings.apiKey()) { SettingsModal.open(); return; }
 
-          const total = $('ai-multi').checked ? Math.max(2, Math.min(20, parseInt($('ai-count').value, 10) || 5)) : 1;
+          const total = $('ai-multi').checked && !$('ai-multi').disabled ? Math.max(2, Math.min(20, parseInt($('ai-count').value, 10) || 5)) : 1;
           const deck = Editor.deck;
           Editor.deselect();
           Editor.syncCurrent();
@@ -2554,6 +2600,7 @@
           let reference = AiPanel.reference(Editor.current());
           let insertAt = replaceFirst ? 0 : Editor.index + 1;
           const madeTitles = [];
+          const madeIds = [];
           let added = 0;
           let failure = null;
 
@@ -2575,6 +2622,7 @@
                 system: AI_SYSTEM,
                 prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files),
                 parts,
+                history: AiPanel.history(deck),
                 schema: AI_SCHEMA,
                 signal: controller.signal,
                 onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -2602,7 +2650,10 @@
             Editor.index = insertAt;
             insertAt += slides.length;
             added += slides.length;
-            slides.forEach(slide => madeTitles.push(slide.title || '(제목 없음)'));
+            slides.forEach(slide => {
+              madeTitles.push(slide.title || '(제목 없음)');
+              madeIds.push(slide.id);
+            });
             if (!reference) reference = AiPanel.reference(slides[0]);
             Editor.renderRail();
             Editor.renderCanvas();
@@ -2612,7 +2663,12 @@
           AiPanel.setBusy(false);
           AiPanel.aborter = null;
           if (Editor.deck !== deck) return;
-          if (added) AiPanel.clearFiles(files);
+          if (added) {
+            AiPanel.clearFiles(files);
+            const list = madeIds.map((id, i) => (deck.slides.findIndex(slide => slide.id === id) + 1) + '번 장: ' + madeTitles[i]).join(', ');
+            AiPanel.remember(deck, '[새 슬라이드 생성' + (total > 1 ? ', ' + total + '장' : '') + '] ' + topic + AiPanel.fileNote(files),
+              '슬라이드 ' + added + '장을 만들어 추가했다(' + list + '). 발표 자료 제목: ' + deck.title);
+          }
           if (failure && !added) {
             status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
             if (!$('ai-prompt').value) $('ai-prompt').value = topic;
@@ -2625,11 +2681,25 @@
         },
 
         /* --- 현재 슬라이드 재생성 --- */
-        isReviseMode() { return $('ai-mode-revise').checked; },
+        mode: 'new',
+
+        isReviseMode() { return AiPanel.mode === 'revise'; },
+
+        setMode(mode) {
+          AiPanel.mode = mode === 'revise' ? 'revise' : 'new';
+          AiPanel.syncMode();
+        },
 
         syncMode() {
           const revise = AiPanel.isReviseMode();
-          $('ai-new-options').classList.toggle('d-none', revise);
+          $('ai-tabs').querySelectorAll('[data-mode]').forEach(tab => {
+            const active = tab.dataset.mode === AiPanel.mode;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', String(active));
+          });
+          // 여러 장 생성은 새 슬라이드 생성에서만 쓴다.
+          $('ai-multi').disabled = revise;
+          $('ai-count').disabled = revise;
           $('ai-send-label').textContent = revise ? '현재 슬라이드 재생성' : '생성';
           $('ai-prompt').placeholder = revise
             ? '예) 제목을 더 크게, 본문을 카드 3개로 나눠 줘. 배경은 밝은 하늘색으로 바꾸고 예시 하나 추가'
@@ -2697,6 +2767,7 @@
               system: AI_SYSTEM,
               prompt: AiPanel.revisePrompt(target, html, request) + AiPanel.filePrompt(files),
               parts,
+              history: AiPanel.history(deck),
               schema: AI_SCHEMA,
               signal: controller.signal,
               onProgress: length => status.set(number + '번 장을 다시 만드는 중…\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -2734,13 +2805,19 @@
           if (Editor.index === index) Editor.renderCanvas();
           Editor.commit();
           AiPanel.clearFiles(files);
+          AiPanel.remember(deck, '[' + number + '번 장 재생성] ' + request + AiPanel.fileNote(files),
+            number + '번 장(' + (deck.slides[index].title || '제목 없음') + ')을 요청대로 고쳤다.');
           Editor.refreshThumb(index);
           status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.');
         },
 
         init() {
           $('ai-multi').addEventListener('change', event => $('ai-count-wrap').classList.toggle('d-none', !event.target.checked));
-          document.querySelectorAll('input[name="ai-mode"]').forEach(radio => radio.addEventListener('change', AiPanel.syncMode));
+          $('ai-tabs').addEventListener('click', event => {
+            const tab = event.target.closest('[data-mode]');
+            if (tab) AiPanel.setMode(tab.dataset.mode);
+          });
+          $('ai-new-chat').addEventListener('click', AiPanel.newChat);
           $('ai-send').addEventListener('click', AiPanel.send);
           $('ai-attach').addEventListener('click', () => $('ai-file').click());
           $('ai-file').addEventListener('change', event => {
@@ -2856,11 +2933,10 @@
 
         function presenter() {
           var popup = null;
-          var started = Date.now();
           document.body.className = 'pv-view';
           document.body.innerHTML =
-            '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span id="pv-timer">00:00</span>' +
-            '<button type="button" id="pv-reset">타이머 다시</button><button type="button" id="pv-prev">◀ 이전</button>' +
+            '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span id="pv-clock" title="현재 시각"></span>' +
+            '<button type="button" id="pv-prev">◀ 이전</button>' +
             '<button type="button" id="pv-next">다음 ▶</button><button type="button" class="pv-primary" id="pv-audience">청중 화면 열기</button></header>' +
             '<main class="pv-main"><section class="pv-col"><div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>' +
             '<div class="v-host pv-current" id="c-host">' + stage('c') + '</div></section>' +
@@ -2910,15 +2986,15 @@
           document.getElementById('pv-prev').addEventListener('click', function () { go(index - 1); });
           document.getElementById('pv-next').addEventListener('click', function () { go(index + 1); });
           document.getElementById('pv-audience').addEventListener('click', openAudience);
-          document.getElementById('pv-reset').addEventListener('click', function () { started = Date.now(); });
           document.addEventListener('keydown', function (event) { onKey(event, document, go); });
           window.addEventListener('resize', fitAll);
           window.addEventListener('beforeunload', function () { if (popup && !popup.closed) popup.close(); });
-          setInterval(function () {
-            var sec = Math.floor((Date.now() - started) / 1000);
-            document.getElementById('pv-timer').textContent =
-              String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
-          }, 1000);
+          function tick() {
+            document.getElementById('pv-clock').textContent =
+              new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          }
+          tick();
+          setInterval(tick, 1000);
           go(0);
         }
 
@@ -3184,13 +3260,6 @@
           Editor.selected.style.background = event.target.value;
           Editor.commitSoon();
         });
-        $('bg-color').addEventListener('input', event => {
-          const slide = Editor.current();
-          slide.bg = event.target.value;
-          slide.pristine = false;
-          $('slide-canvas').style.background = slide.bg;
-          Editor.commitSoon();
-        });
 
         // 발표 시나리오: 서식 있는 글. 붙여넣기는 일반 글자로만 받는다.
         const notes = $('notes-editor');
@@ -3210,7 +3279,7 @@
         $('btn-home').addEventListener('click', () => { location.hash = '#/'; });
         $('btn-undo').addEventListener('click', () => Editor.history(-1));
         $('btn-redo').addEventListener('click', () => Editor.history(1));
-        $('btn-mode').addEventListener('click', () => Show.toggle());
+        document.querySelectorAll('[data-show]').forEach(button => button.addEventListener('click', () => Show.enter(button.dataset.show)));
         $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
         $('show-overlay').addEventListener('click', () => Show.go(Show.index + 1));
         $('presenter-overlay').addEventListener('click', event => {
@@ -3219,7 +3288,6 @@
           const action = button.dataset.pv;
           if (action === 'prev') Show.go(Show.index - 1);
           if (action === 'next') Show.go(Show.index + 1);
-          if (action === 'reset') { Show.started = Date.now(); Show.tick(); }
           if (action === 'audience') Show.openAudience();
           if (action === 'exit') Show.exit();
         });
