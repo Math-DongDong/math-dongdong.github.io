@@ -14,12 +14,13 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 | --- | --- | --- |
 | 소개 페이지 | `pages/automation/{분류}/{앱이름}.html` | `pages/automation/student/reviewmanagement.html` |
 | 기능 이미지 | `assets/images/{플랫폼}/{앱이름}/` | `assets/images/appscript/reviewmanagement/` |
+| Apps Script 원본 코드 | `assets/gas/{앱이름}/` | `assets/gas/reviewmanagement/Code.gs` |
 | 템플릿 | `assets/template/app_intro/app-intro-template.html` | |
 | 가이드(이 문서) | `assets/template/app_intro/app-intro-guide.md` | |
 
 - **분류**: `pages/automation` 안의 폴더 이름을 씁니다. (`class`, `student`, `work`)
 - **플랫폼**: 구글 시트 + Apps Script 앱은 `appscript`, AppSheet 앱은 `appsheet`
-- **앱이름**: 영문 소문자만 붙여 씁니다. 페이지 파일 이름과 이미지 폴더 이름을 똑같이 맞춥니다. (예: `seatingarrangement`)
+- **앱이름**: 영문 소문자만 붙여 씁니다. 페이지 파일 이름, 이미지 폴더 이름, 코드 폴더 이름을 똑같이 맞춥니다. (예: `seatingarrangement`)
 - 페이지 안의 공통 파일 경로는 `../../../`로 시작합니다. `pages/automation/{분류}/` 기준으로 세 단계 위가 사이트 루트이기 때문입니다.
 
 ## 2. 반드시 넣는 공통 요소
@@ -90,8 +91,13 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 - 전체 섹션을 접이식 카드(`#sourceCodeCollapse`)로 구성하고 기본값으로 닫아두어(`collapse`) 모바일/데스크톱 화면에서 스크롤 부담을 최소화합니다.
 - Bootstrap 5 탭(`nav nav-pills`, `tab-content`)을 적용해 `Code.gs`, `index.html` 및 대화상자 HTML 파일들을 탭 버튼으로 손쉽게 전환할 수 있게 만듭니다.
 - 다크 테마 박스(`.code-box-wrapper`, `.code-box-header`, `.code-box-pre`)와 고정폭 폰트(`Consolas`, `Monaco` 등)를 적용합니다.
-- **중요**: `<pre><code id="...">` 내부의 코드는 본문 HTML 태그 및 스크립트 실행 충돌을 방지하기 위해 반드시 `&amp;`, `&lt;`, `&gt;`로 이스케이프하여 작성합니다.
-- 각 탭 헤더에 있는 [코드 복사] 버튼은 `copySourceCode(elementId, btn)` 함수를 호출하여 브라우저 클립보드에 원본 코드를 복사하고 2초간 `복사 완료!` 성공 피드백을 표시합니다.
+- **코드는 페이지에 직접 넣지 않습니다.** `assets/gas/{앱이름}/` 폴더에 Apps Script 편집기의 파일 이름 그대로(`Code.gs`, `index.html` 등) 저장합니다. 이스케이프하지 않고 원본 그대로 붙여넣습니다.
+- 페이지의 코드 칸은 비워 두고 `data-src`에 파일 경로만 적습니다.
+  - 예: `<pre class="code-box-pre"><code id="codeGsContent" data-src="../../../assets/gas/reviewmanagement/Code.gs"></code></pre>`
+- [코드 보기]를 처음 펼칠 때 `loadSourceCodes()`가 `data-src` 파일을 모두 `fetch`로 불러와 `textContent`로 넣습니다. 캐시를 쓰지 않으므로 파일만 고치면 바로 반영됩니다.
+- 각 탭 헤더에 있는 [코드 복사] 버튼은 `copySourceCode(elementId, btn)` 함수를 호출합니다. 코드를 다 불러온 뒤 클립보드에 복사하고 2초간 `복사 완료!` 피드백을 표시합니다.
+- 앱 코드를 고치면 `assets/gas/{앱이름}/`의 해당 파일만 바꿉니다. 소개 페이지 HTML은 고치지 않아도 됩니다.
+- 페이지를 더블클릭(`file://`)으로 열면 `fetch`가 막혀 코드가 보이지 않습니다. 로컬에서 확인할 때는 VS Code Live Server 같은 로컬 서버로 엽니다. GitHub Pages에서는 정상 작동합니다.
 
 ## 5. 이미지 규칙
 
@@ -149,7 +155,7 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
 - [ ] 페이지에 적은 버튼·메뉴 이름이 실제 앱 화면과 같다.
 - [ ] 사이트의 목록 페이지나 네비게이션에 새 페이지 링크를 추가했다. (필요한 경우)
 - [ ] 사이트 폴더 안의 md 파일에 여는 중괄호 두 개, 또는 중괄호와 퍼센트 기호를 붙인 글자가 없다. (11번 참고)
-- [ ] (소스 코드 섹션 사용 시) `<pre><code id="...">` 안의 코드가 `&amp;`, `&lt;`, `&gt;`로 이스케이프되었고, 복사 버튼 및 피드백(`복사 완료!`)이 정상 작동한다.
+- [ ] (소스 코드 섹션 사용 시) `data-src` 경로의 파일이 `assets/gas/{앱이름}/`에 있고, 로컬 서버에서 [코드 보기]를 펼치면 코드가 보이며 복사 버튼 및 피드백(`복사 완료!`)이 정상 작동한다.
 
 ## 10. AI 에이전트에게 맡길 때 요청 예시
 
@@ -166,7 +172,7 @@ pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 - 가운데 준비 단계에 꼭 들어갈 내용: {명단 입력 열, 메뉴 이름, 환경설정 항목 등}
 - 데이터 관리 & 팁에 넣을 내용: {시트 탭별로 쌓이는 데이터, 주의할 점}
 - 참고할 앱 코드: {code.gs, index.html 등 경로}
-- (선택) 소스 코드 뷰어에 넣을 파일 목록: {Code.gs, index.html, dbSetup.html, settings.html 등}
+- (선택) 소스 코드 뷰어에 넣을 파일 목록: {Code.gs, index.html, dbSetup.html, settings.html 등} → assets/gas/{앱이름}/ 에 저장
 
 완성하면 9번 완성 전 점검표를 하나씩 확인하고 결과를 알려 줘.
 ```
@@ -188,8 +194,11 @@ pages/automation/{분류}/{앱이름}.html 소개 페이지를 만들어 줘.
 | 페이지 | 플랫폼 | 다운로드 방식 | 캐러셀 | 소스 코드 탭 |
 | --- | --- | --- | --- | --- |
 | `pages/automation/student/appsheet.html` | AppSheet | AppSheet 템플릿 [Copy and Customize] | 4장 | — |
-| `pages/automation/student/seatingarrangement.html` | Apps Script | 구글 시트 템플릿 복사 | 8장 | 2개 (Code.gs, index.html) |
+| `pages/automation/student/seatingarrangement.html` | Apps Script | 구글 시트 템플릿 복사 | 8장 | 3개 (Code.gs, index.html, advanced.html) |
 | `pages/automation/student/reviewmanagement.html` | Apps Script | 구글 시트 템플릿 복사 | 9장 | 4개 (Code.gs, index.html, dbSetup.html, settings.html) |
+| `pages/automation/student/relationmap.html` | Apps Script | 구글 시트 템플릿 복사 | 7장 | 4개 (Code.gs, index.html, settings.html, setup.html) |
+
+소스 코드 탭의 원본 파일은 모두 `assets/gas/{앱이름}/` 폴더에 있습니다.
 
 ## 부록 B. 소감문 관리 앱(reviewmanagement) 이미지 목록
 

@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>학급 자리 배치 시스템</title>
+  <!-- Tailwind CSS & FontAwesome CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    /* ==========================================================
+       [화면] 책상 캔버스 : 절대좌표 기반 자유 배치
+       ========================================================== */
+    #seatCanvas {
+      position: relative;
+      margin: 0 auto;
+    }
+    /* 학생 시점일 때 캔버스 전체를 180도 회전 */
+    #seatCanvas.rot180 { transform: rotate(180deg); }
+
+    .seat-card {
+      position: absolute;
+      box-sizing: border-box;
+      border-radius: 14px;
+      transition: box-shadow .15s, background-color .15s, border-color .15s;
+    }
+    /* 자석으로 붙은 면은 각지게 처리하여 한 덩어리처럼 보이게 함 */
+    .seat-card.jl { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
+    .seat-card.jr { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+    .seat-card.jt { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
+    .seat-card.jb { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+
+    /* 책상 내부 컨텐츠 (학생 시점에서는 역회전시켜 글자를 똑바로 세움) */
+    .seat-inner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+    }
+    .seat-inner.rot180 { transform: rotate(180deg); }
+
+    /* 드래그 가능 상태 : 터치 스크롤 방지(touch-action) */
+    .seat-card.draggable { cursor: grab; touch-action: none; }
+    .seat-card.dragging {
+      cursor: grabbing;
+      z-index: 60;
+      box-shadow: 0 12px 22px rgba(15, 23, 42, .22);
+      opacity: .95;
+    }
+    /* 자석이 붙은 순간 표시되는 파란 링 */
+    .seat-card.snapped { box-shadow: 0 0 0 3px rgba(2, 132, 199, .45), 0 12px 22px rgba(15,23,42,.2); }
+
+    /* 웹킷 스크롤바 */
+    .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+    /* ==========================================================
+       [인쇄] A4 가로 1페이지 자동 축소 피팅
+       - 배치도 크기는 JS(preparePrint)가 계산해 scale 로 적용
+       ========================================================== */
+    @media print {
+      @page { size: A4 landscape; margin: 10mm 16mm !important; }
+      html, body {
+        width: 100% !important; height: 100% !important;
+        background-color: white !important; color: black !important;
+        padding: 0 !important; margin: 0 !important;
+        overflow: hidden !important;
+        display: flex !important; flex-direction: column !important;
+        justify-content: center !important; align-items: center !important;
+      }
+      .no-print { display: none !important; }
+
+      main {
+        max-width: none !important; width: 100% !important;
+        margin: 0 auto !important; padding: 0 !important;
+        display: flex !important; justify-content: center !important;
+      }
+      .print-container {
+        width: fit-content !important; max-width: 100% !important;
+        box-shadow: none !important; border: none !important;
+        padding: 0 !important; margin: auto !important;
+        page-break-inside: avoid !important;
+      }
+      .print-layout {
+        display: flex !important; flex-direction: row !important;
+        align-items: flex-start !important; justify-content: center !important;
+        width: fit-content !important; margin: 0 auto !important;
+        gap: 1.2rem !important;
+      }
+      .print-grid-wrapper { flex: 0 0 auto !important; width: auto !important; }
+
+      /* 스크롤 컨테이너가 인쇄 시 내용을 자르지 않도록 해제 */
+      #gridContainer { overflow: visible !important; padding-bottom: 0 !important; }
+
+      /* 책상은 흑백 실선으로 (위치/크기는 JS 계산값을 그대로 사용) */
+      .seat-card {
+        border-color: #000 !important;
+        background-color: #fff !important;
+        box-shadow: none !important;
+      }
+      .seat-card.is-disabled { background-color: #f1f5f9 !important; }
+      .seat-name { font-size: 19px !important; font-weight: 800 !important; color: #000 !important; letter-spacing: .03em; }
+
+      /* 우측 학생 명단 */
+      .print-student-list { width: 8.5rem !important; min-width: 8.5rem !important; }
+      .print-student-table th {
+        font-size: 11px !important; padding: 1px 3px !important;
+        white-space: nowrap !important; word-break: keep-all !important;
+      }
+      .print-student-table td {
+        padding: 2px 3px !important; font-size: 11px !important; white-space: nowrap !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen py-6 px-3 md:px-6">
+
+  <main class="max-w-7xl mx-auto space-y-5">
+
+    <!-- ================= 상단 컨트롤 대시보드 ================= -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 no-print">
+
+      <!-- 앱 타이틀 & 새로고침 -->
+      <div class="flex flex-wrap justify-between items-center border-b border-slate-100 pb-4 mb-4 gap-2">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-inner">
+            <i class="fa-solid fa-shapes"></i>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-slate-900 leading-tight">학급 자리 배치</h1>
+            <p class="text-xs text-slate-400">드래그 자석 스냅 · 교사/학생 시점 전환</p>
+          </div>
+        </div>
+        <button onclick="loadStudents()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 border border-slate-200">
+          <i class="fa-solid fa-rotate text-indigo-600"></i> 명단 새로고침
+        </button>
+      </div>
+
+      <!-- 행/열 설정 + 시점 전환 -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <label class="block text-xs font-bold text-slate-600">책상 개수 (행 x 열)</label>
+            <button onclick="resetGrid()" class="text-[11px] font-semibold text-slate-400 hover:text-red-500 transition flex items-center gap-1">
+              <i class="fa-solid fa-arrow-rotate-left"></i> 배치 초기화
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="number" id="rowsInput" value="6" min="1" max="12" oninput="initGrid()" onchange="initGrid()" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-center text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            <span class="text-xs font-bold text-slate-500 whitespace-nowrap">행</span>
+            <input type="number" id="colsInput" value="5" min="1" max="12" oninput="initGrid()" onchange="initGrid()" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-center text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            <span class="text-xs font-bold text-slate-500 whitespace-nowrap">열</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">화면 시점 전환</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="viewTeacherBtn" onclick="setViewMode('teacher')">
+              <i class="fa-solid fa-chalkboard-user"></i> 교사 시점
+            </button>
+            <button id="viewStudentBtn" onclick="setViewMode('student')">
+              <i class="fa-solid fa-user-graduate"></i> 학생 시점
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 작업 모드 선택 -->
+      <div class="mb-4">
+        <label class="block text-xs font-bold text-slate-600 mb-1.5">책상 클릭 시 동작</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button id="toolMagnetBtn" onclick="setToolMode('magnet')">
+            <i class="fa-solid fa-magnet"></i> 자석 이동
+          </button>
+          <button id="toolDisableBtn" onclick="setToolMode('disable')">
+            <i class="fa-solid fa-ban"></i> 책상 삭제
+          </button>
+          <button id="toolFixBtn" onclick="setToolMode('fix')">
+            <i class="fa-solid fa-thumbtack"></i> 고정석 지정
+          </button>
+        </div>
+      </div>
+
+      <!-- 고정석 지정용 드롭다운 -->
+      <div id="fixStudentSelectArea" class="hidden bg-amber-50 border border-amber-200 p-3 rounded-xl mb-4">
+        <label class="block text-xs font-bold text-amber-900 mb-1">📌 고정할 학생을 선택한 후, 아래 배치도에서 원하시는 책상을 클릭하세요:</label>
+        <select id="studentSelectForFix" class="w-full border border-amber-300 rounded-lg px-3 py-2 bg-white text-xs font-semibold"></select>
+      </div>
+
+      <!-- 자석(드래그 이동) 도구 패널 -->
+      <div id="magnetToolArea" class="hidden bg-sky-50 border border-sky-200 p-3 rounded-xl mb-4">
+        <p class="text-xs font-bold text-sky-900 mb-2.5 leading-relaxed">
+          🧲 책상을 <span class="underline">드래그(끌어서)</span> 원하는 위치로 옮기세요. 다른 책상 가까이 가면 자석처럼 착 달라붙고, 끌어내면 떨어집니다.
+        </p>
+
+        <!-- 자석 옵션 스위치 -->
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          <label class="flex items-center gap-1.5 text-xs font-semibold text-sky-900 cursor-pointer">
+            <input type="checkbox" id="snapToggle" checked onchange="snapEnabled = this.checked" class="w-4 h-4 accent-sky-600">
+            자석 붙이기 켜기
+          </label>
+          <label class="flex items-center gap-1.5 text-xs font-semibold text-sky-900 cursor-pointer">
+            <input type="checkbox" id="groupMoveToggle" onchange="groupMove = this.checked" class="w-4 h-4 accent-sky-600">
+            붙은 책상 함께 이동 (모둠 통째로)
+          </label>
+        </div>
+      </div>
+
+      <!-- 액션 버튼 그룹 -->
+      <div class="flex flex-col md:flex-row flex-wrap gap-2 pt-3 border-t border-slate-100">
+        <button onclick="randomizeSeats()" class="w-full md:flex-1 md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 md:py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-base">
+          <i class="fa-solid fa-shuffle"></i> 랜덤 배치 시작!
+        </button>
+        <button onclick="sortByNumberSeats()" class="w-full md:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-3 md:py-2.5 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 text-sm md:text-xs">
+          <i class="fa-solid fa-arrow-down-1-9"></i> 번호순 배치
+        </button>
+        <button onclick="openHistoryModal()" class="w-full md:w-auto bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-3 md:py-2.5 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 text-sm md:text-xs">
+          <i class="fa-solid fa-clock-rotate-left"></i> 이력 불러오기
+        </button>
+        <div class="flex w-full md:w-auto gap-2">
+          <button onclick="openSaveModal()" class="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 md:py-2.5 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 text-sm md:text-xs">
+            <i class="fa-solid fa-floppy-disk"></i> 저장
+          </button>
+          <button onclick="doPrint()" class="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-3 md:py-2.5 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 text-sm md:text-xs">
+            <i class="fa-solid fa-print"></i> 인쇄하기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 배치 현황판 (인쇄 영역) ================= -->
+    <div class="bg-white rounded-2xl shadow-sm p-5 md:p-6 print-container border border-slate-200/80 w-full overflow-hidden">
+
+      <div class="flex flex-col md:flex-row print-layout gap-5 items-start w-full">
+
+        <!-- 좌측: 자리 배치도 -->
+        <div class="flex-1 w-full print-grid-wrapper overflow-hidden">
+          <div class="flex flex-col w-full">
+
+            <!-- 복도/창가 안내 바 (시점에 따라 좌우 전환) -->
+            <div id="sideLabelBar" style="order:1" class="flex justify-between items-center mb-2 px-1 font-bold text-xs text-slate-500 border-b border-slate-100 pb-2 w-full gap-2"></div>
+
+            <!-- 화면 배율 컨트롤 (인쇄 제외) -->
+            <div style="order:1" class="no-print flex items-center justify-end gap-1.5 mb-2">
+              <span class="text-[11px] text-slate-400 font-semibold mr-1">화면 배율</span>
+              <button onclick="setScreenScale(screenScale - 0.1)" class="w-7 h-7 rounded-lg border border-slate-300 bg-white text-slate-600 text-xs hover:bg-slate-100"><i class="fa-solid fa-minus"></i></button>
+              <span id="scaleLabel" class="text-[11px] font-bold text-slate-600 w-10 text-center">100%</span>
+              <button onclick="setScreenScale(screenScale + 0.1)" class="w-7 h-7 rounded-lg border border-slate-300 bg-white text-slate-600 text-xs hover:bg-slate-100"><i class="fa-solid fa-plus"></i></button>
+              <button onclick="fitToScreen()" class="px-2 h-7 rounded-lg border border-slate-300 bg-white text-slate-600 text-[11px] font-semibold hover:bg-slate-100 ml-1">화면맞춤</button>
+            </div>
+
+            <!-- 책상 캔버스 영역 -->
+            <div id="gridContainer" style="order:2" class="w-full overflow-x-auto custom-scrollbar pb-3">
+              <div id="seatScalerBox" class="mx-auto">
+                <div id="seatScaler">
+                  <div id="seatCanvas"><!-- JS 동적 생성 --></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 칠판 (교사 시점=아래 / 학생 시점=위) -->
+            <div id="boardBar" style="order:3"></div>
+          </div>
+        </div>
+
+        <!-- 우측: 학생 명단 -->
+        <div class="w-full md:w-48 shrink-0 border-t md:border-t-0 md:border-l border-slate-200 md:pl-4 pt-3 md:pt-0 print-student-list">
+          <h3 class="font-bold text-slate-700 text-xs mb-1.5 flex items-center justify-between border-b border-slate-200 pb-1 whitespace-nowrap">
+            <span class="flex items-center gap-1"><i class="fa-solid fa-list-ol text-indigo-600"></i> 학생 명단</span>
+            <span class="text-[11px] text-slate-400 font-normal">(<span id="studentListCount">0</span>명)</span>
+          </h3>
+          <div id="studentListContainer" class="w-full"></div>
+        </div>
+      </div>
+
+      <!-- 현황 정보 -->
+      <div class="mt-3 pt-2 border-t border-slate-100 flex flex-wrap justify-between items-center text-xs text-slate-500 no-print gap-1">
+        <div>총 학생: <span id="totalStudentsCount" class="font-bold text-indigo-600">0</span>명</div>
+        <div>배치 가능 책상: <span id="availableDesksCount" class="font-bold text-emerald-600">0</span>개</div>
+        <div id="modeHintText" class="text-sky-600 font-medium">* 책상을 끌어서 옮기면 자석처럼 붙습니다.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 저장 입력 모달 -->
+  <div id="saveModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 transition-all duration-200 no-print">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl transform scale-95 transition-all duration-200" id="saveModalBox">
+      <div class="flex items-center gap-2 mb-2">
+        <i class="fa-solid fa-floppy-disk text-blue-600 text-xl"></i>
+        <h3 class="text-lg font-bold text-slate-800">자리 배치 저장</h3>
+      </div>
+      <p class="text-xs text-slate-500 mb-4 leading-relaxed">책상 위치·모둠 형태·시점까지 그대로 저장합니다.<br>나중에 식별하기 쉬운 이름을 입력해 주세요.</p>
+      <input type="text" id="saveTitleInput" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none mb-6" placeholder="예: 3월 1차 자리배치">
+      <div class="flex gap-2">
+        <button onclick="closeSaveModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm transition">취소</button>
+        <button id="btnConfirmSave" onclick="confirmSaveLayout()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">저장하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 이력 불러오기 모달 -->
+  <div id="historyModal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl">
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <h3 class="text-base font-bold text-indigo-900 flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left"></i> 이전 배치 기록 선택
+        </h3>
+        <button onclick="closeHistoryModal()" class="text-slate-400 hover:text-slate-600 text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="historyListContainer" class="max-h-80 overflow-y-auto space-y-2 pr-1">
+        <div class="text-center py-8 text-slate-400">저장된 기록을 불러오는 중...</div>
+      </div>
+      <div class="mt-4 pt-3 border-t text-right">
+        <button onclick="closeHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-semibold">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 커스텀 알림 모달 -->
+  <div id="customAlertModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 transition-all duration-200 no-print">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center transform scale-95 transition-all duration-200" id="customAlertBox">
+      <div id="alertIconContainer" class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
+        <i id="alertIcon" class="fa-solid fa-check"></i>
+      </div>
+      <h3 id="alertTitle" class="text-lg font-bold text-slate-800 mb-1">알림</h3>
+      <p id="alertMessage" class="text-xs md:text-sm text-slate-500 leading-relaxed mb-6 whitespace-pre-line"></p>
+      <button onclick="closeCustomAlert()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md">확인</button>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================================
+    // 상수 : 책상 크기와 자석 스냅 감도 (모두 픽셀 단위)
+    // ==========================================================
+    const SEAT_W = 104;   // 책상 가로
+    const SEAT_H = 66;    // 책상 세로
+    const GAP_X  = 16;    // 책상 사이 기본 좌우 간격
+    const GAP_Y  = 18;    // 책상 사이 기본 상하 간격
+    const SNAP   = 14;    // 자석이 작동하는 거리(이 안으로 들어오면 착 붙음)
+    const MARGIN = 40;    // 캔버스 사방 여백 (좌/위로도 끌 수 있도록 확보)
+    const BORDER = 2;     // 책상 테두리 두께 (붙을 때 겹치는 양)
+
+    // ==========================================================
+    // 상수 : 배치 조건 (교사가 구글 시트 [고급설정]에서 관리)
+    // ※ 이 화면은 학생들이 함께 볼 수 있으므로, 조건과 관련된 내용은
+    //    어떠한 문구·표시·알림으로도 화면에 드러내지 않습니다.
+    // ==========================================================
+    // 두 책상의 중심 거리가 '책상 크기 × 이 값' 이내이면 이웃으로 판정
+    const NEIGHBOR_RANGE = 1.6;
+
+    // ==========================================================
+    // 전역 상태
+    // ==========================================================
+    let students = [];
+    let gridData = [];          // 좌석 데이터 (x, y 는 항상 '교사 시점' 기준 물리 좌표)
+    let rows = 6, cols = 5;
+    let toolMode = 'magnet';    // 'magnet' | 'disable' | 'fix'
+    let viewMode = 'teacher';   // 'teacher' | 'student'
+    let snapEnabled = true;     // 자석 붙이기 사용 여부
+    let groupMove = false;      // 붙은 책상 묶음 통째로 이동 여부
+    let screenScale = 1;        // 화면 배율
+    let canvasW = 0, canvasH = 0;
+    let renderOffset = { x: 0, y: 0 };  // 인쇄 시 여백을 잘라내기 위한 렌더 오프셋
+    let deskEls = {};           // id -> DOM 요소 (드래그 중 직접 조작용)
+    let dragState = null;
+
+    let separationRules = [];   // 랜덤 배치 직전에 서버에서 받아오는 조건 (화면 표시 없음)
+    let isShuffling = false;    // 랜덤 배치 진행 중 (중복 클릭 방지)
+
+    const BTN_IDLE = 'py-2 rounded-xl border border-slate-300 bg-white text-slate-600 font-bold text-xs flex items-center justify-center gap-1 transition';
+    const BTN_ACTIVE = {
+      disable: 'py-2 rounded-xl border border-red-500 bg-red-50 text-red-700 font-bold text-xs flex items-center justify-center gap-1 transition shadow-sm',
+      fix:     'py-2 rounded-xl border border-amber-500 bg-amber-50 text-amber-700 font-bold text-xs flex items-center justify-center gap-1 transition shadow-sm',
+      magnet:  'py-2 rounded-xl border border-sky-500 bg-sky-50 text-sky-700 font-bold text-xs flex items-center justify-center gap-1 transition shadow-sm',
+      view:    'py-2 rounded-xl border border-indigo-500 bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center gap-1 transition shadow-sm'
+    };
+    const BOARD_BASE = 'bg-slate-800 text-white font-bold text-center py-2 rounded-xl shadow-inner tracking-widest text-xs md:text-sm flex items-center justify-center gap-2 w-full shrink-0';
+
+    // 초기 진입
+    window.onload = function() {
+      updateViewButtons();
+      setToolMode('magnet');
+      loadStudents();
+    };
+
+    // ==========================================================
+    // 공용 유틸
+    // ==========================================================
+
+    // 이름 등에 들어간 특수문자가 HTML 로 해석되지 않도록 변환
+    function escapeHtml(t) {
+      return String(t == null ? '' : t).replace(/[&<>"']/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    // 배열 무작위 섞기 (Fisher-Yates)
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    // ==========================================================
+    // 커스텀 알림 모달
+    // ==========================================================
+    function showAlert(message, title = '알림', type = 'info') {
+      const modal = document.getElementById('customAlertModal');
+      const box = document.getElementById('customAlertBox');
+      const iconBox = document.getElementById('alertIconContainer');
+      const icon = document.getElementById('alertIcon');
+
+      document.getElementById('alertTitle').innerText = title;
+      document.getElementById('alertMessage').innerText = message;
+
+      if (type === 'success') {
+        iconBox.className = 'w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl bg-emerald-100 text-emerald-600';
+        icon.className = 'fa-solid fa-check';
+      } else if (type === 'warning') {
+        iconBox.className = 'w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl bg-amber-100 text-amber-600';
+        icon.className = 'fa-solid fa-triangle-exclamation';
+      } else {
+        iconBox.className = 'w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl bg-indigo-100 text-indigo-600';
+        icon.className = 'fa-solid fa-circle-info';
+      }
+      modal.classList.remove('hidden');
+      setTimeout(() => { box.classList.remove('scale-95'); box.classList.add('scale-100'); }, 10);
+    }
+
+    function closeCustomAlert() {
+      const modal = document.getElementById('customAlertModal');
+      const box = document.getElementById('customAlertBox');
+      box.classList.remove('scale-100'); box.classList.add('scale-95');
+      setTimeout(() => { modal.classList.add('hidden'); }, 150);
+    }
+
+    // ==========================================================
+    // 서버 통신 (학생 명단)
+    // ==========================================================
+    function loadStudents() {
+      google.script.run.withSuccessHandler(function(data) {
+        students = data;
+        document.getElementById('totalStudentsCount').innerText = students.length;
+        document.getElementById('studentListCount').innerText = students.length;
+        updateFixStudentSelect();
+        renderStudentList();
+        initGrid();
+        fitToScreen(); // 모바일 등 화면이 좁으면 자동으로 배율 맞춤
+      }).getStudents();
+    }
+
+    function renderStudentList() {
+      const container = document.getElementById('studentListContainer');
+      let html = `<table class="w-full text-[11px] text-left border-collapse print-student-table">
+        <thead><tr class="bg-slate-100 text-slate-600 border-b border-slate-300">
+          <th class="py-0.5 px-1 w-8 text-center whitespace-nowrap">번호</th>
+          <th class="py-0.5 px-1 whitespace-nowrap">이름</th>
+        </tr></thead><tbody>`;
+      students.forEach((s, idx) => {
+        const bg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60';
+        html += `<tr class="${bg} border-b border-slate-200/80 whitespace-nowrap">
+          <td class="py-0.5 px-1 font-bold text-slate-400 text-center border-r border-slate-100">${s.id}</td>
+          <td class="py-0.5 px-1 font-bold text-slate-800">${escapeHtml(s.name)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      container.innerHTML = html;
+    }
+
+    function updateFixStudentSelect() {
+      const select = document.getElementById('studentSelectForFix');
+      select.innerHTML = '<option value="">-- 고정할 학생 선택 --</option>';
+      students.forEach(s => {
+        select.innerHTML += `<option value="${s.id}">${escapeHtml(s.name)} (${s.id}번)</option>`;
+      });
+    }
+
+    // ==========================================================
+    // 좌석 데이터 생성 / 정규화
+    // ==========================================================
+
+    /**
+     * 행/열 입력값에 따라 좌석 생성
+     * @param {boolean} forceReset true 면 기존 위치·상태를 모두 버림
+     * (기본은 false : 이미 옮겨둔 책상 위치와 상태를 최대한 보존)
+     */
+    function initGrid(forceReset) {
+      const rIn = parseInt(document.getElementById('rowsInput').value);
+      const cIn = parseInt(document.getElementById('colsInput').value);
+      if (!rIn || rIn < 1 || !cIn || cIn < 1) return;
+
+      const prev = {};
+      if (!forceReset) gridData.forEach(s => { prev[s.id] = s; });
+
+      rows = rIn; cols = cIn;
+      const newGrid = [];
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const id = `r${r}_c${c}`;
+          const old = prev[id];
+          const seat = {
+            id: id, row: r, col: c,
+            status: old ? old.status : 'normal',
+            student: old ? old.student : null,
+            x: (old && typeof old.x === 'number') ? old.x : MARGIN + c * (SEAT_W + GAP_X),
+            y: (old && typeof old.y === 'number') ? old.y : MARGIN + r * (SEAT_H + GAP_Y)
+          };
+          // 새로 생긴 책상이 기존 책상과 겹치면 빈자리를 찾아 살짝 밀어 놓음
+          if (!old) findFreeSpot(seat, newGrid);
+          newGrid.push(seat);
+        }
+      }
+      gridData = newGrid;
+      normalizePositions();
+      renderGrid();
+    }
+
+    // 겹치지 않는 위치 탐색 (아래 → 오른쪽 순서로 밀기)
+    function findFreeSpot(seat, placed) {
+      let guard = 0;
+      while (guard++ < 200 && placed.some(o => Math.abs(o.x - seat.x) < SEAT_W && Math.abs(o.y - seat.y) < SEAT_H)) {
+        seat.y += SEAT_H + GAP_Y;
+        if (seat.y > MARGIN + (rows + 2) * (SEAT_H + GAP_Y)) {
+          seat.y = MARGIN;
+          seat.x += SEAT_W + GAP_X;
+        }
+      }
+    }
+
+    function resetGrid() {
+      initGrid(true);
+      fitToScreen();
+      showAlert('책상 위치, 삭제/고정 상태, 배정된 학생이 모두 초기화되었습니다.', '배치 초기화 완료', 'success');
+    }
+
+    // 전체 좌표를 좌상단 MARGIN 기준으로 정렬 (음수 좌표 방지 + 여백 확보)
+    function normalizePositions() {
+      if (!gridData.length) return;
+      const minX = Math.min(...gridData.map(s => s.x));
+      const minY = Math.min(...gridData.map(s => s.y));
+      const dx = MARGIN - minX, dy = MARGIN - minY;
+      gridData.forEach(s => { s.x = Math.round(s.x + dx); s.y = Math.round(s.y + dy); });
+    }
+
+    // 실제 책상들이 차지하는 영역 크기
+    function getContentBounds() {
+      if (!gridData.length) return { minX: 0, minY: 0, w: SEAT_W, h: SEAT_H };
+      const minX = Math.min(...gridData.map(s => s.x));
+      const minY = Math.min(...gridData.map(s => s.y));
+      const maxX = Math.max(...gridData.map(s => s.x + SEAT_W));
+      const maxY = Math.max(...gridData.map(s => s.y + SEAT_H));
+      return { minX: minX, minY: minY, w: maxX - minX, h: maxY - minY };
+    }
+
+    // ==========================================================
+    // 시점 / 도구 모드
+    // ==========================================================
+    function setViewMode(mode) {
+      viewMode = mode;
+      updateViewButtons();
+      renderGrid();
+    }
+
+    function updateViewButtons() {
+      document.getElementById('viewTeacherBtn').className = (viewMode === 'teacher') ? BTN_ACTIVE.view : BTN_IDLE;
+      document.getElementById('viewStudentBtn').className = (viewMode === 'student') ? BTN_ACTIVE.view : BTN_IDLE;
+    }
+
+    function setToolMode(mode) {
+      toolMode = mode;
+      document.getElementById('toolMagnetBtn').className  = (mode === 'magnet')  ? BTN_ACTIVE.magnet  : BTN_IDLE;
+      document.getElementById('toolDisableBtn').className = (mode === 'disable') ? BTN_ACTIVE.disable : BTN_IDLE;
+      document.getElementById('toolFixBtn').className     = (mode === 'fix')     ? BTN_ACTIVE.fix     : BTN_IDLE;
+
+      document.getElementById('magnetToolArea').classList.toggle('hidden', mode !== 'magnet');
+      document.getElementById('fixStudentSelectArea').classList.toggle('hidden', mode !== 'fix');
+
+      const hint = document.getElementById('modeHintText');
+      if (mode === 'magnet') {
+        hint.className = 'text-sky-600 font-medium';
+        hint.innerText = '* 책상을 끌어서 옮기면 자석처럼 붙습니다.';
+      } else if (mode === 'disable') {
+        hint.className = 'text-red-500 font-medium';
+        hint.innerText = '* 책상을 클릭하면 사용하지 않는 자리로 바뀝니다.';
+      } else {
+        hint.className = 'text-amber-600 font-medium';
+        hint.innerText = '* 학생을 선택한 뒤 책상을 클릭하면 고정석이 됩니다.';
+      }
+      renderGrid();
+    }
+
+    /**
+     * 시점에 따른 화면 뼈대(복도/창가 라벨, 칠판 위치)
+     * - 교사 시점 : 칠판 아래, 왼쪽=복도 / 오른쪽=창가
+     * - 학생 시점 : 180도 회전 → 칠판 위, 왼쪽=창가 / 오른쪽=복도
+     */
+    function renderLayoutFrame() {
+      const labelBar = document.getElementById('sideLabelBar');
+      const board = document.getElementById('boardBar');
+      const grid = document.getElementById('gridContainer');
+
+      const corridor = (dir) => dir === 'left'
+        ? `<div class="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200"><i class="fa-solid fa-arrow-left"></i> 복도 쪽</div>`
+        : `<div class="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">복도 쪽 <i class="fa-solid fa-arrow-right"></i></div>`;
+      const windowSide = (dir) => dir === 'left'
+        ? `<div class="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200"><i class="fa-solid fa-arrow-left"></i> 창가 쪽</div>`
+        : `<div class="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">창가 쪽 <i class="fa-solid fa-arrow-right"></i></div>`;
+
+      board.innerHTML = `<i class="fa-solid fa-chalkboard"></i> 칠 판 (앞 / 교탁 위치)`;
+
+      if (viewMode === 'teacher') {
+        labelBar.innerHTML = corridor('left')
+          + `<div class="text-[11px] text-slate-400 font-normal text-center">[ 교사 시선 / 교탁에서 학생을 바라본 배치 ]</div>`
+          + windowSide('right');
+        board.className = BOARD_BASE + ' mt-3 mb-1';
+        board.style.order = '3'; grid.style.order = '2';
+      } else {
+        labelBar.innerHTML = windowSide('left')
+          + `<div class="text-[11px] text-slate-400 font-normal text-center">[ 학생 시선 / 자리에서 칠판을 바라본 배치 ]</div>`
+          + corridor('right');
+        board.className = BOARD_BASE + ' mb-3 mt-1';
+        board.style.order = '2'; grid.style.order = '3';
+      }
+    }
+
+    // ==========================================================
+    // 렌더링
+    // ==========================================================
+
+    // 상하좌우로 다른 책상과 맞닿아 있는지 판정 (붙은 모서리 각지게 처리용)
+    function getJoinInfo(seat) {
+      const j = { l: false, r: false, t: false, b: false };
+      gridData.forEach(o => {
+        if (o.id === seat.id) return;
+        const sameRow = Math.abs(o.y - seat.y) < 3;
+        const sameCol = Math.abs(o.x - seat.x) < 3;
+        if (sameRow && Math.abs((o.x + SEAT_W) - seat.x) < 3) j.l = true;
+        if (sameRow && Math.abs((seat.x + SEAT_W) - o.x) < 3) j.r = true;
+        if (sameCol && Math.abs((o.y + SEAT_H) - seat.y) < 3) j.t = true;
+        if (sameCol && Math.abs((seat.y + SEAT_H) - o.y) < 3) j.b = true;
+      });
+      return j;
+    }
+
+    /**
+     * 배치도 전체 그리기
+     * @param {object} opts { tight:true } 면 여백 없이 딱 맞게 그림 (인쇄용)
+     */
+    function renderGrid(opts) {
+      opts = opts || {};
+      renderLayoutFrame();
+
+      const canvas = document.getElementById('seatCanvas');
+      canvas.innerHTML = '';
+      deskEls = {};
+
+      const b = getContentBounds();
+      if (opts.tight) {
+        renderOffset = { x: b.minX, y: b.minY };
+        canvasW = b.w; canvasH = b.h;
+      } else {
+        renderOffset = { x: 0, y: 0 };
+        canvasW = b.minX + b.w + MARGIN;
+        canvasH = b.minY + b.h + MARGIN;
+      }
+      canvas.style.width = canvasW + 'px';
+      canvas.style.height = canvasH + 'px';
+      canvas.classList.toggle('rot180', viewMode === 'student');
+
+      let available = 0;
+      gridData.forEach(seat => {
+        const el = createDeskElement(seat);
+        canvas.appendChild(el);
+        deskEls[seat.id] = el;
+        if (seat.status !== 'disabled') available++;
+      });
+
+      document.getElementById('availableDesksCount').innerText = available;
+      applyCanvasScale(opts.scale !== undefined ? opts.scale : screenScale);
+    }
+
+    // 책상 카드 1개 생성
+    function createDeskElement(seat) {
+      const j = getJoinInfo(seat);
+      const el = document.createElement('div');
+
+      // 붙은 면은 테두리 2px 을 겹쳐 하나의 선처럼 보이게 만듦
+      let left = seat.x - renderOffset.x, top = seat.y - renderOffset.y;
+      let w = SEAT_W, h = SEAT_H;
+      if (j.l) { left -= BORDER; w += BORDER; }
+      if (j.t) { top -= BORDER; h += BORDER; }
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+      el.style.width = w + 'px';
+      el.style.height = h + 'px';
+
+      let cls = 'seat-card border-2 select-none';
+      if (j.l) cls += ' jl'; if (j.r) cls += ' jr';
+      if (j.t) cls += ' jt'; if (j.b) cls += ' jb';
+
+      const inner = document.createElement('div');
+      inner.className = 'seat-inner' + (viewMode === 'student' ? ' rot180' : '');
+
+      if (seat.status === 'disabled') {
+        cls += ' is-disabled bg-slate-100 border-dashed border-slate-300 text-slate-400';
+        inner.innerHTML = `<i class="fa-solid fa-xmark text-base"></i>
+          <span class="text-[10px] font-semibold mt-0.5">빈자리</span>`;
+      } else if (seat.status === 'fixed') {
+        cls += ' bg-amber-50 border-amber-400 text-amber-900 shadow-sm';
+        inner.innerHTML = `<span class="absolute top-1 left-1 text-[8px] bg-amber-200 px-1 py-0.5 rounded font-bold no-print">고정</span>
+          <div class="seat-name text-sm md:text-base font-extrabold">${seat.student ? escapeHtml(seat.student.name) : ''}</div>`;
+      } else {
+        cls += ' bg-white border-indigo-200 hover:border-indigo-400 shadow-sm text-slate-700';
+        if (seat.student) {
+          inner.innerHTML = `<div class="seat-name text-base md:text-lg font-bold text-indigo-900">${escapeHtml(seat.student.name)}</div>`;
+        } else {
+          inner.innerHTML = `<span class="text-xs text-slate-300 font-semibold">빈 책상</span>`;
+        }
+      }
+
+      if (toolMode === 'magnet') cls += ' draggable';
+      el.className = cls;
+      el.appendChild(inner);
+
+      // 이동 모드일 때만 드래그, 그 외 모드에서는 클릭 동작
+      if (toolMode === 'magnet') {
+        el.addEventListener('pointerdown', (e) => startDrag(e, seat, el));
+      } else {
+        el.onclick = () => handleSeatClick(seat);
+      }
+      return el;
+    }
+
+    // 캔버스 배율 적용 (화면 확대/축소 + 인쇄 축소 공용)
+    function applyCanvasScale(s) {
+      const scaler = document.getElementById('seatScaler');
+      const box = document.getElementById('seatScalerBox');
+      scaler.style.transformOrigin = 'top left';
+      scaler.style.transform = (s === 1) ? 'none' : `scale(${s})`;
+      box.style.width = Math.ceil(canvasW * s) + 'px';
+      box.style.height = Math.ceil(canvasH * s) + 'px';
+    }
+
+    function setScreenScale(s) {
+      screenScale = Math.min(1.6, Math.max(0.4, Math.round(s * 100) / 100));
+      applyCanvasScale(screenScale);
+      document.getElementById('scaleLabel').innerText = Math.round(screenScale * 100) + '%';
+    }
+
+    // 화면 폭에 맞춰 자동 축소
+    function fitToScreen() {
+      const container = document.getElementById('gridContainer');
+      const avail = container.clientWidth - 4;
+      if (avail <= 0 || canvasW <= 0) return;
+      setScreenScale(Math.min(1, avail / canvasW));
+    }
+
+    // ==========================================================
+    // 클릭 동작 (삭제 / 고정석)
+    // ==========================================================
+    function handleSeatClick(seat) {
+      if (toolMode === 'disable') {
+        if (seat.status === 'disabled') {
+          seat.status = 'normal';
+        } else {
+          seat.status = 'disabled';
+          seat.student = null;
+        }
+      } else if (toolMode === 'fix') {
+        if (seat.status === 'fixed') {
+          seat.status = 'normal';
+          seat.student = null;
+        } else {
+          const studentId = document.getElementById('studentSelectForFix').value;
+          if (!studentId) {
+            showAlert('상단 드롭다운에서 고정할 학생을 먼저 선택해 주세요.', '고정석 설정 안내', 'warning');
+            return;
+          }
+          const selected = students.find(s => s.id == studentId);
+          gridData.forEach(s => {
+            if (s.student && s.student.id == studentId) { s.status = 'normal'; s.student = null; }
+          });
+          seat.status = 'fixed';
+          seat.student = selected;
+        }
+      }
+      renderGrid();
+    }
+
+    // ==========================================================
+    // ★ 드래그 & 자석 스냅 로직
+    // ==========================================================
+
+    // 화면 좌표(포인터) → 캔버스 내부 모델 좌표로 변환
+    // (배율 확대/축소 및 학생 시점 180도 회전을 모두 역보정)
+    function pointerToModel(e) {
+      const canvas = document.getElementById('seatCanvas');
+      const rect = canvas.getBoundingClientRect();
+      const s = (canvas.offsetWidth > 0) ? (rect.width / canvas.offsetWidth) : 1;
+      const lx = (e.clientX - rect.left) / s;
+      const ly = (e.clientY - rect.top) / s;
+      if (viewMode === 'student') {
+        return { x: canvas.offsetWidth - lx, y: canvas.offsetHeight - ly };
+      }
+      return { x: lx, y: ly };
+    }
+
+    // 서로 맞닿아 있는 책상 묶음(모둠) 찾기 - 너비 우선 탐색
+    function getCluster(seat) {
+      const cluster = [seat];
+      const queue = [seat];
+      while (queue.length) {
+        const cur = queue.shift();
+        gridData.forEach(o => {
+          if (cluster.includes(o)) return;
+          const hTouch = Math.abs(o.y - cur.y) < 3 &&
+            (Math.abs((o.x + SEAT_W) - cur.x) < 3 || Math.abs((cur.x + SEAT_W) - o.x) < 3);
+          const vTouch = Math.abs(o.x - cur.x) < 3 &&
+            (Math.abs((o.y + SEAT_H) - cur.y) < 3 || Math.abs((cur.y + SEAT_H) - o.y) < 3);
+          if (hTouch || vTouch) { cluster.push(o); queue.push(o); }
+        });
+      }
+      return cluster;
+    }
+
+    /**
+     * 자석 스냅 계산
+     * 이동 중인 책상의 목표 좌표(px, py) 주변에서 가장 가까운 '붙을 자리'를 찾는다.
+     * 후보 : ① 좌우 밀착 ② 상하 밀착 ③ 기본 간격 유지 ④ 행/열 정렬
+     */
+    function computeSnap(px, py, movingIds) {
+      if (!snapEnabled) return { x: px, y: py, snapped: false };
+
+      const others = gridData.filter(s => movingIds.indexOf(s.id) === -1);
+      let snapped = false;
+
+      // 1차 : 세로(Y) 스냅 결정
+      let bestY = { d: SNAP + 1, v: py };
+      others.forEach(o => {
+        if (Math.abs(px - o.x) < SEAT_W * 0.85) {           // 가로로 겹칠 때만 위/아래 밀착 허용
+          [o.y + SEAT_H, o.y - SEAT_H, o.y + SEAT_H + GAP_Y, o.y - SEAT_H - GAP_Y].forEach(v => {
+            const d = Math.abs(py - v); if (d < bestY.d) bestY = { d: d, v: v };
+          });
+        }
+        if (Math.abs(py - o.y) < SEAT_H * 0.9) {            // 같은 줄로 높이 맞추기
+          const d = Math.abs(py - o.y); if (d < bestY.d) bestY = { d: d, v: o.y };
+        }
+      });
+      const ny = (bestY.d <= SNAP) ? bestY.v : py;
+      if (bestY.d <= SNAP) snapped = true;
+
+      // 2차 : 확정된 Y를 기준으로 가로(X) 스냅 결정
+      let bestX = { d: SNAP + 1, v: px };
+      others.forEach(o => {
+        if (Math.abs(ny - o.y) < SEAT_H * 0.85) {           // 세로로 겹칠 때만 좌우 밀착 허용
+          [o.x + SEAT_W, o.x - SEAT_W, o.x + SEAT_W + GAP_X, o.x - SEAT_W - GAP_X].forEach(v => {
+            const d = Math.abs(px - v); if (d < bestX.d) bestX = { d: d, v: v };
+          });
+        }
+        if (Math.abs(px - o.x) < SEAT_W * 0.9) {            // 같은 열로 줄 맞추기
+          const d = Math.abs(px - o.x); if (d < bestX.d) bestX = { d: d, v: o.x };
+        }
+      });
+      const nx = (bestX.d <= SNAP) ? bestX.v : px;
+      if (bestX.d <= SNAP) snapped = true;
+
+      return { x: nx, y: ny, snapped: snapped };
+    }
+
+    // 드래그 시작
+    function startDrag(e, seat, el) {
+      if (toolMode !== 'magnet') return;
+      e.preventDefault();
+
+      const p = pointerToModel(e);
+      const moving = groupMove ? getCluster(seat) : [seat];
+
+      dragState = {
+        seat: seat,
+        offX: p.x - seat.x,
+        offY: p.y - seat.y,
+        rel: moving.map(s => ({ s: s, dx: s.x - seat.x, dy: s.y - seat.y })),
+        ids: moving.map(s => s.id),
+        moved: false,
+        startX: e.clientX,
+        startY: e.clientY
+      };
+
+      // 드래그 중에는 붙어있던 표현(모서리 겹침)을 일시 해제해 낱개로 표시
+      dragState.rel.forEach(r => {
+        const d = deskEls[r.s.id];
+        if (!d) return;
+        d.classList.remove('jl', 'jr', 'jt', 'jb');
+        d.classList.add('dragging');
+        d.style.width = SEAT_W + 'px';
+        d.style.height = SEAT_H + 'px';
+        d.style.left = r.s.x + 'px';
+        d.style.top = r.s.y + 'px';
+      });
+
+      el.setPointerCapture(e.pointerId);
+      el.addEventListener('pointermove', onDragMove);
+      el.addEventListener('pointerup', onDragEnd);
+      el.addEventListener('pointercancel', onDragEnd);
+    }
+
+    // 드래그 중
+    function onDragMove(e) {
+      if (!dragState) return;
+      if (Math.abs(e.clientX - dragState.startX) > 3 || Math.abs(e.clientY - dragState.startY) > 3) {
+        dragState.moved = true;
+      }
+      const p = pointerToModel(e);
+      let nx = p.x - dragState.offX;
+      let ny = p.y - dragState.offY;
+
+      // 자석 스냅 적용
+      const snap = computeSnap(nx, ny, dragState.ids);
+      nx = snap.x; ny = snap.y;
+
+      // 묶음 전체 기준으로 캔버스 밖으로 나가지 않게 제한
+      const relXs = dragState.rel.map(r => r.dx);
+      const relYs = dragState.rel.map(r => r.dy);
+      const minRelX = Math.min(...relXs), maxRelX = Math.max(...relXs);
+      const minRelY = Math.min(...relYs), maxRelY = Math.max(...relYs);
+      nx = Math.max(-minRelX, Math.min(canvasW - SEAT_W - maxRelX, nx));
+      ny = Math.max(-minRelY, Math.min(canvasH - SEAT_H - maxRelY, ny));
+
+      // 위치 반영 (드래그 중에는 재렌더링 없이 DOM 만 직접 갱신)
+      dragState.rel.forEach(r => {
+        r.s.x = nx + r.dx;
+        r.s.y = ny + r.dy;
+        const d = deskEls[r.s.id];
+        if (d) {
+          d.style.left = r.s.x + 'px';
+          d.style.top = r.s.y + 'px';
+          d.classList.toggle('snapped', snap.snapped);
+        }
+      });
+    }
+
+    // 드래그 종료 → 좌표 정리 후 전체 재렌더링(붙은 모양 계산)
+    function onDragEnd(e) {
+      if (!dragState) return;
+      const el = deskEls[dragState.seat.id];
+      if (el) {
+        el.removeEventListener('pointermove', onDragMove);
+        el.removeEventListener('pointerup', onDragEnd);
+        el.removeEventListener('pointercancel', onDragEnd);
+      }
+      dragState = null;
+      normalizePositions();
+      renderGrid();
+    }
+
+    // ==========================================================
+    // ★ 배치 조건 처리 (화면에는 어떤 표시도 하지 않음)
+    // ==========================================================
+
+    /**
+     * 두 책상의 위치 관계 판정 (자유 배치 좌표 기준)
+     * @return 'h'(좌우) | 'v'(상하) | 'd'(대각선) | null(이웃 아님)
+     * - 중심 좌표 차이가 책상 크기의 절반 미만이면 '같은 줄/같은 열'로 봄
+     * - 책상 크기 × NEIGHBOR_RANGE 이내면 '바로 옆'으로 봄
+     */
+    function getSeatRelation(a, b) {
+      const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+      const alignX = SEAT_W * 0.5, alignY = SEAT_H * 0.5;
+      const nearX = SEAT_W * NEIGHBOR_RANGE, nearY = SEAT_H * NEIGHBOR_RANGE;
+
+      if (dx < alignX && dy < alignY) return null;          // 거의 겹친 경우는 무시
+      if (dy < alignY) return dx < nearX ? 'h' : null;      // 같은 줄 → 좌우
+      if (dx < alignX) return dy < nearY ? 'v' : null;      // 같은 열 → 상하
+      return (dx < nearX && dy < nearY) ? 'd' : null;       // 비스듬히 → 대각선
+    }
+
+    // 학생 두 명을 순서 상관없이 같은 키로 묶음 (예: 7|3 → "3|7")
+    function pairKey(a, b) {
+      a = Number(a); b = Number(b);
+      return a < b ? a + '|' + b : b + '|' + a;
+    }
+
+    /**
+     * 조건을 '학생 쌍 → 금지 방향' 지도로 변환
+     * 3명 이상 묶인 조건은 그 안의 모든 쌍에 같은 방향 금지를 적용
+     */
+    function buildRuleMap() {
+      const map = {};
+      separationRules.forEach(r => {
+        for (let i = 0; i < r.ids.length; i++) {
+          for (let j = i + 1; j < r.ids.length; j++) {
+            if (r.ids[i] == r.ids[j]) continue;
+            const k = pairKey(r.ids[i], r.ids[j]);
+            if (!map[k]) map[k] = {};
+            r.dirs.forEach(d => { map[k][d] = true; });
+          }
+        }
+      });
+      return map;
+    }
+
+    function isBlocked(map, a, b, dir) {
+      const entry = map[pairKey(a, b)];
+      return !!(entry && entry[dir]);
+    }
+
+    // 현재 배치에서 조건을 지키지 못한 쌍 목록 (서버 기록용, 화면 표시 없음)
+    function findViolations() {
+      const map = buildRuleMap();
+      if (!Object.keys(map).length) return [];
+      const seats = gridData.filter(s => s.status !== 'disabled' && s.student);
+      const list = [];
+      for (let i = 0; i < seats.length; i++) {
+        for (let j = i + 1; j < seats.length; j++) {
+          const dir = getSeatRelation(seats[i], seats[j]);
+          if (dir && isBlocked(map, seats[i].student.id, seats[j].student.id, dir)) {
+            list.push({ a: seats[i].student.id, b: seats[j].student.id, dir: dir });
+          }
+        }
+      }
+      return list;
+    }
+
+    /**
+     * 조건을 지키는 랜덤 배치 탐색 (Min-Conflict 지역 탐색 + 재시작)
+     * 1) 학생을 무작위로 앉힌다
+     * 2) 조건을 어긴 학생 하나를 골라, 다른 자리(빈 책상 포함)와 맞바꿨을 때
+     *    위반이 가장 줄어드는 자리로 옮긴다 (동점이면 무작위)
+     * 3) 막히면 가끔 무작위로 흔들어 빠져나오고, 그래도 안 되면 처음부터 다시
+     * - 고정석 학생은 움직이지 않지만 이웃 검사에는 포함
+     * - 최대 약 1.2초 탐색 후 가장 좋았던 결과를 반환
+     * @return {{assign: Array, violations: number}} assign[i] = seats[i] 에 앉을 학생
+     */
+    function solveSeparation(pool, seats) {
+      const slotIds = seats.map(s => s.id);
+      const base = pool.slice();
+      while (base.length < slotIds.length) base.push(null); // 남는 책상은 빈자리(null)
+      shuffleArray(base);
+
+      const map = buildRuleMap();
+      if (!Object.keys(map).length) return { assign: base, violations: 0 }; // 조건 없으면 단순 셔플
+
+      // 사용 가능한 모든 책상(고정석 포함)의 이웃 지도 미리 계산
+      const active = gridData.filter(s => s.status !== 'disabled');
+      const neighbors = {};
+      active.forEach(s => { neighbors[s.id] = []; });
+      for (let i = 0; i < active.length; i++) {
+        for (let j = i + 1; j < active.length; j++) {
+          const dir = getSeatRelation(active[i], active[j]);
+          if (dir) {
+            neighbors[active[i].id].push({ id: active[j].id, dir: dir });
+            neighbors[active[j].id].push({ id: active[i].id, dir: dir });
+          }
+        }
+      }
+
+      // 고정석 학생 (움직이지 않음)
+      const fixedMap = {};
+      gridData.forEach(s => { if (s.status === 'fixed' && s.student) fixedMap[s.id] = s.student; });
+
+      const cur = {}; // 움직일 수 있는 자리 → 학생
+      const who = id => (id in cur) ? cur[id] : (fixedMap[id] || null);
+
+      // 특정 자리에 앉은 학생이 이웃과 몇 건 충돌하는지
+      const seatCost = id => {
+        const st = who(id);
+        if (!st || !neighbors[id]) return 0;
+        let c = 0;
+        neighbors[id].forEach(n => {
+          const o = who(n.id);
+          if (o && isBlocked(map, st.id, o.id, n.dir)) c++;
+        });
+        return c;
+      };
+      // 전체 위반 쌍 수 (각 쌍이 양쪽에서 두 번 세어지므로 / 2)
+      const totalCost = () => active.reduce((sum, s) => sum + seatCost(s.id), 0) / 2;
+      const swap = (a, b) => { const t = cur[a]; cur[a] = cur[b]; cur[b] = t; };
+      const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+      let best = null, bestCost = Infinity;
+      const deadline = Date.now() + 1200;
+      let attempt = 0;
+
+      while (bestCost > 0 && (attempt === 0 || Date.now() < deadline)) {
+        if (attempt++ > 0) shuffleArray(base);     // 재시작 시 새로 섞기
+        slotIds.forEach((id, i) => { cur[id] = base[i]; });
+
+        for (let it = 0; it < 400; it++) {
+          if ((it & 31) === 0 && Date.now() > deadline) break;
+          const conflicted = slotIds.filter(id => seatCost(id) > 0);
+          if (!conflicted.length) break;           // 움직일 수 있는 자리 중 충돌 없음
+
+          const s1 = pick(conflicted);
+          let bestDelta = Infinity, cands = [];
+          slotIds.forEach(s2 => {
+            if (s2 === s1 || cur[s1] === cur[s2]) return;
+            const before = seatCost(s1) + seatCost(s2);
+            swap(s1, s2);
+            const after = seatCost(s1) + seatCost(s2);
+            swap(s1, s2);
+            const d = after - before;
+            if (d < bestDelta) { bestDelta = d; cands = [s2]; }
+            else if (d === bestDelta) cands.push(s2);
+          });
+          if (!cands.length) break;
+
+          if (bestDelta <= 0) swap(s1, pick(cands));                 // 개선(또는 동점)이면 이동
+          else if (Math.random() < 0.3) swap(s1, pick(slotIds.filter(id => id !== s1))); // 막혔을 때 흔들기
+        }
+
+        const c = totalCost();
+        if (c < bestCost) { bestCost = c; best = slotIds.map(id => cur[id]); }
+      }
+
+      return { assign: best, violations: bestCost };
+    }
+
+    /**
+     * 랜덤 배치 결과를 서버에 '조용히' 기록
+     * - 화면에는 아무것도 띄우지 않음
+     * - 교사는 구글 시트 [⚙️ 고급설정] 창에서 결과를 확인
+     */
+    function reportResultSilently() {
+      if (!separationRules.length) return;
+      google.script.run
+        .withFailureHandler(function() { /* 기록 실패는 화면에 알리지 않음 */ })
+        .reportPlacementResult({
+          ruleCount: separationRules.length,
+          unmet: findViolations()
+        });
+    }
+
+    // ==========================================================
+    // 배치 알고리즘
+    // ==========================================================
+
+    /**
+     * 실제 좌표를 읽어 번호 순서를 정한다.
+     * 창가(오른쪽) 세로줄부터 → 각 줄에서 칠판 앞(아래)부터 1번
+     */
+    function getOrderedSeatsByPosition() {
+      const normal = gridData.filter(s => s.status === 'normal');
+      const sorted = normal.slice().sort((a, b) => b.x - a.x);
+      const bands = [];
+      sorted.forEach(s => {
+        let band = null;
+        for (let i = 0; i < bands.length; i++) {
+          if (Math.abs(bands[i].x - s.x) < SEAT_W * 0.6) { band = bands[i]; break; }
+        }
+        if (!band) { band = { x: s.x, items: [] }; bands.push(band); }
+        band.items.push(s);
+      });
+      const result = [];
+      bands.forEach(b => {
+        b.items.sort((a, c) => c.y - a.y); // 아래(칠판 앞)부터
+        result.push.apply(result, b.items);
+      });
+      return result;
+    }
+
+    /**
+     * [랜덤 배치 시작!]
+     * - 버튼을 누르면 이름이 돌아가는 연출을 '즉시' 시작하고,
+     *   그동안 서버에서 최신 조건을 받아 최종 배치를 계산한다.
+     * - 연출이 최소 횟수(약 1초) 이상 돌았고 계산도 끝났으면 결과로 확정.
+     * - 화면상으로는 평범한 무작위 배치와 완전히 똑같이 보인다.
+     */
+    function randomizeSeats() {
+      if (isShuffling) return;
+
+      const fixedIds = gridData.filter(s => s.status === 'fixed' && s.student).map(s => s.student.id);
+      const pool = students.filter(s => fixedIds.indexOf(s.id) === -1);
+      const availableSeats = gridData.filter(s => s.status === 'normal');
+
+      if (pool.length > availableSeats.length) {
+        showAlert(`배치할 학생(${pool.length}명)이 이용 가능한 책상 수(${availableSeats.length}개)보다 많습니다.\n책상 수를 늘리시거나 삭제된 책상을 복원해 주세요.`, '책상 수 부족', 'warning');
+        return;
+      }
+
+      isShuffling = true;
+      let result = null;
+
+      // ① 최신 조건을 받아 최종 배치 계산 (연출과 동시에 진행)
+      google.script.run
+        .withSuccessHandler(function(rules) {
+          separationRules = (rules || []).map(r => ({ ids: r.ids.map(Number), dirs: r.dirs.slice() }));
+          result = solveSeparation(pool, availableSeats);
+        })
+        .withFailureHandler(function() {
+          result = solveSeparation(pool, availableSeats); // 실패 시 기존 조건(없으면 일반 셔플)
+        })
+        .getSeparationRules();
+
+      // ② 돌아가는 연출
+      let step = 0;
+      const interval = setInterval(() => {
+        // 서버 응답이 너무 늦으면(약 5초) 기존 조건으로 바로 계산
+        if (!result && step > 60) result = solveSeparation(pool, availableSeats);
+
+        if (step > 10 && result) {
+          clearInterval(interval);
+          availableSeats.forEach((seat, idx) => { seat.student = result.assign[idx] || null; });
+          isShuffling = false;
+          renderGrid();
+          reportResultSilently();
+          return;
+        }
+
+        availableSeats.forEach(seat => {
+          seat.student = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+        });
+        renderGrid();
+        step++;
+      }, 80);
+    }
+
+    // 번호순 배치
+    function sortByNumberSeats() {
+      const fixedIds = gridData.filter(s => s.status === 'fixed' && s.student).map(s => s.student.id);
+      const sortedStudents = students.filter(s => fixedIds.indexOf(s.id) === -1).sort((a, b) => a.id - b.id);
+      const targetSeats = getOrderedSeatsByPosition();
+
+      if (sortedStudents.length > targetSeats.length) {
+        showAlert(`배치할 학생(${sortedStudents.length}명)이 이용 가능한 책상 수(${targetSeats.length}개)보다 많습니다.\n책상 수를 늘리시거나 삭제된 책상을 복원해 주세요.`, '책상 수 부족', 'warning');
+        return;
+      }
+
+      gridData.forEach(s => { if (s.status === 'normal') s.student = null; });
+      targetSeats.forEach((seat, idx) => { if (sortedStudents[idx]) seat.student = sortedStudents[idx]; });
+
+      renderGrid();
+      showAlert('창가 쪽 세로줄의 칠판 앞자리를 1번으로 하여 번호순 배치를 완료했습니다.', '번호순 배치 완료', 'success');
+    }
+
+    // ==========================================================
+    // 인쇄 (A4 가로 1페이지 자동 축소)
+    // ==========================================================
+    function preparePrint() {
+      const MM = 96 / 25.4;                    // 1mm 당 픽셀
+      const pageW = (297 - 32) * MM;           // 좌우 여백 16mm 제외
+      const pageH = (210 - 20) * MM;           // 상하 여백 10mm 제외
+      const availW = pageW - 136 - 30;         // 우측 학생 명단(8.5rem) + 간격 제외
+      const availH = pageH - 110;              // 칠판 + 안내바 + 여백 제외
+
+      const b = getContentBounds();
+      const scale = Math.min(availW / b.w, availH / b.h, 1);
+      renderGrid({ tight: true, scale: scale }); // 여백 없이 딱 맞게 다시 그린 뒤 축소 적용
+    }
+
+    function restoreAfterPrint() {
+      renderGrid();
+      applyCanvasScale(screenScale);
+    }
+
+    function doPrint() {
+      preparePrint();
+      setTimeout(function() { window.print(); }, 80);
+    }
+
+    // 브라우저 인쇄 단축키(Ctrl+P) 대응
+    window.addEventListener('beforeprint', preparePrint);
+    window.addEventListener('afterprint', restoreAfterPrint);
+
+    // ==========================================================
+    // 저장 모달
+    // ==========================================================
+    function openSaveModal() {
+      const modal = document.getElementById('saveModal');
+      const box = document.getElementById('saveModalBox');
+      const input = document.getElementById('saveTitleInput');
+      input.value = '자리배치_' + new Date().toLocaleDateString();
+      modal.classList.remove('hidden');
+      setTimeout(() => { box.classList.remove('scale-95'); box.classList.add('scale-100'); input.focus(); }, 10);
+    }
+
+    function closeSaveModal() {
+      const modal = document.getElementById('saveModal');
+      const box = document.getElementById('saveModalBox');
+      box.classList.remove('scale-100'); box.classList.add('scale-95');
+      setTimeout(() => { modal.classList.add('hidden'); }, 150);
+    }
+
+    function confirmSaveLayout() {
+      const input = document.getElementById('saveTitleInput');
+      const title = input.value.trim();
+      const btn = document.getElementById('btnConfirmSave');
+
+      if (!title) {
+        showAlert('저장할 배치 이름을 입력해주세요.', '입력 오류', 'warning');
+        input.focus();
+        return;
+      }
+
+      // 좌표(x, y) 와 시점까지 함께 저장
+      const layoutData = JSON.stringify({ rows: rows, cols: cols, viewMode: viewMode, grid: gridData });
+
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...`;
+
+      google.script.run.withSuccessHandler(function() {
+        closeSaveModal();
+        btn.disabled = false;
+        btn.innerHTML = `저장하기`;
+        showAlert('구글 시트(배치이력 탭)에 현재 상태가 성공적으로 저장되었습니다.', '저장 완료', 'success');
+      }).saveResult(title, layoutData);
+    }
+
+    // ==========================================================
+    // 이력 불러오기
+    // ==========================================================
+    function openHistoryModal() {
+      document.getElementById('historyModal').classList.remove('hidden');
+      const container = document.getElementById('historyListContainer');
+      container.innerHTML = '<div class="text-center py-8 text-slate-400">저장된 기록을 불러오는 중...</div>';
+
+      google.script.run.withSuccessHandler(function(list) {
+        if (!list || list.length === 0) {
+          container.innerHTML = '<div class="text-center py-8 text-slate-400">저장된 배치 이력이 없습니다.</div>';
+          return;
+        }
+        container.innerHTML = '';
+        list.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl flex justify-between items-center transition cursor-pointer';
+          div.onclick = () => loadHistoryData(item);
+          div.innerHTML = `<div>
+              <div class="font-bold text-slate-800 text-sm">${escapeHtml(item.title)}</div>
+              <div class="text-xs text-slate-400">${item.date}</div>
+            </div>
+            <span class="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg">불러오기</span>`;
+          container.appendChild(div);
+        });
+      }).getHistoryList();
+    }
+
+    // 선택한 이력 적용 (좌표가 없는 구버전 데이터는 격자 좌표로 자동 변환)
+    function loadHistoryData(item) {
+      try {
+        const data = JSON.parse(item.json);
+        rows = data.rows || 6;
+        cols = data.cols || 5;
+        viewMode = (data.viewMode === 'student') ? 'student' : 'teacher';
+
+        gridData = (data.grid || []).map(function(s) {
+          const r = (typeof s.row === 'number') ? s.row : 0;
+          const c = (typeof s.col === 'number') ? s.col : 0;
+          return {
+            id: s.id || ('r' + r + '_c' + c),
+            row: r, col: c,
+            status: s.status || 'normal',
+            student: s.student || null,
+            x: (typeof s.x === 'number') ? s.x : MARGIN + c * (SEAT_W + GAP_X),
+            y: (typeof s.y === 'number') ? s.y : MARGIN + r * (SEAT_H + GAP_Y)
+          };
+        });
+
+        document.getElementById('rowsInput').value = rows;
+        document.getElementById('colsInput').value = cols;
+
+        normalizePositions();
+        updateViewButtons();
+        renderGrid();
+        fitToScreen();
+        closeHistoryModal();
+        showAlert(`'${item.title}' 배치 기록을 성공적으로 불러왔습니다.`, '불러오기 성공', 'success');
+      } catch (e) {
+        showAlert('데이터를 불러오는 중 오류가 발생했습니다.', '오류 발생', 'warning');
+      }
+    }
+
+    function closeHistoryModal() {
+      document.getElementById('historyModal').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

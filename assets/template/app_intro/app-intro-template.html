@@ -391,8 +391,10 @@
 
         <!-- ================= (선택) 소스 코드 보기 및 복사 섹션 =================
              - 템플릿 시트 복사 외에 사용자가 직접 Apps Script 소스 코드를 확인하거나 복사할 수 있게 제공할 때 사용합니다.
-             - <code id="..."> 안의 코드는 HTML 엔티티(&lt;, &gt;, &amp;)로 이스케이프하여 삽입하세요.
-             - 불필요한 경우 이 section 및 하단 copySourceCode 스크립트를 삭제하세요. -->
+             - 코드는 페이지에 넣지 않고 assets/gas/{{앱이름}}/ 폴더에 원본 그대로(이스케이프 없이) 저장합니다.
+               <code id="..." data-src="파일 경로"> 의 data-src 파일을 [코드 보기]를 펼칠 때 fetch 로 불러옵니다.
+             - 파일을 더블클릭(file://)으로 열면 fetch 가 막힙니다. 로컬 확인은 Live Server 등 로컬 서버로 하세요.
+             - 불필요한 경우 이 section 및 하단 소스 코드 스크립트를 삭제하세요. -->
         <section class="mt-4 mb-5">
             <div class="card border border-slate-200 shadow-sm rounded-4 overflow-hidden">
                 <div class="card-header bg-white p-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
@@ -437,7 +439,7 @@
                                             <i class="bi bi-clipboard me-1"></i> 코드 복사
                                         </button>
                                     </div>
-                                    <pre class="code-box-pre"><code id="codeGsContent">{{Code.gs 소스 코드를 여기에 붙여넣으세요}}</code></pre>
+                                    <pre class="code-box-pre"><code id="codeGsContent" data-src="../../../assets/gas/{{앱이름}}/Code.gs"></code></pre>
                                 </div>
                             </div>
 
@@ -452,7 +454,7 @@
                                             <i class="bi bi-clipboard me-1"></i> 코드 복사
                                         </button>
                                     </div>
-                                    <pre class="code-box-pre"><code id="indexHtmlContent">{{index.html 소스 코드를 여기에 붙여넣으세요}}</code></pre>
+                                    <pre class="code-box-pre"><code id="indexHtmlContent" data-src="../../../assets/gas/{{앱이름}}/index.html"></code></pre>
                                 </div>
                             </div>
                         </div>
@@ -465,11 +467,47 @@
     <!-- Bootstrap 5 JS Bundle (캐러셀 구동 필수) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- 코드 복사 스크립트 (소스 코드 섹션 사용 시 필요) -->
+    <!-- 소스 코드 불러오기 및 복사 스크립트 (소스 코드 섹션 사용 시 필요) -->
     <script>
-        function copySourceCode(elementId, btn) {
+        // Apps Script 원본 코드는 assets/gas/ 폴더의 파일에서 불러옵니다.
+        let sourceCodeLoading = null;
+
+        function loadSourceCodes() {
+            if (sourceCodeLoading) return sourceCodeLoading;
+            let hasError = false;
+            const codeEls = Array.from(document.querySelectorAll('code[data-src]'));
+            sourceCodeLoading = Promise.all(codeEls.map(function(codeEl) {
+                if (codeEl.dataset.loaded === 'true') return null;
+                codeEl.textContent = '코드를 불러오는 중...';
+                return fetch(codeEl.dataset.src, { cache: 'no-cache' })
+                    .then(function(res) {
+                        if (!res.ok) throw new Error(res.status);
+                        return res.text();
+                    })
+                    .then(function(text) {
+                        codeEl.textContent = text;
+                        codeEl.dataset.loaded = 'true';
+                    })
+                    .catch(function() {
+                        hasError = true;
+                        codeEl.textContent = '코드를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.';
+                    });
+            })).then(function() {
+                if (hasError) sourceCodeLoading = null;
+            });
+            return sourceCodeLoading;
+        }
+
+        document.getElementById('sourceCodeCollapse').addEventListener('show.bs.collapse', loadSourceCodes);
+
+        async function copySourceCode(elementId, btn) {
             const codeEl = document.getElementById(elementId);
             if (!codeEl) return;
+            await loadSourceCodes();
+            if (codeEl.dataset.loaded !== 'true') {
+                alert('코드를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+                return;
+            }
             const textToCopy = codeEl.textContent;
 
             navigator.clipboard.writeText(textToCopy).then(function() {

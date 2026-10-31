@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <script>
+    // 웹 앱(index.html)과 같은 디자인 토큰
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Pretendard', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'sans-serif'] },
+          colors: {
+            board: { DEFAULT: '#24493D', deep: '#1B3A30', soft: '#E1EBE6' },
+            chalk: { DEFAULT: '#F3F0E4', yellow: '#F0CF5C' },
+            stamp: { DEFAULT: '#CF3A2E', soft: '#FBEAE7' },
+            ink: { DEFAULT: '#1D2B26', muted: '#5F706A' },
+            page: '#E9EFEC',
+            line: '#D5DEDA'
+          }
+        }
+      }
+    };
+  </script>
+  <style type="text/tailwindcss">
+    @layer components {
+      .field { @apply mt-1.5 block w-full rounded-lg border border-line bg-white px-3.5 py-3 text-base text-ink transition focus:border-board focus:outline-none focus:ring-4 focus:ring-chalk-yellow/60; }
+      .btn { @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-chalk-yellow/70; }
+      .btn-primary { @apply bg-board text-chalk hover:bg-board-deep; }
+      .btn-danger { @apply bg-stamp text-white hover:brightness-95; }
+      .btn-ghost { @apply bg-white text-ink ring-1 ring-inset ring-line hover:bg-page; }
+      .btn-sm { @apply rounded-md px-3 py-1.5 text-xs; }
+      .panel { @apply rounded-2xl border border-line bg-white; }
+    }
+  </style>
+  <style>
+    .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 9999px; display: inline-block; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+
+<body class="break-keep bg-page font-sans text-ink antialiased">
+  <div class="mx-auto max-w-3xl p-4">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-extrabold">시트 구조 점검</h1>
+        <p class="mt-0.5 text-xs leading-relaxed text-ink-muted">지금 시트를 살펴본 결과예요. 아래 버튼을 누르기 전까지는 아무것도 바뀌지 않아요.</p>
+      </div>
+      <button id="rediagnoseBtn" type="button" onclick="diagnose()" class="btn btn-ghost btn-sm">다시 점검</button>
+    </div>
+
+    <!-- 시트별 진단 결과 -->
+    <div id="diagArea" class="mt-4 grid gap-3 sm:grid-cols-2">
+      <div class="panel p-5 text-sm text-ink-muted sm:col-span-2">시트를 살펴보는 중이에요.</div>
+    </div>
+
+    <!-- 교사 비밀번호 등록 상태 -->
+    <div id="pwNotice" class="panel mt-3 hidden px-4 py-3"></div>
+
+    <!-- 실행 -->
+    <div class="panel mt-3 p-4">
+      <label class="flex cursor-pointer items-start gap-2.5">
+        <input id="backupChk" type="checkbox" checked class="mt-0.5 h-4 w-4 accent-[#24493D]">
+        <span class="text-sm">
+          <span class="font-bold">실행 전에 백업 시트 만들기 (권장)</span>
+          <span class="mt-0.5 block text-xs text-ink-muted">같은 파일 안에 '백업_시트명_날짜' 탭으로 복사해 둬요. 필요 없어지면 탭을 지우면 돼요.</span>
+        </span>
+      </label>
+      <div class="mt-4 grid gap-2 sm:grid-cols-2">
+        <button id="safeBtn" type="button" onclick="runSafe()" class="btn btn-primary flex-col items-start gap-0.5 px-4 py-3 text-left" disabled>
+          <span class="text-sm">안전 세팅</span>
+          <span class="whitespace-normal text-xs font-normal text-chalk/80">기존 데이터는 두고, 없는 시트와 열만 채워요</span>
+        </button>
+        <button id="resetBtn" type="button" onclick="runReset()" class="btn btn-ghost flex-col items-start gap-0.5 px-4 py-3 text-left" disabled>
+          <span class="text-sm text-stamp">전체 초기화</span>
+          <span class="whitespace-normal text-xs font-normal text-ink-muted">모든 내용을 지우고 예시 데이터로 새로 시작해요</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 실행 결과 -->
+    <div id="logArea" class="panel mt-3 hidden p-4"></div>
+
+    <div class="mt-4 flex justify-end">
+      <button type="button" onclick="google.script.host.close()" class="btn btn-ghost">닫기</button>
+    </div>
+  </div>
+
+  <!-- 공용 모달 (confirm 대신) -->
+  <div id="modalRoot" class="fixed inset-0 z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="absolute inset-0 bg-ink/50" onclick="closeModal(false)"></div>
+    <div class="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+      <h3 id="modalTitle" class="text-lg font-extrabold"></h3>
+      <div id="modalBody" class="mt-2 text-sm leading-relaxed text-ink-muted"></div>
+      <div id="modalButtons" class="mt-6 flex gap-2"></div>
+    </div>
+  </div>
+  <div id="toastRoot" class="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex flex-col items-center gap-2 px-4" aria-live="polite"></div>
+
+<script>
+  let lastDiagnosis = null;   // 마지막 진단 결과 (확인 모달에 작업 목록을 보여 줄 때 사용)
+  let modalState = null;      // { resolve, validate }
+
+  window.addEventListener('load', diagnose);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && modalState) closeModal(false); });
+
+  // ---------------- 공통 도구 ----------------
+  function $(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+  function call(fnName, ...args) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fnName](...args);
+    });
+  }
+  function errMsg(e) { return String((e && e.message) || e || '알 수 없는 오류').replace(/^(Error|Exception):\s*/, ''); }
+  function showToast(message, isError) {
+    const el = document.createElement('div');
+    el.className = `rounded-full px-4 py-2.5 text-sm font-semibold shadow-lg transition-opacity duration-300 ${isError ? 'bg-stamp text-white' : 'bg-ink text-chalk'}`;
+    el.textContent = message;
+    $('toastRoot').appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2600);
+  }
+
+  /**
+   * 확인 모달. validate()가 false를 돌려주면 닫히지 않습니다. (전체 초기화 확인 문구 검사용)
+   * bodyHtml에는 esc()로 처리한 값만 넣습니다.
+   */
+  function openConfirm(o) {
+    $('modalTitle').textContent = o.title;
+    $('modalBody').innerHTML = o.bodyHtml;
+    $('modalButtons').innerHTML = `
+      <button type="button" class="btn btn-ghost flex-1 py-3" onclick="closeModal(false)">취소</button>
+      <button type="button" class="btn ${o.danger ? 'btn-danger' : 'btn-primary'} flex-1 py-3" onclick="closeModal(true)">${esc(o.confirmText)}</button>`;
+    $('modalRoot').classList.remove('hidden');
+    $('modalRoot').classList.add('flex');
+    setTimeout(() => {
+      const target = $('modalBody').querySelector('input') || $('modalButtons').lastElementChild;
+      target.focus();
+    }, 50);
+    return new Promise(resolve => { modalState = { resolve: resolve, validate: o.validate || null }; });
+  }
+  function closeModal(value) {
+    if (!modalState) return;
+    if (value && modalState.validate && modalState.validate() === false) return;
+    const r = modalState.resolve;
+    modalState = null;
+    $('modalRoot').classList.add('hidden');
+    $('modalRoot').classList.remove('flex');
+    r(value);
+  }
+  function setActionsDisabled(disabled) {
+    ['safeBtn', 'resetBtn', 'rediagnoseBtn'].forEach(id => { $(id).disabled = disabled; });
+  }
+
+  // ---------------- 진단 ----------------
+  async function diagnose() {
+    setActionsDisabled(true);
+    $('diagArea').innerHTML = '<div class="panel p-5 text-sm text-ink-muted sm:col-span-2">시트를 살펴보는 중이에요.</div>';
+    try {
+      lastDiagnosis = await call('diagnoseDatabase');
+      renderDiagnosis(lastDiagnosis);
+      setActionsDisabled(false);
+    } catch (e) {
+      $('diagArea').innerHTML = `<div class="panel p-5 text-sm sm:col-span-2"><p class="font-bold text-stamp">점검하지 못했어요.</p><p class="mt-1 text-ink-muted">${esc(errMsg(e))}</p></div>`;
+      $('rediagnoseBtn').disabled = false;
+    }
+  }
+
+  function renderDiagnosis(d) {
+    const STATUS = {
+      ok: ['정상', 'bg-board-soft text-board'],
+      check: ['확인 필요', 'bg-white text-ink ring-1 ring-inset ring-chalk-yellow'],
+      fix: ['보완 필요', 'bg-chalk-yellow/40 text-ink'],
+      missing: ['시트 없음', 'bg-stamp-soft text-stamp']
+    };
+    $('diagArea').innerHTML = d.sheets.map(s => {
+      // 바꿀 구조는 없지만 직접 확인할 항목이 남아 있으면 '확인 필요'로 표시
+      const st = STATUS[s.status === 'ok' && s.warnings.length ? 'check' : s.status];
+      const chips = s.expected.map(h => s.headers.indexOf(h) > -1
+        ? `<span class="rounded bg-board-soft px-1.5 py-0.5 text-xs font-semibold text-board">${esc(h)}</span>`
+        : `<span class="rounded border border-dashed border-stamp/60 px-1.5 py-0.5 text-xs font-semibold text-stamp" title="이 열이 아직 없어요">${esc(h)}</span>`
+      ).join('');
+      const extra = s.headers.filter(h => s.expected.indexOf(h) === -1);
+      return `
+        <section class="panel p-4">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="font-extrabold">[${esc(s.name)}] 시트</h2>
+            <span class="rounded-full px-2 py-0.5 text-xs font-bold ${st[1]}">${st[0]}</span>
+          </div>
+          <p class="mt-0.5 text-xs text-ink-muted">${s.exists ? `데이터 ${s.dataRows}행` : '아직 만들어지지 않았어요'}</p>
+          <p class="mt-3 text-xs font-semibold text-ink-muted">필요한 열 <span class="font-normal">(점선 = 아직 없음)</span></p>
+          <div class="mt-1 flex flex-wrap gap-1">${chips}</div>
+          ${extra.length ? `<p class="mt-2 text-xs text-ink-muted">앱에서 쓰지 않는 열: ${extra.map(esc).join(', ')}</p>` : ''}
+          ${s.tasks.length ? `
+            <p class="mt-3 text-xs font-bold">[안전 세팅]을 누르면</p>
+            <ul class="mt-1 list-disc space-y-0.5 pl-5 text-sm">${s.tasks.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+          ${s.warnings.length ? `
+            <div class="mt-3 rounded-lg bg-chalk-yellow/25 px-3 py-2">
+              <p class="text-xs font-bold">직접 확인할 것</p>
+              <ul class="mt-1 list-disc space-y-0.5 pl-5 text-sm">${s.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
+            </div>` : ''}
+        </section>`;
+    }).join('');
+
+    const notice = $('pwNotice');
+    notice.classList.remove('hidden');
+    if (d.adminPasswordRegistered) {
+      notice.innerHTML = '<p class="text-sm"><span class="font-bold text-board">교사 비밀번호 등록됨</span> <span class="text-ink-muted">웹 앱에서 교사로 로그인할 수 있어요.</span></p>';
+    } else if (d.legacyAdminPassword) {
+      notice.innerHTML = '<p class="text-sm"><span class="font-bold text-stamp">교사 비밀번호 미등록</span> <span class="text-ink-muted">시트에 예전 관리자 패스워드가 있어요. [안전 세팅]을 누르면 자동으로 옮겨져서 지금 비밀번호 그대로 쓸 수 있어요.</span></p>';
+    } else {
+      notice.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-sm"><span class="font-bold text-stamp">교사 비밀번호 미등록</span> <span class="text-ink-muted">등록해야 교사 화면에 들어갈 수 있어요.</span></p>
+          <button type="button" onclick="google.script.run.openSettingsDialog()" class="btn btn-primary btn-sm">비밀번호 등록 창 열기</button>
+        </div>`;
+    }
+  }
+
+  // ---------------- 실행 ----------------
+  async function runSafe() {
+    const tasks = [];
+    (lastDiagnosis ? lastDiagnosis.sheets : []).forEach(s => s.tasks.forEach(t => tasks.push(`[${s.name}] ${t}`)));
+    const ok = await openConfirm({
+      title: '안전 세팅',
+      bodyHtml: tasks.length
+        ? `<p>아래 작업을 실행해요. 기존 데이터는 지우지 않아요.</p>
+           <ul class="mt-2 list-disc space-y-1 pl-5 text-ink">${tasks.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`
+        : '<p>바꿀 구조가 없어요. 실행하면 텍스트 서식(학번 앞자리 0 보존)만 다시 맞춰요.</p>',
+      confirmText: '안전 세팅 실행'
+    });
+    if (ok) execute('safe');
+  }
+
+  async function runReset() {
+    const backup = $('backupChk').checked;
+    const ok = await openConfirm({
+      title: '전체 초기화',
+      danger: true,
+      bodyHtml: `
+        <p>[환경설정]과 [학생소감문] 시트의 <b class="text-ink">모든 내용이 지워지고</b> 예시 데이터로 바뀌어요.</p>
+        ${backup
+          ? '<p class="mt-2">백업 시트를 먼저 만들어 둘게요.</p>'
+          : '<p class="mt-2 rounded-lg bg-stamp-soft px-3 py-2 font-semibold text-stamp">백업이 꺼져 있어요. 지운 내용은 되돌릴 수 없어요.</p>'}
+        <label for="resetConfirmInput" class="mt-4 block font-semibold text-ink">계속하려면 아래 칸에 <b>초기화</b>를 입력하세요.</label>
+        <input id="resetConfirmInput" type="text" autocomplete="off" class="field" placeholder="초기화">
+        <p id="resetConfirmError" class="mt-2 hidden font-semibold text-stamp">'초기화'를 정확히 입력하세요.</p>`,
+      confirmText: '전체 초기화 실행',
+      validate: () => {
+        const pass = $('resetConfirmInput').value.trim() === '초기화';
+        $('resetConfirmError').classList.toggle('hidden', pass);
+        return pass;
+      }
+    });
+    if (ok) execute('reset');
+  }
+
+  async function execute(mode) {
+    const btn = mode === 'reset' ? $('resetBtn') : $('safeBtn');
+    const label = btn.innerHTML;
+    setActionsDisabled(true);
+    btn.innerHTML = `<span class="flex items-center gap-2 text-sm"><span class="spinner"></span>${mode === 'reset' ? '초기화하는 중' : '세팅하는 중'}</span>`;
+    try {
+      const res = await call('runDatabaseSetup', mode, $('backupChk').checked);
+      renderLogs(mode, res.logs);
+      showToast(mode === 'reset' ? '전체 초기화를 마쳤어요.' : '안전 세팅을 마쳤어요.');
+      btn.innerHTML = label;
+      await diagnose();
+    } catch (e) {
+      btn.innerHTML = label;
+      setActionsDisabled(false);
+      renderLogs(mode, ['실행하지 못했어요: ' + errMsg(e)], true);
+    }
+  }
+
+  function renderLogs(mode, logs, isError) {
+    const box = $('logArea');
+    box.classList.remove('hidden');
+    box.innerHTML = `
+      <h2 class="font-extrabold ${isError ? 'text-stamp' : ''}">${mode === 'reset' ? '전체 초기화 결과' : '안전 세팅 결과'}</h2>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">${logs.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+</script>
+</body>
+</html>

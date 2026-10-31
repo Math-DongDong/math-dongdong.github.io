@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <script>
+    // 웹 앱(index.html)과 같은 디자인 토큰
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Pretendard', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'sans-serif'] },
+          colors: {
+            board: { DEFAULT: '#24493D', deep: '#1B3A30', soft: '#E1EBE6' },
+            chalk: { DEFAULT: '#F3F0E4', yellow: '#F0CF5C' },
+            stamp: { DEFAULT: '#CF3A2E', soft: '#FBEAE7' },
+            ink: { DEFAULT: '#1D2B26', muted: '#5F706A' },
+            page: '#E9EFEC',
+            line: '#D5DEDA'
+          }
+        }
+      }
+    };
+  </script>
+  <style type="text/tailwindcss">
+    @layer components {
+      .field { @apply mt-1.5 block w-full rounded-lg border border-line bg-white px-3.5 py-3 text-base text-ink transition placeholder:text-ink-muted/60 focus:border-board focus:outline-none focus:ring-4 focus:ring-chalk-yellow/60; }
+      .field-label { @apply block text-sm font-semibold text-ink; }
+      .btn { @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-chalk-yellow/70; }
+      .btn-primary { @apply bg-board text-chalk hover:bg-board-deep; }
+      .btn-danger { @apply bg-stamp text-white hover:brightness-95; }
+      .btn-ghost { @apply bg-white text-ink ring-1 ring-inset ring-line hover:bg-page; }
+      .btn-sm { @apply rounded-md px-3 py-1.5 text-xs; }
+      .panel { @apply rounded-2xl border border-line bg-white; }
+    }
+  </style>
+  <style>
+    .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 9999px; display: inline-block; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+
+<body class="break-keep bg-page font-sans text-ink antialiased">
+  <div class="mx-auto max-w-xl p-4">
+    <!-- 상단: 제목 + 보기 방식 전환 -->
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-extrabold">비밀번호 등록</h1>
+        <p class="mt-0.5 text-xs leading-relaxed text-ink-muted">여기서 등록한 값은 스크립트 속성에만 저장돼요. 시트나 웹 앱 화면에는 나타나지 않아요.</p>
+      </div>
+      <button id="modeToggle" type="button" onclick="toggleMode()" class="btn btn-ghost btn-sm hidden shrink-0">한 번에 보기</button>
+    </div>
+
+    <div id="loadingBox" class="panel mt-5 p-6 text-sm text-ink-muted">등록 현황을 불러오는 중이에요.</div>
+    <div id="wizardView" class="mt-4 hidden"></div>
+    <div id="listView" class="mt-4 hidden space-y-3"></div>
+  </div>
+
+  <!-- 공용 모달 (confirm 대신) -->
+  <div id="modalRoot" class="fixed inset-0 z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="absolute inset-0 bg-ink/50" onclick="closeModal(false)"></div>
+    <div class="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+      <h3 id="modalTitle" class="text-lg font-extrabold"></h3>
+      <p id="modalMessage" class="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-muted"></p>
+      <div id="modalButtons" class="mt-6 flex gap-2"></div>
+    </div>
+  </div>
+  <div id="toastRoot" class="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex flex-col items-center gap-2 px-4" aria-live="polite"></div>
+
+<script>
+  // ======================================================================
+  //  상태
+  //   items     : 서버의 APP_PROPERTIES를 바탕으로 한 항목 목록 (원본 값 없음, 마스킹된 값만)
+  //   mode      : 'wizard'(한 단계씩) | 'list'(한 번에 보기)
+  //   stepIndex : 0 ~ items.length-1은 항목 단계, items.length는 요약 화면
+  // ======================================================================
+  let items = [];
+  let mode = 'wizard';
+  let stepIndex = 0;
+  let modalResolve = null;
+
+  const EYE_ON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+
+  window.addEventListener('load', init);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && modalResolve) closeModal(false); });
+
+  // ---------------- 공통 도구 ----------------
+  function $(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+  function call(fnName, ...args) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fnName](...args);
+    });
+  }
+  function errMsg(e) { return String((e && e.message) || e || '알 수 없는 오류').replace(/^(Error|Exception):\s*/, ''); }
+  function setBusy(btn, busy, text) {
+    if (!btn) return;
+    if (busy) { btn.dataset.label = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>${esc(text || '저장하는 중')}`; }
+    else if (btn.dataset.label !== undefined) { btn.disabled = false; btn.innerHTML = btn.dataset.label; delete btn.dataset.label; }
+  }
+  function showToast(message, isError) {
+    const el = document.createElement('div');
+    el.className = `rounded-full px-4 py-2.5 text-sm font-semibold shadow-lg transition-opacity duration-300 ${isError ? 'bg-stamp text-white' : 'bg-ink text-chalk'}`;
+    el.textContent = message;
+    $('toastRoot').appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2400);
+  }
+  function showConfirm(message, opt) {
+    opt = opt || {};
+    $('modalTitle').textContent = opt.title || '확인';
+    $('modalMessage').textContent = message;
+    $('modalButtons').innerHTML = `
+      <button type="button" class="btn btn-ghost flex-1 py-3" onclick="closeModal(false)">${esc(opt.cancelText || '취소')}</button>
+      <button type="button" class="btn ${opt.danger ? 'btn-danger' : 'btn-primary'} flex-1 py-3" onclick="closeModal(true)">${esc(opt.confirmText || '확인')}</button>`;
+    $('modalRoot').classList.remove('hidden');
+    $('modalRoot').classList.add('flex');
+    setTimeout(() => $('modalButtons').lastElementChild.focus(), 50);
+    return new Promise(resolve => { modalResolve = resolve; });
+  }
+  function closeModal(value) {
+    $('modalRoot').classList.add('hidden');
+    $('modalRoot').classList.remove('flex');
+    const r = modalResolve;
+    modalResolve = null;
+    if (r) r(value);
+  }
+  function badge(text, tone) {
+    const cls = {
+      required: 'bg-stamp-soft text-stamp', optional: 'bg-page text-ink-muted',
+      done: 'bg-board-soft text-board', todo: 'text-ink-muted ring-1 ring-inset ring-line'
+    }[tone];
+    return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${cls}">${esc(text)}</span>`;
+  }
+  function statusBadges(item) {
+    return (item.required ? badge('필수', 'required') : badge('선택', 'optional')) +
+      (item.registered ? badge('등록됨', 'done') : badge('미등록', 'todo'));
+  }
+  function patternError(item, value) {
+    if (!value || !item.pattern) return '';
+    try { return new RegExp(item.pattern).test(value) ? '' : (item.patternMessage || '형식이 올바르지 않아요.'); }
+    catch (e) { return ''; }
+  }
+  function setFieldError(id, message) {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = message || '';
+    el.classList.toggle('hidden', !message);
+  }
+  function toggleEye(inputId, btn) {
+    const input = $(inputId);
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? EYE_OFF : EYE_ON;
+    btn.setAttribute('aria-label', show ? '값 숨기기' : '값 보기');
+  }
+
+  /** 입력칸 공통 동작: 붙여넣으면 앞뒤 공백 제거, 입력하는 즉시 형식 검사, Enter로 실행 */
+  function bindField(inputId, item, errorId, onEnter) {
+    const input = $(inputId);
+    if (!input) return;
+    const check = () => setFieldError(errorId, patternError(item, input.value.trim()));
+    input.addEventListener('paste', () => setTimeout(() => { input.value = input.value.trim(); check(); }, 0));
+    input.addEventListener('input', check);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); onEnter(); } });
+  }
+
+  /** 입력칸 HTML (password 타입이면 눈 아이콘 포함) */
+  function inputHtml(id, item, extraClass) {
+    const isPw = item.type === 'password';
+    return `
+      <div class="relative ${extraClass || ''}">
+        <input id="${id}" type="${isPw ? 'password' : 'text'}" autocomplete="off" spellcheck="false"
+          placeholder="${esc(item.placeholder)}" class="field ${isPw ? 'pr-12' : ''}">
+        ${isPw ? `<button type="button" onclick="toggleEye('${id}', this)" aria-label="값 보기"
+          class="absolute bottom-0 right-0 top-1.5 flex items-center px-3.5 text-ink-muted hover:text-ink">${EYE_ON}</button>` : ''}
+      </div>`;
+  }
+
+  // ---------------- 시작: 등록 현황 + 이어서 할 단계 불러오기 ----------------
+  async function init() {
+    try {
+      const results = await Promise.all([call('getPropertyStatus'), call('getSetupProgress')]);
+      items = results[0];
+      const progress = results[1];
+      // 아직 등록하지 않은 필수 항목이 있으면 그 단계부터, 모두 등록했으면 요약 화면부터
+      const idx = items.findIndex(i => i.step === progress.nextStep);
+      stepIndex = progress.nextStep && idx > -1 ? idx : items.length;
+      $('loadingBox').classList.add('hidden');
+      $('modeToggle').classList.remove('hidden');
+      render();
+    } catch (e) {
+      $('loadingBox').innerHTML = `<p class="font-bold text-stamp">등록 현황을 불러오지 못했어요.</p><p class="mt-1">${esc(errMsg(e))}</p>`;
+    }
+  }
+
+  function render() {
+    const isWizard = mode === 'wizard';
+    $('wizardView').classList.toggle('hidden', !isWizard);
+    $('listView').classList.toggle('hidden', isWizard);
+    $('modeToggle').textContent = isWizard ? '한 번에 보기' : '단계별로 보기';
+    if (isWizard) renderWizard(); else renderList();
+  }
+
+  function toggleMode() {
+    mode = mode === 'wizard' ? 'list' : 'wizard';
+    render();
+  }
+
+  // ---------------- 위저드 (한 화면에 한 항목) ----------------
+  function renderWizard() {
+    const total = items.length;
+    const onSummary = stepIndex >= total;
+    const pct = Math.round((((onSummary ? total : stepIndex) + 1) / (total + 1)) * 100);   // 1단계부터 막대가 조금 채워져 보이도록
+    const head = `
+      <div class="mb-3">
+        <div class="flex items-center justify-between text-xs font-bold text-ink-muted">
+          <span>${onSummary ? '등록 현황 요약' : `${stepIndex + 1} / ${total} 단계`}</span>
+          <span>${items.filter(i => i.registered).length}개 등록됨</span>
+        </div>
+        <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white ring-1 ring-line">
+          <div class="h-full rounded-full bg-board transition-all duration-300" style="width:${pct}%"></div>
+        </div>
+      </div>`;
+    $('wizardView').innerHTML = head + (onSummary ? summaryHtml() : stepHtml(items[stepIndex]));
+    if (!onSummary) {
+      bindField('propInput', items[stepIndex], 'propError', nextStep);
+      setTimeout(() => { if ($('propInput')) $('propInput').focus(); }, 30);
+    }
+  }
+
+  function stepHtml(item) {
+    const isLast = stepIndex === items.length - 1;
+    return `
+      <div class="panel p-5">
+        <div class="flex flex-wrap items-center gap-1.5">${statusBadges(item)}</div>
+        <h2 class="mt-3 text-xl font-extrabold">${esc(item.label)}</h2>
+        <p class="mt-1.5 text-sm leading-relaxed text-ink-muted">${esc(item.hint)}</p>
+        ${item.docUrl ? `<a href="${esc(item.docUrl)}" target="_blank" rel="noopener" class="mt-2 inline-block text-sm font-bold text-board underline underline-offset-2">발급 페이지 새 창으로 열기</a>` : ''}
+        ${item.registered ? `
+          <div class="mt-4 rounded-lg bg-board-soft px-3 py-2.5 text-sm">
+            지금 등록된 값 <code class="ml-1 font-bold tracking-widest">${esc(item.masked)}</code>
+            <p class="mt-1 text-xs text-ink-muted">새 값을 넣으면 바뀌고, 비워 두고 [다음]을 누르면 지금 값을 그대로 써요.</p>
+          </div>` : ''}
+        <label for="propInput" class="field-label mt-4">${item.registered ? '새 값 (바꿀 때만 입력)' : '값 입력'}</label>
+        ${inputHtml('propInput', item)}
+        <p id="propError" class="mt-2 hidden text-sm font-semibold text-stamp"></p>
+      </div>
+      <div class="mt-4 flex items-center gap-2">
+        <button type="button" onclick="prevStep()" class="btn btn-ghost" ${stepIndex === 0 ? 'disabled' : ''}>이전</button>
+        <span class="flex-1"></span>
+        ${item.required ? '' : '<button type="button" onclick="skipStep()" class="btn btn-ghost">건너뛰기</button>'}
+        <button id="nextBtn" type="button" onclick="nextStep()" class="btn btn-primary">${isLast ? '저장하고 요약 보기' : '다음'}</button>
+      </div>`;
+  }
+
+  /** [다음]: 값이 있으면 그 자리에서 바로 저장 → 창을 닫아도 여기까지는 유지됩니다. */
+  async function nextStep() {
+    const item = items[stepIndex];
+    const input = $('propInput');
+    const value = input.value.trim();
+    if (!value) {
+      if (item.required && !item.registered) return setFieldError('propError', '필수 항목이에요. 값을 입력해야 다음 단계로 넘어갈 수 있어요.');
+      stepIndex++;
+      return renderWizard();
+    }
+    const perr = patternError(item, value);
+    if (perr) return setFieldError('propError', perr);
+
+    const btn = $('nextBtn');
+    setBusy(btn, true);
+    try {
+      const res = await call('saveAppProperty', item.key, value);
+      if (!res.success) { setBusy(btn, false); return setFieldError('propError', res.message); }
+      Object.assign(item, res.status);
+      showToast(res.message);
+      stepIndex++;
+      renderWizard();
+    } catch (e) {
+      setBusy(btn, false);
+      setFieldError('propError', errMsg(e));
+    }
+  }
+
+  function skipStep() { stepIndex++; renderWizard(); }
+  function prevStep() { if (stepIndex > 0) { stepIndex--; renderWizard(); } }
+  function goStep(i) { mode = 'wizard'; stepIndex = i; render(); }
+
+  function summaryHtml() {
+    const missing = items.filter(i => i.required && !i.registered);
+    return `
+      <div class="panel p-5">
+        <h2 class="text-xl font-extrabold">${missing.length ? '아직 등록하지 않은 필수 항목이 있어요' : '등록을 모두 마쳤어요'}</h2>
+        <p class="mt-1.5 text-sm leading-relaxed text-ink-muted">${missing.length
+          ? '필수 항목을 등록해야 웹 앱의 교사 화면에 들어갈 수 있어요.'
+          : '웹 앱 로그인 화면에서 [교사]를 고르고 등록한 비밀번호로 들어가 보세요.'}</p>
+        <ul class="mt-4 divide-y divide-line border-y border-line">
+          ${items.map((item, i) => `
+            <li class="flex flex-wrap items-center gap-2 py-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-1.5"><span class="font-bold">${esc(item.label)}</span>${statusBadges(item)}</div>
+                <p class="mt-0.5 text-xs text-ink-muted">${item.registered
+                  ? `등록된 값 <code class="tracking-widest">${esc(item.masked)}</code>`
+                  : (item.required ? '등록이 필요해요' : '등록하지 않으면 기본값을 써요')}</p>
+                <p id="test-${esc(item.key)}" class="mt-1 hidden text-xs font-semibold"></p>
+              </div>
+              ${item.testable && item.registered ? `<button type="button" onclick="runTest('${esc(item.key)}', this)" class="btn btn-ghost btn-sm">연결 테스트</button>` : ''}
+              <button type="button" onclick="goStep(${i})" class="btn btn-ghost btn-sm">${item.registered ? '바꾸기' : '등록하기'}</button>
+            </li>`).join('')}
+        </ul>
+      </div>
+      <div class="mt-4 flex items-center gap-2">
+        <button type="button" onclick="prevStep()" class="btn btn-ghost">이전</button>
+        <span class="flex-1"></span>
+        <button type="button" onclick="finish()" class="btn btn-primary">완료</button>
+      </div>`;
+  }
+
+  async function runTest(key, btn) {
+    const box = $(`test-${key}`);
+    setBusy(btn, true, '확인하는 중');
+    try {
+      const res = await call('testConnection', key);
+      box.textContent = res.message;
+      box.className = `mt-1 text-xs font-semibold ${res.success ? 'text-board' : 'text-stamp'}`;
+    } catch (e) {
+      box.textContent = errMsg(e);
+      box.className = 'mt-1 text-xs font-semibold text-stamp';
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function finish() {
+    const missing = items.filter(i => i.required && !i.registered);
+    if (missing.length) {
+      const ok = await showConfirm(`아직 등록하지 않은 필수 항목: ${missing.map(m => m.label).join(', ')}\n이대로 닫으면 교사 화면에 들어갈 수 없어요.`, {
+        title: '필수 항목이 남아 있어요', confirmText: '그래도 닫기', cancelText: '등록하러 가기', danger: true
+      });
+      if (!ok) return goStep(items.indexOf(missing[0]));
+    }
+    google.script.host.close();
+  }
+
+  // ---------------- 한 번에 보기 (목록) ----------------
+  function renderList() {
+    $('listView').innerHTML = items.map((item, i) => `
+      <div class="panel p-4">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <h2 class="mr-1 font-extrabold">${esc(item.label)}</h2>${statusBadges(item)}
+        </div>
+        <p class="mt-1 text-sm leading-relaxed text-ink-muted">${esc(item.hint)}</p>
+        ${item.docUrl ? `<a href="${esc(item.docUrl)}" target="_blank" rel="noopener" class="mt-1 inline-block text-sm font-bold text-board underline underline-offset-2">발급 페이지 새 창으로 열기</a>` : ''}
+        <p class="mt-2 text-xs text-ink-muted">지금 값: ${item.registered ? `<code class="font-bold tracking-widest">${esc(item.masked)}</code>` : '없음'}</p>
+        <div class="mt-2 flex flex-wrap items-end gap-2">
+          ${inputHtml(`listInput${i}`, item, 'min-w-[200px] flex-1')}
+          <button id="listSave${i}" type="button" onclick="saveFromList(${i})" class="btn btn-primary h-[50px]">저장</button>
+          <button type="button" onclick="deleteFromList(${i})" class="btn btn-ghost h-[50px] text-stamp" ${item.registered ? '' : 'disabled'}>삭제</button>
+        </div>
+        <p id="listError${i}" class="mt-2 hidden text-sm font-semibold text-stamp"></p>
+      </div>`).join('');
+    items.forEach((item, i) => bindField(`listInput${i}`, item, `listError${i}`, () => saveFromList(i)));
+  }
+
+  async function saveFromList(i) {
+    const item = items[i];
+    const value = $(`listInput${i}`).value.trim();
+    if (!value) return setFieldError(`listError${i}`, '저장할 값을 입력하세요.');
+    const perr = patternError(item, value);
+    if (perr) return setFieldError(`listError${i}`, perr);
+    const btn = $(`listSave${i}`);
+    setBusy(btn, true, '저장 중');
+    try {
+      const res = await call('saveAppProperty', item.key, value);
+      if (!res.success) { setBusy(btn, false); return setFieldError(`listError${i}`, res.message); }
+      Object.assign(item, res.status);
+      showToast(res.message);
+      renderList();
+    } catch (e) {
+      setBusy(btn, false);
+      showToast(errMsg(e), true);
+    }
+  }
+
+  async function deleteFromList(i) {
+    const item = items[i];
+    const ok = await showConfirm(`등록한 ${item.label} 값을 삭제할까요?${item.required ? '\n필수 항목이라 삭제하면 교사 화면에 들어갈 수 없어요.' : ''}`, {
+      title: '등록한 값 삭제', confirmText: '삭제', danger: true
+    });
+    if (!ok) return;
+    try {
+      const res = await call('deleteAppProperty', item.key);
+      Object.assign(item, res.status);
+      showToast(res.message);
+      renderList();
+    } catch (e) {
+      showToast(errMsg(e), true);
+    }
+  }
+</script>
+</body>
+</html>
