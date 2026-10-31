@@ -57,7 +57,8 @@
     .v-host { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
     .v-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
     .v-counter { position: fixed; right: 16px; bottom: 10px; color: rgba(255, 255, 255, 0.45); font: 14px system-ui, sans-serif; }
-    .v-static * { animation: none !important; transition: none !important; }
+    .v-static * { animation: none !important; transition: none !important; opacity: 1 !important; visibility: visible !important; }
+    .ls-media-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 16 / 9; background: #111827; color: #fff; font-size: 72px; border-radius: 16px; }
     body.pv-view { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: #1f2937; color: #e5e7eb; font-family: 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; }
     .pv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; background: #111827; }
     .pv-bar strong { margin-right: auto; font-size: 17px; }
@@ -95,7 +96,7 @@
     .recent-card:hover, .recent-card:focus-visible { transform: translateY(-2px); box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12) !important; }
     .mini-host { position: relative; overflow: hidden; aspect-ratio: 16 / 9; background: #f1f5f9; }
     .mini-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; pointer-events: none; }
-    .mini-canvas * { animation: none !important; transition: none !important; }
+    .mini-canvas * { animation: none !important; transition: none !important; opacity: 1 !important; visibility: visible !important; }
 
     /* ---------- 편집 화면 (PPT 배치) ---------- */
     #editor-view { height: calc(100dvh - var(--nav-h)); display: flex; flex-direction: column; background: #f3f4f6; }
@@ -143,21 +144,26 @@
     }
 
     /* ---------- 편집 모드 ---------- */
+    /* 모든 CSS 움직임을 키프레임 이름과 관계없이 한꺼번에 멈춘다 */
     body.edit-mode #slide-canvas * {
       animation-play-state: paused !important;
       transition: none !important;
     }
-    /* 지연 등장으로 숨겨진 요소는 제자리에 보이게 한다 */
-    body.edit-mode #slide-canvas [class*="anim-"] {
-      animation-name: none !important;
+    /* 지연 등장으로 숨겨진 요소 강제 노출 */
+    body.edit-mode #slide-canvas * {
       opacity: 1 !important;
       visibility: visible !important;
     }
+    /* 등장 모션의 시작 위치·흐림에 멈춰 있지 않고 제자리에서 편집하도록 키프레임 적용도 끈다 */
+    body.edit-mode #slide-canvas * { animation-name: none !important; }
+    #slide-canvas video, #slide-canvas iframe { pointer-events: none; }
+    .iframe-drag-overlay { position: absolute; inset: 0; z-index: 5; background: transparent; cursor: move; }
+    .mode-badge { position: absolute; top: 8px; right: 12px; z-index: 6; pointer-events: none; }
     #slide-canvas { user-select: none; }
     #slide-canvas .draggable-box { cursor: move; }
     #slide-canvas .draggable-box:hover { outline: 2px dashed rgba(37, 99, 235, 0.6); outline-offset: 4px; }
     #slide-canvas .draggable-box.is-selected { outline: 4px solid var(--primary); outline-offset: 4px; }
-    #slide-canvas .draggable-box.is-editing { cursor: text; user-select: text; outline: 4px dashed var(--primary); }
+    #slide-canvas .is-editing { cursor: text; user-select: text; outline: 4px dashed var(--primary); outline-offset: 4px; }
     #slide-canvas img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
     .ls-handle { position: absolute; right: -18px; bottom: -18px; width: 30px; height: 30px; background: #fff; border: 5px solid var(--primary); border-radius: 6px; cursor: nwse-resize; }
 
@@ -250,6 +256,13 @@
             <button type="button" class="btn btn-sm btn-light" data-insert="rect" title="사각형"><i class="bi bi-square"></i></button>
             <button type="button" class="btn btn-sm btn-light" data-insert="circle" title="원"><i class="bi bi-circle"></i></button>
             <button type="button" class="btn btn-sm btn-light" data-insert="image"><i class="bi bi-image"></i> 그림</button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-camera-video"></i> 동영상</button>
+              <ul class="dropdown-menu">
+                <li><button type="button" class="dropdown-item" data-insert="video-file"><i class="bi bi-file-earmark-play"></i> 내 컴퓨터의 동영상 파일</button></li>
+                <li><button type="button" class="dropdown-item" data-insert="video-youtube"><i class="bi bi-youtube"></i> 유튜브 주소</button></li>
+              </ul>
+            </div>
           </div>
           <div class="tool-group">
             <span class="group-label">개체</span>
@@ -273,7 +286,7 @@
             <span class="group-label">배경</span>
             <input type="color" class="form-control form-control-color" id="bg-color" value="#ffffff" title="슬라이드 배경색">
           </div>
-          <span class="small text-muted d-none d-xl-inline">더블클릭: 글자 수정 · 끌기: 이동 · 모서리: 크기</span>
+          <span class="small text-muted d-none d-xl-inline">더블클릭: 글자 수정·그림/영상 바꾸기 · 끌기: 이동 · 모서리: 크기</span>
         </div>
       </header>
 
@@ -290,6 +303,7 @@
 
         <section class="work-area">
           <div class="stage-host" id="stage-host">
+            <span class="badge text-bg-dark mode-badge">편집 모드</span>
             <div class="stage-scaler" id="stage-scaler">
               <div class="slide-canvas" id="slide-canvas"></div>
             </div>
@@ -359,7 +373,7 @@
 
   <!-- 발표 모드 화면 -->
   <div id="show-overlay" aria-label="발표 화면">
-    <button type="button" class="btn btn-sm btn-light show-exit" id="show-exit">편집 모드로 (Esc)</button>
+    <button type="button" class="btn btn-sm btn-light show-exit" id="show-exit">발표 모드 [Ctrl+E로 편집]</button>
     <div id="show-scaler"><div class="slide-canvas" id="show-canvas"></div></div>
     <div class="show-counter" id="show-counter"></div>
   </div>
@@ -454,6 +468,8 @@
   <div id="toast-area" aria-live="polite"></div>
   <input type="file" class="d-none" id="file-import" accept=".html,.htm,text/html">
   <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp">
+  <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm">
+  <input type="file" class="d-none" id="file-media">
   <input type="file" class="d-none" id="ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -479,7 +495,6 @@
         'anim-pop': '튀어나오기',
         'anim-float': '둥실둥실 (반복)'
       };
-      const ALLOWED_CLASSES = new Set(['draggable-box'].concat(Object.keys(ANIMATIONS).filter(Boolean)));
 
       const $ = id => document.getElementById(id);
 
@@ -582,6 +597,9 @@
       };
 
       /* ===== 3. 슬라이드 HTML 정리 (AI 응답·불러온 파일은 반드시 이 길을 거친다) ===== */
+      const RESERVED_CLASS = /^(ls-|is-selected$|is-editing$|iframe-drag-overlay$|slide-canvas$|mini-canvas$)/;
+      const EMBED_SRC = /^https:\/\/((www\.)?(youtube\.com|youtube-nocookie\.com)\/embed\/|player\.vimeo\.com\/video\/)/i;
+
       const Sanitizer = {
         ready: false,
 
@@ -591,39 +609,81 @@
           DOMPurify.addHook('afterSanitizeAttributes', node => {
             if (!node.getAttribute) return;
             const style = node.getAttribute('style');
-            if (style) {
-              // 외부 주소를 부르는 배경 그림은 막고, 넣어 둔 그림(data:image)만 허용한다.
-              node.setAttribute('style', style.replace(/url\(([^)]*)\)/gi,
-                (match, inner) => (/^\s*['"]?data:image\//i.test(inner) ? match : 'none')));
-            }
-            if (node.tagName === 'IMG') {
-              if (!/^data:image\/(png|jpe?g|gif|webp);/i.test(node.getAttribute('src') || '')) node.removeAttribute('src');
+            if (style) node.setAttribute('style', Sanitizer.cssUrls(style));
+            const tag = node.tagName;
+            const src = node.getAttribute('src') || '';
+            if (tag === 'IMG') {
+              if (!/^(data:image\/(png|jpe?g|gif|webp);|https:\/\/)/i.test(src)) node.removeAttribute('src');
               node.setAttribute('draggable', 'false');
+            }
+            if ((tag === 'VIDEO' || tag === 'SOURCE') && src && !/^(data:video\/(mp4|webm|ogg);|https:\/\/)/i.test(src)) node.removeAttribute('src');
+            if (tag === 'VIDEO' && !/^(https:\/\/|data:image\/)/i.test(node.getAttribute('poster') || '')) node.removeAttribute('poster');
+            if (tag === 'IFRAME') {
+              // 유튜브·비메오 영상 퍼가기 주소만 허용하고 샌드박스를 씌운다.
+              if (!EMBED_SRC.test(src)) node.removeAttribute('src');
+              node.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+              node.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
             }
             const classes = node.getAttribute('class');
             if (classes !== null) {
-              const keep = classes.split(/\s+/).filter(name => ALLOWED_CLASSES.has(name));
+              const keep = classes.split(/\s+/).filter(name => name && !RESERVED_CLASS.test(name));
               if (keep.length) node.setAttribute('class', keep.join(' '));
               else node.removeAttribute('class');
             }
           });
         },
 
+        // CSS의 url()은 넣어 둔 그림(data:image)과 https 주소만 남긴다.
+        cssUrls(text) {
+          return String(text).replace(/url\(([^)]*)\)/gi,
+            (match, inner) => (/^\s*['"]?(data:image\/|https:\/\/)/i.test(inner) ? match : 'none'));
+        },
+
         clean(html) {
           Sanitizer.setup();
           return DOMPurify.sanitize(String(html || ''), {
             USE_PROFILES: { html: true, svg: true },
-            FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'iframe', 'object',
-              'embed', 'link', 'meta', 'video', 'audio', 'source', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
+            ADD_TAGS: ['iframe'],
+            ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop'],
+            FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'object',
+              'embed', 'link', 'meta', 'audio', 'track', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
             FORBID_ATTR: ['id', 'name', 'contenteditable', 'tabindex', 'srcset', 'href', 'xlink:href', 'action', 'formaction'],
             ALLOW_DATA_ATTR: false
           });
         },
 
-        // 정리한 뒤 최상위 요소마다 draggable-box와 좌표를 갖추게 한다.
-        slide(html) {
+        // 슬라이드 <style>: 일반 규칙·@keyframes·@media만 남긴다(@import·@font-face 등 외부 불러오기 제외).
+        css(text) {
+          const source = String(text || '').replace(/__k[a-z0-9]+/g, '').trim();
+          if (!source) return '';
+          let sheet;
+          try { sheet = new CSSStyleSheet(); sheet.replaceSync(source); } catch (err) { return ''; }
+          const emit = rules => Array.from(rules).map(rule => {
+            if (rule instanceof CSSStyleRule || rule instanceof CSSKeyframesRule) return rule.cssText;
+            if (rule instanceof CSSMediaRule) return '@media ' + rule.conditionText + ' { ' + emit(rule.cssRules) + ' }';
+            return '';
+          }).filter(Boolean).join('\n');
+          return Sanitizer.cssUrls(emit(sheet.cssRules)).slice(0, 80000);
+        },
+
+        // AI 응답·불러온 파일의 슬라이드를 { html, css, bg }로 나눈다.
+        // <div class="slide"> 겉상자는 벗겨 배경만 bg로 남기고, <style>은 css로 따로 모은다.
+        slide(raw) {
+          const template = document.createElement('template');
+          template.innerHTML = String(raw || '');
+          let css = '';
+          template.content.querySelectorAll('style').forEach(style => { css += style.textContent + '\n'; style.remove(); });
+          let content = template.innerHTML;
+          let bg = '';
+          const elements = Array.from(template.content.children);
+          const looseText = Array.from(template.content.childNodes).some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+          if (elements.length === 1 && !looseText && elements[0].classList.contains('slide')) {
+            bg = elements[0].style.background || elements[0].style.backgroundColor || '';
+            content = elements[0].innerHTML;
+          }
+
           const host = document.createElement('div');
-          host.innerHTML = Sanitizer.clean(html);
+          host.innerHTML = Sanitizer.clean(content);
           let nextTop = 80;
           Array.from(host.childNodes).forEach(node => {
             let el = node;
@@ -641,7 +701,7 @@
             if (!el.style.left && !el.style.right) el.style.left = '120px';
             if (!el.style.top && !el.style.bottom) { el.style.top = nextTop + 'px'; nextTop += 160; }
           });
-          return host.innerHTML;
+          return { html: host.innerHTML.replace(/__k[a-z0-9]+/g, ''), css: Sanitizer.css(css), bg };
         },
 
         // 발표 시나리오: 글자 서식만 남긴다.
@@ -657,6 +717,112 @@
           const bg = String(value || '').trim();
           if (!bg || bg.length > 400 || /url\s*\(|expression|[;{}<>\\]/i.test(bg)) return '#ffffff';
           return (window.CSS && CSS.supports && !CSS.supports('background', bg)) ? '#ffffff' : bg;
+        }
+      };
+
+      /* ===== 3-1. 슬라이드별 CSS 범위 한정과 그리기 ===== */
+      // 슬라이드의 <style>은 그 슬라이드 안에만 적용되도록 선택자 앞에 고유 클래스를 붙이고,
+      // 키프레임 이름에도 고유 꼬리표(__k…)를 붙여 다른 슬라이드·앱 화면과 섞이지 않게 한다.
+      const SlideStyle = {
+        cache: new Map(),
+
+        hash(text) {
+          let h = 5381;
+          for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+          return (h >>> 0).toString(36);
+        },
+
+        build(css) {
+          if (!css) return null;
+          if (SlideStyle.cache.has(css)) return SlideStyle.cache.get(css);
+          let sheet;
+          try { sheet = new CSSStyleSheet(); sheet.replaceSync(css); } catch (err) { return null; }
+          const key = SlideStyle.hash(css);
+          const scope = '.ls-css-' + key;
+          const names = new Set();
+          const collect = rules => Array.from(rules).forEach(rule => {
+            if (rule instanceof CSSKeyframesRule) names.add(rule.name);
+            else if (rule instanceof CSSMediaRule) collect(rule.cssRules);
+          });
+          collect(sheet.cssRules);
+          const rename = value => value.split(/(\s+|,)/).map(token => (names.has(token) ? token + '__k' + key : token)).join('');
+          const scopeSelector = selector => selector.split(',').map(part => {
+            const sel = part.trim().replace(/^(?:(?::root|html|body)(?![\w-])\s*)+/, '');
+            if (!sel) return scope;
+            if (/^\.slide(?![\w-])/.test(sel)) return scope + sel.slice(6);
+            return scope + ' ' + sel;
+          }).join(', ');
+          const emit = rules => Array.from(rules).map(rule => {
+            if (rule instanceof CSSStyleRule) {
+              ['animation', 'animation-name'].forEach(prop => {
+                const value = rule.style.getPropertyValue(prop);
+                if (value) rule.style.setProperty(prop, rename(value), rule.style.getPropertyPriority(prop));
+              });
+              return scopeSelector(rule.selectorText) + ' { ' + rule.style.cssText + ' }';
+            }
+            if (rule instanceof CSSKeyframesRule) { rule.name = rule.name + '__k' + key; return rule.cssText; }
+            if (rule instanceof CSSMediaRule) return '@media ' + rule.conditionText + ' { ' + emit(rule.cssRules) + ' }';
+            return '';
+          }).join('\n');
+          const built = { cls: 'ls-css-' + key, css: emit(sheet.cssRules), names, rename };
+          SlideStyle.cache.set(css, built);
+          return built;
+        },
+
+        // 인라인 style의 animation 이름도 같은 꼬리표로 바꾼다(편집기에서 저장할 때는 다시 뗀다).
+        renameInline(root, built) {
+          if (!built.names.size) return;
+          root.querySelectorAll('[style*="animation"]').forEach(el => {
+            el.setAttribute('style', el.getAttribute('style')
+              .replace(/(animation(?:-name)?\s*:)([^;]*)/gi, (match, prop, value) => prop + built.rename(value)));
+          });
+        }
+      };
+
+      const SlideView = {
+        // mode: 'edit'(편집 캔버스) | 'show'(발표) | 'static'(미리보기: 움직임·영상 정지)
+        fill(canvas, slide, mode) {
+          const doc = canvas.ownerDocument;
+          const built = slide ? SlideStyle.build(slide.css) : null;
+          if (canvas.dataset.base === undefined) canvas.dataset.base = canvas.className;
+          canvas.className = canvas.dataset.base + (built ? ' ' + built.cls : '');
+          canvas.innerHTML = slide ? slide.html : '';
+          canvas.style.background = slide ? slide.bg : '#111827';
+          if (built) {
+            const tag = doc.createElement('style'); // textContent로 넣어 CSS가 HTML로 해석될 틈을 없앤다
+            tag.className = 'ls-slide-style';
+            tag.textContent = built.css;
+            canvas.prepend(tag);
+            SlideStyle.renameInline(canvas, built);
+          }
+          if (mode === 'static') SlideView.freeze(canvas);
+          if (mode === 'edit') SlideView.addOverlays(canvas);
+        },
+
+        freeze(canvas) {
+          canvas.querySelectorAll('video').forEach(video => {
+            video.autoplay = false;
+            video.preload = 'metadata';
+            video.pause();
+          });
+          canvas.querySelectorAll('iframe').forEach(frame => {
+            const holder = canvas.ownerDocument.createElement('div');
+            holder.className = 'ls-media-placeholder';
+            holder.setAttribute('style', frame.getAttribute('style') || '');
+            holder.textContent = '▶';
+            frame.replaceWith(holder);
+          });
+        },
+
+        // 편집 모드: 유튜브 같은 iframe 위에 투명 레이어를 씌워 재생 대신 끌어 옮기게 한다.
+        addOverlays(canvas) {
+          canvas.querySelectorAll('iframe').forEach(frame => {
+            const box = frame.closest('.draggable-box');
+            if (!box || box.querySelector(':scope > .iframe-drag-overlay')) return;
+            const overlay = canvas.ownerDocument.createElement('div');
+            overlay.className = 'iframe-drag-overlay';
+            box.append(overlay);
+          });
         }
       };
 
@@ -778,8 +944,7 @@
           scaler.className = 'mini-scaler';
           const canvas = document.createElement('div');
           canvas.className = 'slide-canvas mini-canvas';
-          canvas.innerHTML = slide ? slide.html : '';
-          canvas.style.background = slide ? slide.bg : '#ffffff';
+          SlideView.fill(canvas, slide, 'static');
           scaler.append(canvas);
           host.append(scaler);
           Mini.fit(host);
@@ -885,13 +1050,16 @@
       };
 
       /* ===== 8. 편집기 ===== */
+      // 3계층: .draggable-box(위치) > .motion-content(모션) > .editable-text(내용)
+      const textBox = (box, text, style) => '<div class="draggable-box" style="' + box + '"><div class="motion-content">' +
+        '<div class="editable-text" style="' + style + '">' + text + '</div></div></div>';
       const TEMPLATES = {
         title:
-          '<div class="draggable-box" style="left:160px;top:380px;width:1600px;font-size:96px;font-weight:800;text-align:center;">제목을 입력하세요</div>' +
-          '<div class="draggable-box" style="left:360px;top:560px;width:1200px;font-size:44px;color:#6b7280;text-align:center;">부제목을 입력하세요</div>',
+          textBox('left:160px;top:380px;width:1600px;', '제목을 입력하세요', 'font-size:96px;font-weight:800;text-align:center;') +
+          textBox('left:360px;top:560px;width:1200px;', '부제목을 입력하세요', 'font-size:44px;color:#4b5563;text-align:center;'),
         content:
-          '<div class="draggable-box" style="left:120px;top:90px;width:1680px;font-size:72px;font-weight:800;">제목을 입력하세요</div>' +
-          '<div class="draggable-box" style="left:120px;top:260px;width:1680px;font-size:44px;line-height:1.6;">• 내용을 입력하세요</div>'
+          textBox('left:120px;top:90px;width:1680px;', '제목을 입력하세요', 'font-size:72px;font-weight:800;') +
+          textBox('left:120px;top:260px;width:1680px;', '• 내용을 입력하세요', 'font-size:44px;line-height:1.6;')
       };
 
       const Editor = {
@@ -906,15 +1074,17 @@
         saveTimer: null,
 
         newSlide(kind) {
-          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', bg: '#ffffff', notes: '', notesFormat: 'html', pristine: false };
+          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', css: '', bg: '#ffffff', notes: '', notesFormat: 'html', pristine: false };
         },
 
         normalizeSlide(slide) {
+          const parsed = Sanitizer.slide(slide.html);
           return {
             id: slide.id || Util.uid(),
             title: String(slide.title || '').slice(0, 120),
-            html: Sanitizer.slide(slide.html),
-            bg: Sanitizer.background(slide.bg),
+            html: parsed.html,
+            css: Sanitizer.css((slide.css || '') + '\n' + parsed.css),
+            bg: Sanitizer.background(parsed.bg || slide.bg),
             notes: Editor.normalizeNotes(slide),
             notesFormat: 'html',
             pristine: !!slide.pristine
@@ -1031,8 +1201,7 @@
           Editor.selected = null;
           Editor.editing = null;
           FloatBar.hide();
-          canvas.innerHTML = slide.html;
-          canvas.style.background = slide.bg;
+          SlideView.fill(canvas, slide, 'edit');
           $('notes-editor').innerHTML = slide.notes;
           $('bg-color').value = Util.toHex(slide.bg, '#ffffff');
           Editor.markActiveThumb();
@@ -1042,11 +1211,11 @@
         /* --- 저장과 되돌리기 --- */
         canvasHtml() {
           const clone = $('slide-canvas').cloneNode(true);
-          clone.querySelectorAll('.ls-handle').forEach(handle => handle.remove());
+          clone.querySelectorAll('.ls-handle, .ls-slide-style, .iframe-drag-overlay').forEach(el => el.remove());
           clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
           clone.querySelectorAll('.is-selected, .is-editing').forEach(el => el.classList.remove('is-selected', 'is-editing'));
           clone.querySelectorAll('[class=""]').forEach(el => el.removeAttribute('class'));
-          return clone.innerHTML;
+          return clone.innerHTML.replace(/__k[a-z0-9]+/g, '');
         },
 
         syncCurrent() {
@@ -1200,15 +1369,24 @@
           Editor.syncBoxTools();
         },
 
-        startEditing(box, clientX, clientY) {
-          if (!(box instanceof HTMLElement) || Editor.editing === box) return;
-          if (box.querySelector('img') && !box.textContent.trim()) return; // 그림만 있는 상자는 글자 편집 없음
+        // target: 글상자(.draggable-box) 또는 그 안의 .editable-text
+        startEditing(target, clientX, clientY) {
+          if (!(target instanceof HTMLElement)) return;
+          const box = target.closest('.draggable-box');
+          if (!box || !$('slide-canvas').contains(box)) return;
+          if (target === box) {
+            const texts = box.querySelectorAll('.editable-text');
+            if (texts.length) target = texts[0];
+            else if (box.querySelector('img, video, iframe') && !box.textContent.trim()) return; // 그림·영상만 있는 상자는 글자 편집 없음
+          }
+          if (Editor.editing === target) return;
+          if (Editor.editing) Editor.stopEditing();
           Editor.select(box);
           box.querySelectorAll(':scope > .ls-handle').forEach(handle => handle.remove());
-          Editor.editing = box;
-          box.classList.add('is-editing');
-          box.contentEditable = 'true';
-          box.focus({ preventScroll: true });
+          Editor.editing = target;
+          target.classList.add('is-editing');
+          target.contentEditable = 'true';
+          target.focus({ preventScroll: true });
 
           let range = null;
           if (clientX !== undefined && document.caretRangeFromPoint) {
@@ -1217,9 +1395,9 @@
             const pos = document.caretPositionFromPoint(clientX, clientY);
             if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
           }
-          if (!range || !box.contains(range.startContainer)) {
+          if (!range || !target.contains(range.startContainer)) {
             range = document.createRange();
-            range.selectNodeContents(box);
+            range.selectNodeContents(target);
             if (clientX !== undefined) range.collapse(false);
           }
           const selection = window.getSelection();
@@ -1228,24 +1406,59 @@
         },
 
         stopEditing() {
-          const box = Editor.editing;
-          if (!box) return;
+          const el = Editor.editing;
+          if (!el) return;
           Editor.editing = null;
-          box.removeAttribute('contenteditable');
-          box.classList.remove('is-editing');
+          el.removeAttribute('contenteditable');
+          el.classList.remove('is-editing');
           FloatBar.hide();
           window.getSelection().removeAllRanges();
-          // 글자를 모두 지운 빈 글상자는 PPT처럼 없앤다.
-          const empty = !box.textContent.trim() && !box.querySelector('img, svg') &&
-            Util.toHex(getComputedStyle(box).backgroundColor, '') === '' && !box.style.border;
-          if (empty) {
+          const box = el.closest('.draggable-box') || el;
+          // 글자를 모두 지운 빈 글상자(색·테두리도 없는 것)는 PPT처럼 없앤다.
+          const painted = [box].concat(Array.from(box.querySelectorAll('*'))).some(node => {
+            const style = getComputedStyle(node);
+            return Util.toHex(style.backgroundColor, '') !== '' || parseFloat(style.borderTopWidth) > 0;
+          });
+          if (!box.textContent.trim() && !box.querySelector('img, svg, video, iframe') && !painted) {
             box.remove();
             if (Editor.selected === box) Editor.selected = null;
             Editor.syncBoxTools();
-          } else if (Editor.selected === box) {
+          } else if (Editor.selected === box && box instanceof HTMLElement && !box.querySelector(':scope > .ls-handle')) {
             box.append(Editor.makeHandle());
           }
           Editor.commit();
+        },
+
+        // 더블클릭한 그림·영상을 바꾼다. 내 파일은 Base64로 슬라이드 안에 넣는다.
+        pickMedia(el) {
+          if (el.tagName === 'IFRAME') {
+            const embed = youtubeEmbed(window.prompt('바꿀 유튜브 동영상 주소를 넣어 주세요.', '') || '');
+            if (!embed) return;
+            el.setAttribute('src', embed);
+            Editor.commit();
+            return;
+          }
+          const input = $('file-media');
+          input.accept = el.tagName === 'VIDEO' ? 'video/mp4,video/webm' : 'image/png,image/jpeg,image/gif,image/webp';
+          Editor.mediaTarget = el;
+          input.click();
+        },
+
+        async replaceMedia(file) {
+          const el = Editor.mediaTarget;
+          Editor.mediaTarget = null;
+          if (!file || !el || !el.isConnected) return;
+          try {
+            if (el.tagName === 'VIDEO') {
+              el.querySelectorAll('source').forEach(source => source.remove());
+              el.setAttribute('src', await readVideo(file));
+            } else {
+              el.setAttribute('src', (await readImage(file)).url);
+            }
+            Editor.commit();
+          } catch (err) {
+            Util.toast(err.message, 'warning');
+          }
         },
 
         // translate 가운데 맞춤이나 right/bottom 배치는 left/top 좌표로 바꿔 끌기와 맞춘다.
@@ -1321,7 +1534,7 @@
         insertBox(html) {
           Editor.deselect();
           const holder = document.createElement('div');
-          holder.innerHTML = Sanitizer.slide(html);
+          holder.innerHTML = Sanitizer.slide(html).html;
           const box = holder.firstElementChild;
           $('slide-canvas').append(box);
           Editor.select(box);
@@ -1331,8 +1544,10 @@
 
         insert(kind) {
           if (kind === 'image') { $('file-image').click(); return; }
+          if (kind === 'video-file') { $('file-video').click(); return; }
+          if (kind === 'video-youtube') { Editor.insertYoutube(); return; }
           if (kind === 'text') {
-            const box = Editor.insertBox('<div style="left:660px;top:480px;width:600px;font-size:48px;">텍스트를 입력하세요</div>');
+            const box = Editor.insertBox(textBox('left:660px;top:480px;width:600px;', '텍스트를 입력하세요', 'font-size:48px;'));
             Editor.startEditing(box);
             return;
           }
@@ -1349,10 +1564,32 @@
             const height = Math.round(width * image.height / image.width);
             const left = Math.round((CANVAS_W - width) / 2);
             const top = Math.max(40, Math.round((CANVAS_H - height) / 2));
-            Editor.insertBox('<div style="left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;"><img src="' + image.url + '" alt="" style="width:100%;"></div>');
+            Editor.insertBox('<div style="left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;"><div class="motion-content">' +
+              '<img class="editable-image" src="' + image.url + '" alt="" style="width:100%;border-radius:16px;"></div></div>');
           } catch (err) {
             Util.toast(err.message, 'warning');
           }
+        },
+
+        async insertVideoFile(file) {
+          if (!file) return;
+          try {
+            const url = await readVideo(file);
+            Editor.insertBox('<div style="left:480px;top:270px;width:960px;"><div class="motion-content">' +
+              '<video class="editable-video" src="' + url + '" autoplay loop muted playsinline style="width:100%;border-radius:16px;"></video></div></div>');
+          } catch (err) {
+            Util.toast(err.message, 'warning');
+          }
+        },
+
+        insertYoutube() {
+          const text = window.prompt('유튜브 동영상 주소를 넣어 주세요.\n예) https://www.youtube.com/watch?v=...', '');
+          if (text === null) return;
+          const embed = youtubeEmbed(text);
+          if (!embed) { Util.toast('유튜브 주소를 알아볼 수 없습니다.', 'warning'); return; }
+          Editor.insertBox('<div style="left:480px;top:270px;width:960px;"><div class="motion-content">' +
+            '<iframe class="editable-video" src="' + embed + '" style="width:100%;aspect-ratio:16/9;border:0;border-radius:16px;" ' +
+            'allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div></div>');
         },
 
         boxAction(action) {
@@ -1443,6 +1680,22 @@
           return { url: canvas.toDataURL(type, 0.9), width, height };
         }
         return { url, width, height };
+      }
+
+      async function readVideo(file) {
+        if (!/^video\/(mp4|webm)$/.test(file.type)) throw new Error('MP4, WEBM 동영상만 넣을 수 있습니다.');
+        if (file.size > 25 * 1024 * 1024) throw new Error('동영상이 25MB를 넘습니다. 더 짧게 자르거나 유튜브 주소로 넣어 주세요.');
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('동영상을 읽지 못했습니다.'));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function youtubeEmbed(text) {
+        const m = String(text).trim().match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/i);
+        return m ? 'https://www.youtube-nocookie.com/embed/' + m[1] + '?rel=0' : '';
       }
 
       /* ===== 9. 떠 있는 서식 도구 ===== */
@@ -1618,9 +1871,8 @@
         },
 
         // 다시 넣어야 애니메이션이 처음부터 재생된다.
-        paintCanvas(canvas, slide) {
-          canvas.innerHTML = slide ? slide.html : '';
-          canvas.style.background = slide ? slide.bg : '#111827';
+        paintCanvas(canvas, slide, mode) {
+          SlideView.fill(canvas, slide, mode || 'show');
         },
 
         paint() {
@@ -1628,7 +1880,7 @@
           const slide = slides[Show.index];
           if (Show.kind === 'presenter') {
             Show.paintCanvas($('pv-c-canvas'), slide);
-            Show.paintCanvas($('pv-n-canvas'), slides[Show.index + 1]);
+            Show.paintCanvas($('pv-n-canvas'), slides[Show.index + 1], 'static');
             $('pv-count').textContent = (Show.index + 1) + ' / ' + slides.length;
             const notes = $('pv-notes');
             if (Util.htmlToText(slide.notes)) notes.innerHTML = slide.notes;
@@ -1870,32 +2122,63 @@
       })();
 
       /* ===== 12. AI 슬라이드 생성 창 ===== */
+      const AI_SLIDE_EXAMPLE = [
+        '<div class="slide" style="position: relative; width: 1920px; height: 1080px; background: #FFFFFF; overflow: hidden; font-family: Pretendard, sans-serif;">',
+        '  <style>',
+        '    @keyframes custom-entrance-card {',
+        '      0% { opacity: 0; transform: translateY(40px) scale(0.97); filter: blur(8px); }',
+        '      100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }',
+        '    }',
+        '  </style>',
+        '  <div class="draggable-box" style="position: absolute; left: 160px; top: 180px; width: 800px;">',
+        '    <div class="motion-content" style="animation: custom-entrance-card 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards; opacity: 0;">',
+        '      <h1 class="editable-text" style="font-size: 72px; font-weight: 800; color: #1F2937; line-height: 1.15; margin-bottom: 24px;">창작된 메인 타이틀</h1>',
+        '      <p class="editable-text" style="font-size: 32px; color: #475569; line-height: 1.6;">설명 내용 및 세부 정보</p>',
+        '    </div>',
+        '  </div>',
+        '</div>'
+      ].join('\n');
+
       const AI_SYSTEM = [
-        '너는 모션이 들어간 HTML 프레젠테이션 슬라이드를 만드는 디자이너다. 결과는 지정한 JSON 형식으로만 출력한다.',
+        '# 역할',
+        '너는 세계 최고 수준의 브랜드 아이덴티티 디자이너이자 웹 인터랙티브 모션 크리에이티브 디렉터다.',
+        '슬라이드의 내용·목적·감정선을 분석해, 흰색 배경 위에서 가장 돋보이는 비주얼 디자인 시스템(컬러 팔레트, 타이포그래피 톤, 카드 질감)과 독창적인 커스텀 CSS 모션 그래픽을 직접 기획하고 결정해 1920x1080 규격의 슬라이드 HTML을 만든다.',
         '',
-        '[캔버스]',
-        '- 슬라이드 한 장은 가로 1920px, 세로 1080px 고정 캔버스다. 기본 글꼴은 Pretendard, 기본 글자색 #1f2937.',
+        '# 출력 형식',
+        '- 결과는 지정한 JSON으로만 출력한다. 각 장의 html 필드에는 인사말·설명·마크다운 코드 블록 없이 <div class="slide">...</div> 형태의 순수 HTML 하나만 넣는다.',
+        '- title: 이 장의 짧은 제목 / notes: 발표자가 읽을 발표 시나리오 2~5문장(말하듯이) / deckTitle: 발표 전체 제목 / bg: 슬라이드 배경색(html의 배경과 같게).',
         '',
-        '[html 규칙]',
-        '- html의 최상위 요소는 모두 <div class="draggable-box" style="left:..px; top:..px; width:..px; ..."> 형식의 상자다. 사용자가 상자를 끌어 옮기고 글을 고친다.',
-        '- 상자 위치는 left/top(px)으로만 정한다. position, right, bottom, transform으로 위치를 잡지 않는다. 모든 상자는 캔버스 안(0~1920, 0~1080)에 들어가야 한다.',
-        '- 스타일은 style 속성(인라인)으로만 쓴다. <style>, <script>, <a>, 폼 요소, 외부 이미지·글꼴 주소는 쓰지 않는다. 그림이 필요하면 이모지, 색 도형(div), 간단한 인라인 <svg>로 표현한다.',
-        '- 상자 안에서는 h1~h3, p, ul/ol/li, span, b, strong, em, br, div, svg를 쓸 수 있다.',
-        '- 글자 크기: 제목 72~110px, 본문 36~48px, 가장 작은 글자 28px 이상. 한 장에 글은 짧게(핵심 3~5줄).',
-        '- 카드, 색 배경 상자, 큰 숫자, 아이콘 이모지 등으로 PPT처럼 보기 좋게 배치하고, 여백을 넉넉히 둔다.',
+        '# 비주얼 디자인 가이드라인 (AI 자율 기획)',
+        '1. 슬라이드 배경: 순백색(background: #FFFFFF)을 기본으로 하되, 테마에 따라 아주 밝은 오프화이트(#F8FAFC, #F9FAFB 등)를 쓸 수 있다. 배경은 <div class="slide">의 style에 적는다.',
+        '2. 컬러 팔레트: 정해진 색을 따르지 말고, 발표 주제의 분야와 분위기에 가장 잘 맞는 2~3가지 핵심 색(주요 글자색, 포인트 강조색, 보조색)을 직접 정해 모든 장에 일관되게 쓴다.',
+        '   예) 환경·생태 → 딥 포레스트 그린 & 세이지 / 금융·핀테크 → 딥 네이비 & 메탈릭 골드·블루 / 차세대 테크·AI → 흑연 다크 차콜 & 일렉트릭 바이올렛·시안 / 교육·학습 → 따뜻한 소프트 블랙 & 활기찬 앰버·코랄',
+        '   가독성 절대 원칙: 모든 글자는 흰 배경에서 또렷이 보이도록 충분히 짙은 색을 쓴다. 밝은 노랑·연한 회색 등 흰 배경에서 잘 안 보이는 글자색은 금지한다.',
+        '3. 카드 패널: 주제 성격에 맞게 테두리 두께, border-radius, box-shadow 강도, 배경 명암을 설계해 입체감과 정보의 위계를 준다.',
+        '4. 글자 크기: 제목 64~110px, 본문 32~48px, 가장 작은 글자 24px 이상. 한 장에 글은 짧게(핵심 3~5줄), 여백은 넉넉히 둔다.',
         '',
-        '[모션]',
-        '- 상자 class에 다음 중 하나를 더할 수 있다: anim-fade, anim-fade-up, anim-fade-left, anim-fade-right, anim-zoom, anim-pop, anim-float(반복).',
-        '- 순서대로 나타나게 하려면 style에 animation-delay:0.3s 처럼 지연을 준다. 한 장에 너무 많이 쓰지 않는다.',
-        '- 그 밖의 class 이름은 쓰지 않는다.',
+        '# 모션 그래픽 자유 창작',
+        '- 정해진 애니메이션 클래스를 쓰지 말고, <div class="slide"> 맨 앞에 <style>을 열어 슬라이드 주제와 데이터 표현에 맞는 커스텀 @keyframes를 직접 만들어 적용한다.',
+        '- 통계·수치: 차트 막대가 용수철처럼 치솟거나 숫자가 커지며 선명해지는 모션 / 비교·대조: 좌우 카드가 시차를 두고 교차해 미끄러져 들어오는 모션 / 비전·키워드: 심한 블러에서 초점이 맞거나 입체적으로 기울며(tilt) 자리 잡는 모션 / 인포그래픽: 연결선이 0%에서 100%로 그려지고 아이콘이 탄성 있게 팝업되는 모션.',
+        '- 단순한 ease-in-out 대신 cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.34, 1.56, 0.64, 1) 같은 실감 나는 물리 감속 곡선을 쓴다.',
+        '- 요소들이 시차(animation-delay)를 두고 차례로 나타나게 한다.',
         '',
-        '[그 밖의 필드]',
-        '- bg: 슬라이드 배경 CSS 값(색 또는 linear-gradient). url()은 쓰지 않는다. 배경이 어두우면 글자는 밝게 한다.',
-        '- title: 이 장의 짧은 제목.',
-        '- notes: 발표자가 읽을 발표 시나리오 2~5문장(말하듯이).',
-        '- deckTitle: 발표 전체 제목.',
+        '# 편집 도구 충돌 방지 필수 규격',
+        '1. 3계층 래퍼: 1계층 .draggable-box(위치) > 2계층 .motion-content(모션) > 3계층 콘텐츠(.editable-text / .editable-image / .editable-video).',
+        '   - 위치(position: absolute; left; top; width)는 .draggable-box의 style에만 쓴다. left/top은 px이고 캔버스(0~1920, 0~1080) 안에 둔다. right, bottom, transform으로 위치를 잡지 않는다.',
+        '   - .draggable-box는 <div class="slide">의 바로 아래 자식으로 두고, 서로 겹쳐 넣지 않는다.',
+        '   - 창작한 모션(animation)은 .motion-content에만 선언한다(style 속성 또는 <style>의 클래스 규칙).',
+        '2. 모든 animation 끝에는 forwards를 붙여 재생이 끝난 뒤 최종 모습이 유지되게 한다. 처음에 숨겨야 하면 .motion-content에 opacity: 0을 함께 준다.',
+        '3. 글자 요소는 class="editable-text", 이미지는 class="editable-image", 비디오는 class="editable-video"를 붙인다.',
+        '4. 미디어 자리표시자: 이미지가 필요하면 실제로 존재한다고 확신하는 Unsplash 고화질 무료 이미지 주소(https://images.unsplash.com/...)를 src로 넣고 border-radius: 16px; object-fit: cover;로 배치한다. 확신이 없으면 이미지 대신 도형·이모지·인라인 SVG로 표현한다.',
+        '   비디오는 사용자가 요청했고 실제 주소를 알 때만 <video class="editable-video" autoplay loop muted playsinline src="..." style="width:100%; border-radius:16px;"></video> 형태로 넣는다.',
+        '5. <script>, <a>, 폼 요소, id 속성, @import, @font-face는 쓰지 않는다. CSS 선택자는 클래스로 쓴다. 기본 글꼴은 Pretendard다.',
+        '',
+        '# 슬라이드 구조 예시',
+        AI_SLIDE_EXAMPLE,
+        '',
+        '# 내용',
         '- 모든 내용은 한국어로 쓴다. 널리 알려진 사실만 쓰고, 확실하지 않은 수치는 지어내지 않는다.',
-        '- 여러 장일 때는 색·글자 크기·배치 분위기를 통일하고, 장마다 내용이 겹치지 않게 흐름을 이어 간다.'
+        '- 여러 장일 때는 같은 컬러 팔레트·글자 톤·카드 질감을 유지하고, 장마다 내용이 겹치지 않게 흐름을 이어 간다.'
       ].join('\n');
 
       const AI_SCHEMA = {
@@ -1912,7 +2195,7 @@
                 html: { type: 'STRING' },
                 notes: { type: 'STRING' }
               },
-              required: ['title', 'bg', 'html', 'notes']
+              required: ['title', 'html', 'notes']
             }
           }
         },
@@ -2211,9 +2494,21 @@
         abort() { if (AiPanel.aborter) AiPanel.aborter.abort(); },
 
         // 디자인 기준으로 넘길 HTML(넣어 둔 그림 데이터는 길어서 뺀다)
+        // AI에게 보여 줄 슬라이드 원본(<div class="slide"> 형태). 넣어 둔 그림·영상 데이터는 짧은 표식으로 바꾼다.
+        source(slide, media) {
+          const full = '<div class="slide" style="position: relative; width: 1920px; height: 1080px; background: ' + slide.bg + '; overflow: hidden;">' +
+            (slide.css ? '<style>\n' + slide.css + '\n</style>' : '') + slide.html + '</div>';
+          return full.replace(/data:(?:image|video)\/[a-z0-9+.-]+;base64,[a-z0-9+/=]+/gi, url => {
+            if (!media) return 'data:image/png;ref,0';
+            media.push(url);
+            return 'data:image/png;ref,' + (media.length - 1);
+          });
+        },
+
+        // 디자인 기준으로 넘길 장
         reference(slide) {
           if (!slide || slide.pristine || !slide.html.trim()) return null;
-          return { bg: slide.bg, html: slide.html.replace(/data:image\/[^"')\s]+/g, 'data:image/…').slice(0, 6000) };
+          return AiPanel.source(slide).slice(0, 12000);
         },
 
         prompt(topic, total, start, count, madeTitles, reference) {
@@ -2229,7 +2524,7 @@
               ? '[앞에서 이미 만든 장]\n' + madeTitles.map((title, i) => (i + 1) + '. ' + title).join('\n') + '\n이어지는 내용으로, 앞 장과 겹치지 않게 만든다.'
               : (total > 1 ? '첫 장은 발표 제목이 크게 들어간 표지로 만든다.' : ''),
             deckTitle !== DEFAULT_TITLE ? '[발표 자료 제목] ' + deckTitle : '',
-            reference ? '[디자인 기준 장 — 색·글자 크기·배치 분위기를 이 장에 맞춘다]\nbg: ' + reference.bg + '\nhtml:\n' + reference.html : '',
+            reference ? '[디자인 기준 장 — 컬러 팔레트·글자 톤·카드 질감·모션 분위기를 이 장에 맞춘다]\n' + reference : '',
             '',
             'slides 배열에 정확히 ' + count + '개를 출력하라.'
           ].filter(Boolean).join('\n');
@@ -2362,6 +2657,7 @@
             '',
             '[지킬 것]',
             '- 요청과 관계없는 글자·위치·크기·색·상자 순서·애니메이션은 그대로 두고, 요청한 부분만 고친다.',
+            '- <div class="slide"> 형태와 3계층 구조(.draggable-box > .motion-content > .editable-*), <style>의 키프레임을 유지한다.',
             '- 사용자가 넣은 그림(src나 url에 있는 data:image/png;ref,번호)은 그 값을 한 글자도 바꾸지 않고, 요청이 없으면 지우지 않는다.',
             '- notes는 바뀐 내용에 맞게 고치되, 관계없으면 그대로 둔다.',
             '- slides 배열에 정확히 1개를 출력하라.'
@@ -2381,10 +2677,7 @@
           const number = Editor.index + 1;
           // 넣어 둔 그림은 길어서 짧은 표식으로 바꿔 보내고, 응답에서 원래 그림으로 되돌린다.
           const images = [];
-          const html = target.html.replace(/data:image\/[a-z+.-]+;base64,[a-z0-9+/=]+/gi, url => {
-            images.push(url);
-            return 'data:image/png;ref,' + (images.length - 1);
-          });
+          const html = AiPanel.source(target, images);
 
           const files = AiPanel.files.slice();
           AiPanel.message('user', '[' + number + '번 장 재생성]\n' + request + AiPanel.fileNote(files));
@@ -2512,10 +2805,26 @@
           scaler.style.left = (host.clientWidth - W * s) / 2 + 'px';
           scaler.style.top = (host.clientHeight - H * s) / 2 + 'px';
         }
-        function paint(doc, id, i) {
-          var canvas = doc.getElementById(id + '-canvas'), slide = slides[i];
-          canvas.innerHTML = slide ? slide.html : '';
+        function paint(doc, id, i, still) {
+          var canvas = doc.getElementById(id + '-canvas'), slide = slides[i], view = slide && slide.view;
+          canvas.className = view ? view.cls : 'slide-canvas';
+          canvas.innerHTML = view ? view.html : (slide ? slide.html : '');
+          if (view && view.css) {
+            var tag = doc.createElement('style');
+            tag.textContent = view.css;
+            canvas.insertBefore(tag, canvas.firstChild);
+          }
           canvas.style.background = slide ? (slide.bg || '#fff') : '#111';
+          if (still) {
+            Array.prototype.forEach.call(canvas.querySelectorAll('video'), function (video) { video.autoplay = false; video.pause(); });
+            Array.prototype.forEach.call(canvas.querySelectorAll('iframe'), function (frame) {
+              var holder = doc.createElement('div');
+              holder.className = 'ls-media-placeholder';
+              holder.setAttribute('style', frame.getAttribute('style') || '');
+              holder.textContent = '▶';
+              frame.parentNode.replaceChild(holder, frame);
+            });
+          }
         }
         function onKey(event, doc, go) {
           var k = event.key;
@@ -2568,7 +2877,7 @@
             if (i < 0 || i >= slides.length) return;
             index = i;
             paint(document, 'c', i);
-            paint(document, 'n', i + 1);
+            paint(document, 'n', i + 1, true);
             var notes = document.getElementById('pv-notes');
             if (slides[i].notes) notes.innerHTML = slides[i].notes;
             else notes.textContent = '(시나리오 없음)';
@@ -2617,6 +2926,17 @@
       }
 
       const Exporter = {
+        // 보기 화면에 바로 넣을 형태(범위가 한정된 CSS·이름이 바뀐 키프레임)
+        view(slide) {
+          const holder = document.createElement('div');
+          holder.className = 'slide-canvas';
+          SlideView.fill(holder, slide, 'show');
+          const style = holder.querySelector('.ls-slide-style');
+          const css = style ? style.textContent : '';
+          if (style) style.remove();
+          return { cls: holder.className, css, html: holder.innerHTML };
+        },
+
         build(kind) {
           const deck = Editor.deck;
           const presenter = kind === 'presenter';
@@ -2629,9 +2949,11 @@
             slides: deck.slides.map(slide => ({
               title: slide.title,
               html: slide.html,
+              css: slide.css,
               bg: slide.bg,
               notes: presenter ? slide.notes : '',
-              notesFormat: 'html'
+              notesFormat: 'html',
+              view: Exporter.view(slide)
             }))
           };
           // 스크립트 조기 종료와 JS 줄바꿈 문자(U+2028/2029)를 막기 위해 이스케이프한다.
@@ -2683,6 +3005,7 @@
             slides: data.slides.slice(0, 500).map(slide => Editor.normalizeSlide({
               title: slide.title,
               html: slide.html,
+              css: slide.css,
               bg: slide.bg,
               notes: keepNotes ? slide.notes : '',
               notesFormat: slide.notesFormat,
@@ -2751,8 +3074,23 @@
         canvas.addEventListener('dblclick', event => {
           if (!document.body.classList.contains('edit-mode')) return;
           const box = event.target.closest('.draggable-box');
-          if (box && canvas.contains(box)) Editor.startEditing(box, event.clientX, event.clientY);
+          if (!box || !canvas.contains(box)) return;
+          const text = event.target.closest('.editable-text');
+          if (text && box.contains(text)) { Editor.startEditing(text, event.clientX, event.clientY); return; }
+          // 그림·영상은 편집 모드에서 마우스를 받지 않으므로 좌표로 찾는다.
+          const all = Array.from(box.querySelectorAll('img, video, iframe'));
+          // 주소가 깨져 크기가 0인 그림도 바꿀 수 있게, 글 없이 미디어 하나만 있는 상자는 그것을 고른다.
+          const media = all.find(el => {
+            const r = el.getBoundingClientRect();
+            return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+          }) || (all.length === 1 && !box.textContent.trim() ? all[0] : null);
+          if (media) { Editor.select(box); Editor.pickMedia(media); return; }
+          Editor.startEditing(box, event.clientX, event.clientY);
         });
+        // 편집 모드에서는 동영상이 재생되지 않게 멈춘다(자동 재생 포함).
+        canvas.addEventListener('play', event => {
+          if (document.body.classList.contains('edit-mode')) event.target.pause();
+        }, true);
         canvas.addEventListener('input', () => { if (Editor.editing) Editor.touch(); });
         canvas.addEventListener('paste', event => {
           if (!Editor.editing) return;
@@ -2887,6 +3225,14 @@
         });
         $('file-image').addEventListener('change', event => {
           Editor.insertImage(event.target.files[0]);
+          event.target.value = '';
+        });
+        $('file-video').addEventListener('change', event => {
+          Editor.insertVideoFile(event.target.files[0]);
+          event.target.value = '';
+        });
+        $('file-media').addEventListener('change', event => {
+          Editor.replaceMedia(event.target.files[0]);
           event.target.value = '';
         });
       }
