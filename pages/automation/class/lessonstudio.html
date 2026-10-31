@@ -113,12 +113,18 @@
     .thumb-item .num { width: 1.4rem; flex: none; font-size: 0.75rem; color: #6b7280; text-align: right; }
     .thumb-item .mini-host { flex: 1; border-radius: 4px; outline: 1px solid var(--line); }
     .thumb-item.active .mini-host { outline: 3px solid var(--primary); }
+    .thumb-item.dragging { opacity: 0.4; }
+    .thumb-item.drop-before { box-shadow: 0 -4px 0 var(--primary); }
+    .thumb-item.drop-after { box-shadow: 0 4px 0 var(--primary); }
 
     .work-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .stage-host { flex: 1; min-height: 0; position: relative; overflow: hidden; }
     .stage-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15); }
     .notes-pane { flex: none; background: #fff; border-top: 1px solid var(--line); padding: 0.5rem 0.75rem; }
-    .notes-pane textarea { resize: none; height: 88px; }
+    .notes-editor { height: 96px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+    .notes-editor:empty::before { content: attr(data-placeholder); color: #9ca3af; }
+    .ai-files:empty { display: none; }
+    .ai-panel.drag-over { outline: 3px dashed var(--primary); outline-offset: -6px; }
 
     .ai-panel { width: 360px; flex: none; background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
     .ai-panel.collapsed { display: none; }
@@ -133,7 +139,7 @@
     }
     @media (max-width: 767.98px) {
       .slide-rail { width: 110px; }
-      .notes-pane textarea { height: 60px; }
+      .notes-editor { height: 64px; }
     }
 
     /* ---------- 편집 모드 ---------- */
@@ -157,7 +163,9 @@
 
     /* ---------- 발표 모드 ---------- */
     #show-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; }
-    body.presentation-mode #show-overlay { display: block; }
+    body.presentation-mode.show-audience #show-overlay { display: block; }
+    #presenter-overlay { display: none; position: fixed; inset: 0; z-index: 2000; flex-direction: column; background: #1f2937; color: #e5e7eb; }
+    body.presentation-mode.show-presenter #presenter-overlay { display: flex; }
     #show-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
     .show-counter { position: absolute; right: 16px; bottom: 10px; color: rgba(255, 255, 255, 0.45); font-size: 0.85rem; }
     .show-exit { position: absolute; top: 10px; right: 10px; opacity: 0.25; z-index: 1; }
@@ -225,7 +233,13 @@
                 <li><button type="button" class="dropdown-item" data-export="audience"><i class="bi bi-display"></i> 청중 화면만</button></li>
               </ul>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-mode" title="발표 모드 / 편집 모드 전환 (Ctrl+E)"><i class="bi bi-play-btn"></i> 발표 모드 <kbd class="small">Ctrl+E</kbd></button>
+            <div class="input-group input-group-sm w-auto">
+              <select class="form-select form-select-sm" id="show-kind" aria-label="발표 방식" style="max-width: 9rem;">
+                <option value="audience" selected>청중 화면만</option>
+                <option value="presenter">발표자 보기</option>
+              </select>
+              <button type="button" class="btn btn-outline-primary" id="btn-mode" title="발표 모드 / 편집 모드 전환 (Ctrl+E)"><i class="bi bi-play-btn"></i> 발표 시작 <kbd class="small">Ctrl+E</kbd></button>
+            </div>
             <button type="button" class="btn btn-sm btn-primary" id="btn-ai"><i class="bi bi-stars"></i> AI 슬라이드 생성</button>
           </div>
         </div>
@@ -268,11 +282,9 @@
           <div class="d-flex flex-wrap gap-1 p-2 border-bottom">
             <button type="button" class="btn btn-sm btn-primary flex-grow-1" data-slide="add" title="새 슬라이드"><i class="bi bi-plus-lg"></i> 새 슬라이드</button>
             <button type="button" class="btn btn-sm btn-light" data-slide="copy" title="슬라이드 복제"><i class="bi bi-copy"></i></button>
-            <button type="button" class="btn btn-sm btn-light" data-slide="up" title="위로"><i class="bi bi-arrow-up"></i></button>
-            <button type="button" class="btn btn-sm btn-light" data-slide="down" title="아래로"><i class="bi bi-arrow-down"></i></button>
             <button type="button" class="btn btn-sm btn-light text-danger" data-slide="delete" title="슬라이드 삭제"><i class="bi bi-trash3"></i></button>
           </div>
-          <div id="thumb-list"></div>
+          <div id="thumb-list" title="끌어서 순서를 바꿀 수 있습니다"></div>
           <div class="small text-muted text-center border-top py-1" id="slide-counter"></div>
         </aside>
 
@@ -283,16 +295,17 @@
             </div>
           </div>
           <div class="notes-pane">
-            <div class="row g-2">
-              <div class="col-md-7">
-                <label class="form-label small fw-semibold mb-1" for="notes-input"><i class="bi bi-chat-square-text"></i> 발표 시나리오</label>
-                <textarea class="form-control form-control-sm" id="notes-input" placeholder="이 장에서 말할 내용을 적어 두세요. 발표자 보기에서만 보입니다."></textarea>
-              </div>
-              <div class="col-md-5">
-                <label class="form-label small fw-semibold mb-1" for="memo-input"><i class="bi bi-sticky"></i> 메모</label>
-                <textarea class="form-control form-control-sm" id="memo-input" placeholder="준비물, 예상 질문 등"></textarea>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <span class="small fw-semibold" id="notes-label"><i class="bi bi-chat-square-text"></i> 발표 시나리오</span>
+              <span class="small text-muted d-none d-lg-inline">글자를 블록 지정하면 서식 도구가 나옵니다</span>
+              <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="AI 시나리오 작성">
+                <button type="button" class="btn btn-outline-primary" id="btn-notes-ai"><i class="bi bi-stars"></i> AI로 이 장 시나리오 작성</button>
+                <button type="button" class="btn btn-outline-primary" id="btn-notes-ai-all">모든 장</button>
               </div>
             </div>
+            <div class="form-control form-control-sm notes-editor" id="notes-editor" contenteditable="true" role="textbox"
+              aria-multiline="true" aria-labelledby="notes-label" spellcheck="false"
+              data-placeholder="이 장에서 말할 내용을 적어 두세요. 발표자 보기에서만 보입니다."></div>
           </div>
         </section>
 
@@ -309,7 +322,8 @@
           </div>
           <div class="ai-log" id="ai-log">
             <div class="ai-msg ai">[새 슬라이드 생성]: 발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 [여러 장 생성]을 켜세요.
-[현재 슬라이드 재생성]: 지금 보고 있는 장을 고칠 점만 적어 보내면 그 장을 다시 만들어 줍니다.</div>
+[현재 슬라이드 재생성]: 지금 보고 있는 장을 고칠 점만 적어 보내면 그 장을 다시 만들어 줍니다.
+📎로 이미지·PDF·PPTX 같은 참고 자료를 붙이면 그 내용을 참고합니다.</div>
           </div>
           <div class="border-top p-2">
             <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="AI 작업 선택">
@@ -318,6 +332,7 @@
               <input type="radio" class="btn-check" name="ai-mode" id="ai-mode-revise" value="revise">
               <label class="btn btn-outline-primary" for="ai-mode-revise"><i class="bi bi-arrow-repeat"></i> 현재 슬라이드 재생성</label>
             </div>
+            <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="ai-files"></div>
             <textarea class="form-control form-control-sm mb-2" id="ai-prompt" rows="4"
               placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
             <div class="d-flex align-items-center flex-wrap gap-2 small mb-2" id="ai-new-options">
@@ -331,10 +346,11 @@
               </div>
             </div>
             <div class="d-flex gap-2">
+              <button type="button" class="btn btn-light btn-sm" id="ai-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
               <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> <span id="ai-send-label">생성</span> <span class="opacity-75">Ctrl+Enter</span></button>
               <button type="button" class="btn btn-outline-danger btn-sm d-none" id="ai-stop"><i class="bi bi-stop-circle"></i> 중단</button>
             </div>
-            <p class="small text-muted mt-2 mb-0">요청 내용은 Google Gemini API로 전송됩니다. 개인정보는 적지 마세요.</p>
+            <p class="small text-muted mt-2 mb-0">요청 내용과 첨부 자료는 Google Gemini API로 전송됩니다. 개인정보가 담긴 자료는 넣지 마세요.</p>
           </div>
         </aside>
       </div>
@@ -346,6 +362,32 @@
     <button type="button" class="btn btn-sm btn-light show-exit" id="show-exit">편집 모드로 (Esc)</button>
     <div id="show-scaler"><div class="slide-canvas" id="show-canvas"></div></div>
     <div class="show-counter" id="show-counter"></div>
+  </div>
+
+  <!-- 발표자 보기 화면 -->
+  <div id="presenter-overlay" aria-label="발표자 보기">
+    <header class="pv-bar">
+      <strong id="pv-title"></strong>
+      <span id="pv-count"></span>
+      <span id="pv-timer">00:00</span>
+      <button type="button" data-pv="reset">타이머 다시</button>
+      <button type="button" data-pv="prev">◀ 이전</button>
+      <button type="button" data-pv="next">다음 ▶</button>
+      <button type="button" class="pv-primary" data-pv="audience">청중 화면 열기</button>
+      <button type="button" data-pv="exit">편집 모드로 (Esc)</button>
+    </header>
+    <main class="pv-main">
+      <section class="pv-col">
+        <div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>
+        <div class="v-host pv-current" id="pv-c-host"><div class="v-scaler" id="pv-c-scaler"><div class="slide-canvas" id="pv-c-canvas"></div></div></div>
+      </section>
+      <aside class="pv-col">
+        <div class="pv-label">다음 장</div>
+        <div class="v-host pv-next v-static" id="pv-n-host"><div class="v-scaler" id="pv-n-scaler"><div class="slide-canvas" id="pv-n-canvas"></div></div></div>
+        <div class="pv-label">발표 시나리오</div>
+        <div class="pv-text" id="pv-notes"></div>
+      </aside>
+    </main>
   </div>
 
   <!-- 떠 있는 서식 도구 -->
@@ -382,6 +424,11 @@
             <label class="form-label small fw-semibold" for="set-model">모델 이름</label>
             <input type="text" class="form-control" id="set-model" autocomplete="off" spellcheck="false">
           </div>
+          <div class="mt-3">
+            <label class="form-label small fw-semibold" for="set-interval">요청 간격 (초)</label>
+            <input type="number" class="form-control" id="set-interval" value="5" min="0" max="60">
+            <p class="form-text mb-0">여러 장 생성·모든 장 시나리오 작성처럼 여러 번 요청할 때 요청 사이에 기다리는 시간입니다. 기본 권장값은 5초입니다.</p>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
@@ -407,9 +454,11 @@
   <div id="toast-area" aria-live="polite"></div>
   <input type="file" class="d-none" id="file-import" accept=".html,.htm,text/html">
   <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp">
+  <input type="file" class="d-none" id="ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script>
     (function () {
       'use strict';
@@ -462,6 +511,17 @@
           const m = value.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?/i);
           if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return fallback;
           return '#' + [m[1], m[2], m[3]].map(n => Math.min(255, parseInt(n, 10)).toString(16).padStart(2, '0')).join('');
+        },
+
+        textToHtml(text) {
+          return Util.escapeHtml(String(text || '').trim()).replace(/\r?\n/g, '<br>');
+        },
+
+        // 서식 있는 시나리오를 AI에게 보낼 일반 글로 바꾼다.
+        htmlToText(html) {
+          const marked = String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li)>/gi, '\n');
+          const doc = new DOMParser().parseFromString('<body>' + marked + '</body>', 'text/html');
+          return doc.body.textContent.replace(/\n{3,}/g, '\n\n').trim();
         },
 
         safeFileName(name) {
@@ -584,6 +644,15 @@
           return host.innerHTML;
         },
 
+        // 발표 시나리오: 글자 서식만 남긴다.
+        notes(html) {
+          Sanitizer.setup();
+          return DOMPurify.sanitize(String(html || ''), {
+            ALLOWED_TAGS: ['b', 'strong', 'i', 'em', 'u', 'span', 'br', 'div', 'p', 'ul', 'ol', 'li'],
+            ALLOWED_ATTR: ['style']
+          });
+        },
+
         background(value) {
           const bg = String(value || '').trim();
           if (!bg || bg.length > 400 || /url\s*\(|expression|[;{}<>\\]/i.test(bg)) return '#ffffff';
@@ -631,6 +700,7 @@
         KEY: 'lessonStudio.geminiApiKey',
         SESSION_KEY: 'lessonStudio.geminiApiKey.session',
         MODEL: 'lessonStudio.geminiModel',
+        INTERVAL: 'lessonStudio.geminiInterval',
 
         read(storage, key) {
           try { return storage.getItem(key) || ''; } catch (err) { return ''; }
@@ -640,7 +710,13 @@
         remembered() { return !!Settings.read(localStorage, Settings.KEY); },
         model() { return Settings.read(localStorage, Settings.MODEL) || DEFAULT_MODEL; },
 
-        save(key, remember, model) {
+        // 여러 번 요청할 때 요청 사이에 기다리는 초(기본 5초)
+        interval() {
+          const value = parseFloat(Settings.read(localStorage, Settings.INTERVAL));
+          return isNaN(value) ? 5 : Math.max(0, Math.min(60, value));
+        },
+
+        save(key, remember, model, interval) {
           try {
             if (remember && key) {
               localStorage.setItem(Settings.KEY, key);
@@ -651,6 +727,8 @@
               else sessionStorage.removeItem(Settings.SESSION_KEY);
             }
             localStorage.setItem(Settings.MODEL, model || DEFAULT_MODEL);
+            const seconds = parseFloat(interval);
+            localStorage.setItem(Settings.INTERVAL, String(isNaN(seconds) ? 5 : Math.max(0, Math.min(60, seconds))));
             return true;
           } catch (err) {
             Util.toast('이 브라우저에서는 설정을 저장할 수 없습니다.', 'warning');
@@ -664,13 +742,14 @@
           $('set-key').value = Settings.apiKey();
           $('set-remember').checked = Settings.remembered();
           $('set-model').value = Settings.model();
+          $('set-interval').value = Settings.interval();
           bootstrap.Modal.getOrCreateInstance($('settings-modal')).show();
         },
 
         save() {
           const key = $('set-key').value.trim();
           const remember = $('set-remember').checked;
-          if (!Settings.save(key, remember, $('set-model').value.trim())) return;
+          if (!Settings.save(key, remember, $('set-model').value.trim(), $('set-interval').value)) return;
           bootstrap.Modal.getOrCreateInstance($('settings-modal')).hide();
           Util.toast(remember || !key ? 'AI 설정을 저장했습니다.' : 'AI 설정을 이 탭에만 적용했습니다. (브라우저 미저장)', 'success');
           AiPanel.syncKey();
@@ -827,7 +906,7 @@
         saveTimer: null,
 
         newSlide(kind) {
-          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', bg: '#ffffff', notes: '', memo: '', pristine: false };
+          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', bg: '#ffffff', notes: '', notesFormat: 'html', pristine: false };
         },
 
         normalizeSlide(slide) {
@@ -836,13 +915,27 @@
             title: String(slide.title || '').slice(0, 120),
             html: Sanitizer.slide(slide.html),
             bg: Sanitizer.background(slide.bg),
-            notes: String(slide.notes || ''),
-            memo: String(slide.memo || ''),
+            notes: Editor.normalizeNotes(slide),
+            notesFormat: 'html',
             pristine: !!slide.pristine
           };
         },
 
+        // 예전 데이터·AI 응답의 일반 글 시나리오와 메모는 서식 있는 시나리오 하나로 합친다.
+        normalizeNotes(slide) {
+          if (slide.notesFormat === 'html') return Sanitizer.notes(slide.notes);
+          let html = Util.textToHtml(slide.notes);
+          if (String(slide.memo || '').trim()) html += (html ? '<br><br>' : '') + Util.textToHtml(slide.memo);
+          return html;
+        },
+
         current() { return Editor.deck.slides[Editor.index]; },
+
+        saveNotes() {
+          if (!Editor.deck) return;
+          Editor.current().notes = $('notes-editor').innerHTML;
+          Editor.scheduleSave();
+        },
         snapshot() { return JSON.stringify(Editor.deck.slides); },
 
         async open(id) {
@@ -904,6 +997,7 @@
             const item = document.createElement('div');
             item.className = 'thumb-item';
             item.dataset.index = i;
+            item.draggable = true;
             const num = document.createElement('div');
             num.className = 'num';
             num.textContent = i + 1;
@@ -939,8 +1033,7 @@
           FloatBar.hide();
           canvas.innerHTML = slide.html;
           canvas.style.background = slide.bg;
-          $('notes-input').value = slide.notes;
-          $('memo-input').value = slide.memo;
+          $('notes-editor').innerHTML = slide.notes;
           $('bg-color').value = Util.toHex(slide.bg, '#ffffff');
           Editor.markActiveThumb();
           Editor.syncBoxTools();
@@ -1057,12 +1150,22 @@
             if (slides.length === 1) { Util.toast('마지막 한 장은 지울 수 없습니다.', 'warning'); return; }
             slides.splice(i, 1);
             Editor.index = Math.min(i, slides.length - 1);
-          } else if (action === 'up' || action === 'down') {
-            const j = action === 'up' ? i - 1 : i + 1;
-            if (j < 0 || j >= slides.length) return;
-            [slides[i], slides[j]] = [slides[j], slides[i]];
-            Editor.index = j;
           }
+          Editor.renderRail();
+          Editor.renderCanvas();
+          Editor.commit();
+        },
+
+        // from 번째 장을 빼서 to 자리(뺀 뒤 기준)에 넣는다.
+        moveSlide(from, to) {
+          const slides = Editor.deck.slides;
+          to = Math.max(0, Math.min(slides.length - 1, to));
+          if (from === to || from < 0 || from >= slides.length) return;
+          Editor.deselect();
+          Editor.syncCurrent();
+          const [moved] = slides.splice(from, 1);
+          slides.splice(to, 0, moved);
+          Editor.index = to;
           Editor.renderRail();
           Editor.renderCanvas();
           Editor.commit();
@@ -1345,15 +1448,20 @@
       /* ===== 9. 떠 있는 서식 도구 ===== */
       const FloatBar = {
         range: null,
+        root: null, // 서식을 입힐 영역: 편집 중인 글상자 또는 발표 시나리오
 
         onSelection() {
           const bar = $('float-toolbar');
           if (bar.contains(document.activeElement)) return; // 색 고르는 중
-          const box = Editor.editing;
           const selection = window.getSelection();
-          if (!box || !selection.rangeCount || selection.isCollapsed) { FloatBar.hide(); return; }
+          if (!selection.rangeCount || selection.isCollapsed) { FloatBar.hide(); return; }
           const range = selection.getRangeAt(0);
-          if (!box.contains(range.commonAncestorContainer)) { FloatBar.hide(); return; }
+          const node = range.commonAncestorContainer;
+          let root = null;
+          if (Editor.editing && Editor.editing.contains(node)) root = Editor.editing;
+          else if ($('notes-editor').contains(node)) root = $('notes-editor');
+          if (!root) { FloatBar.hide(); return; }
+          FloatBar.root = root;
           FloatBar.range = range.cloneRange();
           FloatBar.show();
         },
@@ -1378,6 +1486,7 @@
         hide() {
           $('float-toolbar').style.display = 'none';
           FloatBar.range = null;
+          FloatBar.root = null;
         },
 
         element() {
@@ -1389,7 +1498,7 @@
 
         // 고른 글자에 인라인 스타일을 입힌다.
         apply(props) {
-          const box = Editor.editing;
+          const box = FloatBar.root;
           const range = FloatBar.range;
           if (!box || !range || range.collapsed || !box.contains(range.commonAncestorContainer)) return;
           const keys = Object.keys(props);
@@ -1421,7 +1530,8 @@
           selection.addRange(next);
           FloatBar.range = next.cloneRange();
           FloatBar.show();
-          Editor.touch();
+          if (box === $('notes-editor')) Editor.saveNotes();
+          else Editor.touch();
           Editor.commitSoon();
         },
 
@@ -1457,18 +1567,29 @@
       /* ===== 10. 발표 모드 ===== */
       const Show = {
         index: 0,
+        kind: 'audience',
+        popup: null,
+        started: 0,
+        timer: null,
 
         isOn() { return document.body.classList.contains('presentation-mode'); },
-        toggle() { if (Show.isOn()) Show.exit(); else Show.enter(); },
+        toggle() { if (Show.isOn()) Show.exit(); else Show.enter($('show-kind').value); },
 
-        enter() {
+        enter(kind) {
           if (!Editor.deck) return;
           Editor.deselect();
           Editor.syncCurrent();
           Editor.saveNow();
+          Show.kind = kind === 'presenter' ? 'presenter' : 'audience';
           Show.index = Editor.index;
           document.body.classList.remove('edit-mode');
-          document.body.classList.add('presentation-mode');
+          document.body.classList.add('presentation-mode', 'show-' + Show.kind);
+          if (Show.kind === 'presenter') {
+            $('pv-title').textContent = Editor.deck.title;
+            Show.started = Date.now();
+            Show.tick();
+            Show.timer = setInterval(Show.tick, 1000);
+          }
           Show.paint();
           const root = document.documentElement;
           if (root.requestFullscreen && !document.fullscreenElement) root.requestFullscreen().catch(() => { /* 전체 화면을 못 써도 발표는 된다 */ });
@@ -1476,9 +1597,13 @@
 
         exit() {
           if (!Show.isOn()) return;
-          document.body.classList.remove('presentation-mode');
+          document.body.classList.remove('presentation-mode', 'show-audience', 'show-presenter');
           document.body.classList.add('edit-mode');
-          $('show-canvas').innerHTML = '';
+          clearInterval(Show.timer);
+          Show.timer = null;
+          ['show-canvas', 'pv-c-canvas', 'pv-n-canvas'].forEach(id => { $(id).innerHTML = ''; });
+          if (Show.popup && !Show.popup.closed) Show.popup.close();
+          Show.popup = null;
           if (document.fullscreenElement) document.exitFullscreen().catch(() => { /* 무시 */ });
           if (Editor.deck && Show.index !== Editor.index) {
             Editor.index = Show.index;
@@ -1487,13 +1612,32 @@
           Editor.fit();
         },
 
+        tick() {
+          const sec = Math.floor((Date.now() - Show.started) / 1000);
+          $('pv-timer').textContent = String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+        },
+
+        // 다시 넣어야 애니메이션이 처음부터 재생된다.
+        paintCanvas(canvas, slide) {
+          canvas.innerHTML = slide ? slide.html : '';
+          canvas.style.background = slide ? slide.bg : '#111827';
+        },
+
         paint() {
           const slides = Editor.deck.slides;
           const slide = slides[Show.index];
-          const canvas = $('show-canvas');
-          canvas.innerHTML = slide.html; // 다시 넣어야 애니메이션이 처음부터 재생된다
-          canvas.style.background = slide.bg;
-          $('show-counter').textContent = (Show.index + 1) + ' / ' + slides.length;
+          if (Show.kind === 'presenter') {
+            Show.paintCanvas($('pv-c-canvas'), slide);
+            Show.paintCanvas($('pv-n-canvas'), slides[Show.index + 1]);
+            $('pv-count').textContent = (Show.index + 1) + ' / ' + slides.length;
+            const notes = $('pv-notes');
+            if (Util.htmlToText(slide.notes)) notes.innerHTML = slide.notes;
+            else notes.textContent = '(시나리오 없음)';
+            if (Show.popup && !Show.popup.closed) Show.paintCanvas(Show.popup.document.getElementById('pa-canvas'), slide);
+          } else {
+            Show.paintCanvas($('show-canvas'), slide);
+            $('show-counter').textContent = (Show.index + 1) + ' / ' + slides.length;
+          }
           Show.fit();
         },
 
@@ -1503,7 +1647,37 @@
           Show.paint();
         },
 
-        fit() { fitStage($('show-overlay'), $('show-scaler'), 0); },
+        fit() {
+          if (Show.kind === 'presenter') {
+            fitStage($('pv-c-host'), $('pv-c-scaler'), 0);
+            fitStage($('pv-n-host'), $('pv-n-scaler'), 0);
+            if (Show.popup && !Show.popup.closed) {
+              const doc = Show.popup.document;
+              fitStage(doc.getElementById('pa-host'), doc.getElementById('pa-scaler'), 0);
+            }
+          } else {
+            fitStage($('show-overlay'), $('show-scaler'), 0);
+          }
+        },
+
+        // 발표자 보기에서 청중에게 보여 줄 창을 따로 연다(같은 장으로 함께 넘어간다).
+        openAudience() {
+          if (Show.popup && !Show.popup.closed) { Show.popup.focus(); return; }
+          const popup = window.open('', 'ls_audience', 'width=1280,height=760');
+          if (!popup) { Util.toast('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.', 'warning'); return; }
+          const doc = popup.document;
+          doc.open();
+          doc.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>' + Util.escapeHtml(Editor.deck.title) +
+            ' - 청중 화면</title><style>' + $('ls-slide-css').textContent + '</style></head><body class="ls-viewer presentation-mode">' +
+            '<div class="v-host" id="pa-host"><div class="v-scaler" id="pa-scaler"><div class="slide-canvas" id="pa-canvas"></div></div></div></body></html>');
+          doc.close();
+          Show.popup = popup;
+          doc.addEventListener('keydown', Show.onKey);
+          doc.getElementById('pa-host').addEventListener('click', () => Show.go(Show.index + 1));
+          popup.addEventListener('resize', Show.fit);
+          Show.paint();
+          setTimeout(Show.fit, 100);
+        },
 
         onKey(event) {
           const key = event.key;
@@ -1644,7 +1818,7 @@
               try {
                 const body = {
                   systemInstruction: { parts: [{ text: options.system }] },
-                  contents: [{ role: 'user', parts: [{ text: options.prompt + extra }] }],
+                  contents: [{ role: 'user', parts: [{ text: options.prompt + extra }].concat(options.parts || []) }],
                   generationConfig: Object.assign({ responseMimeType: 'application/json' },
                     useSchema && options.schema ? { responseSchema: options.schema } : {})
                 };
@@ -1745,9 +1919,34 @@
         required: ['slides']
       };
 
+      const NOTES_BATCH = 5; // 모든 장 시나리오 작성 시 한 번에 보내는 장 수
+      const NOTES_SYSTEM = [
+        '너는 발표 코치다. 슬라이드에 적힌 내용을 읽고, 발표자가 그대로 읽어도 자연스러운 발표 시나리오를 쓴다. 결과는 지정한 JSON 형식으로만 출력한다.',
+        '- 자연스러운 한국어 구어체로 장마다 3~6문장을 쓴다. 필요하면 청중에게 던지는 짧은 질문이나 다음 장으로 넘어가는 말을 넣는다.',
+        '- 슬라이드 글을 그대로 읽지 말고 풀어서 설명하고, 앞뒤 장과 흐름이 이어지게 한다.',
+        '- 슬라이드에 없는 구체적인 수치나 사실은 지어내지 않는다.',
+        '- 기존 시나리오가 있으면 그 뜻을 살려 다듬는다.',
+        '- notes는 일반 글로 쓴다(HTML 금지, 줄바꿈은 가능).'
+      ].join('\n');
+      const NOTES_SCHEMA = {
+        type: 'OBJECT',
+        properties: {
+          items: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: { number: { type: 'INTEGER' }, notes: { type: 'STRING' } },
+              required: ['number', 'notes']
+            }
+          }
+        },
+        required: ['items']
+      };
+
       const AiPanel = {
         aborter: null,
         busy: false,
+        files: [], // 참고 자료 { file, kind, parts }
 
         syncKey() { $('ai-nokey').classList.toggle('d-none', !!Settings.apiKey()); },
 
@@ -1775,8 +1974,238 @@
 
         setBusy(on) {
           AiPanel.busy = on;
-          $('ai-send').disabled = on;
+          ['ai-send', 'btn-notes-ai', 'btn-notes-ai-all'].forEach(id => { $(id).disabled = on; });
           $('ai-stop').classList.toggle('d-none', !on);
+        },
+
+        /* --- 참고 자료 첨부 --- */
+        addFiles(list) {
+          const MB = 1024 * 1024;
+          let inlineBytes = AiPanel.files.filter(item => item.kind === 'image' || item.kind === 'pdf').reduce((sum, item) => sum + item.file.size, 0);
+          Array.from(list || []).forEach(file => {
+            const name = file.name.toLowerCase();
+            if (name.endsWith('.ppt')) { Util.toast('옛 .ppt 형식은 읽을 수 없습니다. PowerPoint에서 .pptx나 .pdf로 저장해 첨부해 주세요.', 'warning'); return; }
+            let kind = null;
+            if (/^image\/(png|jpeg|webp|gif)$/.test(file.type) || /\.(png|jpe?g|webp|gif)$/.test(name)) kind = 'image';
+            else if (name.endsWith('.pdf')) kind = 'pdf';
+            else if (name.endsWith('.pptx')) kind = 'pptx';
+            else if (/\.(txt|md)$/.test(name)) kind = 'text';
+            if (!kind) { Util.toast(file.name + ': 이미지·PDF·PPTX·TXT 파일만 첨부할 수 있습니다.', 'warning'); return; }
+            if (AiPanel.files.length >= 10) { Util.toast('참고 자료는 10개까지 첨부할 수 있습니다.', 'warning'); return; }
+            if (file.size > (kind === 'pptx' ? 50 : 20) * MB) { Util.toast(file.name + ' 파일이 너무 큽니다.', 'warning'); return; }
+            if (kind === 'image' || kind === 'pdf') {
+              if (inlineBytes + file.size > 14 * MB) { Util.toast('이미지·PDF 첨부는 합계 14MB까지 보낼 수 있습니다.', 'warning'); return; }
+              inlineBytes += file.size;
+            }
+            AiPanel.files.push({ file, kind, parts: null });
+          });
+          AiPanel.drawFiles();
+        },
+
+        drawFiles() {
+          const host = $('ai-files');
+          host.textContent = '';
+          const icons = { image: 'bi-image', pdf: 'bi-file-earmark-pdf', pptx: 'bi-file-earmark-slides', text: 'bi-file-earmark-text' };
+          AiPanel.files.forEach(item => {
+            const chip = document.createElement('span');
+            chip.className = 'badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-1 fw-normal';
+            const icon = document.createElement('i');
+            icon.className = 'bi ' + icons[item.kind];
+            const label = document.createElement('span');
+            label.className = 'text-truncate';
+            label.style.maxWidth = '200px';
+            label.textContent = item.file.name;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn-close';
+            remove.style.fontSize = '0.55rem';
+            remove.setAttribute('aria-label', item.file.name + ' 첨부 빼기');
+            remove.addEventListener('click', () => {
+              AiPanel.files = AiPanel.files.filter(other => other !== item);
+              AiPanel.drawFiles();
+            });
+            chip.append(icon, label, remove);
+            host.append(chip);
+          });
+        },
+
+        clearFiles(used) {
+          AiPanel.files = AiPanel.files.filter(item => !used.includes(item));
+          AiPanel.drawFiles();
+        },
+
+        fileNote(files) { return files.length ? '\n📎 ' + files.map(item => item.file.name).join(', ') : ''; },
+
+        filePrompt(files) {
+          if (!files.length) return '';
+          return '\n\n[참고 자료] 함께 보낸 파일(' + files.map(item => item.file.name).join(', ') + ')의 내용·자료·분위기를 참고한다. ' +
+            '자료에 있는 사실을 우선하고, 자료를 길게 옮기지 말고 슬라이드에 맞게 요약한다.';
+        },
+
+        base64(file) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+            reader.onerror = () => reject(new Error(file.name + ' 파일을 읽지 못했습니다.'));
+            reader.readAsDataURL(file);
+          });
+        },
+
+        // Gemini에 보낼 형태로 바꾼다. 이미지·PDF는 그대로, PPTX는 글과 그림 몇 장을 뽑는다.
+        async readFile(item) {
+          const file = item.file;
+          const head = { text: '[참고 자료: ' + file.name + ']' };
+          if (item.kind === 'text') return [{ text: head.text + '\n' + (await file.text()).slice(0, 100000) }];
+          if (item.kind === 'image' || item.kind === 'pdf') {
+            const mimeType = item.kind === 'pdf' ? 'application/pdf' : (file.type || 'image/png');
+            return [head, { inlineData: { mimeType, data: await AiPanel.base64(file) } }];
+          }
+          if (!window.JSZip) throw new Error('PPTX를 읽는 도구를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
+          let zip;
+          try { zip = await JSZip.loadAsync(file); } catch (err) { throw new Error(file.name + ': PPTX 파일을 열지 못했습니다.'); }
+          const slideNo = name => parseInt(name.match(/(\d+)\.xml$/)[1], 10);
+          const slideNames = Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort((a, b) => slideNo(a) - slideNo(b));
+          const lines = [];
+          for (let i = 0; i < slideNames.length; i++) {
+            const xml = new DOMParser().parseFromString(await zip.file(slideNames[i]).async('string'), 'application/xml');
+            const paragraphs = Array.from(xml.getElementsByTagName('a:p'))
+              .map(p => Array.from(p.getElementsByTagName('a:t')).map(t => t.textContent).join(''))
+              .filter(text => text.trim());
+            lines.push('슬라이드 ' + (i + 1) + ': ' + (paragraphs.join(' / ') || '(글 없음)'));
+          }
+          const parts = [{ text: '[참고 자료: ' + file.name + ' (PPTX ' + slideNames.length + '장)]\n' + lines.join('\n').slice(0, 100000) }];
+          const media = Object.keys(zip.files).filter(name => /^ppt\/media\/.+\.(png|jpe?g)$/i.test(name)).slice(0, 4);
+          for (const name of media) {
+            const data = await zip.file(name).async('base64');
+            if (data.length > 2 * 1024 * 1024) continue;
+            parts.push({ inlineData: { mimeType: /\.png$/i.test(name) ? 'image/png' : 'image/jpeg', data } });
+          }
+          return parts;
+        },
+
+        async prepareFiles(files, status) {
+          const parts = [];
+          for (const item of files) {
+            if (!item.parts) {
+              status.set('참고 자료 읽는 중… ' + item.file.name);
+              item.parts = await AiPanel.readFile(item);
+            }
+            parts.push(...item.parts);
+          }
+          return parts;
+        },
+
+        // 여러 번 요청할 때 AI 설정의 요청 간격만큼 기다린다.
+        async pause(signal, status) {
+          for (let left = Math.ceil(Settings.interval()); left > 0; left--) {
+            if (signal.aborted) return;
+            status.set('다음 요청까지 ' + left + '초 기다리는 중… (AI 설정의 요청 간격)');
+            await Util.sleep(1000);
+          }
+        },
+
+        /* --- 발표 시나리오 작성 --- */
+        slideText(slide) {
+          const host = document.createElement('template');
+          host.innerHTML = slide.html;
+          const boxes = Array.from(host.content.children);
+          const text = boxes.map(el => el.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+          return (text || '(글 없음)') + (host.content.querySelector('img') ? '\n(그림 있음)' : '');
+        },
+
+        notesPrompt(deck, numbers) {
+          const overview = deck.slides.map((slide, i) => (i + 1) + '. ' + (slide.title || AiPanel.slideText(slide).split('\n')[0]).slice(0, 50)).join('\n');
+          const targets = numbers.map(n => {
+            const slide = deck.slides[n - 1];
+            const old = Util.htmlToText(slide.notes);
+            return '[장 번호 ' + n + ']\n' + AiPanel.slideText(slide) + (old ? '\n(기존 시나리오: ' + old.slice(0, 1500) + ')' : '');
+          }).join('\n\n');
+          return [
+            '[발표 자료 제목] ' + deck.title,
+            '',
+            '[전체 흐름]',
+            overview,
+            '',
+            '[시나리오를 쓸 장]',
+            targets,
+            '',
+            'items 배열에 위 장마다 하나씩 넣고, number에는 장 번호를 그대로 쓴다.'
+          ].join('\n');
+        },
+
+        async writeNotes(all) {
+          if (AiPanel.busy || !Editor.deck) return;
+          if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          Editor.deselect();
+          Editor.syncCurrent();
+          const deck = Editor.deck;
+          const ids = all ? deck.slides.map(slide => slide.id) : [Editor.current().id];
+          const hasOld = ids.some(id => Util.htmlToText(deck.slides.find(slide => slide.id === id).notes));
+          if (hasOld && !await Util.confirm((all ? '이미 적힌 시나리오도 AI가 모두 새로 씁니다.' : '이 장에 적힌 시나리오를 AI가 새로 씁니다.') +
+            '\n기존 내용은 참고해서 다듬고, 마음에 들지 않으면 되돌리기(Ctrl+Z)로 돌아갈 수 있습니다.', '작성')) return;
+          if (AiPanel.busy || Editor.deck !== deck) return;
+
+          AiPanel.toggle(true);
+          AiPanel.message('user', all ? '모든 장(' + ids.length + '장)의 발표 시나리오 작성' : (Editor.index + 1) + '번 장 발표 시나리오 작성');
+          const status = AiPanel.message('ai', '슬라이드 내용을 읽고 시나리오를 쓰는 중…');
+          AiPanel.setBusy(true);
+          const controller = new AbortController();
+          AiPanel.aborter = controller;
+          let done = 0;
+          let failure = null;
+
+          for (let start = 0; start < ids.length; start += NOTES_BATCH) {
+            if (start > 0) await AiPanel.pause(controller.signal, status);
+            if (controller.signal.aborted) { failure = { aborted: true }; break; }
+            // 기다리는 동안 장 순서가 바뀌어도 맞는 장에 넣도록 번호와 id를 함께 기억한다.
+            const byNumber = new Map();
+            ids.slice(start, start + NOTES_BATCH).forEach(id => {
+              const n = deck.slides.findIndex(slide => slide.id === id) + 1;
+              if (n > 0) byNumber.set(n, id);
+            });
+            const numbers = Array.from(byNumber.keys());
+            if (!numbers.length) continue;
+            const label = ids.length > 1
+              ? numbers[0] + '~' + numbers[numbers.length - 1] + '번 장 시나리오를 쓰는 중… (모두 ' + ids.length + '장)'
+              : '시나리오를 쓰는 중…';
+            status.set(label);
+            let result;
+            try {
+              result = await Gemini.generateJson({
+                model: Settings.model(),
+                system: NOTES_SYSTEM,
+                prompt: AiPanel.notesPrompt(deck, numbers),
+                schema: NOTES_SCHEMA,
+                signal: controller.signal,
+                onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
+              });
+            } catch (err) {
+              failure = err;
+              break;
+            }
+            if (Editor.deck !== deck) break;
+            ((result && result.items) || []).forEach(item => {
+              const slide = deck.slides.find(other => other.id === byNumber.get(Number(item.number)));
+              if (!slide || !String(item.notes || '').trim()) return;
+              slide.notes = Sanitizer.notes(Util.textToHtml(item.notes));
+              done++;
+            });
+            $('notes-editor').innerHTML = Editor.current().notes;
+            Editor.commit();
+          }
+
+          AiPanel.setBusy(false);
+          AiPanel.aborter = null;
+          if (Editor.deck !== deck) return;
+          if (done) {
+            const rest = failure ? '\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 쓰지 못했습니다: ' + failure.message) : '';
+            status.set(done + '장의 발표 시나리오를 썼습니다. 아래 [발표 시나리오] 칸에서 고칠 수 있습니다.' + rest, !!(failure && !failure.aborted));
+          } else if (failure) {
+            status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
+            if (failure.needsKey) SettingsModal.open();
+          } else {
+            status.set('⚠ AI 응답에 시나리오가 없습니다. 다시 시도해 주세요.', true);
+          }
         },
 
         abort() { if (AiPanel.aborter) AiPanel.aborter.abort(); },
@@ -1817,7 +2246,8 @@
           Editor.deselect();
           Editor.syncCurrent();
 
-          AiPanel.message('user', topic + (total > 1 ? '\n(' + total + '장)' : ''));
+          const files = AiPanel.files.slice();
+          AiPanel.message('user', topic + (total > 1 ? '\n(' + total + '장)' : '') + AiPanel.fileNote(files));
           const status = AiPanel.message('ai', '슬라이드를 만드는 중…');
           $('ai-prompt').value = '';
           AiPanel.setBusy(true);
@@ -1832,7 +2262,14 @@
           let added = 0;
           let failure = null;
 
-          for (let start = 0; start < total; start += AI_BATCH) {
+          let parts = [];
+          try { parts = await AiPanel.prepareFiles(files, status); } catch (err) { failure = err; }
+
+          for (let start = 0; !failure && start < total; start += AI_BATCH) {
+            if (start > 0) {
+              await AiPanel.pause(controller.signal, status);
+              if (controller.signal.aborted) { failure = { aborted: true }; break; }
+            }
             const count = Math.min(AI_BATCH, total - start);
             const label = total > 1 ? (start + 1) + '~' + (start + count) + '번째 장을 만드는 중… (모두 ' + total + '장)' : '슬라이드를 만드는 중…';
             status.set(label);
@@ -1841,7 +2278,8 @@
               result = await Gemini.generateJson({
                 model: Settings.model(),
                 system: AI_SYSTEM,
-                prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference),
+                prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files),
+                parts,
                 schema: AI_SCHEMA,
                 signal: controller.signal,
                 onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -1879,6 +2317,7 @@
           AiPanel.setBusy(false);
           AiPanel.aborter = null;
           if (Editor.deck !== deck) return;
+          if (added) AiPanel.clearFiles(files);
           if (failure && !added) {
             status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
             if (!$('ai-prompt').value) $('ai-prompt').value = topic;
@@ -1917,7 +2356,7 @@
             '[현재 슬라이드]',
             'title: ' + (slide.title || '(없음)'),
             'bg: ' + slide.bg,
-            'notes: ' + (slide.notes || '(없음)'),
+            'notes: ' + (Util.htmlToText(slide.notes) || '(없음)'),
             'html:',
             html,
             '',
@@ -1947,7 +2386,8 @@
             return 'data:image/png;ref,' + (images.length - 1);
           });
 
-          AiPanel.message('user', '[' + number + '번 장 재생성]\n' + request);
+          const files = AiPanel.files.slice();
+          AiPanel.message('user', '[' + number + '번 장 재생성]\n' + request + AiPanel.fileNote(files));
           const status = AiPanel.message('ai', number + '번 장을 다시 만드는 중…');
           $('ai-prompt').value = '';
           AiPanel.setBusy(true);
@@ -1957,10 +2397,13 @@
           let result = null;
           let failure = null;
           try {
+            const parts = await AiPanel.prepareFiles(files, status);
+            status.set(number + '번 장을 다시 만드는 중…');
             result = await Gemini.generateJson({
               model: Settings.model(),
               system: AI_SYSTEM,
-              prompt: AiPanel.revisePrompt(target, html, request),
+              prompt: AiPanel.revisePrompt(target, html, request) + AiPanel.filePrompt(files),
+              parts,
               schema: AI_SCHEMA,
               signal: controller.signal,
               onProgress: length => status.set(number + '번 장을 다시 만드는 중…\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -1993,10 +2436,11 @@
             html: restored,
             bg: item.bg || current.bg,
             notes: item.notes || current.notes,
-            memo: current.memo
+            notesFormat: item.notes ? 'text' : 'html'
           });
           if (Editor.index === index) Editor.renderCanvas();
           Editor.commit();
+          AiPanel.clearFiles(files);
           Editor.refreshThumb(index);
           status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.');
         },
@@ -2005,6 +2449,32 @@
           $('ai-multi').addEventListener('change', event => $('ai-count-wrap').classList.toggle('d-none', !event.target.checked));
           document.querySelectorAll('input[name="ai-mode"]').forEach(radio => radio.addEventListener('change', AiPanel.syncMode));
           $('ai-send').addEventListener('click', AiPanel.send);
+          $('ai-attach').addEventListener('click', () => $('ai-file').click());
+          $('ai-file').addEventListener('change', event => {
+            AiPanel.addFiles(event.target.files);
+            event.target.value = '';
+          });
+          const panel = $('ai-panel');
+          panel.addEventListener('dragover', event => {
+            if (!Array.from(event.dataTransfer.types || []).includes('Files')) return;
+            event.preventDefault();
+            panel.classList.add('drag-over');
+          });
+          panel.addEventListener('dragleave', event => { if (!panel.contains(event.relatedTarget)) panel.classList.remove('drag-over'); });
+          panel.addEventListener('drop', event => {
+            panel.classList.remove('drag-over');
+            if (!event.dataTransfer.files.length) return;
+            event.preventDefault();
+            AiPanel.addFiles(event.dataTransfer.files);
+          });
+          $('ai-prompt').addEventListener('paste', event => {
+            const files = Array.from(event.clipboardData.files || []);
+            if (!files.length) return;
+            event.preventDefault();
+            AiPanel.addFiles(files);
+          });
+          $('btn-notes-ai').addEventListener('click', () => AiPanel.writeNotes(false));
+          $('btn-notes-ai-all').addEventListener('click', () => AiPanel.writeNotes(true));
           $('ai-stop').addEventListener('click', AiPanel.abort);
           $('ai-close').addEventListener('click', () => AiPanel.toggle(false));
           $('btn-ai').addEventListener('click', () => AiPanel.toggle());
@@ -2086,8 +2556,7 @@
             '<main class="pv-main"><section class="pv-col"><div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>' +
             '<div class="v-host pv-current" id="c-host">' + stage('c') + '</div></section>' +
             '<aside class="pv-col"><div class="pv-label">다음 장</div><div class="v-host pv-next v-static" id="n-host">' + stage('n') + '</div>' +
-            '<div class="pv-label">발표 시나리오</div><div class="pv-text" id="pv-notes"></div>' +
-            '<div class="pv-label">메모</div><div class="pv-text" id="pv-memo"></div></aside></main>';
+            '<div class="pv-label">발표 시나리오</div><div class="pv-text" id="pv-notes"></div></aside></main>';
           document.getElementById('pv-title').textContent = data.title || '';
 
           function fitAll() {
@@ -2100,8 +2569,9 @@
             index = i;
             paint(document, 'c', i);
             paint(document, 'n', i + 1);
-            document.getElementById('pv-notes').textContent = slides[i].notes || '(시나리오 없음)';
-            document.getElementById('pv-memo').textContent = slides[i].memo || '(메모 없음)';
+            var notes = document.getElementById('pv-notes');
+            if (slides[i].notes) notes.innerHTML = slides[i].notes;
+            else notes.textContent = '(시나리오 없음)';
             document.getElementById('pv-count').textContent = (i + 1) + ' / ' + slides.length;
             if (popup && !popup.closed) paint(popup.document, 'pa', i);
             fitAll();
@@ -2161,7 +2631,7 @@
               html: slide.html,
               bg: slide.bg,
               notes: presenter ? slide.notes : '',
-              memo: presenter ? slide.memo : ''
+              notesFormat: 'html'
             }))
           };
           // 스크립트 조기 종료와 JS 줄바꿈 문자(U+2028/2029)를 막기 위해 이스케이프한다.
@@ -2215,6 +2685,7 @@
               html: slide.html,
               bg: slide.bg,
               notes: keepNotes ? slide.notes : '',
+              notesFormat: slide.notesFormat,
               memo: keepNotes ? slide.memo : ''
             }))
           };
@@ -2225,8 +2696,8 @@
             return;
           }
           Util.toast(keepNotes
-            ? '발표자 보기 파일을 불러왔습니다. 시나리오와 메모도 함께 편집할 수 있습니다.'
-            : '청중 화면 파일을 불러왔습니다. 시나리오와 메모는 비어 있는 상태입니다.', 'success');
+            ? '발표자 보기 파일을 불러왔습니다. 발표 시나리오도 함께 편집할 수 있습니다.'
+            : '청중 화면 파일을 불러왔습니다. 발표 시나리오는 비어 있는 상태입니다.', 'success');
           location.hash = '#/edit/' + deck.id;
         }
       };
@@ -2293,7 +2764,7 @@
         // 그림 붙여넣기·끌어다 놓기
         document.addEventListener('paste', event => {
           if (Router.view !== 'editor' || Editor.editing || Show.isOn()) return;
-          if (event.target.closest && event.target.closest('input, textarea')) return;
+          if (event.target.closest && event.target.closest('input, textarea, [contenteditable="true"]')) return;
           const file = Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/'));
           if (file) { event.preventDefault(); Editor.insertImage(file); }
         });
@@ -2314,6 +2785,51 @@
         $('thumb-list').addEventListener('click', event => {
           const item = event.target.closest('.thumb-item');
           if (item) Editor.goTo(Number(item.dataset.index));
+        });
+
+        // 슬라이드 목록: 끌어서 순서 바꾸기
+        const list = $('thumb-list');
+        let dragFrom = null;
+        const clearMarks = () => list.querySelectorAll('.drop-before, .drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
+        const dropTarget = event => {
+          const items = Array.from(list.querySelectorAll('.thumb-item'));
+          const item = event.target.closest('.thumb-item') || items[items.length - 1];
+          if (!item) return null;
+          const rect = item.getBoundingClientRect();
+          const before = event.target.closest('.thumb-item') ? event.clientY < rect.top + rect.height / 2 : false;
+          return { item, before };
+        };
+        list.addEventListener('dragstart', event => {
+          const item = event.target.closest('.thumb-item');
+          if (!item) return;
+          dragFrom = Number(item.dataset.index);
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', String(dragFrom));
+          item.classList.add('dragging');
+        });
+        list.addEventListener('dragover', event => {
+          if (dragFrom === null) return;
+          event.preventDefault();
+          const target = dropTarget(event);
+          clearMarks();
+          if (target) target.item.classList.add(target.before ? 'drop-before' : 'drop-after');
+        });
+        list.addEventListener('drop', event => {
+          if (dragFrom === null) return;
+          event.preventDefault();
+          const target = dropTarget(event);
+          clearMarks();
+          if (!target) return;
+          let to = Number(target.item.dataset.index) + (target.before ? 0 : 1);
+          if (dragFrom < to) to--;
+          const from = dragFrom;
+          dragFrom = null;
+          Editor.moveSlide(from, to);
+        });
+        list.addEventListener('dragend', () => {
+          dragFrom = null;
+          clearMarks();
+          list.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
         });
         document.querySelectorAll('[data-slide]').forEach(button => button.addEventListener('click', () => Editor.slideAction(button.dataset.slide)));
         document.querySelectorAll('[data-insert]').forEach(button => button.addEventListener('click', () => Editor.insert(button.dataset.insert)));
@@ -2338,10 +2854,15 @@
           Editor.commitSoon();
         });
 
-        $('notes-input').addEventListener('input', event => { Editor.current().notes = event.target.value; Editor.scheduleSave(); });
-        $('memo-input').addEventListener('input', event => { Editor.current().memo = event.target.value; Editor.scheduleSave(); });
-        $('notes-input').addEventListener('change', () => Editor.commit());
-        $('memo-input').addEventListener('change', () => Editor.commit());
+        // 발표 시나리오: 서식 있는 글. 붙여넣기는 일반 글자로만 받는다.
+        const notes = $('notes-editor');
+        notes.addEventListener('input', Editor.saveNotes);
+        notes.addEventListener('focusout', () => { if (Editor.deck) Editor.commit(); });
+        notes.addEventListener('paste', event => {
+          event.preventDefault();
+          document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+        });
+        notes.addEventListener('drop', event => event.preventDefault());
 
         $('deck-title').addEventListener('input', event => {
           Editor.deck.title = event.target.value.trim() || DEFAULT_TITLE;
@@ -2354,6 +2875,16 @@
         $('btn-mode').addEventListener('click', () => Show.toggle());
         $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
         $('show-overlay').addEventListener('click', () => Show.go(Show.index + 1));
+        $('presenter-overlay').addEventListener('click', event => {
+          const button = event.target.closest('[data-pv]');
+          if (!button) return;
+          const action = button.dataset.pv;
+          if (action === 'prev') Show.go(Show.index - 1);
+          if (action === 'next') Show.go(Show.index + 1);
+          if (action === 'reset') { Show.started = Date.now(); Show.tick(); }
+          if (action === 'audience') Show.openAudience();
+          if (action === 'exit') Show.exit();
+        });
         $('file-image').addEventListener('change', event => {
           Editor.insertImage(event.target.files[0]);
           event.target.value = '';
