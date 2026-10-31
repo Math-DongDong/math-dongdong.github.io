@@ -104,11 +104,8 @@
     /* ---------- 편집 화면 (PPT 배치) ---------- */
     #editor-view { height: calc(100dvh - var(--nav-h)); display: flex; flex-direction: column; background: #f3f4f6; }
     .ribbon { background: #fff; border-bottom: 1px solid var(--line); padding: 0.35rem 0.75rem; }
-    .ribbon .tool-group { display: flex; align-items: center; gap: 0.25rem; padding-right: 0.6rem; margin-right: 0.35rem; border-right: 1px solid var(--line); }
-    .ribbon .tool-group:last-child { border-right: 0; }
-    .ribbon .group-label { font-size: 0.75rem; color: #6b7280; margin-right: 0.15rem; }
-    .ribbon .form-control-color { width: 2.2rem; height: 1.9rem; padding: 0.15rem; }
-    #deck-title { width: min(320px, 40vw); font-weight: 600; }
+    #deck-title { flex: 0 1 320px; min-width: 120px; font-weight: 600; }
+    @media (max-width: 991.98px) { .ribbon-row { flex-wrap: wrap !important; } }
     .editor-body { flex: 1; min-height: 0; display: flex; position: relative; }
 
     .slide-rail { width: 200px; flex: none; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
@@ -117,7 +114,8 @@
     .thumb-item .num { width: 1.4rem; flex: none; font-size: 0.75rem; color: #6b7280; text-align: right; }
     .thumb-item .mini-host { flex: 1; border-radius: 4px; outline: 1px solid var(--line); }
     .thumb-item.active .mini-host { outline: 3px solid var(--primary); }
-    .rail-section { display: flex; align-items: center; gap: 0.15rem; margin: 0.15rem 0 0.45rem 0.25rem; font-size: 0.8rem; }
+    .rail-section.dragging { opacity: 0.4; }
+    .rail-section { cursor: grab; display: flex; align-items: center; gap: 0.15rem; margin: 0.15rem 0 0.45rem 0.25rem; font-size: 0.8rem; }
     .rail-section-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.3rem; border: 0; background: #eef2ff; color: #1e3a8a; border-radius: 0.4rem; padding: 0.2rem 0.4rem; font-weight: 700; text-align: left; }
     .rail-section-toggle .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .rail-section-toggle .count { font-weight: 400; color: #6b7280; flex: none; }
@@ -145,7 +143,7 @@
     .ai-panel { --ai-w: 360px; width: var(--ai-w); flex: none; background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
       transition: width 0.3s ease, opacity 0.3s ease, visibility 0.3s, transform 0.3s ease; }
     .ai-panel > * { min-width: var(--ai-w); }
-    .ai-panel.collapsed { width: 0; opacity: 0; visibility: hidden; border-left-width: 0; }
+
     .ai-log { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .ai-msg { max-width: 92%; padding: 0.5rem 0.75rem; border-radius: 0.75rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
     .ai-msg.ai { background: #f3f4f6; align-self: flex-start; }
@@ -153,8 +151,7 @@
     .ai-msg.error { background: #fee2e2; color: #991b1b; }
 
     @media (max-width: 1199.98px) {
-      .ai-panel { --ai-w: min(92vw, 360px); position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); }
-      .ai-panel.collapsed { width: var(--ai-w); transform: translateX(100%); }
+      .ai-panel { --ai-w: 300px; }
     }
     @media (max-width: 767.98px) {
       .slide-rail { width: 110px; }
@@ -242,13 +239,21 @@
     <!-- ========== 편집 화면 ========== -->
     <section id="editor-view" class="d-none" aria-label="슬라이드 편집기">
       <header class="ribbon">
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <div class="d-flex flex-nowrap align-items-center gap-2 ribbon-row">
           <button type="button" class="btn btn-sm btn-light" id="btn-home" title="목록으로"><i class="bi bi-house"></i></button>
           <input type="text" class="form-control form-control-sm" id="deck-title" aria-label="프레젠테이션 제목" maxlength="80">
-          <span class="small text-muted" id="save-status"></span>
-          <div class="ms-auto d-flex flex-wrap align-items-center gap-1">
+          <span class="small text-muted text-nowrap" id="save-status"></span>
+          <div class="ms-auto d-flex flex-nowrap align-items-center gap-1">
             <button type="button" class="btn btn-sm btn-light" id="btn-undo" title="되돌리기 (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
             <button type="button" class="btn btn-sm btn-light" id="btn-redo" title="다시 실행 (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-square"></i> 개체 삽입</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><button type="button" class="dropdown-item" data-insert="image"><i class="bi bi-image"></i> 그림 (내 컴퓨터)</button></li>
+                <li><button type="button" class="dropdown-item" data-insert="video-file"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
+                <li><button type="button" class="dropdown-item" data-insert="video-youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
+              </ul>
+            </div>
             <div class="dropdown">
               <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> 불러오기</button>
               <ul class="dropdown-menu dropdown-menu-end">
@@ -259,7 +264,7 @@
             <div class="dropdown">
               <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download"></i> HTML 내보내기</button>
               <ul class="dropdown-menu dropdown-menu-end">
-                <li><button type="button" class="dropdown-item" data-export="presenter"><i class="bi bi-person-video3"></i> 발표자 보기 (시나리오·메모 포함)</button></li>
+                <li><button type="button" class="dropdown-item" data-export="presenter"><i class="bi bi-person-video3"></i> 발표자 보기 (시나리오 포함)</button></li>
                 <li><button type="button" class="dropdown-item" data-export="audience"><i class="bi bi-display"></i> 청중 화면만</button></li>
               </ul>
             </div>
@@ -270,31 +275,7 @@
                 <li><button type="button" class="dropdown-item" data-show="presenter"><i class="bi bi-person-video3"></i> 발표자 보기</button></li>
               </ul>
             </div>
-            <button type="button" class="btn btn-sm btn-primary" id="btn-ai"><i class="bi bi-stars"></i> AI 슬라이드 생성</button>
           </div>
-        </div>
-        <div class="d-flex flex-wrap align-items-center gap-1">
-          <div class="tool-group">
-            <span class="group-label">삽입</span>
-            <button type="button" class="btn btn-sm btn-light" data-insert="image"><i class="bi bi-image"></i> 그림</button>
-            <div class="dropdown">
-              <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-camera-video"></i> 동영상</button>
-              <ul class="dropdown-menu">
-                <li><button type="button" class="dropdown-item" data-insert="video-file"><i class="bi bi-file-earmark-play"></i> 내 컴퓨터의 동영상 파일</button></li>
-                <li><button type="button" class="dropdown-item" data-insert="video-youtube"><i class="bi bi-youtube"></i> 유튜브 주소</button></li>
-              </ul>
-            </div>
-          </div>
-          <div class="tool-group">
-            <span class="group-label">개체</span>
-            <button type="button" class="btn btn-sm btn-light" data-box="front" data-needs-box title="맨 앞으로"><i class="bi bi-front"></i></button>
-            <button type="button" class="btn btn-sm btn-light" data-box="back" data-needs-box title="맨 뒤로"><i class="bi bi-back"></i></button>
-            <button type="button" class="btn btn-sm btn-light" data-box="copy" data-needs-box title="복제 (Ctrl+D)"><i class="bi bi-copy"></i></button>
-            <button type="button" class="btn btn-sm btn-light text-danger" data-box="delete" data-needs-box title="삭제 (Delete)"><i class="bi bi-trash3"></i></button>
-            <span class="group-label ms-1">채우기</span>
-            <input type="color" class="form-control form-control-color" id="fill-color" value="#93c5fd" data-needs-box title="선택한 개체 채우기 색">
-          </div>
-          <span class="small text-muted d-none d-xl-inline">더블클릭: 글자 수정·그림/영상 바꾸기 · 끌기: 이동 · 모서리: 크기</span>
         </div>
       </header>
 
@@ -323,7 +304,6 @@
               <span class="small text-muted d-none d-lg-inline">글자를 블록 지정하면 서식 도구가 나옵니다</span>
               <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="AI 시나리오 작성">
                 <button type="button" class="btn btn-outline-primary" id="btn-notes-ai"><i class="bi bi-stars"></i> AI로 이 장 시나리오 작성</button>
-                <button type="button" class="btn btn-outline-primary" id="btn-notes-ai-all">모든 장</button>
               </div>
             </div>
             <div class="form-control form-control-sm notes-editor" id="notes-editor" contenteditable="true" role="textbox"
@@ -345,7 +325,6 @@
             <div class="ms-auto d-flex flex-nowrap gap-1">
               <button type="button" class="btn btn-sm btn-light text-nowrap" id="ai-new-chat" title="새 채팅 (이전 대화 맥락 지우기)"><i class="bi bi-chat-square-dots"></i> 새 채팅</button>
               <button type="button" class="btn btn-sm btn-light" data-act="settings" title="AI 설정"><i class="bi bi-gear"></i></button>
-              <button type="button" class="btn btn-sm btn-light" id="ai-close" title="AI 창 닫기"><i class="bi bi-x-lg"></i></button>
             </div>
           </div>
           <ul class="nav nav-tabs nav-fill small px-2" id="ai-tabs" role="tablist">
@@ -1249,7 +1228,6 @@
           $('home-view').classList.add('d-none');
           $('editor-view').classList.remove('d-none');
           document.body.classList.add('in-editor');
-          if (window.innerWidth < 1200) $('ai-panel').classList.add('collapsed');
           $('deck-title').value = deck.title;
           document.title = deck.title + ' - HTML 슬라이드 편집 도구';
           Editor.renderRail();
@@ -1313,6 +1291,8 @@
           const row = document.createElement('div');
           row.className = 'rail-section';
           row.dataset.section = section.id;
+          row.draggable = true;
+          row.title = '끌어서 구역째 옮기기';
           const toggle = document.createElement('button');
           toggle.type = 'button';
           toggle.className = 'rail-section-toggle';
@@ -1420,7 +1400,10 @@
             if (active) item.scrollIntoView({ block: 'nearest' });
           });
           const addSection = $('btn-add-section');
-          addSection.classList.toggle('d-none', Editor.picked.size < 2);
+          // 고른 장 중에 이미 구역에 든 장이 있으면 구역을 새로 만들지 않는다.
+          const sectionIds = new Set((Editor.deck.sections || []).map(section => section.id));
+          const inSection = slides.some(slide => Editor.picked.has(slide.id) && sectionIds.has(slide.section));
+          addSection.classList.toggle('d-none', Editor.picked.size < 2 || inSection);
           addSection.innerHTML = '<i class="bi bi-collection"></i> 구역 추가 (' + Editor.picked.size + '장)';
           $('slide-counter').textContent = (Editor.index + 1) + ' / ' + Editor.deck.slides.length;
         },
@@ -1435,7 +1418,6 @@
           SlideView.fill(canvas, slide, 'edit');
           $('notes-editor').innerHTML = slide.notes;
           Editor.markActiveThumb();
-          Editor.syncBoxTools();
         },
 
         /* --- 저장과 되돌리기 --- */
@@ -1651,7 +1633,6 @@
           Editor.selected = box;
           box.classList.add('is-selected');
           if (box instanceof HTMLElement) box.append(Editor.makeHandle());
-          Editor.syncBoxTools();
         },
 
         deselect() {
@@ -1662,7 +1643,6 @@
             box.querySelectorAll(':scope > .ls-handle').forEach(handle => handle.remove());
           }
           Editor.selected = null;
-          Editor.syncBoxTools();
         },
 
         // target: 글상자(.draggable-box) 또는 그 안의 .editable-text
@@ -1718,7 +1698,6 @@
           if (!box.textContent.trim() && !box.querySelector('img, svg, video, iframe') && !painted) {
             box.remove();
             if (Editor.selected === box) Editor.selected = null;
-            Editor.syncBoxTools();
           } else if (Editor.selected === box && box instanceof HTMLElement && !box.querySelector(':scope > .ls-handle')) {
             box.append(Editor.makeHandle());
           }
@@ -1898,7 +1877,6 @@
           if (action === 'delete') {
             box.remove();
             Editor.selected = null;
-            Editor.syncBoxTools();
           } else if (action === 'copy') {
             const copy = box.cloneNode(true);
             copy.classList.remove('is-selected', 'is-editing');
@@ -1926,12 +1904,6 @@
           Editor.commitSoon();
         },
 
-        // 선택한 개체에 맞춰 도구 상태를 바꾼다.
-        syncBoxTools() {
-          const box = Editor.selected;
-          document.querySelectorAll('[data-needs-box]').forEach(el => { el.disabled = !box; });
-          if (box) $('fill-color').value = Util.toHex(getComputedStyle(box).backgroundColor, '#93c5fd');
-        }
       };
       Editor.commitSoon = Util.debounce(() => Editor.commit(), 400);
       Editor.refreshThumbSoon = Util.debounce(() => { if (Editor.deck) Editor.refreshThumb(Editor.index); }, 400);
@@ -2392,7 +2364,7 @@
                 }
                 if (err.status === 429) { await Util.sleep(Math.min(3000 * Math.pow(2, attempt), 20000)); continue; }
                 if (err.isJsonParse && !extra) {
-                  extra = '\n\n앞선 응답이 JSON으로 해석되지 않았다. 설명 없이 JSON만 출력하라.';
+                  extra = '\n\n' + Prompts.text('jsonRetry');
                   continue;
                 }
                 throw err;
@@ -2409,72 +2381,50 @@
       })();
 
       /* ===== 12. AI 슬라이드 생성 창 ===== */
-      const AI_SLIDE_EXAMPLE = [
-        '<div class="slide" style="position: relative; width: 1920px; height: 1080px; background: #FFFFFF; overflow: hidden; font-family: Pretendard, sans-serif;">',
-        '  <style>',
-        '    .slide { animation: slide-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }',
-        '    @keyframes slide-enter { 0% { opacity: 0; transform: translateX(60px); } 100% { opacity: 1; transform: none; } }',
-        '    @keyframes custom-entrance-card {',
-        '      0% { opacity: 0; transform: translateY(40px) scale(0.97); filter: blur(8px); }',
-        '      100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }',
-        '    }',
-        '  </style>',
-        '  <div class="draggable-box" style="position: absolute; left: 160px; top: 180px; width: 800px;">',
-        '    <div class="motion-content" style="animation: custom-entrance-card 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.5s forwards; opacity: 0;">',
-        '      <h1 class="editable-text" style="font-size: 72px; font-weight: 800; color: #1F2937; line-height: 1.15; margin-bottom: 24px;">창작된 메인 타이틀</h1>',
-        '      <p class="editable-text" style="font-size: 32px; color: #475569; line-height: 1.6;">설명 내용 및 세부 정보</p>',
-        '    </div>',
-        '  </div>',
-        '</div>'
-      ].join('\n');
+      // AI에게 보내는 문장은 모두 assets/json/lessonstudio-prompts.json에 있다.
+      // 배열은 줄 단위로 이어 붙이고, {{이름}} 자리에 값을 채운다.
+      const Prompts = {
+        URL: '../../../assets/json/lessonstudio-prompts.json',
+        data: null,
+        loading: null,
 
-      const AI_SYSTEM = [
-        '# 역할',
-        '너는 세계 최고 수준의 브랜드 아이덴티티 디자이너이자 웹 인터랙티브 모션 크리에이티브 디렉터다.',
-        '슬라이드의 내용·목적·감정선을 분석해, 흰색 배경 위에서 가장 돋보이는 비주얼 디자인 시스템(컬러 팔레트, 타이포그래피 톤, 카드 질감)과 독창적인 커스텀 CSS 모션 그래픽을 직접 기획하고 결정해 1920x1080 규격의 슬라이드 HTML을 만든다.',
-        '',
-        '# 출력 형식',
-        '- 결과는 지정한 JSON으로만 출력한다. 각 장의 html 필드에는 인사말·설명·마크다운 코드 블록 없이 <div class="slide">...</div> 형태의 순수 HTML 하나만 넣는다.',
-        '- title: 이 장의 짧은 제목 / notes: 발표자가 읽을 발표 시나리오 2~5문장(말하듯이) / deckTitle: 발표 전체 제목 / bg: 슬라이드 배경색(html의 배경과 같게).',
-        '',
-        '# 비주얼 디자인 가이드라인 (AI 자율 기획)',
-        '1. 슬라이드 배경: 순백색(background: #FFFFFF)을 기본으로 하되, 테마에 따라 아주 밝은 오프화이트(#F8FAFC, #F9FAFB 등)를 쓸 수 있다. 배경은 <div class="slide">의 style에 적는다.',
-        '2. 컬러 팔레트: 정해진 색을 따르지 말고, 발표 주제의 분야와 분위기에 가장 잘 맞는 2~3가지 핵심 색(주요 글자색, 포인트 강조색, 보조색)을 직접 정해 모든 장에 일관되게 쓴다.',
-        '   예) 환경·생태 → 딥 포레스트 그린 & 세이지 / 금융·핀테크 → 딥 네이비 & 메탈릭 골드·블루 / 차세대 테크·AI → 흑연 다크 차콜 & 일렉트릭 바이올렛·시안 / 교육·학습 → 따뜻한 소프트 블랙 & 활기찬 앰버·코랄',
-        '   가독성 절대 원칙: 모든 글자는 흰 배경에서 또렷이 보이도록 충분히 짙은 색을 쓴다. 밝은 노랑·연한 회색 등 흰 배경에서 잘 안 보이는 글자색은 금지한다.',
-        '3. 카드 패널: 주제 성격에 맞게 테두리 두께, border-radius, box-shadow 강도, 배경 명암을 설계해 입체감과 정보의 위계를 준다.',
-        '4. 글자 크기: 제목 64~110px, 본문 32~48px, 가장 작은 글자 24px 이상. 한 장에 글은 짧게(핵심 3~5줄), 여백은 넉넉히 둔다.',
-        '',
-        '# 모션 그래픽 자유 창작',
-        '- 정해진 애니메이션 클래스를 쓰지 말고, <div class="slide"> 맨 앞에 <style>을 열어 슬라이드 주제와 데이터 표현에 맞는 커스텀 @keyframes를 직접 만들어 적용한다.',
-        '- 통계·수치: 차트 막대가 용수철처럼 치솟거나 숫자가 커지며 선명해지는 모션 / 비교·대조: 좌우 카드가 시차를 두고 교차해 미끄러져 들어오는 모션 / 비전·키워드: 심한 블러에서 초점이 맞거나 입체적으로 기울며(tilt) 자리 잡는 모션 / 인포그래픽: 연결선이 0%에서 100%로 그려지고 아이콘이 탄성 있게 팝업되는 모션.',
-        '- 단순한 ease-in-out 대신 cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.34, 1.56, 0.64, 1) 같은 실감 나는 물리 감속 곡선을 쓴다.',
-        '- 요소들이 시차(animation-delay)를 두고 차례로 나타나게 한다.',
-        '',
-        '# 편집 도구 충돌 방지 필수 규격',
-        '1. 3계층 래퍼: 1계층 .draggable-box(위치) > 2계층 .motion-content(모션) > 3계층 콘텐츠(.editable-text / .editable-image / .editable-video).',
-        '   - 위치(position: absolute; left; top; width)는 .draggable-box의 style에만 쓴다. left/top은 px이고 캔버스(0~1920, 0~1080) 안에 둔다. right, bottom, transform으로 위치를 잡지 않는다.',
-        '   - .draggable-box는 <div class="slide">의 바로 아래 자식으로 두고, 서로 겹쳐 넣지 않는다.',
-        '   - 창작한 모션(animation)은 .motion-content에만 선언한다(style 속성 또는 <style>의 클래스 규칙).',
-        '2. 모든 animation 끝에는 forwards를 붙여 재생이 끝난 뒤 최종 모습이 유지되게 한다. 처음에 숨겨야 하면 .motion-content에 opacity: 0을 함께 준다.',
-        '3. 글자 요소는 class="editable-text", 이미지는 class="editable-image", 비디오는 class="editable-video"를 붙인다.',
-        '4. 미디어 자리표시자: 이미지가 필요하면 실제로 존재한다고 확신하는 Unsplash 고화질 무료 이미지 주소(https://images.unsplash.com/...)를 src로 넣고 border-radius: 16px; object-fit: cover;로 배치한다. 확신이 없으면 이미지 대신 도형·이모지·인라인 SVG로 표현한다.',
-        '   비디오는 사용자가 요청했고 실제 주소를 알 때만 <video class="editable-video" autoplay loop muted playsinline src="..." style="width:100%; border-radius:16px;"></video> 형태로 넣는다.',
-        '5. <script>, <a>, 폼 요소, id 속성, @import, @font-face는 쓰지 않는다. CSS 선택자는 클래스로 쓴다. 기본 글꼴은 Pretendard다.',
-        '',
-        '# 화면 전환 (장과 장 사이)',
-        '- 각 장에는 그 장이 화면에 나타날 때의 전환 효과를 <style> 안의 .slide 규칙으로 만든다. 예) .slide { animation: slide-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }',
-        '- 바로 앞 장과 비교해 자연스럽게 이어지게 고른다: 같은 흐름이 이어지면 오른쪽에서 부드럽게 밀려 들어오기, 배경·분위기가 비슷하면 은은한 페이드와 살짝 확대, 단원이나 주제가 크게 바뀌면 clip-path 와이프나 블러에서 선명해지기처럼 분명한 전환을 쓴다.',
-        '- 새 장은 앞 장 위에 겹쳐 나타난다. 전환은 0.4~0.8초로 짧게 하고, 요소 등장 모션은 전환이 끝난 뒤 시작되도록 animation-delay를 0.4초 이상 준다.',
-        '- .slide 전환에는 opacity·transform·filter·clip-path만 쓰고, 끝난 뒤에는 원래 모습(opacity 1, transform 없음)이 되게 both 또는 forwards를 붙인다.',
-        '',
-        '# 슬라이드 구조 예시',
-        AI_SLIDE_EXAMPLE,
-        '',
-        '# 내용',
-        '- 모든 내용은 한국어로 쓴다. 널리 알려진 사실만 쓰고, 확실하지 않은 수치는 지어내지 않는다.',
-        '- 여러 장일 때는 같은 컬러 팔레트·글자 톤·카드 질감을 유지하고, 장마다 내용이 겹치지 않게 흐름을 이어 간다.'
-      ].join('\n');
+        load() {
+          if (Prompts.data) return Promise.resolve(Prompts.data);
+          if (!Prompts.loading) {
+            Prompts.loading = fetch(Prompts.URL, { cache: 'no-cache' })
+              .then(res => {
+                if (!res.ok) throw new Error(String(res.status));
+                return res.json();
+              })
+              .then(data => { Prompts.data = data; return data; })
+              .catch(() => {
+                Prompts.loading = null;
+                throw new Error('AI 프롬프트 파일(assets/json/lessonstudio-prompts.json)을 불러오지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.');
+              });
+          }
+          return Prompts.loading;
+        },
+
+        text(key, values) {
+          let value = key.split('.').reduce((node, part) => (node ? node[part] : undefined), Prompts.data);
+          if (Array.isArray(value)) value = value.join('\n');
+          if (typeof value !== 'string') return '';
+          return value.replace(/\{\{(\w+)\}\}/g, (match, name) => (values && name in values ? String(values[name]) : match));
+        },
+
+        slideSystem() { return Prompts.text('slideSystem', { example: Prompts.text('slideExample') }); },
+
+        // AI를 쓰기 전에 부른다. 못 불러오면 안내하고 false.
+        async ready() {
+          try {
+            await Prompts.load();
+            return true;
+          } catch (err) {
+            Util.toast(err.message, 'danger');
+            return false;
+          }
+        }
+      };
 
       const AI_SCHEMA = {
         type: 'OBJECT',
@@ -2498,14 +2448,6 @@
       };
 
       const NOTES_BATCH = 5; // 모든 장 시나리오 작성 시 한 번에 보내는 장 수
-      const NOTES_SYSTEM = [
-        '너는 발표 코치다. 슬라이드에 적힌 내용을 읽고, 발표자가 그대로 읽어도 자연스러운 발표 시나리오를 쓴다. 결과는 지정한 JSON 형식으로만 출력한다.',
-        '- 자연스러운 한국어 구어체로 장마다 3~6문장을 쓴다. 필요하면 청중에게 던지는 짧은 질문이나 다음 장으로 넘어가는 말을 넣는다.',
-        '- 슬라이드 글을 그대로 읽지 말고 풀어서 설명하고, 앞뒤 장과 흐름이 이어지게 한다.',
-        '- 슬라이드에 없는 구체적인 수치나 사실은 지어내지 않는다.',
-        '- 기존 시나리오가 있으면 그 뜻을 살려 다듬는다.',
-        '- notes는 일반 글로 쓴다(HTML 금지, 줄바꿈은 가능).'
-      ].join('\n');
       const NOTES_SCHEMA = {
         type: 'OBJECT',
         properties: {
@@ -2527,14 +2469,6 @@
         files: [], // 참고 자료 { file, kind, parts }
 
         syncKey() { $('ai-nokey').classList.toggle('d-none', !!Settings.apiKey()); },
-
-        toggle(force) {
-          const panel = $('ai-panel');
-          const open = force !== undefined ? force : panel.classList.contains('collapsed');
-          panel.classList.toggle('collapsed', !open);
-          // 펼쳐지는 동안에는 아직 숨김 상태라 포커스가 안 들어가므로, 다 열린 뒤에 입력칸으로 옮긴다.
-          if (open) setTimeout(() => { if (!panel.classList.contains('collapsed')) $('ai-prompt').focus(); }, 320);
-        },
 
         // 대화 내용은 프레젠테이션마다 저장해 두고, [새 채팅]을 누르기 전까지 AI에게 이전 맥락으로 함께 보낸다.
         INTRO: '[새 슬라이드 생성]: 발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 제목 옆 [여러 장]을 켜세요.\n' +
@@ -2613,7 +2547,7 @@
 
         setBusy(on) {
           AiPanel.busy = on;
-          ['ai-send', 'btn-notes-ai', 'btn-notes-ai-all'].forEach(id => { $(id).disabled = on; });
+          ['ai-send', 'btn-notes-ai'].forEach(id => { $(id).disabled = on; });
           $('ai-stop').classList.toggle('d-none', !on);
         },
 
@@ -2677,8 +2611,7 @@
 
         filePrompt(files) {
           if (!files.length) return '';
-          return '\n\n[참고 자료] 함께 보낸 파일(' + files.map(item => item.file.name).join(', ') + ')의 내용·자료·분위기를 참고한다. ' +
-            '자료에 있는 사실을 우선하고, 자료를 길게 옮기지 말고 슬라이드에 맞게 요약한다.';
+          return '\n\n' + Prompts.text('attachments', { names: files.map(item => item.file.name).join(', ') });
         },
 
         base64(file) {
@@ -2757,24 +2690,16 @@
           const targets = numbers.map(n => {
             const slide = deck.slides[n - 1];
             const old = Util.htmlToText(slide.notes);
-            return '[장 번호 ' + n + ']\n' + AiPanel.slideText(slide) + (old ? '\n(기존 시나리오: ' + old.slice(0, 1500) + ')' : '');
+            return Prompts.text('notes.target', { number: n, text: AiPanel.slideText(slide) }) +
+              (old ? '\n' + Prompts.text('notes.oldNotes', { old: old.slice(0, 1500) }) : '');
           }).join('\n\n');
-          return [
-            '[발표 자료 제목] ' + deck.title,
-            '',
-            '[전체 흐름]',
-            overview,
-            '',
-            '[시나리오를 쓸 장]',
-            targets,
-            '',
-            'items 배열에 위 장마다 하나씩 넣고, number에는 장 번호를 그대로 쓴다.'
-          ].join('\n');
+          return Prompts.text('notes.body', { title: deck.title, overview, targets });
         },
 
         async writeNotes(all) {
           if (AiPanel.busy || !Editor.deck) return;
           if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          if (!await Prompts.ready() || AiPanel.busy || !Editor.deck) return;
           Editor.deselect();
           Editor.syncCurrent();
           const deck = Editor.deck;
@@ -2784,7 +2709,6 @@
             '\n기존 내용은 참고해서 다듬고, 마음에 들지 않으면 되돌리기(Ctrl+Z)로 돌아갈 수 있습니다.', '작성')) return;
           if (AiPanel.busy || Editor.deck !== deck) return;
 
-          AiPanel.toggle(true);
           AiPanel.message('user', all ? '모든 장(' + ids.length + '장)의 발표 시나리오 작성' : (Editor.index + 1) + '번 장 발표 시나리오 작성');
           const status = AiPanel.message('ai', '슬라이드 내용을 읽고 시나리오를 쓰는 중…');
           AiPanel.setBusy(true);
@@ -2812,7 +2736,7 @@
             try {
               result = await Gemini.generateJson({
                 model: Settings.model(),
-                system: NOTES_SYSTEM,
+                system: Prompts.text('notesSystem'),
                 prompt: AiPanel.notesPrompt(deck, numbers),
                 schema: NOTES_SCHEMA,
                 signal: controller.signal,
@@ -2872,26 +2796,15 @@
           const deck = Editor.deck;
           const outline = deck.slides.map((slide, i) => (i + 1) + '. ' + (slide.title || AiPanel.slideText(slide).split('\n')[0] || '(빈 장)').slice(0, 50)).join('\n');
           return [
-            '[발표 주제 및 개요]',
-            topic,
-            '',
+            Prompts.text('newSlides.topic', { topic }),
             total > 1
-              ? '[분량] 모두 ' + total + '장을 만든다. 이번에는 그중 ' + (start + 1) + '번째부터 ' + (start + count) + '번째 장까지 ' + count + '장을 만든다.'
-              : '[분량] 슬라이드 1장만 만든다.',
-            madeTitles.length
-              ? '[이번 요청으로 앞에서 이미 만든 장]\n' + madeTitles.map((title, i) => (i + 1) + '. ' + title).join('\n') + '\n이어지는 내용으로, 앞 장과 겹치지 않게 만든다.'
-              : '',
-            deck.title !== DEFAULT_TITLE ? '[발표 자료 제목] ' + deck.title : '',
-            '[지금 발표 자료의 목차]\n' + outline,
-            previous
-              ? '[바로 앞 장 — 새 장들은 이 장 바로 다음에 이어진다]\n' +
-                '- 내용: 이 장의 흐름을 이어받아 다음 내용으로 자연스럽게 넘어간다.\n' +
-                '- 디자인: 컬러 팔레트·글자 톤·카드 질감을 이어받는다.\n' +
-                '- 화면 전환: 첫 새 장의 .slide 전환은 이 장에서 자연스럽게 이어지게 하고, 그다음 장들은 각자 바로 앞 새 장과 이어지게 한다.\n' +
-                previous
-              : (total > 1 ? '첫 장은 발표 제목이 크게 들어간 표지로 만든다.' : ''),
-            '',
-            'slides 배열에 정확히 ' + count + '개를 출력하라.'
+              ? Prompts.text('newSlides.countMany', { total, from: start + 1, to: start + count, count })
+              : Prompts.text('newSlides.countOne'),
+            madeTitles.length ? Prompts.text('newSlides.madeBefore', { list: madeTitles.map((title, i) => (i + 1) + '. ' + title).join('\n') }) : '',
+            deck.title !== DEFAULT_TITLE ? Prompts.text('newSlides.deckTitle', { title: deck.title }) : '',
+            Prompts.text('newSlides.outline', { outline }),
+            previous ? Prompts.text('newSlides.previous', { previous }) : (total > 1 ? Prompts.text('newSlides.cover') : ''),
+            Prompts.text('newSlides.output', { count })
           ].filter(Boolean).join('\n');
         },
 
@@ -2900,6 +2813,7 @@
           const topic = $('ai-prompt').value.trim();
           if (!topic) { Util.toast('발표 주제와 개요를 입력해 주세요.', 'warning'); $('ai-prompt').focus(); return; }
           if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          if (!await Prompts.ready() || AiPanel.busy || !Editor.deck) return;
 
           const total = $('ai-multi').checked && !$('ai-multi').disabled ? Math.max(2, Math.min(20, parseInt($('ai-count').value, 10) || 5)) : 1;
           const deck = Editor.deck;
@@ -2938,7 +2852,7 @@
             try {
               result = await Gemini.generateJson({
                 model: Settings.model(),
-                system: AI_SYSTEM,
+                system: Prompts.slideSystem(),
                 prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files),
                 parts,
                 history: AiPanel.history(deck),
@@ -3034,28 +2948,15 @@
 
         revisePrompt(slide, html, request, previous) {
           return [
-            '[할 일] 아래 [현재 슬라이드]를 [수정 요청]대로 고쳐서 1장으로 다시 출력한다.',
-            '',
-            '[수정 요청]',
-            request,
-            '',
-            '[현재 슬라이드]',
-            'title: ' + (slide.title || '(없음)'),
-            'bg: ' + slide.bg,
-            'notes: ' + (Util.htmlToText(slide.notes) || '(없음)'),
-            'html:',
-            html,
-            '',
-            previous
-              ? '[바로 앞 장 — 이 장의 화면 전환(.slide의 animation)이 이 장에서 자연스럽게 이어지게 만들거나 다듬는다]\n' + previous
-              : '[이 장은 첫 장이다 — 화면 전환은 발표를 여는 느낌으로 만든다]',
-            '',
-            '[지킬 것]',
-            '- 요청과 관계없는 글자·위치·크기·색·상자 순서·애니메이션은 그대로 두고, 요청한 부분만 고친다.',
-            '- <div class="slide"> 형태와 3계층 구조(.draggable-box > .motion-content > .editable-*), <style>의 키프레임을 유지한다.',
-            '- 사용자가 넣은 그림(src나 url에 있는 data:image/png;ref,번호)은 그 값을 한 글자도 바꾸지 않고, 요청이 없으면 지우지 않는다.',
-            '- notes는 바뀐 내용에 맞게 고치되, 관계없으면 그대로 둔다.',
-            '- slides 배열에 정확히 1개를 출력하라.'
+            Prompts.text('reviseSlide.head', {
+              request,
+              title: slide.title || '(없음)',
+              bg: slide.bg,
+              notes: Util.htmlToText(slide.notes) || '(없음)',
+              html
+            }),
+            previous ? Prompts.text('reviseSlide.previous', { previous }) : Prompts.text('reviseSlide.first'),
+            Prompts.text('reviseSlide.rules')
           ].join('\n');
         },
 
@@ -3064,6 +2965,7 @@
           const request = $('ai-prompt').value.trim();
           if (!request) { Util.toast('현재 슬라이드에서 고칠 점을 입력해 주세요.', 'warning'); $('ai-prompt').focus(); return; }
           if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          if (!await Prompts.ready() || AiPanel.busy || !Editor.deck) return;
 
           const deck = Editor.deck;
           Editor.deselect();
@@ -3089,7 +2991,7 @@
             status.set(number + '번 장을 다시 만드는 중…');
             result = await Gemini.generateJson({
               model: Settings.model(),
-              system: AI_SYSTEM,
+              system: Prompts.slideSystem(),
               prompt: AiPanel.revisePrompt(target, html, request, number > 1 ? AiPanel.reference(deck.slides[number - 2]) : null) + AiPanel.filePrompt(files),
               parts,
               history: AiPanel.history(deck),
@@ -3170,10 +3072,7 @@
             AiPanel.addFiles(files);
           });
           $('btn-notes-ai').addEventListener('click', () => AiPanel.writeNotes(false));
-          $('btn-notes-ai-all').addEventListener('click', () => AiPanel.writeNotes(true));
           $('ai-stop').addEventListener('click', AiPanel.abort);
-          $('ai-close').addEventListener('click', () => AiPanel.toggle(false));
-          $('btn-ai').addEventListener('click', () => AiPanel.toggle());
           $('ai-prompt').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
               event.preventDefault();
@@ -3570,6 +3469,7 @@
         // 슬라이드 목록: 끌어서 순서 바꾸기
         const list = $('thumb-list');
         let dragIds = null;
+        let dragSection = null;
         const clearMarks = () => list.querySelectorAll('.drop-before, .drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
         const dropTarget = event => {
           const header = event.target.closest('.rail-section');
@@ -3582,6 +3482,16 @@
           return { item, before };
         };
         list.addEventListener('dragstart', event => {
+          const header = event.target.closest && event.target.closest('.rail-section');
+          if (header) {
+            // 구역 머리줄을 끌면 구역 전체를 옮긴다.
+            dragSection = header.dataset.section;
+            dragIds = Editor.deck.slides.filter(slide => slide.section === dragSection).map(slide => slide.id);
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', dragIds.join(','));
+            header.classList.add('dragging');
+            return;
+          }
           const item = event.target.closest('.thumb-item');
           if (!item) return;
           const index = Number(item.dataset.index);
@@ -3608,25 +3518,33 @@
           clearMarks();
           if (!target) return;
           const ids = dragIds;
+          let before = Number(target.item.dataset.index) + (target.before ? 0 : 1);
+          if (dragSection) {
+            // 구역은 다른 구역 한가운데에 끼우지 않고, 가까운 구역 경계로 붙인다.
+            const slides = Editor.deck.slides;
+            const host = slides[before] && slides[before].section;
+            if (host && host !== dragSection && slides[before - 1] && slides[before - 1].section === host) {
+              const start = slides.findIndex(slide => slide.section === host);
+              let end = start;
+              while (end + 1 < slides.length && slides[end + 1].section === host) end++;
+              before = before - start < end + 1 - before ? start : end + 1;
+            }
+          }
           dragIds = null;
-          Editor.moveSlides(ids, Number(target.item.dataset.index) + (target.before ? 0 : 1));
+          dragSection = null;
+          Editor.moveSlides(ids, before);
         });
         list.addEventListener('dragend', () => {
           dragIds = null;
+          dragSection = null;
           clearMarks();
           list.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
         });
         document.querySelectorAll('[data-slide]').forEach(button => button.addEventListener('click', () => Editor.slideAction(button.dataset.slide)));
         document.querySelectorAll('[data-insert]').forEach(button => button.addEventListener('click', () => Editor.insert(button.dataset.insert)));
-        document.querySelectorAll('[data-box]').forEach(button => button.addEventListener('click', () => Editor.boxAction(button.dataset.box)));
         document.querySelectorAll('[data-export]').forEach(button => button.addEventListener('click', () => Exporter.download(button.dataset.export)));
 
 
-        $('fill-color').addEventListener('input', event => {
-          if (!Editor.selected) return;
-          Editor.selected.style.background = event.target.value;
-          Editor.commitSoon();
-        });
 
         // 발표 시나리오 칸: 위쪽 손잡이를 끌어 높이를 바꾸고, 바꾼 높이를 기억한다.
         const resizer = $('notes-resizer');
@@ -3724,6 +3642,7 @@
         FloatBar.init();
         AiPanel.init();
         window.addEventListener('hashchange', Router.route);
+        Prompts.load().catch(() => { /* AI를 쓸 때 다시 시도하고 안내한다 */ });
         Router.route();
       }
 
