@@ -287,15 +287,6 @@
             <span class="group-label ms-1">채우기</span>
             <input type="color" class="form-control form-control-color" id="fill-color" value="#93c5fd" data-needs-box title="선택한 개체 채우기 색">
           </div>
-          <div class="tool-group">
-            <span class="group-label">애니메이션</span>
-            <select class="form-select form-select-sm w-auto" id="anim-select" data-needs-box aria-label="애니메이션"></select>
-            <select class="form-select form-select-sm w-auto" id="anim-delay" data-needs-box aria-label="지연 시간">
-              <option value="0">바로</option><option value="0.2">0.2초 뒤</option><option value="0.4">0.4초 뒤</option>
-              <option value="0.6">0.6초 뒤</option><option value="0.8">0.8초 뒤</option><option value="1">1초 뒤</option>
-              <option value="1.5">1.5초 뒤</option><option value="2">2초 뒤</option>
-            </select>
-          </div>
           <span class="small text-muted d-none d-xl-inline">더블클릭: 글자 수정·그림/영상 바꾸기 · 끌기: 이동 · 모서리: 크기</span>
         </div>
       </header>
@@ -503,16 +494,6 @@
       const DEFAULT_MODEL = 'gemini-3.5-flash';
       const DEFAULT_TITLE = '제목 없는 프레젠테이션';
       const AI_BATCH = 4; // 여러 장 생성 시 한 번에 요청하는 장 수(응답 시간이 길어지지 않게)
-      const ANIMATIONS = {
-        '': '없음',
-        'anim-fade': '서서히 나타나기',
-        'anim-fade-up': '아래에서 올라오기',
-        'anim-fade-left': '왼쪽에서 들어오기',
-        'anim-fade-right': '오른쪽에서 들어오기',
-        'anim-zoom': '확대되며 나타나기',
-        'anim-pop': '튀어나오기',
-        'anim-float': '둥실둥실 (반복)'
-      };
 
       const $ = id => document.getElementById(id);
 
@@ -1667,7 +1648,19 @@
           $('slide-canvas').append(box);
           Editor.select(box);
           Editor.commit();
+          if (box.querySelector('img, video, iframe')) Editor.motionTip();
           return box;
+        },
+
+        // 그림·영상을 처음 넣었을 때 한 번만: 등장 효과는 AI 재생성으로 넣는다고 알려 준다.
+        motionTip() {
+          const KEY = 'lessonStudio.motionTipShown';
+          try {
+            if (localStorage.getItem(KEY)) return;
+            localStorage.setItem(KEY, '1');
+          } catch (err) { /* 저장이 안 되면 이번에만 보여 준다 */ }
+          Util.toast('💡 등장 효과 넣기: 오른쪽 AI 창의 [현재 슬라이드 재생성] 탭에서 ' +
+            '"새로 넣은 그림에 등장 효과 넣어 줘"처럼 요청하면 AI가 모션을 만들어 줍니다.', 'primary');
         },
 
         insert(kind) {
@@ -1756,25 +1749,10 @@
           Editor.commitSoon();
         },
 
-        setAnimation(name, delay) {
-          const box = Editor.selected;
-          if (!box) return;
-          Object.keys(ANIMATIONS).filter(Boolean).forEach(cls => box.classList.remove(cls));
-          if (name) box.classList.add(name);
-          box.style.animationDelay = name && parseFloat(delay) ? delay + 's' : '';
-          Editor.commit();
-        },
-
         // 선택한 개체에 맞춰 도구 상태를 바꾼다.
         syncBoxTools() {
           const box = Editor.selected;
           document.querySelectorAll('[data-needs-box]').forEach(el => { el.disabled = !box; });
-          const anim = box ? (Array.from(box.classList).find(cls => cls.startsWith('anim-')) || '') : '';
-          $('anim-select').value = ANIMATIONS[anim] !== undefined ? anim : '';
-          const delaySelect = $('anim-delay');
-          const delay = box ? String(parseFloat(box.style.animationDelay) || 0) : '0';
-          if (!Array.from(delaySelect.options).some(option => option.value === delay)) delaySelect.add(new Option(delay + '초 뒤', delay));
-          delaySelect.value = delay;
           if (box) $('fill-color').value = Util.toHex(getComputedStyle(box).backgroundColor, '#93c5fd');
         }
       };
@@ -3398,10 +3376,6 @@
         document.querySelectorAll('[data-box]').forEach(button => button.addEventListener('click', () => Editor.boxAction(button.dataset.box)));
         document.querySelectorAll('[data-export]').forEach(button => button.addEventListener('click', () => Exporter.download(button.dataset.export)));
 
-        const animSelect = $('anim-select');
-        Object.keys(ANIMATIONS).forEach(name => animSelect.add(new Option(ANIMATIONS[name], name)));
-        animSelect.addEventListener('change', () => Editor.setAnimation(animSelect.value, $('anim-delay').value));
-        $('anim-delay').addEventListener('change', () => Editor.setAnimation(animSelect.value, $('anim-delay').value));
 
         $('fill-color').addEventListener('input', event => {
           if (!Editor.selected) return;
