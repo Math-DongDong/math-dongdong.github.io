@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HTML 슬라이드 편집 도구</title>
+  <title>AI 모션 슬라이드</title>
   <meta name="description" content="PPT처럼 HTML 슬라이드를 편집하고, AI에게 주제를 말하면 모션이 들어간 슬라이드를 만들어 주는 도구">
 
   <!-- Bootstrap -->
@@ -160,6 +160,7 @@
     .notes-resizer { height: 8px; margin: 0 -0.75rem 0.25rem; cursor: row-resize; display: flex; align-items: center; justify-content: center; }
     .notes-resizer::before { content: ''; width: 40px; height: 3px; border-radius: 2px; background: #d1d5db; }
     .notes-resizer:hover::before, .notes-resizer.active::before { background: var(--primary); }
+    .slide-title-group { width: min(360px, 45%); }
     .notes-editor { height: 96px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
     .notes-editor:empty::before { content: attr(data-placeholder); color: #9ca3af; }
     .ai-files:empty { display: none; }
@@ -232,11 +233,24 @@
   <script src="../../../js/navbar.js"></script>
 
   <main id="app">
+    <!-- ========== 휴대폰 크기 안내 (이 크기에서는 앱을 열지 않는다) ========== -->
+    <section id="mobile-block" class="page-wrap text-center d-none">
+      <div class="mx-auto py-5" style="max-width: 420px;">
+        <i class="bi bi-laptop display-3 text-primary"></i>
+        <h1 class="h4 fw-bold mt-3">AI 모션 슬라이드</h1>
+        <p class="text-muted mt-3 mb-4">
+          이 도구는 넓은 화면에서 슬라이드를 편집하도록 만들어져 휴대폰 화면에서는 쓸 수 없습니다.<br>
+          <b>태블릿, 노트북, 데스크톱</b>에서 접속해 주세요.
+        </p>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="btn-mobile-recheck"><i class="bi bi-arrow-clockwise"></i> 다시 확인</button>
+      </div>
+    </section>
+
     <!-- ========== 첫 화면 ========== -->
     <section id="home-view" class="page-wrap d-none">
       <header class="text-center mb-4">
         <h1 class="fw-bold text-primary mt-2">
-          <i class="bi bi-easel2"></i> HTML 슬라이드 편집 도구
+          <i class="bi bi-easel2"></i> AI 모션 슬라이드
         </h1>
         <p class="text-muted fs-6">
           PPT처럼 슬라이드를 직접 고치고, 오른쪽 AI 창에 주제를 적으면 Gemini가 모션이 들어간 슬라이드를 만들어 줍니다.
@@ -245,6 +259,7 @@
         <div class="d-flex flex-wrap justify-content-center gap-2 d-none" id="home-actions">
           <button type="button" class="btn btn-primary" id="btn-new-deck"><i class="bi bi-plus-lg"></i> 새 프레젠테이션</button>
           <button type="button" class="btn btn-outline-primary" data-act="import"><i class="bi bi-folder2-open"></i> 파일 불러오기</button>
+          <button type="button" class="btn btn-outline-primary cloud-only d-none" data-act="cloud-list"><i class="bi bi-cloud-download"></i> Storage에서 불러오기</button>
         </div>
         <div class="d-none" id="home-setup">
           <p class="small text-muted mb-2">슬라이드는 AI(Gemini)가 만들어 줍니다. 먼저 AI 설정에서 API 키를 등록해 주세요.</p>
@@ -281,6 +296,7 @@
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><button type="button" class="dropdown-item" data-act="recent"><i class="bi bi-clock-history"></i> 최근 목록에서</button></li>
                 <li><button type="button" class="dropdown-item" data-act="import"><i class="bi bi-pc-display"></i> 내 컴퓨터에서 (HTML 파일)</button></li>
+                <li class="cloud-only d-none"><button type="button" class="dropdown-item" data-act="cloud-list"><i class="bi bi-cloud-download"></i> Firebase Storage에서 (관리자)</button></li>
               </ul>
             </div>
             <div class="dropdown">
@@ -288,6 +304,8 @@
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><button type="button" class="dropdown-item" data-export="presenter"><i class="bi bi-person-video3"></i> 발표자 보기 (시나리오 포함)</button></li>
                 <li><button type="button" class="dropdown-item" data-export="audience"><i class="bi bi-display"></i> 청중 화면만</button></li>
+                <li class="cloud-only d-none"><hr class="dropdown-divider"></li>
+                <li class="cloud-only d-none"><button type="button" class="dropdown-item" data-act="cloud-save"><i class="bi bi-cloud-upload"></i> Firebase Storage에 저장 (관리자)</button></li>
               </ul>
             </div>
             <div class="dropdown">
@@ -324,6 +342,10 @@
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <span class="small fw-semibold" id="notes-label"><i class="bi bi-chat-square-text"></i> 발표 시나리오</span>
               <span class="small text-muted d-none d-lg-inline">글자를 블록 지정하면 서식 도구가 나옵니다</span>
+              <div class="input-group input-group-sm ms-auto slide-title-group">
+                <label class="input-group-text" for="slide-title-input"><i class="bi bi-type-h3"></i>&nbsp;소제목</label>
+                <input type="text" class="form-control" id="slide-title-input" maxlength="120" placeholder="이 장의 소제목 (모든 슬라이드 보기에 표시)">
+              </div>
             </div>
             <div class="form-control form-control-sm notes-editor" id="notes-editor" contenteditable="true" role="textbox"
               aria-multiline="true" aria-labelledby="notes-label" spellcheck="false"
@@ -496,6 +518,22 @@
           <button type="submit" class="btn btn-primary">확인</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Firebase Storage 목록 (관리자 전용) -->
+  <div class="modal fade" id="cloud-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5"><i class="bi bi-cloud"></i> Firebase Storage에서 불러오기</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted text-center my-4" id="cloud-modal-status">불러오는 중…</p>
+          <div class="list-group" id="cloud-modal-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1053,7 +1091,7 @@
           $('editor-view').classList.add('d-none');
           $('home-view').classList.remove('d-none');
           document.body.classList.remove('in-editor');
-          document.title = 'HTML 슬라이드 편집 도구';
+          document.title = 'AI 모션 슬라이드';
           Home.syncKey();
           await Home.draw();
         },
@@ -1268,7 +1306,7 @@
           $('editor-view').classList.remove('d-none');
           document.body.classList.add('in-editor');
           $('deck-title').value = deck.title;
-          document.title = deck.title + ' - HTML 슬라이드 편집 도구';
+          document.title = deck.title + ' - AI 모션 슬라이드';
           Editor.renderRail();
           Editor.renderCanvas();
           Editor.fit();
@@ -1456,6 +1494,7 @@
           FloatBar.hide();
           SlideView.fill(canvas, slide, 'edit');
           $('notes-editor').innerHTML = slide.notes;
+          $('slide-title-input').value = slide.title || '';
           Editor.markActiveThumb();
         },
 
@@ -2382,10 +2421,10 @@
       })();
 
       /* ===== 12. AI 슬라이드 생성 창 ===== */
-      // AI에게 보내는 문장은 모두 assets/json/lessonstudio-prompts.json에 있다.
+      // AI에게 보내는 문장은 모두 assets/json/motionslide-prompts.json에 있다.
       // 배열은 줄 단위로 이어 붙이고, {{이름}} 자리에 값을 채운다.
       const Prompts = {
-        URL: '../../../assets/json/lessonstudio-prompts.json',
+        URL: '../../../assets/json/motionslide-prompts.json',
         data: null,
         loading: null,
 
@@ -2400,7 +2439,7 @@
               .then(data => { Prompts.data = data; return data; })
               .catch(() => {
                 Prompts.loading = null;
-                throw new Error('AI 프롬프트 파일(assets/json/lessonstudio-prompts.json)을 불러오지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.');
+                throw new Error('AI 프롬프트 파일(assets/json/motionslide-prompts.json)을 불러오지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.');
               });
           }
           return Prompts.loading;
@@ -2881,7 +2920,7 @@
             if (result.deckTitle && deck.title === DEFAULT_TITLE) {
               deck.title = String(result.deckTitle).trim().slice(0, 80) || DEFAULT_TITLE;
               $('deck-title').value = deck.title;
-              document.title = deck.title + ' - HTML 슬라이드 편집 도구';
+              document.title = deck.title + ' - AI 모션 슬라이드';
             }
             list.forEach(item => { rawHtml += String(item.html || ''); });
             const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(item.html, refs), bg: item.bg, notes: item.notes }));
@@ -3392,7 +3431,7 @@
             .split(String.fromCharCode(0x2028)).join('\\u2028').split(String.fromCharCode(0x2029)).join('\\u2029');
           return '<!DOCTYPE html>\n<html lang="ko">\n<head>\n<meta charset="UTF-8">\n' +
             '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
-            '<meta name="generator" content="HTML 슬라이드 편집 도구">\n' +
+            '<meta name="generator" content="AI 모션 슬라이드">\n' +
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
@@ -3457,6 +3496,111 @@
             ? '발표자 보기 파일을 불러왔습니다. 발표 시나리오도 함께 편집할 수 있습니다.'
             : '청중 화면 파일을 불러왔습니다. 발표 시나리오는 비어 있는 상태입니다.', 'success');
           location.hash = '#/edit/' + deck.id;
+        }
+      };
+
+      /* ===== 14-1. Firebase Storage (관리자 전용) =====
+         실제 접근 권한은 Firebase Storage 보안 규칙이 정한다. 화면에서는 관리자에게만 메뉴를 보여 준다. */
+      const CloudUI = {
+        on() { return !!(window.SlideCloud && window.SlideCloud.isAdmin); },
+
+        sync() {
+          const on = CloudUI.on();
+          document.querySelectorAll('.cloud-only').forEach(el => el.classList.toggle('d-none', !on));
+        },
+
+        errorText(err) {
+          const code = (err && err.code) || '';
+          if (code === 'storage/unauthorized') return 'Storage 권한이 없습니다. Firebase Storage 규칙에서 motion_slides 경로를 관리자에게 허용했는지 확인해 주세요.';
+          if (code === 'storage/object-not-found') return '파일을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.';
+          return 'Storage 작업에 실패했습니다. (' + (code || (err && err.message) || '알 수 없는 오류') + ')';
+        },
+
+        async save() {
+          if (!CloudUI.on() || !Editor.deck) return;
+          Editor.deselect();
+          Editor.syncCurrent();
+          const title = await Util.ask('Firebase Storage에 저장', '저장 이름 (발표자 보기 형식으로 저장되어 시나리오까지 다시 불러올 수 있습니다)', Editor.deck.title);
+          if (!title || !Editor.deck) return;
+          const fileName = Util.safeFileName(title) + '.html';
+          try {
+            const files = await window.SlideCloud.list();
+            if (files.some(file => file.file === fileName) &&
+              !await Util.confirm('Storage에 같은 이름("' + title + '")의 파일이 있습니다. 덮어쓸까요?', '덮어쓰기', true)) return;
+            Util.toast('Storage에 저장하는 중…');
+            await window.SlideCloud.save(fileName, title, Exporter.build('presenter'));
+            Util.toast('Firebase Storage에 저장했습니다: ' + title, 'success');
+          } catch (err) {
+            Util.toast(CloudUI.errorText(err), 'danger');
+          }
+        },
+
+        async open() {
+          if (!CloudUI.on()) return;
+          const status = $('cloud-modal-status');
+          const list = $('cloud-modal-list');
+          status.textContent = '불러오는 중…';
+          status.classList.remove('d-none');
+          list.textContent = '';
+          const modal = bootstrap.Modal.getOrCreateInstance($('cloud-modal'));
+          modal.show();
+          let files = [];
+          try {
+            files = await window.SlideCloud.list();
+          } catch (err) {
+            status.textContent = CloudUI.errorText(err);
+            return;
+          }
+          status.textContent = 'Storage에 저장된 슬라이드가 없습니다.';
+          status.classList.toggle('d-none', files.length > 0);
+          files.forEach(file => {
+            const row = document.createElement('div');
+            row.className = 'list-group-item d-flex align-items-center gap-2';
+            const text = document.createElement('div');
+            text.className = 'me-auto';
+            text.style.minWidth = '0';
+            const name = document.createElement('div');
+            name.className = 'fw-semibold text-truncate';
+            name.textContent = file.title;
+            const meta = document.createElement('div');
+            meta.className = 'small text-muted';
+            meta.textContent = Util.formatTime(file.updated) + ' 저장 · ' + (file.size / 1048576).toFixed(1) + 'MB';
+            text.append(name, meta);
+            const load = document.createElement('button');
+            load.type = 'button';
+            load.className = 'btn btn-sm btn-primary text-nowrap';
+            load.innerHTML = '<i class="bi bi-box-arrow-in-down"></i> 불러오기';
+            load.addEventListener('click', async () => {
+              load.disabled = true;
+              try {
+                const blob = await window.SlideCloud.load(file.path);
+                modal.hide();
+                await Importer.open(new File([blob], file.file, { type: 'text/html' }));
+              } catch (err) {
+                load.disabled = false;
+                Util.toast(CloudUI.errorText(err), 'danger');
+              }
+            });
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-sm btn-outline-danger';
+            remove.title = 'Storage에서 삭제';
+            remove.setAttribute('aria-label', file.title + ' 삭제');
+            remove.innerHTML = '<i class="bi bi-trash3"></i>';
+            remove.addEventListener('click', async () => {
+              modal.hide();
+              if (!await Util.confirm('Storage에서 "' + file.title + '"을(를) 지울까요? 되돌릴 수 없습니다.', '삭제', true)) { CloudUI.open(); return; }
+              try {
+                await window.SlideCloud.remove(file.path);
+                Util.toast('Storage에서 지웠습니다.', 'success');
+              } catch (err) {
+                Util.toast(CloudUI.errorText(err), 'danger');
+              }
+              CloudUI.open();
+            });
+            row.append(text, load, remove);
+            list.append(row);
+          });
         }
       };
 
@@ -3681,6 +3825,15 @@
           window.addEventListener('pointerup', up);
         });
 
+        // 장 소제목: 모든 슬라이드 보기·AI 목차에 쓰인다.
+        $('slide-title-input').addEventListener('input', event => {
+          const slide = Editor.current();
+          slide.title = event.target.value.slice(0, 120);
+          slide.pristine = false;
+          Editor.scheduleSave();
+        });
+        $('slide-title-input').addEventListener('change', () => Editor.commit());
+
         // 발표 시나리오: 서식 있는 글. 붙여넣기는 일반 글자로만 받는다.
         const notes = $('notes-editor');
         notes.addEventListener('input', Editor.saveNotes);
@@ -3693,7 +3846,7 @@
 
         $('deck-title').addEventListener('input', event => {
           Editor.deck.title = event.target.value.trim() || DEFAULT_TITLE;
-          document.title = Editor.deck.title + ' - HTML 슬라이드 편집 도구';
+          document.title = Editor.deck.title + ' - AI 모션 슬라이드';
           Editor.scheduleSave();
         });
         $('btn-home').addEventListener('click', () => { location.hash = '#/'; });
@@ -3742,6 +3895,8 @@
           if (button.dataset.act === 'settings') SettingsModal.open();
           if (button.dataset.act === 'import') $('file-import').click();
           if (button.dataset.act === 'recent') RecentPicker.open();
+          if (button.dataset.act === 'cloud-save') CloudUI.save();
+          if (button.dataset.act === 'cloud-list') CloudUI.open();
         });
         $('file-import').addEventListener('change', event => {
           Importer.open(event.target.files[0]);
@@ -3753,13 +3908,90 @@
         wireEditor();
         FloatBar.init();
         AiPanel.init();
-        window.addEventListener('hashchange', Router.route);
-        Prompts.load().catch(() => { /* AI를 쓸 때 다시 시도하고 안내한다 */ });
-        Router.route();
+        window.addEventListener('slideCloudChanged', CloudUI.sync);
+        CloudUI.sync();
+
+        // 휴대폰 크기(폭 768px 미만)나 휴대폰 기기에서는 안내만 보이고 앱을 열지 않는다.
+        const tooSmall = () => window.innerWidth < 768 || /Android.+Mobile|iPhone|iPod|Windows Phone/i.test(navigator.userAgent);
+        const start = () => {
+          $('mobile-block').classList.add('d-none');
+          window.addEventListener('hashchange', Router.route);
+          Prompts.load().catch(() => { /* AI를 쓸 때 다시 시도하고 안내한다 */ });
+          Router.route();
+        };
+        if (tooSmall()) {
+          $('mobile-block').classList.remove('d-none');
+          $('btn-mobile-recheck').addEventListener('click', () => {
+            if (tooSmall()) Util.toast('아직 화면이 좁습니다. 태블릿·노트북·데스크톱에서 열어 주세요.', 'warning');
+            else start();
+          });
+          return;
+        }
+        start();
       }
 
       boot();
     })();
+  </script>
+
+  <!-- Firebase Storage 연결 (관리자 전용). 관리자로 로그인했을 때만 Storage SDK를 불러온다. -->
+  <script type="module">
+    const ADMIN_EMAIL = 'jjes0107@gmail.com';
+    const FOLDER = 'motion_slides';
+    let sdk = null;
+
+    async function storageSdk() {
+      if (!sdk) {
+        const [{ storage }, api] = await Promise.all([
+          import('../../../js/firebase-storage.js'),
+          import('https://www.gstatic.com/firebasejs/12.16.0/firebase-storage.js')
+        ]);
+        sdk = { storage, api };
+      }
+      return sdk;
+    }
+
+    window.SlideCloud = {
+      isAdmin: false,
+
+      async list() {
+        const { storage, api } = await storageSdk();
+        const result = await api.listAll(api.ref(storage, FOLDER));
+        const metas = await Promise.all(result.items.map(item => api.getMetadata(item)));
+        return metas.map(meta => ({
+          path: meta.fullPath,
+          file: meta.name,
+          title: (meta.customMetadata && meta.customMetadata.title) || meta.name.replace(/\.html$/i, ''),
+          size: meta.size,
+          updated: meta.updated
+        })).sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
+      },
+
+      async save(fileName, title, html) {
+        const { storage, api } = await storageSdk();
+        await api.uploadString(api.ref(storage, FOLDER + '/' + fileName), html, 'raw', {
+          contentType: 'text/html; charset=utf-8',
+          customMetadata: { title }
+        });
+      },
+
+      async load(path) {
+        const { storage, api } = await storageSdk();
+        return api.getBlob(api.ref(storage, path));
+      },
+
+      async remove(path) {
+        const { storage, api } = await storageSdk();
+        await api.deleteObject(api.ref(storage, path));
+      }
+    };
+
+    // 교사 로그인(teacher-auth.js)이 알려 주는 상태로 관리자인지 판단한다.
+    window.addEventListener('teacherAuthChanged', event => {
+      const detail = event.detail || {};
+      window.SlideCloud.isAdmin = !!detail.isAdmin && String(detail.email || '').toLowerCase() === ADMIN_EMAIL;
+      window.dispatchEvent(new Event('slideCloudChanged'));
+    });
   </script>
 </body>
 
