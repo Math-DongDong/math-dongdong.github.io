@@ -4,11 +4,14 @@
  * ==========================================================
  */
 
-// ▼ 분리 규칙(고급설정) 시트 설정
+// ▼ 자리 규칙(고급설정: 분리 / 근접 배치) 시트 설정
 const RULE_SHEET_NAME = '분리규칙';
-const RULE_HEADERS = ['학생번호목록', '학생이름', '분리방향', '수정일시'];
+const RULE_HEADERS = ['규칙유형', '학생번호목록', '학생이름', '적용방향', '수정일시'];
+
 // 방향 코드 ↔ 한글 라벨 (시트에는 사람이 읽기 쉬운 한글로 저장)
 const DIR_LABELS = { v: '상하', h: '좌우', d: '대각선' };
+// 규칙 유형 코드 ↔ 한글 라벨
+const TYPE_LABELS = { separate: '분리', together: '근접' };
 
 // ▼ 최근 랜덤 배치의 규칙 충족 결과 (교사용 고급설정 창에서만 확인)
 //    민감 정보가 아닌 '내부 기록용' 값이라 별도 설정 화면 없이 코드에서만 관리합니다.
@@ -16,14 +19,14 @@ const LAST_CHECK_KEY = 'LAST_PLACEMENT_CHECK';
 
 /**
  * 구글 시트 열릴 때 커스텀 메뉴 생성
- * - 고급설정(분리 배치 규칙)은 웹 앱이 아닌 이 메뉴에서만 편집/확인
+ * - 고급설정(분리·근접 배치 규칙)은 웹 앱이 아닌 이 메뉴에서만 편집/확인
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🎲 자리 배치 시스템')
     .addItem('DB 세팅 및 초기화 (샘플데이터 포함)', 'setupDatabase')
     .addSeparator()
-    .addItem('⚙️ 고급설정 (분리 배치 규칙)', 'openAdvancedSettings')
+    .addItem('⚙️ 고급설정 (분리·근접 배치 규칙)', 'openAdvancedSettings')
     .addToUi();
 }
 
@@ -43,8 +46,8 @@ function doGet() {
 function openAdvancedSettings() {
   const html = HtmlService.createHtmlOutputFromFile('advanced')
     .setWidth(560)
-    .setHeight(720);
-  SpreadsheetApp.getUi().showModalDialog(html, '⚙️ 고급설정 · 분리 배치 규칙');
+    .setHeight(740);
+  SpreadsheetApp.getUi().showModalDialog(html, '⚙️ 고급설정 · 분리 및 짝꿍 도움(근접) 규칙');
 }
 
 /**
@@ -63,7 +66,7 @@ function getAdvancedSettingsData() {
  * 데이터베이스(시트) 초기화 및 샘플 데이터 입력
  * - 학생명단 : 샘플 30명으로 덮어씀
  * - 배치이력 : 없을 때만 헤더 생성 (기존 이력 보존)
- * - 분리규칙 : 없을 때만 헤더 생성 (기존 규칙 보존)
+ * - 분리규칙 : 없을 때만 헤더 생성, 구버전 4열이면 5열로 자동 업그레이드 (기존 규칙 보존)
  */
 function setupDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -104,10 +107,10 @@ function setupDatabase() {
       .setBackground('#10B981').setFontColor('#FFFFFF').setFontWeight('bold');
   }
 
-  // 3. 분리규칙 시트 생성 (이미 있으면 기존 규칙을 그대로 둠)
+  // 3. 분리규칙 시트 생성 및 헤더 정비 (기존 규칙 보존)
   getOrCreateRuleSheet_();
 
-  SpreadsheetApp.getUi().alert('DB 세팅이 완료되었습니다! 30명의 샘플 학생 데이터가 생성되었습니다.\n(분리규칙 탭도 준비되었습니다.)');
+  SpreadsheetApp.getUi().alert('DB 세팅이 완료되었습니다! 30명의 샘플 학생 데이터가 생성되었습니다.\n(분리·근접 배치 규칙 탭도 준비되었습니다.)');
 }
 
 /**
@@ -174,13 +177,13 @@ function getHistoryList() {
 }
 
 // ==========================================================
-// ▼ 분리 규칙(고급설정) 관련 함수
+// ▼ 자리 배치 규칙(분리 / 근접·짝꿍도움) 관련 함수
 // ==========================================================
 
 /**
  * [내부용] 분리규칙 시트를 찾고, 없으면 헤더와 함께 새로 만든다.
- * - 학생번호목록 열은 '텍스트' 서식으로 고정
- *   (예: "3, 7" 이 숫자 37 이나 소수 3.7 로 바뀌는 것을 방지)
+ * - 구버전(4열: 학생번호목록이 1열) 시트인 경우 앞에 '규칙유형' 열을 자동 추가하여 마이그레이션
+ * - 학생번호목록 열(2열)은 '텍스트' 서식으로 고정
  */
 function getOrCreateRuleSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -190,12 +193,29 @@ function getOrCreateRuleSheet_() {
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, RULE_HEADERS.length).setValues([RULE_HEADERS])
       .setBackground('#E11D48').setFontColor('#FFFFFF').setFontWeight('bold');
-    sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
+    sheet.getRange(2, 2, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
     sheet.setFrozenRows(1);
-    sheet.setColumnWidth(1, 130);
-    sheet.setColumnWidth(2, 240);
-    sheet.setColumnWidth(3, 150);
+    sheet.setColumnWidth(1, 90);
+    sheet.setColumnWidth(2, 130);
+    sheet.setColumnWidth(3, 240);
     sheet.setColumnWidth(4, 150);
+    sheet.setColumnWidth(5, 150);
+  } else {
+    // 구버전 4열 헤더('학생번호목록'으로 시작)인 경우 1열 앞에 '규칙유형' 열 삽입
+    const firstHeader = String(sheet.getRange(1, 1).getDisplayValue()).trim();
+    if (firstHeader === '학생번호목록') {
+      sheet.insertColumnBefore(1);
+      sheet.getRange(1, 1, 1, RULE_HEADERS.length).setValues([RULE_HEADERS])
+        .setBackground('#E11D48').setFontColor('#FFFFFF').setFontWeight('bold');
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        const defaultTypes = [];
+        for (let r = 2; r <= lastRow; r++) defaultTypes.push(['분리']);
+        sheet.getRange(2, 1, lastRow - 1, 1).setValues(defaultTypes);
+      }
+      sheet.setColumnWidth(1, 90);
+    }
+    sheet.getRange(2, 2, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
   }
   return sheet;
 }
@@ -213,18 +233,30 @@ function parseIdList_(text) {
 }
 
 /**
- * 저장된 분리 규칙 목록 가져오기 (웹 앱 랜덤 배치 + 고급설정 화면 공용)
- * @return {Array<{ids:number[], dirs:string[]}>}
- *   dirs 는 방향 코드 배열 ('v'=상하, 'h'=좌우, 'd'=대각선)
- * - 학생 '번호'만 내보내고 이름은 보내지 않음
- * - 사용자가 시트에서 직접 '상하, 대각선' 처럼 수정해도 읽을 수 있음
+ * [내부용] 시트에 적힌 규칙유형 문자열을 코드로 변환 ('separate' | 'together')
+ */
+function parseRuleType_(text) {
+  const t = String(text || '').trim();
+  if (t.indexOf('근접') !== -1 || t.indexOf('도움') !== -1 || t.indexOf('짝꿍') !== -1 || t === 'together') {
+    return 'together';
+  }
+  return 'separate';
+}
+
+/**
+ * 저장된 배치 규칙 목록 가져오기 (웹 앱 랜덤 배치 + 고급설정 화면 공용)
+ * @return {Array<{type:string, ids:number[], dirs:string[]}>}
+ *   type : 'separate'(분리 배치) | 'together'(근접·짝꿍 도움 배치)
+ *   dirs : 방향 코드 배열 ('v'=상하, 'h'=좌우, 'd'=대각선)
+ * - 구버전 4열 시트와 신버전 5열 시트를 모두 호환하여 읽음
  */
 function getSeparationRules() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RULE_SHEET_NAME);
   if (!sheet || sheet.getLastRow() <= 1) return [];
 
-  // 화면에 보이는 그대로(문자열) 읽어 숫자 자동 변환 문제를 피함
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, RULE_HEADERS.length).getDisplayValues();
+  const lastCol = Math.max(sheet.getLastColumn(), RULE_HEADERS.length);
+  const allRows = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getDisplayValues();
+  const isLegacy4Col = String(allRows[0][0] || '').trim() === '학생번호목록';
 
   // 한글 라벨 → 방향 코드 역변환표
   const labelToCode = {};
@@ -232,22 +264,29 @@ function getSeparationRules() {
   labelToCode['대각'] = 'd';
 
   const rules = [];
-  data.forEach(function(row) {
-    const ids = parseIdList_(row[0]);
+  for (let i = 1; i < allRows.length; i++) {
+    const row = allRows[i];
+    const type = isLegacy4Col ? 'separate' : parseRuleType_(row[0]);
+    const idCol = isLegacy4Col ? row[0] : row[1];
+    const dirCol = isLegacy4Col ? row[2] : row[3];
+
+    const ids = parseIdList_(idCol);
     const dirs = [];
-    String(row[2] || '').split(/[,\/\s]+/).forEach(function(t) {
+    String(dirCol || '').split(/[,\/\s]+/).forEach(function(t) {
       const code = labelToCode[t.trim()];
       if (code && dirs.indexOf(code) === -1) dirs.push(code);
     });
-    if (ids.length >= 2 && dirs.length) rules.push({ ids: ids, dirs: dirs });
-  });
+    if (ids.length >= 2 && dirs.length) {
+      rules.push({ type: type, ids: ids, dirs: dirs });
+    }
+  }
   return rules;
 }
 
 /**
- * 분리 규칙 전체 저장 (기존 규칙을 지우고 전달받은 목록으로 덮어씀)
+ * 배치 규칙 전체 저장 (기존 규칙을 지우고 전달받은 목록으로 덮어씀)
  * - 규칙이 바뀌었으므로 이전 랜덤 배치 결과 기록은 초기화
- * @param {Array<{ids:number[], dirs:string[]}>} rules
+ * @param {Array<{type:string, ids:number[], dirs:string[]}>} rules
  * @return {number} 실제 저장된 규칙 수
  */
 function saveSeparationRules(rules) {
@@ -264,11 +303,13 @@ function saveSeparationRules(rules) {
     const rows = [];
 
     (rules || []).forEach(function(r) {
+      const type = (r.type === 'together') ? 'together' : 'separate';
       const ids = parseIdList_((r.ids || []).join(','));
       const dirs = ['v', 'h', 'd'].filter(function(code) { return (r.dirs || []).indexOf(code) !== -1; });
       if (ids.length < 2 || !dirs.length) return; // 잘못된 규칙은 건너뜀
 
       rows.push([
+        TYPE_LABELS[type],
         ids.join(', '),
         ids.map(function(id) { return nameMap[id] || ('#' + id); }).join(', '),
         dirs.map(function(code) { return DIR_LABELS[code]; }).join(', '),
@@ -300,8 +341,7 @@ function saveSeparationRules(rules) {
  * 웹 앱이 랜덤 배치를 마친 뒤 '조용히' 호출하는 함수
  * - 웹 앱 화면에는 아무것도 표시하지 않고, 결과만 서버에 기록
  * - 기록은 구글 시트 [⚙️ 고급설정] 창에서만 확인 가능
- * @param {{ruleCount:number, unmet:Array<{a:number, b:number, dir:string}>}} result
- *   unmet : 지키지 못한 학생 쌍 (학생 번호 + 방향 코드)
+ * @param {{ruleCount:number, unmet:Array<{a:number, b:number, dir:string, type:string}>}} result
  */
 function reportPlacementResult(result) {
   result = result || {};
@@ -312,10 +352,17 @@ function reportPlacementResult(result) {
     time: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm'),
     ruleCount: Number(result.ruleCount) || 0,
     unmet: (result.unmet || []).slice(0, 30).map(function(u) {
+      // dir 이 'v,h' 처럼 복수 코드일 수도 있으므로 각각 한글 라벨로 변환
+      const dirText = String(u.dir || '')
+        .split(',')
+        .map(function(c) { return DIR_LABELS[c.trim()] || c.trim(); })
+        .filter(Boolean)
+        .join('·');
       return {
+        type: u.type === 'together' ? 'together' : 'separate',
         a: nameMap[u.a] || ('#' + u.a),
         b: nameMap[u.b] || ('#' + u.b),
-        dir: DIR_LABELS[u.dir] || ''
+        dir: dirText
       };
     })
   };
