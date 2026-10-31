@@ -2178,14 +2178,20 @@
           const slide = slides[Show.index];
           if (Show.kind === 'presenter') {
             Show.paintCanvas($('pv-c-canvas'), slide);
+            Show.media.prepare($('pv-c-canvas'), 'master');
             Show.paintCanvas($('pv-n-canvas'), slides[Show.index + 1], 'static');
             $('pv-count').textContent = (Show.index + 1) + ' / ' + slides.length;
             const notes = $('pv-notes');
             if (Util.htmlToText(slide.notes)) notes.innerHTML = slide.notes;
             else notes.textContent = '(시나리오 없음)';
-            if (Show.popup && !Show.popup.closed) Show.paintCanvas(Show.popup.document.getElementById('pa-canvas'), slide);
+            if (Show.popup && !Show.popup.closed) {
+              const audienceCanvas = Show.popup.document.getElementById('pa-canvas');
+              Show.paintCanvas(audienceCanvas, slide);
+              Show.media.prepare(audienceCanvas, 'mirror');
+            }
           } else {
             Show.paintCanvas($('show-canvas'), slide);
+            Show.media.prepare($('show-canvas'), 'solo');
             $('show-counter').textContent = (Show.index + 1) + ' / ' + slides.length;
           }
           Show.fit();
@@ -2225,7 +2231,12 @@
           doc.addEventListener('keydown', Show.onKey);
           doc.getElementById('pa-host').addEventListener('click', () => Show.go(Show.index + 1));
           popup.addEventListener('resize', Show.fit);
-          Show.paint();
+          // 지금 장을 청중 창에만 그리고, 발표자 쪽에서 이미 재생 중인 영상은 이어서 맞춘다.
+          const audienceCanvas = doc.getElementById('pa-canvas');
+          Show.paintCanvas(audienceCanvas, Editor.deck.slides[Show.index]);
+          Show.media.prepare(audienceCanvas, 'mirror');
+          Show.media.syncAll();
+          Show.fit();
           setTimeout(Show.fit, 100);
         },
 
@@ -3208,6 +3219,138 @@
         return { close: close };
       }
 
+      /* ===== 12-2. 발표 영상 재생·연동 =====
+         · 발표 화면의 영상은 자동 재생하지 않고, 발표자가 재생 버튼을 눌러야 재생된다.
+         · 발표자 보기(주) ↔ 청중 창(따라감): 재생·일시정지·위치·속도를 맞춘다. 소리는 청중 창에서만 낸다.
+         · 유튜브는 YouTube 퍼가기 API(postMessage)로 재생·정지·위치를 맞춘다.
+         앱과 내보낸 파일이 함께 쓰므로 바깥 변수를 쓰지 않는다. */
+      function createMediaSync(win, notice) {
+        var pairs = { master: null, mirror: null };
+        var noticed = false;
+        var each = function (list, fn) { Array.prototype.forEach.call(list, fn); };
+
+        function youtubeSrc(src) {
+          var url = src.replace(/([?&])autoplay=1(&|$)/, '$1').replace(/[?&]$/, '');
+          if (!/[?&]enablejsapi=1/.test(url)) url += (url.indexOf('?') >= 0 ? '&' : '?') + 'enablejsapi=1';
+          return url;
+        }
+        function command(frame, func, args) {
+          try { frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*'); } catch (err) { /* 무시 */ }
+        }
+        function listen(frame) {
+          try { frame.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (err) { /* 무시 */ }
+        }
+
+        // role: 'solo'(청중 화면만) | 'master'(발표자 보기) | 'mirror'(청중 창)
+        function prepare(canvas, role) {
+          each(canvas.querySelectorAll('video'), function (video) {
+            video.autoplay = false;
+            video.removeAttribute('autoplay');
+            video.pause();
+            video.muted = false;
+            video.controls = role !== 'mirror';
+            if (role === 'mirror') video.style.pointerEvents = 'none';
+          });
+          each(canvas.querySelectorAll('iframe'), function (frame) {
+            var src = frame.getAttribute('src') || '';
+            if (!/youtube(-nocookie)?\.com\/embed\//.test(src)) return;
+            var next = youtubeSrc(src);
+            if (next !== src) frame.setAttribute('src', next);
+            if (role === 'mirror') frame.style.pointerEvents = 'none';
+            if (role === 'master') frame.addEventListener('load', function () { listen(frame); });
+          });
+        }
+
+        // 발표자 쪽 영상과 같은 순서의 청중 창 영상
+        function pair(el) {
+          var master = pairs.master && pairs.master();
+          var mirror = pairs.mirror && pairs.mirror();
+          if (!master || !mirror || !master.contains(el)) return null;
+          var selector = el.tagName === 'VIDEO' ? 'video' : 'iframe';
+          var k = Array.prototype.indexOf.call(master.querySelectorAll(selector), el);
+          return mirror.querySelectorAll(selector)[k] || null;
+        }
+
+        function playMirror(mirror, master) {
+          master.muted = true; // 소리는 청중 창에서
+          mirror.muted = false;
+          var started = mirror.play();
+          if (started && started.catch) {
+            started.catch(function () {
+              // 청중 창에서 소리 재생이 막히면 청중 창은 소리 없이, 소리는 발표자 쪽에서 낸다.
+              mirror.muted = true;
+              mirror.play();
+              master.muted = false;
+              if (!noticed && notice) { noticed = true; notice('청중 창에서 소리를 낼 수 없어 발표자 화면에서 소리가 납니다.'); }
+            });
+          }
+        }
+
+        function onVideo(type, video) {
+          var mirror = pair(video);
+          if (!mirror) return;
+          if (type === 'timeupdate') {
+            if (!video.paused && Math.abs(mirror.currentTime - video.currentTime) > 0.5) mirror.currentTime = video.currentTime;
+            return;
+          }
+          if (type === 'ratechange') { mirror.playbackRate = video.playbackRate; return; }
+          if (Math.abs(mirror.currentTime - video.currentTime) > 0.1) mirror.currentTime = video.currentTime;
+          if (type === 'play') playMirror(mirror, video);
+          else if (type === 'pause') mirror.pause();
+        }
+
+        function bindMaster(canvas) {
+          ['play', 'pause', 'seeked', 'ratechange', 'timeupdate'].forEach(function (type) {
+            canvas.addEventListener(type, function (event) {
+              if (event.target && event.target.tagName === 'VIDEO') onVideo(event.type, event.target);
+            }, true);
+          });
+        }
+
+        // 청중 창을 새로 열었을 때 이미 재생 중인 영상을 맞춘다.
+        function syncAll() {
+          var master = pairs.master && pairs.master();
+          if (!master) return;
+          each(master.querySelectorAll('video'), function (video) {
+            var mirror = pair(video);
+            if (!mirror) return;
+            mirror.playbackRate = video.playbackRate;
+            mirror.currentTime = video.currentTime;
+            if (!video.paused) playMirror(mirror, video);
+          });
+        }
+
+        win.addEventListener('message', function (event) {
+          if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(event.origin)) return;
+          var data;
+          try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (err) { return; }
+          var master = pairs.master && pairs.master();
+          if (!data || !master) return;
+          var frame = null;
+          each(master.querySelectorAll('iframe'), function (item) { if (item.contentWindow === event.source) frame = item; });
+          var mirror = frame && pair(frame);
+          if (!mirror) return;
+          var info = data.event === 'onStateChange' ? { playerState: data.info } : (data.info || {});
+          if (typeof info.currentTime === 'number') frame.lsTime = info.currentTime;
+          if (info.playerState === 1) {
+            command(frame, 'mute');
+            command(mirror, 'unMute');
+            command(mirror, 'seekTo', [frame.lsTime || 0, true]);
+            command(mirror, 'playVideo');
+          } else if (info.playerState === 2) {
+            command(mirror, 'pauseVideo');
+            command(mirror, 'seekTo', [frame.lsTime || 0, true]);
+          }
+        });
+
+        return {
+          prepare: prepare,
+          bindMaster: bindMaster,
+          syncAll: syncAll,
+          setPair: function (master, mirror) { pairs.master = master; pairs.mirror = mirror; }
+        };
+      }
+
       /* ===== 13. 내보내기 (단독 실행 HTML) ===== */
       // 내보낸 파일 안에서 그대로 실행되는 보기 프로그램. 바깥 변수를 쓰지 않는다.
       function exportRuntime() {
@@ -3311,10 +3454,15 @@
             if (i < 0 || i >= slides.length) return;
             index = i;
             paint(document, 'a', i);
+            audienceMedia.prepare(document.getElementById('a-canvas'), 'solo');
             document.getElementById('a-counter').textContent = (i + 1) + ' / ' + slides.length;
           }
+          var audienceMedia = createMediaSync(window, null);
           document.addEventListener('keydown', function (event) { onKey(event, document, go); });
-          document.getElementById('a-host').addEventListener('click', function () { go(index + 1); });
+          document.getElementById('a-host').addEventListener('click', function (event) {
+            if (event.target.closest && event.target.closest('video')) return;
+            go(index + 1);
+          });
           document.getElementById('a-overview').addEventListener('click', function () { openOverview(go); });
           window.addEventListener('resize', function () { fit(document, 'a'); });
           fit(document, 'a');
@@ -3323,6 +3471,11 @@
 
         function presenter() {
           var popup = null;
+          var media = createMediaSync(window, function (message) { alert(message); });
+          media.setPair(
+            function () { return document.getElementById('c-canvas'); },
+            function () { return popup && !popup.closed ? popup.document.getElementById('pa-canvas') : null; }
+          );
           document.body.className = 'pv-view';
           document.body.innerHTML =
             '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span id="pv-clock" title="현재 시각"></span>' +
@@ -3334,6 +3487,7 @@
             '<aside class="pv-col"><div class="pv-label">다음 장</div><div class="v-host pv-next v-static" id="n-host">' + stage('n') + '</div>' +
             '<div class="pv-label">발표 시나리오</div><div class="pv-text" id="pv-notes"></div></aside></main>';
           document.getElementById('pv-title').textContent = data.title || '';
+          media.bindMaster(document.getElementById('c-canvas'));
 
           function fitAll() {
             fit(document, 'c');
@@ -3344,12 +3498,16 @@
             if (i < 0 || i >= slides.length) return;
             index = i;
             paint(document, 'c', i);
+            media.prepare(document.getElementById('c-canvas'), 'master');
             paint(document, 'n', i + 1, true);
             var notes = document.getElementById('pv-notes');
             if (slides[i].notes) notes.innerHTML = slides[i].notes;
             else notes.textContent = '(시나리오 없음)';
             document.getElementById('pv-count').textContent = (i + 1) + ' / ' + slides.length;
-            if (popup && !popup.closed) paint(popup.document, 'pa', i);
+            if (popup && !popup.closed) {
+              paint(popup.document, 'pa', i);
+              media.prepare(popup.document.getElementById('pa-canvas'), 'mirror');
+            }
             fitAll();
           }
           function openAudience() {
@@ -3367,6 +3525,8 @@
               doc.getElementById('pa-host').addEventListener('click', function () { go(index + 1); });
               popup.addEventListener('resize', function () { fit(doc, 'pa'); });
               paint(doc, 'pa', index);
+              media.prepare(doc.getElementById('pa-canvas'), 'mirror');
+              media.syncAll();
               fit(doc, 'pa');
               setTimeout(function () { fit(doc, 'pa'); }, 100);
             } catch (err) {
@@ -3435,7 +3595,7 @@
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
-            '<script>' + slideOverview.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
         },
 
         download(kind) {
@@ -3855,7 +4015,10 @@
         document.querySelectorAll('[data-show]').forEach(button => button.addEventListener('click', () => Show.enter(button.dataset.show)));
         $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
         $('show-overview').addEventListener('click', event => { event.stopPropagation(); Show.openOverview(); });
-        $('show-overlay').addEventListener('click', () => Show.go(Show.index + 1));
+        $('show-overlay').addEventListener('click', event => {
+          if (event.target.closest('video')) return; // 재생바를 누른 것은 장 넘김이 아니다
+          Show.go(Show.index + 1);
+        });
         $('presenter-overlay').addEventListener('click', event => {
           const button = event.target.closest('[data-pv]');
           if (!button) return;
@@ -3881,6 +4044,13 @@
       }
 
       function boot() {
+        Show.media = createMediaSync(window, message => Util.toast(message, 'warning'));
+        Show.media.setPair(
+          () => (Show.kind === 'presenter' && Show.isOn() ? $('pv-c-canvas') : null),
+          () => (Show.popup && !Show.popup.closed ? Show.popup.document.getElementById('pa-canvas') : null)
+        );
+        Show.media.bindMaster($('pv-c-canvas'));
+
         const nav = document.querySelector('nav.navbar');
         const setNavHeight = () => document.documentElement.style.setProperty('--nav-h', (nav ? nav.offsetHeight : 0) + 'px');
         setNavHeight();
