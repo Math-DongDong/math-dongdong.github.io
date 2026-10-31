@@ -308,12 +308,19 @@
             <button type="button" class="btn btn-sm btn-warning ms-1" data-act="settings">AI 설정</button>
           </div>
           <div class="ai-log" id="ai-log">
-            <div class="ai-msg ai">발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 [여러 장 생성]을 켜세요.</div>
+            <div class="ai-msg ai">[새 슬라이드 생성]: 발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 [여러 장 생성]을 켜세요.
+[현재 슬라이드 재생성]: 지금 보고 있는 장을 고칠 점만 적어 보내면 그 장을 다시 만들어 줍니다.</div>
           </div>
           <div class="border-top p-2">
+            <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="AI 작업 선택">
+              <input type="radio" class="btn-check" name="ai-mode" id="ai-mode-new" value="new" checked>
+              <label class="btn btn-outline-primary" for="ai-mode-new"><i class="bi bi-plus-square"></i> 새 슬라이드 생성</label>
+              <input type="radio" class="btn-check" name="ai-mode" id="ai-mode-revise" value="revise">
+              <label class="btn btn-outline-primary" for="ai-mode-revise"><i class="bi bi-arrow-repeat"></i> 현재 슬라이드 재생성</label>
+            </div>
             <textarea class="form-control form-control-sm mb-2" id="ai-prompt" rows="4"
               placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
-            <div class="d-flex align-items-center flex-wrap gap-2 small mb-2">
+            <div class="d-flex align-items-center flex-wrap gap-2 small mb-2" id="ai-new-options">
               <div class="form-check form-switch mb-0">
                 <input class="form-check-input" type="checkbox" role="switch" id="ai-multi">
                 <label class="form-check-label" for="ai-multi">여러 장 생성</label>
@@ -324,7 +331,7 @@
               </div>
             </div>
             <div class="d-flex gap-2">
-              <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> 생성 <span class="opacity-75">Ctrl+Enter</span></button>
+              <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> <span id="ai-send-label">생성</span> <span class="opacity-75">Ctrl+Enter</span></button>
               <button type="button" class="btn btn-outline-danger btn-sm d-none" id="ai-stop"><i class="bi bi-stop-circle"></i> 중단</button>
             </div>
             <p class="small text-muted mt-2 mb-0">요청 내용은 Google Gemini API로 전송됩니다. 개인정보는 적지 마세요.</p>
@@ -1883,16 +1890,128 @@
           }
         },
 
+        /* --- 현재 슬라이드 재생성 --- */
+        isReviseMode() { return $('ai-mode-revise').checked; },
+
+        syncMode() {
+          const revise = AiPanel.isReviseMode();
+          $('ai-new-options').classList.toggle('d-none', revise);
+          $('ai-send-label').textContent = revise ? '현재 슬라이드 재생성' : '생성';
+          $('ai-prompt').placeholder = revise
+            ? '예) 제목을 더 크게, 본문을 카드 3개로 나눠 줘. 배경은 밝은 하늘색으로 바꾸고 예시 하나 추가'
+            : "예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문";
+        },
+
+        send() {
+          if (AiPanel.isReviseMode()) AiPanel.revise();
+          else AiPanel.generate();
+        },
+
+        revisePrompt(slide, html, request) {
+          return [
+            '[할 일] 아래 [현재 슬라이드]를 [수정 요청]대로 고쳐서 1장으로 다시 출력한다.',
+            '',
+            '[수정 요청]',
+            request,
+            '',
+            '[현재 슬라이드]',
+            'title: ' + (slide.title || '(없음)'),
+            'bg: ' + slide.bg,
+            'notes: ' + (slide.notes || '(없음)'),
+            'html:',
+            html,
+            '',
+            '[지킬 것]',
+            '- 요청과 관계없는 글자·위치·크기·색·상자 순서·애니메이션은 그대로 두고, 요청한 부분만 고친다.',
+            '- 사용자가 넣은 그림(src나 url에 있는 data:image/png;ref,번호)은 그 값을 한 글자도 바꾸지 않고, 요청이 없으면 지우지 않는다.',
+            '- notes는 바뀐 내용에 맞게 고치되, 관계없으면 그대로 둔다.',
+            '- slides 배열에 정확히 1개를 출력하라.'
+          ].join('\n');
+        },
+
+        async revise() {
+          if (AiPanel.busy || !Editor.deck) return;
+          const request = $('ai-prompt').value.trim();
+          if (!request) { Util.toast('현재 슬라이드에서 고칠 점을 입력해 주세요.', 'warning'); $('ai-prompt').focus(); return; }
+          if (!Settings.apiKey()) { SettingsModal.open(); return; }
+
+          const deck = Editor.deck;
+          Editor.deselect();
+          Editor.syncCurrent();
+          const target = Editor.current();
+          const number = Editor.index + 1;
+          // 넣어 둔 그림은 길어서 짧은 표식으로 바꿔 보내고, 응답에서 원래 그림으로 되돌린다.
+          const images = [];
+          const html = target.html.replace(/data:image\/[a-z+.-]+;base64,[a-z0-9+/=]+/gi, url => {
+            images.push(url);
+            return 'data:image/png;ref,' + (images.length - 1);
+          });
+
+          AiPanel.message('user', '[' + number + '번 장 재생성]\n' + request);
+          const status = AiPanel.message('ai', number + '번 장을 다시 만드는 중…');
+          $('ai-prompt').value = '';
+          AiPanel.setBusy(true);
+          const controller = new AbortController();
+          AiPanel.aborter = controller;
+
+          let result = null;
+          let failure = null;
+          try {
+            result = await Gemini.generateJson({
+              model: Settings.model(),
+              system: AI_SYSTEM,
+              prompt: AiPanel.revisePrompt(target, html, request),
+              schema: AI_SCHEMA,
+              signal: controller.signal,
+              onProgress: length => status.set(number + '번 장을 다시 만드는 중…\n' + length.toLocaleString('ko-KR') + '자 받음')
+            });
+          } catch (err) {
+            failure = err;
+          }
+          AiPanel.setBusy(false);
+          AiPanel.aborter = null;
+          if (Editor.deck !== deck) return;
+
+          const item = !failure && result && Array.isArray(result.slides) ? result.slides[0] : null;
+          if (!item && !failure) failure = new Error('AI 응답에 슬라이드가 없습니다. 다시 시도해 주세요.');
+          const index = deck.slides.findIndex(slide => slide.id === target.id);
+          if (!failure && index < 0) failure = new Error('기다리는 동안 그 장이 삭제되어 반영하지 못했습니다.');
+          if (failure) {
+            status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
+            if (!$('ai-prompt').value) $('ai-prompt').value = request;
+            if (failure.needsKey) SettingsModal.open();
+            return;
+          }
+
+          const restored = String(item.html || '').replace(/data:image\/png;ref,(\d+)/g, (match, n) => images[Number(n)] || match);
+          Editor.deselect();
+          Editor.syncCurrent();
+          const current = deck.slides[index];
+          deck.slides[index] = Editor.normalizeSlide({
+            id: current.id,
+            title: item.title || current.title,
+            html: restored,
+            bg: item.bg || current.bg,
+            notes: item.notes || current.notes,
+            memo: current.memo
+          });
+          if (Editor.index === index) Editor.renderCanvas();
+          Editor.commit();
+          Editor.refreshThumb(index);
+          status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.');
+        },
+
         init() {
           $('ai-multi').addEventListener('change', event => $('ai-count-wrap').classList.toggle('d-none', !event.target.checked));
-          $('ai-send').addEventListener('click', AiPanel.generate);
+          document.querySelectorAll('input[name="ai-mode"]').forEach(radio => radio.addEventListener('change', AiPanel.syncMode));
+          $('ai-send').addEventListener('click', AiPanel.send);
           $('ai-stop').addEventListener('click', AiPanel.abort);
           $('ai-close').addEventListener('click', () => AiPanel.toggle(false));
           $('btn-ai').addEventListener('click', () => AiPanel.toggle());
           $('ai-prompt').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
               event.preventDefault();
-              AiPanel.generate();
+              AiPanel.send();
             }
           });
         }
