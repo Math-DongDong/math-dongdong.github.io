@@ -247,14 +247,6 @@
             <button type="button" class="btn btn-sm btn-light" id="btn-undo" title="되돌리기 (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
             <button type="button" class="btn btn-sm btn-light" id="btn-redo" title="다시 실행 (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
             <div class="dropdown">
-              <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-square"></i> 개체 삽입</button>
-              <ul class="dropdown-menu dropdown-menu-end">
-                <li><button type="button" class="dropdown-item" data-insert="image"><i class="bi bi-image"></i> 그림 (내 컴퓨터)</button></li>
-                <li><button type="button" class="dropdown-item" data-insert="video-file"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
-                <li><button type="button" class="dropdown-item" data-insert="video-youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
-              </ul>
-            </div>
-            <div class="dropdown">
               <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> 불러오기</button>
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><button type="button" class="dropdown-item" data-act="recent"><i class="bi bi-clock-history"></i> 최근 목록에서</button></li>
@@ -302,9 +294,6 @@
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <span class="small fw-semibold" id="notes-label"><i class="bi bi-chat-square-text"></i> 발표 시나리오</span>
               <span class="small text-muted d-none d-lg-inline">글자를 블록 지정하면 서식 도구가 나옵니다</span>
-              <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="AI 시나리오 작성">
-                <button type="button" class="btn btn-outline-primary" id="btn-notes-ai"><i class="bi bi-stars"></i> AI로 이 장 시나리오 작성</button>
-              </div>
             </div>
             <div class="form-control form-control-sm notes-editor" id="notes-editor" contenteditable="true" role="textbox"
               aria-multiline="true" aria-labelledby="notes-label" spellcheck="false"
@@ -342,6 +331,14 @@
               placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
             <div class="d-flex gap-2">
               <button type="button" class="btn btn-light btn-sm" id="ai-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
+              <div class="dropup">
+                <button type="button" class="btn btn-light btn-sm dropdown-toggle text-nowrap" data-bs-toggle="dropdown" title="슬라이드에 넣을 그림·동영상 담기"><i class="bi bi-plus-square"></i> 삽입</button>
+                <ul class="dropdown-menu">
+                  <li><button type="button" class="dropdown-item" data-insert="image"><i class="bi bi-image"></i> 그림 (내 컴퓨터)</button></li>
+                  <li><button type="button" class="dropdown-item" data-insert="video-file"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
+                  <li><button type="button" class="dropdown-item" data-insert="video-youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
+                </ul>
+              </div>
               <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> <span id="ai-send-label">생성</span> <span class="opacity-75">Ctrl+Enter</span></button>
               <button type="button" class="btn btn-outline-danger btn-sm d-none" id="ai-stop"><i class="bi bi-stop-circle"></i> 중단</button>
             </div>
@@ -1809,64 +1806,11 @@
         },
 
         /* --- 개체 넣기·다루기 --- */
-        insertBox(html) {
-          Editor.deselect();
-          const holder = document.createElement('div');
-          holder.innerHTML = Sanitizer.slide(html).html;
-          const box = holder.firstElementChild;
-          $('slide-canvas').append(box);
-          Editor.select(box);
-          Editor.commit();
-          if (box.querySelector('img, video, iframe')) Editor.motionTip();
-          return box;
-        },
-
-        // 그림·영상을 넣을 때마다: 등장 효과는 AI 재생성으로 넣는다고 알려 준다.
-        motionTip() {
-          Util.toast('💡 등장 효과 넣기: 오른쪽 AI 창의 [현재 슬라이드 재생성] 탭에서 ' +
-            '"새로 넣은 그림에 등장 효과 넣어 줘"처럼 요청하면 AI가 모션을 만들어 줍니다.', 'primary');
-        },
-
+        // 그림·영상은 바로 넣지 않고 AI 창에 담아 두었다가, 질문을 보낼 때 AI가 배치한다.
         insert(kind) {
-          if (kind === 'image') { $('file-image').click(); return; }
-          if (kind === 'video-file') { $('file-video').click(); return; }
-          if (kind === 'video-youtube') Editor.insertYoutube();
-        },
-
-        async insertImage(file) {
-          if (!file) return;
-          try {
-            const image = await readImage(file);
-            const width = Math.min(900, image.width);
-            const height = Math.round(width * image.height / image.width);
-            const left = Math.round((CANVAS_W - width) / 2);
-            const top = Math.max(40, Math.round((CANVAS_H - height) / 2));
-            Editor.insertBox('<div style="left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;"><div class="motion-content">' +
-              '<img class="editable-image" src="' + image.url + '" alt="" style="width:100%;border-radius:16px;"></div></div>');
-          } catch (err) {
-            Util.toast(err.message, 'warning');
-          }
-        },
-
-        async insertVideoFile(file) {
-          if (!file) return;
-          try {
-            const url = await readVideo(file);
-            Editor.insertBox('<div style="left:480px;top:270px;width:960px;"><div class="motion-content">' +
-              '<video class="editable-video" src="' + url + '" autoplay loop muted playsinline style="width:100%;border-radius:16px;"></video></div></div>');
-          } catch (err) {
-            Util.toast(err.message, 'warning');
-          }
-        },
-
-        async insertYoutube() {
-          const text = await Util.ask('유튜브 동영상 넣기', '유튜브 주소 (예: https://www.youtube.com/watch?v=...)', '');
-          if (text === null) return;
-          const embed = youtubeEmbed(text);
-          if (!embed) { Util.toast('유튜브 주소를 알아볼 수 없습니다.', 'warning'); return; }
-          Editor.insertBox('<div style="left:480px;top:270px;width:960px;"><div class="motion-content">' +
-            '<iframe class="editable-video" src="' + embed + '" style="width:100%;aspect-ratio:16/9;border:0;border-radius:16px;" ' +
-            'allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div></div>');
+          if (kind === 'image') $('file-image').click();
+          else if (kind === 'video-file') $('file-video').click();
+          else if (kind === 'video-youtube') AiPanel.stageYoutube();
         },
 
         boxAction(action) {
@@ -2447,26 +2391,11 @@
         required: ['slides']
       };
 
-      const NOTES_BATCH = 5; // 모든 장 시나리오 작성 시 한 번에 보내는 장 수
-      const NOTES_SCHEMA = {
-        type: 'OBJECT',
-        properties: {
-          items: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: { number: { type: 'INTEGER' }, notes: { type: 'STRING' } },
-              required: ['number', 'notes']
-            }
-          }
-        },
-        required: ['items']
-      };
-
       const AiPanel = {
         aborter: null,
         busy: false,
         files: [], // 참고 자료 { file, kind, parts }
+        media: [], // 슬라이드에 넣을 개체 { kind: image|video|youtube, name, url, embed, width, height, token }
 
         syncKey() { $('ai-nokey').classList.toggle('d-none', !!Settings.apiKey()); },
 
@@ -2547,7 +2476,7 @@
 
         setBusy(on) {
           AiPanel.busy = on;
-          ['ai-send', 'btn-notes-ai'].forEach(id => { $(id).disabled = on; });
+          $('ai-send').disabled = on;
           $('ai-stop').classList.toggle('d-none', !on);
         },
 
@@ -2600,11 +2529,115 @@
             chip.append(icon, label, remove);
             host.append(chip);
           });
+          // 슬라이드에 넣을 개체(파란 칩)
+          const mediaIcons = { image: 'bi-image', video: 'bi-file-earmark-play', youtube: 'bi-youtube' };
+          AiPanel.media.forEach(item => {
+            const chip = document.createElement('span');
+            chip.className = 'badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-1 fw-normal';
+            chip.title = '슬라이드에 넣을 개체';
+            const icon = document.createElement('i');
+            icon.className = 'bi ' + mediaIcons[item.kind];
+            const label = document.createElement('span');
+            label.className = 'text-truncate';
+            label.style.maxWidth = '200px';
+            label.textContent = '넣기: ' + item.name;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn-close btn-close-white';
+            remove.style.fontSize = '0.55rem';
+            remove.setAttribute('aria-label', item.name + ' 빼기');
+            remove.addEventListener('click', () => {
+              AiPanel.media = AiPanel.media.filter(other => other !== item);
+              AiPanel.drawFiles();
+            });
+            chip.append(icon, label, remove);
+            host.append(chip);
+          });
         },
 
         clearFiles(used) {
           AiPanel.files = AiPanel.files.filter(item => !used.includes(item));
           AiPanel.drawFiles();
+        },
+
+        /* --- 슬라이드에 넣을 개체(그림·동영상) --- */
+        async stageImage(file) {
+          if (!file) return;
+          try {
+            const image = await readImage(file);
+            AiPanel.addMedia({ kind: 'image', name: file.name || '붙여 넣은 그림', url: image.url, width: image.width, height: image.height });
+          } catch (err) {
+            Util.toast(err.message, 'warning');
+          }
+        },
+
+        async stageVideo(file) {
+          if (!file) return;
+          try {
+            AiPanel.addMedia({ kind: 'video', name: file.name, url: await readVideo(file) });
+          } catch (err) {
+            Util.toast(err.message, 'warning');
+          }
+        },
+
+        async stageYoutube() {
+          const text = await Util.ask('유튜브 동영상 담기', '유튜브 주소 (예: https://www.youtube.com/watch?v=...)', '');
+          if (text === null) return;
+          const embed = youtubeEmbed(text);
+          if (!embed) { Util.toast('유튜브 주소를 알아볼 수 없습니다.', 'warning'); return; }
+          AiPanel.addMedia({ kind: 'youtube', name: '유튜브 동영상', embed });
+        },
+
+        addMedia(item) {
+          if (AiPanel.media.length >= 6) { Util.toast('넣을 개체는 한 번에 6개까지 담을 수 있습니다.', 'warning'); return; }
+          AiPanel.media.push(item);
+          AiPanel.drawFiles();
+          Util.toast('🧩 ' + item.name + '을(를) 담았습니다. 아래 입력칸에 어디에 어떻게 넣을지 적고 [' + $('ai-send-label').textContent +
+            ']을 누르면 AI가 슬라이드에 넣어 줍니다.\n예) "오른쪽에 크게 넣고 아래에서 올라오는 효과"', 'primary');
+          $('ai-prompt').focus();
+        },
+
+        mediaNote(items) { return items.length ? '\n🧩 ' + items.map(item => item.name).join(', ') : ''; },
+
+        // 담은 개체를 짧은 표식으로 바꿔 AI에게 알려 준다. refs에는 표식 번호에 맞는 실제 데이터를 넣는다.
+        mediaRequest(items, refs) {
+          if (!items.length) return { text: '', parts: [] };
+          const parts = [];
+          const lines = items.map(item => {
+            if (item.kind === 'youtube') {
+              item.token = item.embed;
+              return '- 유튜브 동영상: <iframe class="editable-video" src="' + item.embed + '" style="width:100%; aspect-ratio:16/9; border:0; border-radius:16px;" ' +
+                'allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+            }
+            item.token = (item.kind === 'video' ? 'data:video/mp4;ref,' : 'data:image/png;ref,') + refs.length;
+            refs.push(item.url);
+            if (item.kind === 'video') {
+              return '- 동영상 "' + item.name + '": <video class="editable-video" src="' + item.token + '" autoplay loop muted playsinline style="width:100%; border-radius:16px;"></video>';
+            }
+            // 그림은 AI가 내용을 보고 배치·설명할 수 있게 이미지도 함께 보낸다.
+            parts.push({ text: '[넣을 그림: ' + item.name + ']' },
+              { inlineData: { mimeType: item.url.slice(5, item.url.indexOf(';')), data: item.url.split(',')[1] || '' } });
+            return '- 그림 "' + item.name + '" (' + item.width + '×' + item.height + '): <img class="editable-image" src="' + item.token +
+              '" alt="" style="width:100%; border-radius:16px; object-fit:cover;">';
+          });
+          return { text: '\n\n' + Prompts.text('insertMedia', { list: lines.join('\n') }), parts };
+        },
+
+        // AI 응답의 표식을 실제 그림·영상 데이터로 되돌린다.
+        restoreMedia(html, refs) {
+          return String(html || '').replace(/data:(?:image|video)\/[a-z0-9]+;ref,(\d+)/g, (match, n) => refs[Number(n)] || match);
+        },
+
+        // AI가 실제로 넣은 개체만 목록에서 뺀다. 빠뜨린 개체는 남겨 두고 알린다.
+        finishMedia(items, rawHtml) {
+          if (!items.length) return;
+          const used = items.filter(item => item.token && rawHtml.indexOf(item.token) >= 0);
+          AiPanel.media = AiPanel.media.filter(item => !used.includes(item));
+          AiPanel.drawFiles();
+          const missed = items.filter(item => !used.includes(item));
+          if (missed.length) {
+            Util.toast('AI가 ' + missed.map(item => item.name).join(', ') + '을(를) 넣지 않았습니다. 입력칸에 남겨 두었으니 넣을 자리를 적어 다시 요청해 주세요.', 'warning');
+          }
         },
 
         fileNote(files) { return files.length ? '\n📎 ' + files.map(item => item.file.name).join(', ') : ''; },
@@ -2676,7 +2709,7 @@
           }
         },
 
-        /* --- 발표 시나리오 작성 --- */
+        // 목차를 만들 때 쓰는 장의 글 요약
         slideText(slide) {
           const host = document.createElement('template');
           host.innerHTML = slide.html;
@@ -2685,91 +2718,6 @@
           return (text || '(글 없음)') + (host.content.querySelector('img') ? '\n(그림 있음)' : '');
         },
 
-        notesPrompt(deck, numbers) {
-          const overview = deck.slides.map((slide, i) => (i + 1) + '. ' + (slide.title || AiPanel.slideText(slide).split('\n')[0]).slice(0, 50)).join('\n');
-          const targets = numbers.map(n => {
-            const slide = deck.slides[n - 1];
-            const old = Util.htmlToText(slide.notes);
-            return Prompts.text('notes.target', { number: n, text: AiPanel.slideText(slide) }) +
-              (old ? '\n' + Prompts.text('notes.oldNotes', { old: old.slice(0, 1500) }) : '');
-          }).join('\n\n');
-          return Prompts.text('notes.body', { title: deck.title, overview, targets });
-        },
-
-        async writeNotes(all) {
-          if (AiPanel.busy || !Editor.deck) return;
-          if (!Settings.apiKey()) { SettingsModal.open(); return; }
-          if (!await Prompts.ready() || AiPanel.busy || !Editor.deck) return;
-          Editor.deselect();
-          Editor.syncCurrent();
-          const deck = Editor.deck;
-          const ids = all ? deck.slides.map(slide => slide.id) : [Editor.current().id];
-          const hasOld = ids.some(id => Util.htmlToText(deck.slides.find(slide => slide.id === id).notes));
-          if (hasOld && !await Util.confirm((all ? '이미 적힌 시나리오도 AI가 모두 새로 씁니다.' : '이 장에 적힌 시나리오를 AI가 새로 씁니다.') +
-            '\n기존 내용은 참고해서 다듬고, 마음에 들지 않으면 되돌리기(Ctrl+Z)로 돌아갈 수 있습니다.', '작성')) return;
-          if (AiPanel.busy || Editor.deck !== deck) return;
-
-          AiPanel.message('user', all ? '모든 장(' + ids.length + '장)의 발표 시나리오 작성' : (Editor.index + 1) + '번 장 발표 시나리오 작성');
-          const status = AiPanel.message('ai', '슬라이드 내용을 읽고 시나리오를 쓰는 중…');
-          AiPanel.setBusy(true);
-          const controller = new AbortController();
-          AiPanel.aborter = controller;
-          let done = 0;
-          let failure = null;
-
-          for (let start = 0; start < ids.length; start += NOTES_BATCH) {
-            if (start > 0) await AiPanel.pause(controller.signal, status);
-            if (controller.signal.aborted) { failure = { aborted: true }; break; }
-            // 기다리는 동안 장 순서가 바뀌어도 맞는 장에 넣도록 번호와 id를 함께 기억한다.
-            const byNumber = new Map();
-            ids.slice(start, start + NOTES_BATCH).forEach(id => {
-              const n = deck.slides.findIndex(slide => slide.id === id) + 1;
-              if (n > 0) byNumber.set(n, id);
-            });
-            const numbers = Array.from(byNumber.keys());
-            if (!numbers.length) continue;
-            const label = ids.length > 1
-              ? numbers[0] + '~' + numbers[numbers.length - 1] + '번 장 시나리오를 쓰는 중… (모두 ' + ids.length + '장)'
-              : '시나리오를 쓰는 중…';
-            status.set(label);
-            let result;
-            try {
-              result = await Gemini.generateJson({
-                model: Settings.model(),
-                system: Prompts.text('notesSystem'),
-                prompt: AiPanel.notesPrompt(deck, numbers),
-                schema: NOTES_SCHEMA,
-                signal: controller.signal,
-                onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
-              });
-            } catch (err) {
-              failure = err;
-              break;
-            }
-            if (Editor.deck !== deck) break;
-            ((result && result.items) || []).forEach(item => {
-              const slide = deck.slides.find(other => other.id === byNumber.get(Number(item.number)));
-              if (!slide || !String(item.notes || '').trim()) return;
-              slide.notes = Sanitizer.notes(Util.textToHtml(item.notes));
-              done++;
-            });
-            $('notes-editor').innerHTML = Editor.current().notes;
-            Editor.commit();
-          }
-
-          AiPanel.setBusy(false);
-          AiPanel.aborter = null;
-          if (Editor.deck !== deck) return;
-          if (done) {
-            const rest = failure ? '\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 쓰지 못했습니다: ' + failure.message) : '';
-            status.set(done + '장의 발표 시나리오를 썼습니다. 아래 [발표 시나리오] 칸에서 고칠 수 있습니다.' + rest, !!(failure && !failure.aborted));
-          } else if (failure) {
-            status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
-            if (failure.needsKey) SettingsModal.open();
-          } else {
-            status.set('⚠ AI 응답에 시나리오가 없습니다. 다시 시도해 주세요.', true);
-          }
-        },
 
         abort() { if (AiPanel.aborter) AiPanel.aborter.abort(); },
 
@@ -2821,7 +2769,10 @@
           Editor.syncCurrent();
 
           const files = AiPanel.files.slice();
-          AiPanel.message('user', topic + (total > 1 ? '\n(' + total + '장)' : '') + AiPanel.fileNote(files));
+          const media = AiPanel.media.slice();
+          const refs = [];
+          let rawHtml = '';
+          AiPanel.message('user', topic + (total > 1 ? '\n(' + total + '장)' : '') + AiPanel.fileNote(files) + AiPanel.mediaNote(media));
           const status = AiPanel.message('ai', '슬라이드를 만드는 중…');
           $('ai-prompt').value = '';
           AiPanel.setBusy(true);
@@ -2839,6 +2790,8 @@
 
           let parts = [];
           try { parts = await AiPanel.prepareFiles(files, status); } catch (err) { failure = err; }
+          const mediaRequest = AiPanel.mediaRequest(media, refs);
+          parts = parts.concat(mediaRequest.parts);
 
           for (let start = 0; !failure && start < total; start += AI_BATCH) {
             if (start > 0) {
@@ -2853,7 +2806,7 @@
               result = await Gemini.generateJson({
                 model: Settings.model(),
                 system: Prompts.slideSystem(),
-                prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files),
+                prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files) + mediaRequest.text,
                 parts,
                 history: AiPanel.history(deck),
                 schema: AI_SCHEMA,
@@ -2873,7 +2826,8 @@
               $('deck-title').value = deck.title;
               document.title = deck.title + ' - HTML 슬라이드 편집 도구';
             }
-            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: item.html, bg: item.bg, notes: item.notes }));
+            list.forEach(item => { rawHtml += String(item.html || ''); });
+            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(item.html, refs), bg: item.bg, notes: item.notes }));
 
             Editor.deselect();
             Editor.syncCurrent();
@@ -2900,6 +2854,7 @@
           if (Editor.deck !== deck) return;
           if (added) {
             AiPanel.clearFiles(files);
+            AiPanel.finishMedia(media, rawHtml);
             const list = madeIds.map((id, i) => (deck.slides.findIndex(slide => slide.id === id) + 1) + '번 장: ' + madeTitles[i]).join(', ');
             AiPanel.remember(deck, '[새 슬라이드 생성' + (total > 1 ? ', ' + total + '장' : '') + '] ' + topic + AiPanel.fileNote(files),
               '슬라이드 ' + added + '장을 만들어 추가했다(' + list + '). 발표 자료 제목: ' + deck.title);
@@ -2977,7 +2932,9 @@
           const html = AiPanel.source(target, images);
 
           const files = AiPanel.files.slice();
-          AiPanel.message('user', '[' + number + '번 장 재생성]\n' + request + AiPanel.fileNote(files));
+          const media = AiPanel.media.slice();
+          const mediaRequest = AiPanel.mediaRequest(media, images); // 표식 번호는 이 장에 이미 있는 그림 다음부터
+          AiPanel.message('user', '[' + number + '번 장 재생성]\n' + request + AiPanel.fileNote(files) + AiPanel.mediaNote(media));
           const status = AiPanel.message('ai', number + '번 장을 다시 만드는 중…');
           $('ai-prompt').value = '';
           AiPanel.setBusy(true);
@@ -2987,12 +2944,12 @@
           let result = null;
           let failure = null;
           try {
-            const parts = await AiPanel.prepareFiles(files, status);
+            const parts = (await AiPanel.prepareFiles(files, status)).concat(mediaRequest.parts);
             status.set(number + '번 장을 다시 만드는 중…');
             result = await Gemini.generateJson({
               model: Settings.model(),
               system: Prompts.slideSystem(),
-              prompt: AiPanel.revisePrompt(target, html, request, number > 1 ? AiPanel.reference(deck.slides[number - 2]) : null) + AiPanel.filePrompt(files),
+              prompt: AiPanel.revisePrompt(target, html, request, number > 1 ? AiPanel.reference(deck.slides[number - 2]) : null) + AiPanel.filePrompt(files) + mediaRequest.text,
               parts,
               history: AiPanel.history(deck),
               schema: AI_SCHEMA,
@@ -3017,7 +2974,7 @@
             return;
           }
 
-          const restored = String(item.html || '').replace(/data:image\/png;ref,(\d+)/g, (match, n) => images[Number(n)] || match);
+          const restored = AiPanel.restoreMedia(item.html, images);
           Editor.deselect();
           Editor.syncCurrent();
           const current = deck.slides[index];
@@ -3033,6 +2990,7 @@
           if (Editor.index === index) Editor.renderCanvas();
           Editor.commit();
           AiPanel.clearFiles(files);
+          AiPanel.finishMedia(media, String(item.html || ''));
           AiPanel.remember(deck, '[' + number + '번 장 재생성] ' + request + AiPanel.fileNote(files),
             number + '번 장(' + (deck.slides[index].title || '제목 없음') + ')을 요청대로 고쳤다.');
           Editor.refreshThumb(index);
@@ -3071,7 +3029,6 @@
             event.preventDefault();
             AiPanel.addFiles(files);
           });
-          $('btn-notes-ai').addEventListener('click', () => AiPanel.writeNotes(false));
           $('ai-stop').addEventListener('click', AiPanel.abort);
           $('ai-prompt').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
@@ -3391,7 +3348,13 @@
         if (mod && lower === 'z') { event.preventDefault(); Editor.history(event.shiftKey ? 1 : -1); return; }
         if (mod && lower === 'y') { event.preventDefault(); Editor.history(1); return; }
         const box = Editor.selected;
-        if (!box) return;
+        if (!box) {
+          if (!mod && (key === 'ArrowLeft' || key === 'ArrowRight')) {
+            event.preventDefault();
+            Editor.goTo(Editor.index + (key === 'ArrowLeft' ? -1 : 1));
+          }
+          return;
+        }
         if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
         else if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); Editor.boxAction('delete'); }
         else if (key.startsWith('Arrow')) { event.preventDefault(); Editor.nudge(key, event.shiftKey); }
@@ -3435,13 +3398,13 @@
           if (Router.view !== 'editor' || Editor.editing || Show.isOn()) return;
           if (event.target.closest && event.target.closest('input, textarea, [contenteditable="true"]')) return;
           const file = Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/'));
-          if (file) { event.preventDefault(); Editor.insertImage(file); }
+          if (file) { event.preventDefault(); AiPanel.stageImage(file); }
         });
         $('stage-host').addEventListener('dragover', event => event.preventDefault());
         $('stage-host').addEventListener('drop', event => {
           event.preventDefault();
           const file = Array.from(event.dataTransfer.files || []).find(item => item.type.startsWith('image/'));
-          if (file) Editor.insertImage(file);
+          if (file) AiPanel.stageImage(file);
         });
 
         new ResizeObserver(() => Editor.fit()).observe($('stage-host'));
@@ -3602,11 +3565,11 @@
           if (action === 'exit') Show.exit();
         });
         $('file-image').addEventListener('change', event => {
-          Editor.insertImage(event.target.files[0]);
+          AiPanel.stageImage(event.target.files[0]);
           event.target.value = '';
         });
         $('file-video').addEventListener('change', event => {
-          Editor.insertVideoFile(event.target.files[0]);
+          AiPanel.stageVideo(event.target.files[0]);
           event.target.value = '';
         });
         $('file-media').addEventListener('change', event => {
