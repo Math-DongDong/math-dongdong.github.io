@@ -114,6 +114,8 @@
     .thumb-item .num { width: 1.4rem; flex: none; font-size: 0.75rem; color: #6b7280; text-align: right; }
     .thumb-item .mini-host { flex: 1; border-radius: 4px; outline: 1px solid var(--line); }
     .thumb-item.active .mini-host { outline: 3px solid var(--primary); }
+    .thumb-item.picked .mini-host { outline: 3px solid #93c5fd; }
+    .thumb-item.picked .num { color: var(--primary); font-weight: 700; }
     .thumb-item.dragging { opacity: 0.4; }
     .thumb-item.drop-before { box-shadow: 0 -4px 0 var(--primary); }
     .thumb-item.drop-after { box-shadow: 0 4px 0 var(--primary); }
@@ -121,14 +123,20 @@
     .work-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .stage-host { flex: 1; min-height: 0; position: relative; overflow: hidden; }
     .stage-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15); }
-    .notes-pane { flex: none; background: #fff; border-top: 1px solid var(--line); padding: 0.5rem 0.75rem; }
+    .notes-pane { flex: none; background: #fff; border-top: 1px solid var(--line); padding: 0 0.75rem 0.5rem; }
+    .notes-resizer { height: 8px; margin: 0 -0.75rem 0.25rem; cursor: row-resize; display: flex; align-items: center; justify-content: center; }
+    .notes-resizer::before { content: ''; width: 40px; height: 3px; border-radius: 2px; background: #d1d5db; }
+    .notes-resizer:hover::before, .notes-resizer.active::before { background: var(--primary); }
     .notes-editor { height: 96px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
     .notes-editor:empty::before { content: attr(data-placeholder); color: #9ca3af; }
     .ai-files:empty { display: none; }
     .ai-panel.drag-over { outline: 3px dashed var(--primary); outline-offset: -6px; }
 
-    .ai-panel { width: 360px; flex: none; background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-    .ai-panel.collapsed { display: none; }
+    /* AI 창: 폭이 바뀌며 부드럽게 열리고 닫힌다(안쪽 내용은 폭을 고정해 찌그러지지 않게). */
+    .ai-panel { --ai-w: 360px; width: var(--ai-w); flex: none; background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+      transition: width 0.3s ease, opacity 0.3s ease, visibility 0.3s, transform 0.3s ease; }
+    .ai-panel > * { min-width: var(--ai-w); }
+    .ai-panel.collapsed { width: 0; opacity: 0; visibility: hidden; border-left-width: 0; }
     .ai-log { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .ai-msg { max-width: 92%; padding: 0.5rem 0.75rem; border-radius: 0.75rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
     .ai-msg.ai { background: #f3f4f6; align-self: flex-start; }
@@ -136,7 +144,8 @@
     .ai-msg.error { background: #fee2e2; color: #991b1b; }
 
     @media (max-width: 1199.98px) {
-      .ai-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; width: min(92vw, 360px); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); }
+      .ai-panel { --ai-w: min(92vw, 360px); position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); }
+      .ai-panel.collapsed { width: var(--ai-w); transform: translateX(100%); }
     }
     @media (max-width: 767.98px) {
       .slide-rail { width: 110px; }
@@ -230,7 +239,13 @@
           <div class="ms-auto d-flex flex-wrap align-items-center gap-1">
             <button type="button" class="btn btn-sm btn-light" id="btn-undo" title="되돌리기 (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
             <button type="button" class="btn btn-sm btn-light" id="btn-redo" title="다시 실행 (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="import"><i class="bi bi-folder2-open"></i> 불러오기</button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> 불러오기</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><button type="button" class="dropdown-item" data-act="recent"><i class="bi bi-clock-history"></i> 최근 목록에서</button></li>
+                <li><button type="button" class="dropdown-item" data-act="import"><i class="bi bi-pc-display"></i> 내 컴퓨터에서 (HTML 파일)</button></li>
+              </ul>
+            </div>
             <div class="dropdown">
               <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download"></i> HTML 내보내기</button>
               <ul class="dropdown-menu dropdown-menu-end">
@@ -303,6 +318,7 @@
             </div>
           </div>
           <div class="notes-pane">
+            <div class="notes-resizer" id="notes-resizer" title="위아래로 끌어 높이 조절" role="separator" aria-orientation="horizontal"></div>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <span class="small fw-semibold" id="notes-label"><i class="bi bi-chat-square-text"></i> 발표 시나리오</span>
               <span class="small text-muted d-none d-lg-inline">글자를 블록 지정하면 서식 도구가 나옵니다</span>
@@ -318,10 +334,8 @@
         </section>
 
         <aside class="ai-panel" id="ai-panel" aria-label="AI 슬라이드 생성">
-          <div class="d-flex flex-wrap align-items-center gap-2 px-3 pt-2 pb-1">
-            <i class="bi bi-stars text-primary"></i>
-            <strong>AI 슬라이드 생성</strong>
-            <div class="form-check form-switch mb-0 small" title="한 번에 여러 장 만들기 (새 슬라이드 생성에서만)">
+          <div class="d-flex flex-nowrap align-items-center gap-2 px-3 pt-2 pb-1">
+            <div class="form-check form-switch mb-0 small text-nowrap" title="한 번에 여러 장 만들기 (새 슬라이드 생성에서만)">
               <input class="form-check-input" type="checkbox" role="switch" id="ai-multi">
               <label class="form-check-label" for="ai-multi">여러 장</label>
             </div>
@@ -329,8 +343,8 @@
               <input type="number" class="form-control" id="ai-count" min="2" max="20" value="5" aria-label="만들 장 수">
               <span class="input-group-text px-1">장</span>
             </div>
-            <div class="ms-auto d-flex gap-1">
-              <button type="button" class="btn btn-sm btn-light" id="ai-new-chat" title="새 채팅 (이전 대화 맥락 지우기)"><i class="bi bi-chat-square-dots"></i> 새 채팅</button>
+            <div class="ms-auto d-flex flex-nowrap gap-1">
+              <button type="button" class="btn btn-sm btn-light text-nowrap" id="ai-new-chat" title="새 채팅 (이전 대화 맥락 지우기)"><i class="bi bi-chat-square-dots"></i> 새 채팅</button>
               <button type="button" class="btn btn-sm btn-light" data-act="settings" title="AI 설정"><i class="bi bi-gear"></i></button>
               <button type="button" class="btn btn-sm btn-light" id="ai-close" title="AI 창 닫기"><i class="bi bi-x-lg"></i></button>
             </div>
@@ -435,6 +449,22 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
           <button type="button" class="btn btn-primary" id="set-save">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 최근 목록에서 불러오기 -->
+  <div class="modal fade" id="recent-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5"><i class="bi bi-clock-history"></i> 최근 목록에서 불러오기</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted text-center my-4 d-none" id="recent-modal-empty">불러올 다른 프레젠테이션이 없습니다.</p>
+          <div class="row row-cols-2 row-cols-md-3 g-3" id="recent-modal-grid"></div>
         </div>
       </div>
     </div>
@@ -1037,6 +1067,48 @@
         }
       };
 
+      // 편집 화면 [불러오기 → 최근 목록에서]
+      const RecentPicker = {
+        async open() {
+          const grid = $('recent-modal-grid');
+          Mini.releaseAll(grid);
+          grid.textContent = '';
+          let decks = [];
+          try { decks = await DeckStore.all(); } catch (err) { /* 아래에서 빈 목록으로 안내 */ }
+          decks = decks.filter(deck => !Editor.deck || deck.id !== Editor.deck.id)
+            .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+          $('recent-modal-empty').classList.toggle('d-none', decks.length > 0);
+          const modal = bootstrap.Modal.getOrCreateInstance($('recent-modal'));
+          decks.forEach(deck => {
+            const col = document.createElement('div');
+            col.className = 'col';
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'card h-100 w-100 text-start p-0 shadow-sm recent-card';
+            const thumb = document.createElement('div');
+            thumb.className = 'mini-host card-img-top';
+            const body = document.createElement('div');
+            body.className = 'card-body p-2';
+            const title = document.createElement('div');
+            title.className = 'fw-semibold small text-truncate';
+            title.textContent = deck.title || DEFAULT_TITLE;
+            const meta = document.createElement('div');
+            meta.className = 'small text-muted';
+            meta.textContent = (deck.slides || []).length + '장 · ' + Util.formatTime(deck.updatedAt);
+            body.append(title, meta);
+            card.append(thumb, body);
+            card.addEventListener('click', () => {
+              modal.hide();
+              location.hash = '#/edit/' + deck.id;
+            });
+            col.append(card);
+            grid.append(col);
+            Mini.mount(thumb, (deck.slides || [])[0]);
+          });
+          modal.show();
+        }
+      };
+
       /* ===== 8. 편집기 ===== */
       // 3계층: .draggable-box(위치) > .motion-content(모션) > .editable-text(내용)
       const textBox = (box, text, style) => '<div class="draggable-box" style="' + box + '"><div class="motion-content">' +
@@ -1175,9 +1247,15 @@
         },
 
         markActiveThumb() {
+          const slides = Editor.deck.slides;
+          // 지워진 장은 선택에서 빼고, 지금 보는 장은 항상 선택에 포함한다.
+          Editor.picked = new Set(Array.from(Editor.picked).filter(id => slides.some(slide => slide.id === id)));
+          if (!Editor.picked.has(Editor.current().id)) Editor.pickOnly();
           $('thumb-list').querySelectorAll('.thumb-item').forEach(item => {
-            const active = Number(item.dataset.index) === Editor.index;
+            const index = Number(item.dataset.index);
+            const active = index === Editor.index;
             item.classList.toggle('active', active);
+            item.classList.toggle('picked', !active && Editor.picked.has(slides[index].id));
             if (active) item.scrollIntoView({ block: 'nearest' });
           });
           $('slide-counter').textContent = (Editor.index + 1) + ' / ' + Editor.deck.slides.length;
@@ -1284,12 +1362,59 @@
         },
 
         /* --- 슬라이드 단위 작업 --- */
-        goTo(i) {
-          if (!Editor.deck || i < 0 || i >= Editor.deck.slides.length || i === Editor.index) return;
-          Editor.deselect();
-          Editor.commit();
-          Editor.index = i;
-          Editor.renderCanvas();
+        // keepPicks: Shift·Ctrl로 여러 장을 고르는 중이면 선택을 유지한다.
+        goTo(i, keepPicks) {
+          if (!Editor.deck || i < 0 || i >= Editor.deck.slides.length) return;
+          if (i !== Editor.index) {
+            Editor.deselect();
+            Editor.commit();
+            Editor.index = i;
+            Editor.renderCanvas();
+          }
+          if (!keepPicks) Editor.pickOnly();
+          Editor.markActiveThumb();
+        },
+
+        /* --- 슬라이드 목록 여러 장 선택 --- */
+        picked: new Set(),
+        anchor: null,
+
+        pickOnly() {
+          const id = Editor.current().id;
+          Editor.picked = new Set([id]);
+          Editor.anchor = id;
+        },
+
+        // Shift+클릭: 기준 장부터 클릭한 장까지 한꺼번에 고른다.
+        pickRange(i) {
+          const slides = Editor.deck.slides;
+          let from = slides.findIndex(slide => slide.id === Editor.anchor);
+          if (from < 0) from = Editor.index;
+          const [a, b] = from < i ? [from, i] : [i, from];
+          Editor.picked = new Set(slides.slice(a, b + 1).map(slide => slide.id));
+          Editor.goTo(i, true);
+        },
+
+        // Ctrl+클릭: 한 장씩 더하거나 뺀다.
+        togglePick(i) {
+          const id = Editor.deck.slides[i].id;
+          if (Editor.picked.has(id) && Editor.picked.size > 1) {
+            Editor.picked.delete(id);
+            if (i === Editor.index) {
+              const next = Editor.deck.slides.findIndex(slide => Editor.picked.has(slide.id));
+              Editor.goTo(next, true);
+            } else {
+              Editor.markActiveThumb();
+            }
+            return;
+          }
+          Editor.picked.add(id);
+          Editor.anchor = id;
+          Editor.goTo(i, true);
+        },
+
+        pickedIds() {
+          return Editor.deck.slides.filter(slide => Editor.picked.has(slide.id)).map(slide => slide.id);
         },
 
         slideAction(action) {
@@ -1297,32 +1422,47 @@
           Editor.syncCurrent();
           const slides = Editor.deck.slides;
           const i = Editor.index;
+          const ids = Editor.pickedIds();
           if (action === 'add') {
-            slides.splice(i + 1, 0, Editor.newSlide('content'));
+            // 새 슬라이드는 글상자 없는 흰 장
+            slides.splice(i + 1, 0, Editor.newSlide('blank'));
             Editor.index = i + 1;
+            Editor.pickOnly();
           } else if (action === 'copy') {
-            slides.splice(i + 1, 0, Object.assign({}, slides[i], { id: Util.uid(), pristine: false }));
-            Editor.index = i + 1;
+            // 고른 장들을 마지막으로 고른 장 뒤에 같은 순서로 복제한다.
+            const last = Math.max(...ids.map(id => slides.findIndex(slide => slide.id === id)));
+            const copies = ids.map(id => Object.assign({}, slides.find(slide => slide.id === id), { id: Util.uid(), pristine: false }));
+            slides.splice(last + 1, 0, ...copies);
+            Editor.index = last + 1;
+            Editor.picked = new Set(copies.map(copy => copy.id));
+            Editor.anchor = copies[0].id;
           } else if (action === 'delete') {
-            if (slides.length === 1) { Util.toast('마지막 한 장은 지울 수 없습니다.', 'warning'); return; }
-            slides.splice(i, 1);
-            Editor.index = Math.min(i, slides.length - 1);
+            if (ids.length >= slides.length) { Util.toast('모든 장을 지울 수는 없습니다. 한 장 이상 남겨 주세요.', 'warning'); return; }
+            const first = slides.findIndex(slide => ids.includes(slide.id));
+            Editor.deck.slides = slides.filter(slide => !ids.includes(slide.id));
+            Editor.index = Math.min(first, Editor.deck.slides.length - 1);
+            Editor.pickOnly();
           }
           Editor.renderRail();
           Editor.renderCanvas();
           Editor.commit();
         },
 
-        // from 번째 장을 빼서 to 자리(뺀 뒤 기준)에 넣는다.
-        moveSlide(from, to) {
+        // 고른 장들을 한 덩어리로 빼서 before 번째 장 앞(원래 순서 기준)에 넣는다.
+        moveSlides(ids, before) {
           const slides = Editor.deck.slides;
-          to = Math.max(0, Math.min(slides.length - 1, to));
-          if (from === to || from < 0 || from >= slides.length) return;
+          const set = new Set(ids);
+          const moving = slides.filter(slide => set.has(slide.id));
+          if (!moving.length) return;
+          const rest = slides.filter(slide => !set.has(slide.id));
+          const at = slides.slice(0, before).filter(slide => !set.has(slide.id)).length;
+          const next = rest.slice(0, at).concat(moving, rest.slice(at));
+          if (next.every((slide, k) => slide === slides[k])) return;
           Editor.deselect();
           Editor.syncCurrent();
-          const [moved] = slides.splice(from, 1);
-          slides.splice(to, 0, moved);
-          Editor.index = to;
+          const currentId = Editor.current().id;
+          Editor.deck.slides = next;
+          Editor.index = next.findIndex(slide => slide.id === currentId);
           Editor.renderRail();
           Editor.renderCanvas();
           Editor.commit();
@@ -2223,7 +2363,8 @@
           const panel = $('ai-panel');
           const open = force !== undefined ? force : panel.classList.contains('collapsed');
           panel.classList.toggle('collapsed', !open);
-          if (open) $('ai-prompt').focus();
+          // 펼쳐지는 동안에는 아직 숨김 상태라 포커스가 안 들어가므로, 다 열린 뒤에 입력칸으로 옮긴다.
+          if (open) setTimeout(() => { if (!panel.classList.contains('collapsed')) $('ai-prompt').focus(); }, 320);
         },
 
         // 대화 내용은 프레젠테이션마다 저장해 두고, [새 채팅]을 누르기 전까지 AI에게 이전 맥락으로 함께 보낸다.
@@ -3198,12 +3339,16 @@
 
         $('thumb-list').addEventListener('click', event => {
           const item = event.target.closest('.thumb-item');
-          if (item) Editor.goTo(Number(item.dataset.index));
+          if (!item) return;
+          const index = Number(item.dataset.index);
+          if (event.shiftKey) Editor.pickRange(index);
+          else if (event.ctrlKey || event.metaKey) Editor.togglePick(index);
+          else Editor.goTo(index);
         });
 
         // 슬라이드 목록: 끌어서 순서 바꾸기
         const list = $('thumb-list');
-        let dragFrom = null;
+        let dragIds = null;
         const clearMarks = () => list.querySelectorAll('.drop-before, .drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
         const dropTarget = event => {
           const items = Array.from(list.querySelectorAll('.thumb-item'));
@@ -3216,32 +3361,35 @@
         list.addEventListener('dragstart', event => {
           const item = event.target.closest('.thumb-item');
           if (!item) return;
-          dragFrom = Number(item.dataset.index);
+          const index = Number(item.dataset.index);
+          // 고르지 않은 장을 끌면 그 장만, 고른 장을 끌면 고른 장 전부를 옮긴다.
+          if (!Editor.picked.has(Editor.deck.slides[index].id)) Editor.goTo(index);
+          dragIds = Editor.pickedIds();
           event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('text/plain', String(dragFrom));
-          item.classList.add('dragging');
+          event.dataTransfer.setData('text/plain', dragIds.join(','));
+          list.querySelectorAll('.thumb-item').forEach(el => {
+            if (dragIds.includes(Editor.deck.slides[Number(el.dataset.index)].id)) el.classList.add('dragging');
+          });
         });
         list.addEventListener('dragover', event => {
-          if (dragFrom === null) return;
+          if (!dragIds) return;
           event.preventDefault();
           const target = dropTarget(event);
           clearMarks();
           if (target) target.item.classList.add(target.before ? 'drop-before' : 'drop-after');
         });
         list.addEventListener('drop', event => {
-          if (dragFrom === null) return;
+          if (!dragIds) return;
           event.preventDefault();
           const target = dropTarget(event);
           clearMarks();
           if (!target) return;
-          let to = Number(target.item.dataset.index) + (target.before ? 0 : 1);
-          if (dragFrom < to) to--;
-          const from = dragFrom;
-          dragFrom = null;
-          Editor.moveSlide(from, to);
+          const ids = dragIds;
+          dragIds = null;
+          Editor.moveSlides(ids, Number(target.item.dataset.index) + (target.before ? 0 : 1));
         });
         list.addEventListener('dragend', () => {
-          dragFrom = null;
+          dragIds = null;
           clearMarks();
           list.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
         });
@@ -3259,6 +3407,31 @@
           if (!Editor.selected) return;
           Editor.selected.style.background = event.target.value;
           Editor.commitSoon();
+        });
+
+        // 발표 시나리오 칸: 위쪽 손잡이를 끌어 높이를 바꾸고, 바꾼 높이를 기억한다.
+        const resizer = $('notes-resizer');
+        const NOTES_HEIGHT_KEY = 'lessonStudio.notesHeight';
+        try {
+          const saved = parseInt(localStorage.getItem(NOTES_HEIGHT_KEY), 10);
+          if (saved >= 40) $('notes-editor').style.height = saved + 'px';
+        } catch (err) { /* 무시 */ }
+        resizer.addEventListener('pointerdown', event => {
+          event.preventDefault();
+          const editor = $('notes-editor');
+          const startY = event.clientY;
+          const startHeight = editor.offsetHeight;
+          const max = Math.max(80, document.querySelector('.work-area').clientHeight * 0.65);
+          resizer.classList.add('active');
+          const move = ev => { editor.style.height = Math.round(Math.max(40, Math.min(max, startHeight + startY - ev.clientY))) + 'px'; };
+          const up = () => {
+            resizer.classList.remove('active');
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            try { localStorage.setItem(NOTES_HEIGHT_KEY, String(editor.offsetHeight)); } catch (err) { /* 무시 */ }
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
         });
 
         // 발표 시나리오: 서식 있는 글. 붙여넣기는 일반 글자로만 받는다.
@@ -3319,6 +3492,7 @@
           if (!button) return;
           if (button.dataset.act === 'settings') SettingsModal.open();
           if (button.dataset.act === 'import') $('file-import').click();
+          if (button.dataset.act === 'recent') RecentPicker.open();
         });
         $('file-import').addEventListener('change', event => {
           Importer.open(event.target.files[0]);
