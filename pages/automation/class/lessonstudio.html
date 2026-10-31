@@ -1,0 +1,2278 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTML 슬라이드 편집 도구</title>
+  <meta name="description" content="PPT처럼 HTML 슬라이드를 편집하고, AI에게 주제를 말하면 모션이 들어간 슬라이드를 만들어 주는 도구">
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+  <!-- 슬라이드 공용 스타일: 편집기와 내보낸 HTML 파일이 함께 쓴다 -->
+  <style id="ls-slide-css">
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+    .slide-canvas {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      isolation: isolate;
+      background: #ffffff;
+      color: #1f2937;
+      font-family: 'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
+      font-size: 40px;
+      line-height: 1.35;
+      word-break: keep-all;
+      text-align: left;
+    }
+
+    .slide-canvas .draggable-box { position: absolute; box-sizing: border-box; }
+    .slide-canvas h1, .slide-canvas h2, .slide-canvas h3, .slide-canvas h4, .slide-canvas p, .slide-canvas ul, .slide-canvas ol { margin: 0; }
+    .slide-canvas ul, .slide-canvas ol { padding-left: 1.2em; }
+    .slide-canvas img { max-width: 100%; display: block; }
+
+    /* 모션 (위치는 translate/scale 속성만 써서 요소의 transform과 겹치지 않게 한다) */
+    .anim-fade { animation: ls-fade 0.8s ease both; }
+    .anim-fade-up { animation: ls-fade-up 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+    .anim-fade-left { animation: ls-fade-left 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+    .anim-fade-right { animation: ls-fade-right 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+    .anim-zoom { animation: ls-zoom 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+    .anim-pop { animation: ls-pop 0.6s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+    .anim-float { animation: ls-float 3s ease-in-out infinite; }
+    @keyframes ls-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes ls-fade-up { from { opacity: 0; translate: 0 60px; } to { opacity: 1; translate: 0 0; } }
+    @keyframes ls-fade-left { from { opacity: 0; translate: -80px 0; } to { opacity: 1; translate: 0 0; } }
+    @keyframes ls-fade-right { from { opacity: 0; translate: 80px 0; } to { opacity: 1; translate: 0 0; } }
+    @keyframes ls-zoom { from { opacity: 0; scale: 0.8; } to { opacity: 1; scale: 1; } }
+    @keyframes ls-pop { 0% { opacity: 0; scale: 0.5; } 100% { opacity: 1; scale: 1; } }
+    @keyframes ls-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -18px; } }
+
+    /* 내보낸 파일의 보기 화면 */
+    body.ls-viewer { margin: 0; height: 100vh; overflow: hidden; background: #000; }
+    .v-host { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+    .v-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+    .v-counter { position: fixed; right: 16px; bottom: 10px; color: rgba(255, 255, 255, 0.45); font: 14px system-ui, sans-serif; }
+    .v-static * { animation: none !important; transition: none !important; }
+    body.pv-view { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: #1f2937; color: #e5e7eb; font-family: 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; }
+    .pv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; background: #111827; }
+    .pv-bar strong { margin-right: auto; font-size: 17px; }
+    .pv-bar span { font-variant-numeric: tabular-nums; padding: 0 6px; }
+    .pv-bar button { border: 1px solid #4b5563; background: #374151; color: #fff; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+    .pv-bar button.pv-primary { background: #2563eb; border-color: #2563eb; }
+    .pv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 16px; }
+    .pv-col { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+    .pv-label { font-size: 13px; color: #9ca3af; }
+    .pv-col .v-host { width: 100%; height: auto; border-radius: 8px; }
+    .pv-current { flex: 1; min-height: 0; }
+    .pv-next { aspect-ratio: 16 / 9; flex: none; }
+    .pv-text { flex: 1; min-height: 70px; overflow: auto; background: #111827; border-radius: 8px; padding: 12px; white-space: pre-wrap; font-size: 18px; line-height: 1.6; }
+    @media (max-width: 800px) { .pv-main { grid-template-columns: 1fr; overflow: auto; } .pv-current { flex: none; aspect-ratio: 16 / 9; } }
+  </style>
+
+  <style>
+    :root {
+      --nav-h: 57px;
+      --line: #e5e7eb;
+      --primary: #2563eb;
+    }
+
+    body {
+      background-color: #ffffff;
+      font-family: 'Pretendard Variable', system-ui, sans-serif;
+    }
+
+    body.in-editor { overflow: hidden; }
+
+    .page-wrap { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+    /* ---------- 첫 화면 ---------- */
+    .recent-card { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+    .recent-card:hover, .recent-card:focus-visible { transform: translateY(-2px); box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12) !important; }
+    .mini-host { position: relative; overflow: hidden; aspect-ratio: 16 / 9; background: #f1f5f9; }
+    .mini-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; pointer-events: none; }
+    .mini-canvas * { animation: none !important; transition: none !important; }
+
+    /* ---------- 편집 화면 (PPT 배치) ---------- */
+    #editor-view { height: calc(100dvh - var(--nav-h)); display: flex; flex-direction: column; background: #f3f4f6; }
+    .ribbon { background: #fff; border-bottom: 1px solid var(--line); padding: 0.35rem 0.75rem; }
+    .ribbon .tool-group { display: flex; align-items: center; gap: 0.25rem; padding-right: 0.6rem; margin-right: 0.35rem; border-right: 1px solid var(--line); }
+    .ribbon .tool-group:last-child { border-right: 0; }
+    .ribbon .group-label { font-size: 0.75rem; color: #6b7280; margin-right: 0.15rem; }
+    .ribbon .form-control-color { width: 2.2rem; height: 1.9rem; padding: 0.15rem; }
+    #deck-title { width: min(320px, 40vw); font-weight: 600; }
+    .editor-body { flex: 1; min-height: 0; display: flex; position: relative; }
+
+    .slide-rail { width: 200px; flex: none; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+    #thumb-list { flex: 1; overflow-y: auto; padding: 0.6rem 0.6rem 0.6rem 0.25rem; }
+    .thumb-item { display: flex; gap: 0.35rem; margin-bottom: 0.7rem; cursor: pointer; }
+    .thumb-item .num { width: 1.4rem; flex: none; font-size: 0.75rem; color: #6b7280; text-align: right; }
+    .thumb-item .mini-host { flex: 1; border-radius: 4px; outline: 1px solid var(--line); }
+    .thumb-item.active .mini-host { outline: 3px solid var(--primary); }
+
+    .work-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .stage-host { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+    .stage-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15); }
+    .notes-pane { flex: none; background: #fff; border-top: 1px solid var(--line); padding: 0.5rem 0.75rem; }
+    .notes-pane textarea { resize: none; height: 88px; }
+
+    .ai-panel { width: 360px; flex: none; background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+    .ai-panel.collapsed { display: none; }
+    .ai-log { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .ai-msg { max-width: 92%; padding: 0.5rem 0.75rem; border-radius: 0.75rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
+    .ai-msg.ai { background: #f3f4f6; align-self: flex-start; }
+    .ai-msg.user { background: #dbeafe; align-self: flex-end; }
+    .ai-msg.error { background: #fee2e2; color: #991b1b; }
+
+    @media (max-width: 1199.98px) {
+      .ai-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; width: min(92vw, 360px); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); }
+    }
+    @media (max-width: 767.98px) {
+      .slide-rail { width: 110px; }
+      .notes-pane textarea { height: 60px; }
+    }
+
+    /* ---------- 편집 모드 ---------- */
+    body.edit-mode #slide-canvas * {
+      animation-play-state: paused !important;
+      transition: none !important;
+    }
+    /* 지연 등장으로 숨겨진 요소는 제자리에 보이게 한다 */
+    body.edit-mode #slide-canvas [class*="anim-"] {
+      animation-name: none !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
+    #slide-canvas { user-select: none; }
+    #slide-canvas .draggable-box { cursor: move; }
+    #slide-canvas .draggable-box:hover { outline: 2px dashed rgba(37, 99, 235, 0.6); outline-offset: 4px; }
+    #slide-canvas .draggable-box.is-selected { outline: 4px solid var(--primary); outline-offset: 4px; }
+    #slide-canvas .draggable-box.is-editing { cursor: text; user-select: text; outline: 4px dashed var(--primary); }
+    #slide-canvas img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
+    .ls-handle { position: absolute; right: -18px; bottom: -18px; width: 30px; height: 30px; background: #fff; border: 5px solid var(--primary); border-radius: 6px; cursor: nwse-resize; }
+
+    /* ---------- 발표 모드 ---------- */
+    #show-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; }
+    body.presentation-mode #show-overlay { display: block; }
+    #show-scaler { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+    .show-counter { position: absolute; right: 16px; bottom: 10px; color: rgba(255, 255, 255, 0.45); font-size: 0.85rem; }
+    .show-exit { position: absolute; top: 10px; right: 10px; opacity: 0.25; z-index: 1; }
+    .show-exit:hover { opacity: 1; }
+
+    /* ---------- 떠 있는 서식 도구 ---------- */
+    #float-toolbar { position: fixed; z-index: 1500; display: none; align-items: center; gap: 0.2rem; padding: 0.25rem; background: #fff; border: 1px solid var(--line); border-radius: 0.5rem; }
+    #float-toolbar .form-control-color { width: 2rem; height: 1.8rem; padding: 0.1rem; }
+    #fmt-size { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; }
+
+    #toast-area { position: fixed; right: 1rem; bottom: 1rem; z-index: 2100; display: flex; flex-direction: column; gap: 0.5rem; }
+  </style>
+</head>
+
+<body class="edit-mode">
+  <!-- 상단 네비게이션바 (업무자동화 전용) -->
+  <script src="../../../js/navbar.js"></script>
+
+  <main id="app">
+    <!-- ========== 첫 화면 ========== -->
+    <section id="home-view" class="page-wrap d-none">
+      <header class="text-center mb-4">
+        <h1 class="fw-bold text-primary mt-2">
+          <i class="bi bi-easel2"></i> HTML 슬라이드 편집 도구
+        </h1>
+        <p class="text-muted fs-6">
+          PPT처럼 슬라이드를 직접 고치고, 오른쪽 AI 창에 주제를 적으면 Gemini가 모션이 들어간 슬라이드를 만들어 줍니다.
+        </p>
+        <div class="d-flex flex-wrap justify-content-center gap-2">
+          <button type="button" class="btn btn-primary" id="btn-new-deck"><i class="bi bi-plus-lg"></i> 새 프레젠테이션</button>
+          <button type="button" class="btn btn-outline-primary" data-act="import"><i class="bi bi-folder2-open"></i> 파일 불러오기</button>
+          <button type="button" class="btn btn-outline-secondary" data-act="settings"><i class="bi bi-robot"></i> AI 설정</button>
+        </div>
+      </header>
+
+      <section>
+        <h2 class="h6 fw-bold text-muted mb-3"><i class="bi bi-clock-history"></i> 최근 편집 <span class="fw-normal" id="recent-count"></span></h2>
+        <p class="text-muted text-center py-5 border rounded-3 d-none" id="recent-empty">
+          아직 편집한 슬라이드가 없습니다. [새 프레젠테이션]으로 시작하거나 내보낸 HTML 파일을 불러오세요.
+        </p>
+        <div id="recent-grid" class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3"></div>
+      </section>
+
+      <footer class="mt-5 pt-3 border-top d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <p class="small text-muted mb-0"><i class="bi bi-info-circle"></i> 작업 내용은 고칠 때마다 이 브라우저(IndexedDB)에 자동 저장됩니다. 중요한 자료는 HTML로 내보내 두세요.</p>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-clear-recent"><i class="bi bi-trash3"></i> 최근 편집 목록 모두 지우기</button>
+      </footer>
+    </section>
+
+    <!-- ========== 편집 화면 ========== -->
+    <section id="editor-view" class="d-none" aria-label="슬라이드 편집기">
+      <header class="ribbon">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <button type="button" class="btn btn-sm btn-light" id="btn-home" title="목록으로"><i class="bi bi-house"></i></button>
+          <input type="text" class="form-control form-control-sm" id="deck-title" aria-label="프레젠테이션 제목" maxlength="80">
+          <span class="small text-muted" id="save-status"></span>
+          <div class="ms-auto d-flex flex-wrap align-items-center gap-1">
+            <button type="button" class="btn btn-sm btn-light" id="btn-undo" title="되돌리기 (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
+            <button type="button" class="btn btn-sm btn-light" id="btn-redo" title="다시 실행 (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="import"><i class="bi bi-folder2-open"></i> 불러오기</button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download"></i> HTML 내보내기</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><button type="button" class="dropdown-item" data-export="presenter"><i class="bi bi-person-video3"></i> 발표자 보기 (시나리오·메모 포함)</button></li>
+                <li><button type="button" class="dropdown-item" data-export="audience"><i class="bi bi-display"></i> 청중 화면만</button></li>
+              </ul>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-mode" title="발표 모드 / 편집 모드 전환 (Ctrl+E)"><i class="bi bi-play-btn"></i> 발표 모드 <kbd class="small">Ctrl+E</kbd></button>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-ai"><i class="bi bi-stars"></i> AI 슬라이드 생성</button>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <div class="tool-group">
+            <span class="group-label">삽입</span>
+            <button type="button" class="btn btn-sm btn-light" data-insert="text"><i class="bi bi-fonts"></i> 텍스트 상자</button>
+            <button type="button" class="btn btn-sm btn-light" data-insert="rect" title="사각형"><i class="bi bi-square"></i></button>
+            <button type="button" class="btn btn-sm btn-light" data-insert="circle" title="원"><i class="bi bi-circle"></i></button>
+            <button type="button" class="btn btn-sm btn-light" data-insert="image"><i class="bi bi-image"></i> 그림</button>
+          </div>
+          <div class="tool-group">
+            <span class="group-label">개체</span>
+            <button type="button" class="btn btn-sm btn-light" data-box="front" data-needs-box title="맨 앞으로"><i class="bi bi-front"></i></button>
+            <button type="button" class="btn btn-sm btn-light" data-box="back" data-needs-box title="맨 뒤로"><i class="bi bi-back"></i></button>
+            <button type="button" class="btn btn-sm btn-light" data-box="copy" data-needs-box title="복제 (Ctrl+D)"><i class="bi bi-copy"></i></button>
+            <button type="button" class="btn btn-sm btn-light text-danger" data-box="delete" data-needs-box title="삭제 (Delete)"><i class="bi bi-trash3"></i></button>
+            <span class="group-label ms-1">채우기</span>
+            <input type="color" class="form-control form-control-color" id="fill-color" value="#93c5fd" data-needs-box title="선택한 개체 채우기 색">
+          </div>
+          <div class="tool-group">
+            <span class="group-label">애니메이션</span>
+            <select class="form-select form-select-sm w-auto" id="anim-select" data-needs-box aria-label="애니메이션"></select>
+            <select class="form-select form-select-sm w-auto" id="anim-delay" data-needs-box aria-label="지연 시간">
+              <option value="0">바로</option><option value="0.2">0.2초 뒤</option><option value="0.4">0.4초 뒤</option>
+              <option value="0.6">0.6초 뒤</option><option value="0.8">0.8초 뒤</option><option value="1">1초 뒤</option>
+              <option value="1.5">1.5초 뒤</option><option value="2">2초 뒤</option>
+            </select>
+          </div>
+          <div class="tool-group">
+            <span class="group-label">배경</span>
+            <input type="color" class="form-control form-control-color" id="bg-color" value="#ffffff" title="슬라이드 배경색">
+          </div>
+          <span class="small text-muted d-none d-xl-inline">더블클릭: 글자 수정 · 끌기: 이동 · 모서리: 크기</span>
+        </div>
+      </header>
+
+      <div class="editor-body">
+        <aside class="slide-rail" aria-label="슬라이드 목록">
+          <div class="d-flex flex-wrap gap-1 p-2 border-bottom">
+            <button type="button" class="btn btn-sm btn-primary flex-grow-1" data-slide="add" title="새 슬라이드"><i class="bi bi-plus-lg"></i> 새 슬라이드</button>
+            <button type="button" class="btn btn-sm btn-light" data-slide="copy" title="슬라이드 복제"><i class="bi bi-copy"></i></button>
+            <button type="button" class="btn btn-sm btn-light" data-slide="up" title="위로"><i class="bi bi-arrow-up"></i></button>
+            <button type="button" class="btn btn-sm btn-light" data-slide="down" title="아래로"><i class="bi bi-arrow-down"></i></button>
+            <button type="button" class="btn btn-sm btn-light text-danger" data-slide="delete" title="슬라이드 삭제"><i class="bi bi-trash3"></i></button>
+          </div>
+          <div id="thumb-list"></div>
+          <div class="small text-muted text-center border-top py-1" id="slide-counter"></div>
+        </aside>
+
+        <section class="work-area">
+          <div class="stage-host" id="stage-host">
+            <div class="stage-scaler" id="stage-scaler">
+              <div class="slide-canvas" id="slide-canvas"></div>
+            </div>
+          </div>
+          <div class="notes-pane">
+            <div class="row g-2">
+              <div class="col-md-7">
+                <label class="form-label small fw-semibold mb-1" for="notes-input"><i class="bi bi-chat-square-text"></i> 발표 시나리오</label>
+                <textarea class="form-control form-control-sm" id="notes-input" placeholder="이 장에서 말할 내용을 적어 두세요. 발표자 보기에서만 보입니다."></textarea>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label small fw-semibold mb-1" for="memo-input"><i class="bi bi-sticky"></i> 메모</label>
+                <textarea class="form-control form-control-sm" id="memo-input" placeholder="준비물, 예상 질문 등"></textarea>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="ai-panel" id="ai-panel" aria-label="AI 슬라이드 생성">
+          <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+            <i class="bi bi-stars text-primary"></i>
+            <strong class="me-auto">AI 슬라이드 생성</strong>
+            <button type="button" class="btn btn-sm btn-light" data-act="settings" title="AI 설정"><i class="bi bi-gear"></i></button>
+            <button type="button" class="btn btn-sm btn-light" id="ai-close" title="AI 창 닫기"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="alert alert-warning small m-2 mb-0 d-none" id="ai-nokey">
+            Gemini API 키가 필요합니다.
+            <button type="button" class="btn btn-sm btn-warning ms-1" data-act="settings">AI 설정</button>
+          </div>
+          <div class="ai-log" id="ai-log">
+            <div class="ai-msg ai">발표 주제와 개요를 적어 보내면 슬라이드를 만들어 현재 장 뒤에 추가합니다. 여러 장이 필요하면 [여러 장 생성]을 켜세요.</div>
+          </div>
+          <div class="border-top p-2">
+            <textarea class="form-control form-control-sm mb-2" id="ai-prompt" rows="4"
+              placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
+            <div class="d-flex align-items-center flex-wrap gap-2 small mb-2">
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="ai-multi">
+                <label class="form-check-label" for="ai-multi">여러 장 생성</label>
+              </div>
+              <div class="input-group input-group-sm d-none" id="ai-count-wrap" style="width: 110px;">
+                <input type="number" class="form-control" id="ai-count" min="2" max="20" value="5" aria-label="만들 장 수">
+                <span class="input-group-text">장</span>
+              </div>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> 생성 <span class="opacity-75">Ctrl+Enter</span></button>
+              <button type="button" class="btn btn-outline-danger btn-sm d-none" id="ai-stop"><i class="bi bi-stop-circle"></i> 중단</button>
+            </div>
+            <p class="small text-muted mt-2 mb-0">요청 내용은 Google Gemini API로 전송됩니다. 개인정보는 적지 마세요.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- 발표 모드 화면 -->
+  <div id="show-overlay" aria-label="발표 화면">
+    <button type="button" class="btn btn-sm btn-light show-exit" id="show-exit">편집 모드로 (Esc)</button>
+    <div id="show-scaler"><div class="slide-canvas" id="show-canvas"></div></div>
+    <div class="show-counter" id="show-counter"></div>
+  </div>
+
+  <!-- 떠 있는 서식 도구 -->
+  <div id="float-toolbar" class="shadow" role="toolbar" aria-label="글자 서식">
+    <button type="button" class="btn btn-sm btn-light" data-fmt="bold" title="굵게"><i class="bi bi-type-bold"></i></button>
+    <button type="button" class="btn btn-sm btn-light" data-fmt="smaller" title="글자 작게"><i class="bi bi-dash-lg"></i></button>
+    <span class="small" id="fmt-size">40px</span>
+    <button type="button" class="btn btn-sm btn-light" data-fmt="bigger" title="글자 크게"><i class="bi bi-plus-lg"></i></button>
+    <input type="color" class="form-control form-control-color" id="fmt-color" value="#1f2937" title="글자 색">
+  </div>
+
+  <!-- AI 설정 모달 -->
+  <div class="modal fade" id="settings-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5">Gemini AI 설정</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="set-key">Gemini API 키</label>
+            <input type="password" class="form-control" id="set-key" autocomplete="off" spellcheck="false" placeholder="AI Studio에서 발급받은 키">
+            <div class="form-check mt-2 small">
+              <input class="form-check-input" type="checkbox" id="set-remember">
+              <label class="form-check-label" for="set-remember">Gemini API Key를 이 기기(브라우저)에 저장하기</label>
+            </div>
+            <p class="form-text mb-0">
+              체크 시 로컬 스토리지에 보관되며, 해제 시 저장된 키 정보가 삭제됩니다(이 탭을 닫기 전까지만 사용).
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="fw-semibold ms-1">API 키 발급</a>
+            </p>
+          </div>
+          <div>
+            <label class="form-label small fw-semibold" for="set-model">모델 이름</label>
+            <input type="text" class="form-control" id="set-model" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button type="button" class="btn btn-primary" id="set-save">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 확인 모달 -->
+  <div class="modal fade" id="confirm-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-body" id="confirm-message"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button type="button" class="btn btn-primary" id="confirm-ok">확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-area" aria-live="polite"></div>
+  <input type="file" class="d-none" id="file-import" accept=".html,.htm,text/html">
+  <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp">
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ===== 1. 상수 ===== */
+      const CANVAS_W = 1920;
+      const CANVAS_H = 1080;
+      const DEFAULT_MODEL = 'gemini-3.5-flash';
+      const DEFAULT_TITLE = '제목 없는 프레젠테이션';
+      const AI_BATCH = 4; // 여러 장 생성 시 한 번에 요청하는 장 수(응답 시간이 길어지지 않게)
+      const ANIMATIONS = {
+        '': '없음',
+        'anim-fade': '서서히 나타나기',
+        'anim-fade-up': '아래에서 올라오기',
+        'anim-fade-left': '왼쪽에서 들어오기',
+        'anim-fade-right': '오른쪽에서 들어오기',
+        'anim-zoom': '확대되며 나타나기',
+        'anim-pop': '튀어나오기',
+        'anim-float': '둥실둥실 (반복)'
+      };
+      const ALLOWED_CLASSES = new Set(['draggable-box'].concat(Object.keys(ANIMATIONS).filter(Boolean)));
+
+      const $ = id => document.getElementById(id);
+
+      /* ===== 2. 공용 도구 ===== */
+      const Util = {
+        uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); },
+
+        debounce(fn, ms) {
+          let timer = null;
+          return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+        },
+
+        sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); },
+
+        escapeHtml(text) {
+          return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        },
+
+        formatTime(iso) {
+          const date = new Date(iso);
+          if (isNaN(date)) return '';
+          return date.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        },
+
+        toHex(color, fallback) {
+          const value = String(color || '').trim();
+          if (/^#[0-9a-f]{6}$/i.test(value)) return value.toLowerCase();
+          if (/^#[0-9a-f]{3}$/i.test(value)) return '#' + value.slice(1).split('').map(c => c + c).join('').toLowerCase();
+          const m = value.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?/i);
+          if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return fallback;
+          return '#' + [m[1], m[2], m[3]].map(n => Math.min(255, parseInt(n, 10)).toString(16).padStart(2, '0')).join('');
+        },
+
+        safeFileName(name) {
+          return String(name || '').replace(/[\\/:*?"<>|]+/g, '_').trim().slice(0, 60) || 'slides';
+        },
+
+        download(filename, text) {
+          const url = URL.createObjectURL(new Blob([text], { type: 'text/html;charset=utf-8' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        },
+
+        toast(message, tone) {
+          const el = document.createElement('div');
+          el.className = 'toast align-items-center border-0 text-bg-' + (tone || 'dark');
+          el.setAttribute('role', 'status');
+          const row = document.createElement('div');
+          row.className = 'd-flex';
+          const body = document.createElement('div');
+          body.className = 'toast-body';
+          body.style.whiteSpace = 'pre-wrap';
+          body.textContent = message;
+          const close = document.createElement('button');
+          close.type = 'button';
+          close.className = 'btn-close btn-close-white me-2 m-auto';
+          close.setAttribute('data-bs-dismiss', 'toast');
+          close.setAttribute('aria-label', '닫기');
+          row.append(body, close);
+          el.append(row);
+          $('toast-area').append(el);
+          el.addEventListener('hidden.bs.toast', () => el.remove());
+          new bootstrap.Toast(el, { delay: 4000 }).show();
+        },
+
+        confirm(message, okText, danger) {
+          return new Promise(resolve => {
+            const el = $('confirm-modal');
+            const ok = $('confirm-ok');
+            $('confirm-message').textContent = message;
+            ok.textContent = okText || '확인';
+            ok.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+            let result = false;
+            const modal = bootstrap.Modal.getOrCreateInstance(el);
+            const onOk = () => { result = true; modal.hide(); };
+            ok.addEventListener('click', onOk, { once: true });
+            el.addEventListener('hidden.bs.modal', () => {
+              ok.removeEventListener('click', onOk);
+              resolve(result);
+            }, { once: true });
+            modal.show();
+          });
+        }
+      };
+
+      /* ===== 3. 슬라이드 HTML 정리 (AI 응답·불러온 파일은 반드시 이 길을 거친다) ===== */
+      const Sanitizer = {
+        ready: false,
+
+        setup() {
+          if (Sanitizer.ready) return;
+          Sanitizer.ready = true;
+          DOMPurify.addHook('afterSanitizeAttributes', node => {
+            if (!node.getAttribute) return;
+            const style = node.getAttribute('style');
+            if (style) {
+              // 외부 주소를 부르는 배경 그림은 막고, 넣어 둔 그림(data:image)만 허용한다.
+              node.setAttribute('style', style.replace(/url\(([^)]*)\)/gi,
+                (match, inner) => (/^\s*['"]?data:image\//i.test(inner) ? match : 'none')));
+            }
+            if (node.tagName === 'IMG') {
+              if (!/^data:image\/(png|jpe?g|gif|webp);/i.test(node.getAttribute('src') || '')) node.removeAttribute('src');
+              node.setAttribute('draggable', 'false');
+            }
+            const classes = node.getAttribute('class');
+            if (classes !== null) {
+              const keep = classes.split(/\s+/).filter(name => ALLOWED_CLASSES.has(name));
+              if (keep.length) node.setAttribute('class', keep.join(' '));
+              else node.removeAttribute('class');
+            }
+          });
+        },
+
+        clean(html) {
+          Sanitizer.setup();
+          return DOMPurify.sanitize(String(html || ''), {
+            USE_PROFILES: { html: true, svg: true },
+            FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'iframe', 'object',
+              'embed', 'link', 'meta', 'video', 'audio', 'source', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
+            FORBID_ATTR: ['id', 'name', 'contenteditable', 'tabindex', 'srcset', 'href', 'xlink:href', 'action', 'formaction'],
+            ALLOW_DATA_ATTR: false
+          });
+        },
+
+        // 정리한 뒤 최상위 요소마다 draggable-box와 좌표를 갖추게 한다.
+        slide(html) {
+          const host = document.createElement('div');
+          host.innerHTML = Sanitizer.clean(html);
+          let nextTop = 80;
+          Array.from(host.childNodes).forEach(node => {
+            let el = node;
+            if (node.nodeType === Node.TEXT_NODE) {
+              if (!node.textContent.trim()) { node.remove(); return; }
+              el = document.createElement('div');
+              el.textContent = node.textContent.trim();
+              node.replaceWith(el);
+            } else if (node.nodeType !== Node.ELEMENT_NODE) {
+              node.remove();
+              return;
+            }
+            el.classList.add('draggable-box');
+            el.style.position = '';
+            if (!el.style.left && !el.style.right) el.style.left = '120px';
+            if (!el.style.top && !el.style.bottom) { el.style.top = nextTop + 'px'; nextTop += 160; }
+          });
+          return host.innerHTML;
+        },
+
+        background(value) {
+          const bg = String(value || '').trim();
+          if (!bg || bg.length > 400 || /url\s*\(|expression|[;{}<>\\]/i.test(bg)) return '#ffffff';
+          return (window.CSS && CSS.supports && !CSS.supports('background', bg)) ? '#ffffff' : bg;
+        }
+      };
+
+      /* ===== 4. IndexedDB 저장소 ===== */
+      const DeckStore = {
+        db: null,
+
+        open() {
+          if (DeckStore.db) return Promise.resolve(DeckStore.db);
+          return new Promise((resolve, reject) => {
+            const request = indexedDB.open('htmlSlideStudio', 1);
+            request.onupgradeneeded = () => {
+              const db = request.result;
+              if (!db.objectStoreNames.contains('decks')) db.createObjectStore('decks', { keyPath: 'id' });
+            };
+            request.onsuccess = () => { DeckStore.db = request.result; resolve(request.result); };
+            request.onerror = () => reject(request.error);
+          });
+        },
+
+        async run(mode, action) {
+          const db = await DeckStore.open();
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction('decks', mode);
+            const request = action(tx.objectStore('decks'));
+            tx.oncomplete = () => resolve(request ? request.result : undefined);
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+          });
+        },
+
+        all() { return DeckStore.run('readonly', store => store.getAll()); },
+        get(id) { return DeckStore.run('readonly', store => store.get(id)); },
+        put(deck) { return DeckStore.run('readwrite', store => store.put(deck)); },
+        remove(id) { return DeckStore.run('readwrite', store => store.delete(id)); },
+        clear() { return DeckStore.run('readwrite', store => store.clear()); }
+      };
+
+      /* ===== 5. AI 설정 ===== */
+      const Settings = {
+        KEY: 'lessonStudio.geminiApiKey',
+        SESSION_KEY: 'lessonStudio.geminiApiKey.session',
+        MODEL: 'lessonStudio.geminiModel',
+
+        read(storage, key) {
+          try { return storage.getItem(key) || ''; } catch (err) { return ''; }
+        },
+
+        apiKey() { return Settings.read(localStorage, Settings.KEY) || Settings.read(sessionStorage, Settings.SESSION_KEY); },
+        remembered() { return !!Settings.read(localStorage, Settings.KEY); },
+        model() { return Settings.read(localStorage, Settings.MODEL) || DEFAULT_MODEL; },
+
+        save(key, remember, model) {
+          try {
+            if (remember && key) {
+              localStorage.setItem(Settings.KEY, key);
+              sessionStorage.removeItem(Settings.SESSION_KEY);
+            } else {
+              localStorage.removeItem(Settings.KEY);
+              if (key) sessionStorage.setItem(Settings.SESSION_KEY, key);
+              else sessionStorage.removeItem(Settings.SESSION_KEY);
+            }
+            localStorage.setItem(Settings.MODEL, model || DEFAULT_MODEL);
+            return true;
+          } catch (err) {
+            Util.toast('이 브라우저에서는 설정을 저장할 수 없습니다.', 'warning');
+            return false;
+          }
+        }
+      };
+
+      const SettingsModal = {
+        open() {
+          $('set-key').value = Settings.apiKey();
+          $('set-remember').checked = Settings.remembered();
+          $('set-model').value = Settings.model();
+          bootstrap.Modal.getOrCreateInstance($('settings-modal')).show();
+        },
+
+        save() {
+          const key = $('set-key').value.trim();
+          const remember = $('set-remember').checked;
+          if (!Settings.save(key, remember, $('set-model').value.trim())) return;
+          bootstrap.Modal.getOrCreateInstance($('settings-modal')).hide();
+          Util.toast(remember || !key ? 'AI 설정을 저장했습니다.' : 'AI 설정을 이 탭에만 적용했습니다. (브라우저 미저장)', 'success');
+          AiPanel.syncKey();
+        }
+      };
+
+      /* ===== 6. 16:9 무대 맞추기 ===== */
+      function fitStage(host, scaler, padding) {
+        const width = host.clientWidth - padding * 2;
+        const height = host.clientHeight - padding * 2;
+        if (width <= 0 || height <= 0) return 0;
+        const scale = Math.min(width / CANVAS_W, height / CANVAS_H);
+        scaler.style.transform = 'scale(' + scale + ')';
+        scaler.style.left = (host.clientWidth - CANVAS_W * scale) / 2 + 'px';
+        scaler.style.top = (host.clientHeight - CANVAS_H * scale) / 2 + 'px';
+        return scale;
+      }
+
+      // 작은 미리보기(목록 카드·슬라이드 목록)
+      const Mini = {
+        observer: new ResizeObserver(entries => entries.forEach(entry => Mini.fit(entry.target))),
+
+        mount(host, slide) {
+          host.textContent = '';
+          const scaler = document.createElement('div');
+          scaler.className = 'mini-scaler';
+          const canvas = document.createElement('div');
+          canvas.className = 'slide-canvas mini-canvas';
+          canvas.innerHTML = slide ? slide.html : '';
+          canvas.style.background = slide ? slide.bg : '#ffffff';
+          scaler.append(canvas);
+          host.append(scaler);
+          Mini.fit(host);
+          Mini.observer.observe(host);
+        },
+
+        fit(host) {
+          const scaler = host.firstElementChild;
+          if (scaler) scaler.style.transform = 'scale(' + host.clientWidth / CANVAS_W + ')';
+        },
+
+        releaseAll(root) { root.querySelectorAll('.mini-host').forEach(host => Mini.observer.unobserve(host)); }
+      };
+
+      /* ===== 7. 첫 화면 (최근 편집 목록) ===== */
+      const Home = {
+        async show() {
+          $('editor-view').classList.add('d-none');
+          $('home-view').classList.remove('d-none');
+          document.body.classList.remove('in-editor');
+          document.title = 'HTML 슬라이드 편집 도구';
+          await Home.draw();
+        },
+
+        async draw() {
+          const grid = $('recent-grid');
+          Mini.releaseAll(grid);
+          grid.textContent = '';
+          let decks = [];
+          try {
+            decks = await DeckStore.all();
+          } catch (err) {
+            Util.toast('브라우저 저장소(IndexedDB)를 열 수 없습니다. 시크릿 창이면 일반 창에서 열어 주세요.', 'danger');
+          }
+          decks.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+          $('recent-empty').classList.toggle('d-none', decks.length > 0);
+          $('recent-count').textContent = decks.length ? '(' + decks.length + '개)' : '';
+          $('btn-clear-recent').disabled = !decks.length;
+          decks.forEach(deck => grid.append(Home.card(deck)));
+        },
+
+        card(deck) {
+          const col = document.createElement('div');
+          col.className = 'col';
+          const card = document.createElement('article');
+          card.className = 'card h-100 shadow-sm recent-card';
+          card.tabIndex = 0;
+
+          const thumb = document.createElement('div');
+          thumb.className = 'mini-host card-img-top';
+          const body = document.createElement('div');
+          body.className = 'card-body p-2 d-flex align-items-start gap-2';
+          const text = document.createElement('div');
+          text.className = 'flex-grow-1 min-w-0';
+          text.style.minWidth = '0';
+          const title = document.createElement('h3');
+          title.className = 'h6 mb-1 text-truncate';
+          title.textContent = deck.title || DEFAULT_TITLE;
+          const meta = document.createElement('div');
+          meta.className = 'small text-muted';
+          meta.textContent = (deck.slides || []).length + '장 · ' + Util.formatTime(deck.updatedAt) + ' 수정';
+          text.append(title, meta);
+
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'btn btn-sm btn-light text-danger';
+          remove.title = '삭제';
+          remove.setAttribute('aria-label', '삭제');
+          remove.innerHTML = '<i class="bi bi-trash3"></i>';
+          remove.addEventListener('click', async event => {
+            event.stopPropagation();
+            if (!await Util.confirm('"' + (deck.title || DEFAULT_TITLE) + '"을(를) 삭제할까요? 되돌릴 수 없습니다.', '삭제', true)) return;
+            await DeckStore.remove(deck.id);
+            Home.draw();
+          });
+
+          body.append(text, remove);
+          card.append(thumb, body);
+          col.append(card);
+          Mini.mount(thumb, (deck.slides || [])[0]);
+
+          const open = () => { location.hash = '#/edit/' + deck.id; };
+          card.addEventListener('click', open);
+          card.addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+          return col;
+        },
+
+        async clearAll() {
+          if (!await Util.confirm('최근 편집 목록의 슬라이드를 모두 지울까요?\n이 브라우저에 저장된 작업이 전부 삭제되며 되돌릴 수 없습니다. 필요한 것은 먼저 HTML로 내보내 두세요.', '모두 지우기', true)) return;
+          await DeckStore.clear();
+          Util.toast('최근 편집 목록을 모두 지웠습니다.', 'success');
+          Home.draw();
+        },
+
+        async createDeck() {
+          const now = new Date().toISOString();
+          const first = Editor.newSlide('title');
+          first.pristine = true;
+          const deck = { id: Util.uid(), title: DEFAULT_TITLE, createdAt: now, updatedAt: now, slides: [first] };
+          await DeckStore.put(deck);
+          location.hash = '#/edit/' + deck.id;
+        }
+      };
+
+      /* ===== 8. 편집기 ===== */
+      const TEMPLATES = {
+        title:
+          '<div class="draggable-box" style="left:160px;top:380px;width:1600px;font-size:96px;font-weight:800;text-align:center;">제목을 입력하세요</div>' +
+          '<div class="draggable-box" style="left:360px;top:560px;width:1200px;font-size:44px;color:#6b7280;text-align:center;">부제목을 입력하세요</div>',
+        content:
+          '<div class="draggable-box" style="left:120px;top:90px;width:1680px;font-size:72px;font-weight:800;">제목을 입력하세요</div>' +
+          '<div class="draggable-box" style="left:120px;top:260px;width:1680px;font-size:44px;line-height:1.6;">• 내용을 입력하세요</div>'
+      };
+
+      const Editor = {
+        deck: null,
+        index: 0,
+        scale: 1,
+        selected: null,
+        editing: null,
+        undoStack: [],
+        redoStack: [],
+        lastSnap: '',
+        saveTimer: null,
+
+        newSlide(kind) {
+          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', bg: '#ffffff', notes: '', memo: '', pristine: false };
+        },
+
+        normalizeSlide(slide) {
+          return {
+            id: slide.id || Util.uid(),
+            title: String(slide.title || '').slice(0, 120),
+            html: Sanitizer.slide(slide.html),
+            bg: Sanitizer.background(slide.bg),
+            notes: String(slide.notes || ''),
+            memo: String(slide.memo || ''),
+            pristine: !!slide.pristine
+          };
+        },
+
+        current() { return Editor.deck.slides[Editor.index]; },
+        snapshot() { return JSON.stringify(Editor.deck.slides); },
+
+        async open(id) {
+          let deck = null;
+          try { deck = await DeckStore.get(id); } catch (err) { /* 아래에서 안내 */ }
+          if (!deck) {
+            Util.toast('슬라이드를 찾을 수 없습니다.', 'warning');
+            location.hash = '#/';
+            return;
+          }
+          deck.slides = (deck.slides || []).map(Editor.normalizeSlide);
+          if (!deck.slides.length) deck.slides.push(Editor.newSlide('title'));
+          deck.title = deck.title || DEFAULT_TITLE;
+
+          Editor.deck = deck;
+          Editor.index = 0;
+          Editor.undoStack = [];
+          Editor.redoStack = [];
+          Editor.lastSnap = Editor.snapshot();
+
+          $('home-view').classList.add('d-none');
+          $('editor-view').classList.remove('d-none');
+          document.body.classList.add('in-editor');
+          if (window.innerWidth < 1200) $('ai-panel').classList.add('collapsed');
+          $('deck-title').value = deck.title;
+          document.title = deck.title + ' - HTML 슬라이드 편집 도구';
+          Editor.renderRail();
+          Editor.renderCanvas();
+          Editor.fit();
+          Editor.updateHistoryButtons();
+          Editor.setStatus('자동 저장됨');
+          AiPanel.syncKey();
+        },
+
+        async leave() {
+          if (!Editor.deck) return;
+          AiPanel.abort();
+          if (document.body.classList.contains('presentation-mode')) Show.exit();
+          Editor.deselect();
+          Editor.syncCurrent();
+          await Editor.saveNow();
+          Mini.releaseAll($('thumb-list'));
+          Editor.deck = null;
+        },
+
+        fit() {
+          const scale = fitStage($('stage-host'), $('stage-scaler'), 24);
+          if (scale) Editor.scale = scale;
+        },
+
+        setStatus(text) { $('save-status').textContent = text; },
+
+        /* --- 화면 그리기 --- */
+        renderRail() {
+          const list = $('thumb-list');
+          Mini.releaseAll(list);
+          list.textContent = '';
+          Editor.deck.slides.forEach((slide, i) => {
+            const item = document.createElement('div');
+            item.className = 'thumb-item';
+            item.dataset.index = i;
+            const num = document.createElement('div');
+            num.className = 'num';
+            num.textContent = i + 1;
+            const host = document.createElement('div');
+            host.className = 'mini-host';
+            item.append(num, host);
+            list.append(item);
+            Mini.mount(host, slide);
+          });
+          Editor.markActiveThumb();
+        },
+
+        refreshThumb(i) {
+          const host = $('thumb-list').querySelector('.thumb-item[data-index="' + i + '"] .mini-host');
+          if (host && Editor.deck.slides[i]) Mini.mount(host, Editor.deck.slides[i]);
+        },
+
+        markActiveThumb() {
+          $('thumb-list').querySelectorAll('.thumb-item').forEach(item => {
+            const active = Number(item.dataset.index) === Editor.index;
+            item.classList.toggle('active', active);
+            if (active) item.scrollIntoView({ block: 'nearest' });
+          });
+          $('slide-counter').textContent = (Editor.index + 1) + ' / ' + Editor.deck.slides.length;
+        },
+
+        // 캔버스를 현재 장으로 바꾼다(선택 상태는 DOM과 함께 사라진다).
+        renderCanvas() {
+          const slide = Editor.current();
+          const canvas = $('slide-canvas');
+          Editor.selected = null;
+          Editor.editing = null;
+          FloatBar.hide();
+          canvas.innerHTML = slide.html;
+          canvas.style.background = slide.bg;
+          $('notes-input').value = slide.notes;
+          $('memo-input').value = slide.memo;
+          $('bg-color').value = Util.toHex(slide.bg, '#ffffff');
+          Editor.markActiveThumb();
+          Editor.syncBoxTools();
+        },
+
+        /* --- 저장과 되돌리기 --- */
+        canvasHtml() {
+          const clone = $('slide-canvas').cloneNode(true);
+          clone.querySelectorAll('.ls-handle').forEach(handle => handle.remove());
+          clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+          clone.querySelectorAll('.is-selected, .is-editing').forEach(el => el.classList.remove('is-selected', 'is-editing'));
+          clone.querySelectorAll('[class=""]').forEach(el => el.removeAttribute('class'));
+          return clone.innerHTML;
+        },
+
+        syncCurrent() {
+          if (!Editor.deck) return;
+          const slide = Editor.current();
+          const html = Editor.canvasHtml();
+          if (html !== slide.html) {
+            slide.html = html;
+            slide.pristine = false;
+          }
+        },
+
+        // 바뀐 내용을 되돌리기 기록에 남기고 임시 저장한다.
+        commit() {
+          if (!Editor.deck) return;
+          Editor.syncCurrent();
+          const snap = Editor.snapshot();
+          if (snap !== Editor.lastSnap) {
+            Editor.undoStack.push(Editor.lastSnap);
+            if (Editor.undoStack.length > 80) Editor.undoStack.shift();
+            Editor.lastSnap = snap;
+            Editor.redoStack = [];
+          }
+          Editor.scheduleSave();
+          Editor.refreshThumb(Editor.index);
+          Editor.updateHistoryButtons();
+        },
+
+        // 글자 입력 중: 기록은 남기지 않고 임시 저장만 한다(편집을 마칠 때 기록).
+        touch() {
+          Editor.syncCurrent();
+          Editor.scheduleSave();
+          Editor.refreshThumbSoon();
+        },
+
+        scheduleSave() {
+          Editor.setStatus('저장 중…');
+          clearTimeout(Editor.saveTimer);
+          Editor.saveTimer = setTimeout(Editor.saveNow, 500);
+        },
+
+        async saveNow() {
+          clearTimeout(Editor.saveTimer);
+          Editor.saveTimer = null;
+          const deck = Editor.deck;
+          if (!deck) return;
+          deck.updatedAt = new Date().toISOString();
+          try {
+            await DeckStore.put(deck);
+            if (Editor.deck === deck) {
+              Editor.setStatus('자동 저장됨 ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+            }
+          } catch (err) {
+            Editor.setStatus('저장 실패');
+            Util.toast('자동 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.', 'danger');
+          }
+        },
+
+        history(direction) {
+          Editor.stopEditing();
+          Editor.commit();
+          const from = direction < 0 ? Editor.undoStack : Editor.redoStack;
+          const to = direction < 0 ? Editor.redoStack : Editor.undoStack;
+          if (!from.length) return;
+          to.push(Editor.lastSnap);
+          Editor.lastSnap = from.pop();
+          Editor.deck.slides = JSON.parse(Editor.lastSnap);
+          Editor.index = Math.min(Editor.index, Editor.deck.slides.length - 1);
+          Editor.renderRail();
+          Editor.renderCanvas();
+          Editor.scheduleSave();
+          Editor.updateHistoryButtons();
+        },
+
+        updateHistoryButtons() {
+          $('btn-undo').disabled = !Editor.undoStack.length;
+          $('btn-redo').disabled = !Editor.redoStack.length;
+        },
+
+        /* --- 슬라이드 단위 작업 --- */
+        goTo(i) {
+          if (!Editor.deck || i < 0 || i >= Editor.deck.slides.length || i === Editor.index) return;
+          Editor.deselect();
+          Editor.commit();
+          Editor.index = i;
+          Editor.renderCanvas();
+        },
+
+        slideAction(action) {
+          Editor.deselect();
+          Editor.syncCurrent();
+          const slides = Editor.deck.slides;
+          const i = Editor.index;
+          if (action === 'add') {
+            slides.splice(i + 1, 0, Editor.newSlide('content'));
+            Editor.index = i + 1;
+          } else if (action === 'copy') {
+            slides.splice(i + 1, 0, Object.assign({}, slides[i], { id: Util.uid(), pristine: false }));
+            Editor.index = i + 1;
+          } else if (action === 'delete') {
+            if (slides.length === 1) { Util.toast('마지막 한 장은 지울 수 없습니다.', 'warning'); return; }
+            slides.splice(i, 1);
+            Editor.index = Math.min(i, slides.length - 1);
+          } else if (action === 'up' || action === 'down') {
+            const j = action === 'up' ? i - 1 : i + 1;
+            if (j < 0 || j >= slides.length) return;
+            [slides[i], slides[j]] = [slides[j], slides[i]];
+            Editor.index = j;
+          }
+          Editor.renderRail();
+          Editor.renderCanvas();
+          Editor.commit();
+        },
+
+        /* --- 개체 선택·편집 --- */
+        makeHandle() {
+          const handle = document.createElement('span');
+          handle.className = 'ls-handle';
+          handle.contentEditable = 'false';
+          handle.title = '크기 조절';
+          return handle;
+        },
+
+        select(box) {
+          if (Editor.selected === box) return;
+          Editor.deselect();
+          Editor.selected = box;
+          box.classList.add('is-selected');
+          if (box instanceof HTMLElement) box.append(Editor.makeHandle());
+          Editor.syncBoxTools();
+        },
+
+        deselect() {
+          Editor.stopEditing();
+          const box = Editor.selected;
+          if (box) {
+            box.classList.remove('is-selected');
+            box.querySelectorAll(':scope > .ls-handle').forEach(handle => handle.remove());
+          }
+          Editor.selected = null;
+          Editor.syncBoxTools();
+        },
+
+        startEditing(box, clientX, clientY) {
+          if (!(box instanceof HTMLElement) || Editor.editing === box) return;
+          if (box.querySelector('img') && !box.textContent.trim()) return; // 그림만 있는 상자는 글자 편집 없음
+          Editor.select(box);
+          box.querySelectorAll(':scope > .ls-handle').forEach(handle => handle.remove());
+          Editor.editing = box;
+          box.classList.add('is-editing');
+          box.contentEditable = 'true';
+          box.focus({ preventScroll: true });
+
+          let range = null;
+          if (clientX !== undefined && document.caretRangeFromPoint) {
+            range = document.caretRangeFromPoint(clientX, clientY);
+          } else if (clientX !== undefined && document.caretPositionFromPoint) {
+            const pos = document.caretPositionFromPoint(clientX, clientY);
+            if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
+          }
+          if (!range || !box.contains(range.startContainer)) {
+            range = document.createRange();
+            range.selectNodeContents(box);
+            if (clientX !== undefined) range.collapse(false);
+          }
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        },
+
+        stopEditing() {
+          const box = Editor.editing;
+          if (!box) return;
+          Editor.editing = null;
+          box.removeAttribute('contenteditable');
+          box.classList.remove('is-editing');
+          FloatBar.hide();
+          window.getSelection().removeAllRanges();
+          // 글자를 모두 지운 빈 글상자는 PPT처럼 없앤다.
+          const empty = !box.textContent.trim() && !box.querySelector('img, svg') &&
+            Util.toHex(getComputedStyle(box).backgroundColor, '') === '' && !box.style.border;
+          if (empty) {
+            box.remove();
+            if (Editor.selected === box) Editor.selected = null;
+            Editor.syncBoxTools();
+          } else if (Editor.selected === box) {
+            box.append(Editor.makeHandle());
+          }
+          Editor.commit();
+        },
+
+        // translate 가운데 맞춤이나 right/bottom 배치는 left/top 좌표로 바꿔 끌기와 맞춘다.
+        bakePosition(box) {
+          const style = box.style;
+          const needs = /translate/i.test(style.transform || '') || (!style.left && style.right) || (!style.top && style.bottom);
+          if (!needs) return;
+          const rect = box.getBoundingClientRect();
+          const parentRect = box.parentElement.getBoundingClientRect();
+          const scale = Editor.scale || 1;
+          if (!style.width) style.width = Math.round(rect.width / scale) + 'px';
+          style.transform = (style.transform || '').replace(/translate(3d|X|Y)?\([^)]*\)/gi, '').trim();
+          style.left = Math.round((rect.left - parentRect.left) / scale) + 'px';
+          style.top = Math.round((rect.top - parentRect.top) / scale) + 'px';
+          style.right = '';
+          style.bottom = '';
+        },
+
+        onPointerDown(event) {
+          if (!document.body.classList.contains('edit-mode') || event.button !== 0) return;
+          const canvas = $('slide-canvas');
+          const handle = event.target.closest('.ls-handle');
+          const box = event.target.closest('.draggable-box');
+          // 글자 편집 중인 상자 안: 커서 이동·블록 지정은 브라우저에 맡긴다.
+          if (Editor.editing && Editor.editing.contains(event.target) && !handle) return;
+          if (Editor.editing) Editor.stopEditing();
+          if (!box || !canvas.contains(box)) { Editor.deselect(); return; }
+          event.preventDefault();
+          Editor.select(box);
+          Editor.drag(event, box, !!handle);
+        },
+
+        drag(event, box, resizing) {
+          const scale = Editor.scale || 1;
+          Editor.bakePosition(box);
+          const rect = box.getBoundingClientRect();
+          const start = {
+            x: event.clientX,
+            y: event.clientY,
+            left: parseFloat(box.style.left) || 0,
+            top: parseFloat(box.style.top) || 0,
+            width: rect.width / scale,
+            height: rect.height / scale
+          };
+          const fixedHeight = !!box.style.height;
+          let moved = false;
+
+          const move = ev => {
+            const dx = (ev.clientX - start.x) / scale;
+            const dy = (ev.clientY - start.y) / scale;
+            if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+            moved = true;
+            if (resizing) {
+              box.style.width = Math.max(40, Math.round(start.width + dx)) + 'px';
+              if (fixedHeight) box.style.height = Math.max(20, Math.round(start.height + dy)) + 'px';
+            } else {
+              box.style.left = Math.round(start.left + dx) + 'px';
+              box.style.top = Math.round(start.top + dy) + 'px';
+            }
+          };
+          const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+            if (moved) Editor.commit();
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+          window.addEventListener('pointercancel', up);
+        },
+
+        /* --- 개체 넣기·다루기 --- */
+        insertBox(html) {
+          Editor.deselect();
+          const holder = document.createElement('div');
+          holder.innerHTML = Sanitizer.slide(html);
+          const box = holder.firstElementChild;
+          $('slide-canvas').append(box);
+          Editor.select(box);
+          Editor.commit();
+          return box;
+        },
+
+        insert(kind) {
+          if (kind === 'image') { $('file-image').click(); return; }
+          if (kind === 'text') {
+            const box = Editor.insertBox('<div style="left:660px;top:480px;width:600px;font-size:48px;">텍스트를 입력하세요</div>');
+            Editor.startEditing(box);
+            return;
+          }
+          const radius = kind === 'circle' ? '50%' : '24px';
+          const size = kind === 'circle' ? 'width:320px;height:320px;' : 'width:480px;height:280px;';
+          Editor.insertBox('<div style="left:720px;top:380px;' + size + 'background:#93c5fd;border-radius:' + radius + ';"></div>');
+        },
+
+        async insertImage(file) {
+          if (!file) return;
+          try {
+            const image = await readImage(file);
+            const width = Math.min(900, image.width);
+            const height = Math.round(width * image.height / image.width);
+            const left = Math.round((CANVAS_W - width) / 2);
+            const top = Math.max(40, Math.round((CANVAS_H - height) / 2));
+            Editor.insertBox('<div style="left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;"><img src="' + image.url + '" alt="" style="width:100%;"></div>');
+          } catch (err) {
+            Util.toast(err.message, 'warning');
+          }
+        },
+
+        boxAction(action) {
+          const box = Editor.selected;
+          if (!box) return;
+          Editor.stopEditing();
+          if (!box.isConnected) return;
+          if (action === 'delete') {
+            box.remove();
+            Editor.selected = null;
+            Editor.syncBoxTools();
+          } else if (action === 'copy') {
+            const copy = box.cloneNode(true);
+            copy.classList.remove('is-selected', 'is-editing');
+            copy.querySelectorAll('.ls-handle').forEach(handle => handle.remove());
+            copy.style.left = (parseFloat(box.style.left) || 0) + 40 + 'px';
+            copy.style.top = (parseFloat(box.style.top) || 0) + 40 + 'px';
+            box.after(copy);
+            Editor.select(copy);
+          } else if (action === 'front' || action === 'back') {
+            const siblings = Array.from(box.parentElement.children).filter(el => el !== box && el.classList.contains('draggable-box'));
+            const levels = siblings.map(el => parseInt(getComputedStyle(el).zIndex, 10) || 0);
+            box.style.zIndex = action === 'front' ? Math.max(0, ...levels) + 1 : Math.min(0, ...levels) - 1;
+          }
+          Editor.commit();
+        },
+
+        nudge(key, big) {
+          const box = Editor.selected;
+          const step = big ? 50 : 10;
+          Editor.bakePosition(box);
+          const dx = key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0;
+          const dy = key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0;
+          box.style.left = (parseFloat(box.style.left) || 0) + dx + 'px';
+          box.style.top = (parseFloat(box.style.top) || 0) + dy + 'px';
+          Editor.commitSoon();
+        },
+
+        setAnimation(name, delay) {
+          const box = Editor.selected;
+          if (!box) return;
+          Object.keys(ANIMATIONS).filter(Boolean).forEach(cls => box.classList.remove(cls));
+          if (name) box.classList.add(name);
+          box.style.animationDelay = name && parseFloat(delay) ? delay + 's' : '';
+          Editor.commit();
+        },
+
+        // 선택한 개체에 맞춰 도구 상태를 바꾼다.
+        syncBoxTools() {
+          const box = Editor.selected;
+          document.querySelectorAll('[data-needs-box]').forEach(el => { el.disabled = !box; });
+          const anim = box ? (Array.from(box.classList).find(cls => cls.startsWith('anim-')) || '') : '';
+          $('anim-select').value = ANIMATIONS[anim] !== undefined ? anim : '';
+          const delaySelect = $('anim-delay');
+          const delay = box ? String(parseFloat(box.style.animationDelay) || 0) : '0';
+          if (!Array.from(delaySelect.options).some(option => option.value === delay)) delaySelect.add(new Option(delay + '초 뒤', delay));
+          delaySelect.value = delay;
+          if (box) $('fill-color').value = Util.toHex(getComputedStyle(box).backgroundColor, '#93c5fd');
+        }
+      };
+      Editor.commitSoon = Util.debounce(() => Editor.commit(), 400);
+      Editor.refreshThumbSoon = Util.debounce(() => { if (Editor.deck) Editor.refreshThumb(Editor.index); }, 400);
+
+      async function readImage(file) {
+        if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error('PNG, JPG, GIF, WEBP 그림만 넣을 수 있습니다.');
+        if (file.size > 15 * 1024 * 1024) throw new Error('그림 파일이 15MB를 넘습니다.');
+        const url = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('그림을 읽지 못했습니다.'));
+          reader.readAsDataURL(file);
+        });
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        let width = img.naturalWidth;
+        let height = img.naturalHeight;
+        // 큰 사진은 줄여서 저장 공간을 아낀다(움직이는 GIF는 그대로).
+        if (file.type !== 'image/gif' && (Math.max(width, height) > CANVAS_W || file.size > 1.5 * 1024 * 1024)) {
+          const ratio = Math.min(1, CANVAS_W / Math.max(width, height));
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+          return { url: canvas.toDataURL(type, 0.9), width, height };
+        }
+        return { url, width, height };
+      }
+
+      /* ===== 9. 떠 있는 서식 도구 ===== */
+      const FloatBar = {
+        range: null,
+
+        onSelection() {
+          const bar = $('float-toolbar');
+          if (bar.contains(document.activeElement)) return; // 색 고르는 중
+          const box = Editor.editing;
+          const selection = window.getSelection();
+          if (!box || !selection.rangeCount || selection.isCollapsed) { FloatBar.hide(); return; }
+          const range = selection.getRangeAt(0);
+          if (!box.contains(range.commonAncestorContainer)) { FloatBar.hide(); return; }
+          FloatBar.range = range.cloneRange();
+          FloatBar.show();
+        },
+
+        show() {
+          const bar = $('float-toolbar');
+          bar.style.display = 'flex';
+          const rect = FloatBar.range.getBoundingClientRect();
+          const left = Math.max(8, Math.min(rect.left + rect.width / 2 - bar.offsetWidth / 2, window.innerWidth - bar.offsetWidth - 8));
+          let top = rect.top - bar.offsetHeight - 10;
+          if (top < 8) top = rect.bottom + 10;
+          bar.style.left = left + 'px';
+          bar.style.top = top + 'px';
+          const el = FloatBar.element();
+          if (!el) return;
+          const style = getComputedStyle(el);
+          $('fmt-size').textContent = Math.round(parseFloat(style.fontSize)) + 'px';
+          $('fmt-color').value = Util.toHex(style.color, '#1f2937');
+          bar.querySelector('[data-fmt="bold"]').classList.toggle('active', parseInt(style.fontWeight, 10) >= 600);
+        },
+
+        hide() {
+          $('float-toolbar').style.display = 'none';
+          FloatBar.range = null;
+        },
+
+        element() {
+          const range = FloatBar.range;
+          if (!range) return null;
+          const node = range.startContainer;
+          return node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        },
+
+        // 고른 글자에 인라인 스타일을 입힌다.
+        apply(props) {
+          const box = Editor.editing;
+          const range = FloatBar.range;
+          if (!box || !range || range.collapsed || !box.contains(range.commonAncestorContainer)) return;
+          const keys = Object.keys(props);
+          const stripInside = root => root.querySelectorAll('*').forEach(el => {
+            if (!el.style) return;
+            keys.forEach(key => { el.style[key] = ''; });
+            if (el.getAttribute('style') === '') el.removeAttribute('style');
+          });
+
+          // 이미 한 덩어리(span)를 통째로 고른 경우 그 span만 고친다(색을 끌어 고를 때 겹겹이 쌓이지 않게).
+          const common = range.commonAncestorContainer;
+          let target = common.nodeType === Node.TEXT_NODE ? common.parentElement : common;
+          if (!(target && target !== box && target.tagName === 'SPAN' && box.contains(target) && range.toString() === target.textContent)) {
+            const fragment = range.extractContents();
+            stripInside(fragment);
+            if ('fontWeight' in props) fragment.querySelectorAll('b, strong').forEach(el => el.replaceWith(...el.childNodes));
+            target = document.createElement('span');
+            target.append(fragment);
+            range.insertNode(target);
+          } else {
+            stripInside(target);
+          }
+          Object.assign(target.style, props);
+
+          const next = document.createRange();
+          next.selectNodeContents(target);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(next);
+          FloatBar.range = next.cloneRange();
+          FloatBar.show();
+          Editor.touch();
+          Editor.commitSoon();
+        },
+
+        resize(direction) {
+          const el = FloatBar.element();
+          if (!el) return;
+          const size = parseFloat(getComputedStyle(el).fontSize) || 40;
+          const next = Math.round(direction > 0 ? size * 1.15 : size / 1.15);
+          FloatBar.apply({ fontSize: Math.max(12, Math.min(300, next)) + 'px' });
+        },
+
+        toggleBold() {
+          const el = FloatBar.element();
+          if (!el) return;
+          FloatBar.apply({ fontWeight: parseInt(getComputedStyle(el).fontWeight, 10) >= 600 ? '400' : '700' });
+        },
+
+        init() {
+          const bar = $('float-toolbar');
+          bar.addEventListener('mousedown', event => { if (event.target.closest('button')) event.preventDefault(); });
+          bar.addEventListener('click', event => {
+            const button = event.target.closest('[data-fmt]');
+            if (!button) return;
+            if (button.dataset.fmt === 'bold') FloatBar.toggleBold();
+            if (button.dataset.fmt === 'bigger') FloatBar.resize(1);
+            if (button.dataset.fmt === 'smaller') FloatBar.resize(-1);
+          });
+          $('fmt-color').addEventListener('input', event => FloatBar.apply({ color: event.target.value }));
+          document.addEventListener('selectionchange', FloatBar.onSelection);
+        }
+      };
+
+      /* ===== 10. 발표 모드 ===== */
+      const Show = {
+        index: 0,
+
+        isOn() { return document.body.classList.contains('presentation-mode'); },
+        toggle() { if (Show.isOn()) Show.exit(); else Show.enter(); },
+
+        enter() {
+          if (!Editor.deck) return;
+          Editor.deselect();
+          Editor.syncCurrent();
+          Editor.saveNow();
+          Show.index = Editor.index;
+          document.body.classList.remove('edit-mode');
+          document.body.classList.add('presentation-mode');
+          Show.paint();
+          const root = document.documentElement;
+          if (root.requestFullscreen && !document.fullscreenElement) root.requestFullscreen().catch(() => { /* 전체 화면을 못 써도 발표는 된다 */ });
+        },
+
+        exit() {
+          if (!Show.isOn()) return;
+          document.body.classList.remove('presentation-mode');
+          document.body.classList.add('edit-mode');
+          $('show-canvas').innerHTML = '';
+          if (document.fullscreenElement) document.exitFullscreen().catch(() => { /* 무시 */ });
+          if (Editor.deck && Show.index !== Editor.index) {
+            Editor.index = Show.index;
+            Editor.renderCanvas();
+          }
+          Editor.fit();
+        },
+
+        paint() {
+          const slides = Editor.deck.slides;
+          const slide = slides[Show.index];
+          const canvas = $('show-canvas');
+          canvas.innerHTML = slide.html; // 다시 넣어야 애니메이션이 처음부터 재생된다
+          canvas.style.background = slide.bg;
+          $('show-counter').textContent = (Show.index + 1) + ' / ' + slides.length;
+          Show.fit();
+        },
+
+        go(i) {
+          if (!Editor.deck || i < 0 || i >= Editor.deck.slides.length) return;
+          Show.index = i;
+          Show.paint();
+        },
+
+        fit() { fitStage($('show-overlay'), $('show-scaler'), 0); },
+
+        onKey(event) {
+          const key = event.key;
+          if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(key)) { event.preventDefault(); Show.go(Show.index + 1); }
+          else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(key)) { event.preventDefault(); Show.go(Show.index - 1); }
+          else if (key === 'Home') Show.go(0);
+          else if (key === 'End') Show.go(Editor.deck.slides.length - 1);
+          else if (key === 'Escape') { event.preventDefault(); Show.exit(); }
+        }
+      };
+
+      /* ===== 11. Gemini 호출 ===== */
+      const Gemini = (function () {
+        const BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+        const IDLE_TIMEOUT_MS = 180000;  // 글자가 이만큼 안 들어오면 중단(생각하는 시간 포함)
+        const TOTAL_TIMEOUT_MS = 900000; // 한 번 호출의 최대 시간
+
+        function serverDetail(text) {
+          let message = '';
+          try { message = (JSON.parse(text).error || {}).message || ''; } catch (err) { /* 무시 */ }
+          if (!message) return '';
+          const key = Settings.apiKey();
+          if (key) message = message.split(key).join('***');
+          return '\n(서버 응답: ' + message.slice(0, 200) + ')';
+        }
+
+        function describe(status, text) {
+          let message;
+          if (status === 400) message = '요청 형식이 올바르지 않습니다.';
+          else if (status === 401 || status === 403) message = 'API 키에 문제가 있습니다. AI 설정에서 키를 확인해 주세요.';
+          else if (status === 404) message = '모델을 찾을 수 없습니다. AI 설정에서 모델 이름을 확인해 주세요.';
+          else if (status === 429) message = 'Gemini 사용량 한도를 넘었습니다. 잠시 뒤 다시 시도해 주세요.';
+          else if (status === 503) message = 'Gemini 서버가 지금 붐빕니다(503). 잠시 뒤 다시 시도하거나 다른 모델로 바꿔 보세요.';
+          else if (status === 504) message = 'Gemini 서버 처리 시간이 초과됐습니다(504). 만들 장 수를 줄여 보세요.';
+          else if (status >= 500) message = 'Gemini 서버 오류입니다(' + status + '). 잠시 뒤 다시 시도해 주세요.';
+          else message = 'AI 호출에 실패했습니다(코드 ' + status + ').';
+          return message + serverDetail(text);
+        }
+
+        function collect(data) {
+          const candidate = (data.candidates || [])[0] || {};
+          const parts = (candidate.content && candidate.content.parts) || [];
+          return { text: parts.map(part => (part.thought ? '' : part.text || '')).join(''), finishReason: candidate.finishReason || null };
+        }
+
+        async function post(model, body, signal, onChunk) {
+          const stream = typeof onChunk === 'function';
+          const url = BASE + encodeURIComponent(model) + (stream ? ':streamGenerateContent?alt=sse' : ':generateContent');
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': Settings.apiKey() },
+            body: JSON.stringify(body),
+            signal
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            const err = new Error(describe(res.status, text));
+            err.status = res.status;
+            throw err;
+          }
+          if (!stream) return collect(await res.json());
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let text = '';
+          let finishReason = null;
+          const handle = line => {
+            if (!line.startsWith('data:')) return;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') return;
+            let chunk;
+            try { chunk = JSON.parse(payload); } catch (err) { return; }
+            const piece = collect(chunk);
+            text += piece.text;
+            finishReason = piece.finishReason || finishReason;
+          };
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            lines.forEach(handle);
+            onChunk(text.length);
+          }
+          handle(buffer);
+          return { text, finishReason };
+        }
+
+        function parseJson(text) {
+          const trimmed = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+          try {
+            return JSON.parse(trimmed);
+          } catch (err) {
+            const start = trimmed.indexOf('{');
+            const end = trimmed.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+              try { return JSON.parse(trimmed.slice(start, end + 1)); } catch (inner) { /* 아래로 */ }
+            }
+            const error = new Error('AI 응답을 읽지 못했습니다. 다시 시도해 주세요.');
+            error.isJsonParse = true;
+            throw error;
+          }
+        }
+
+        /**
+         * options: { model, system, prompt, schema, signal, onProgress(글자 수) }
+         * 서버 오류는 받는 방식(스트리밍↔한 번에)을 바꿔 가며 다시 시도한다.
+         */
+        async function generateJson(options) {
+          if (!Settings.apiKey()) {
+            const err = new Error('Gemini API 키가 없습니다. AI 설정에서 키를 입력해 주세요.');
+            err.needsKey = true;
+            throw err;
+          }
+          const controller = new AbortController();
+          const outer = options.signal;
+          if (outer) {
+            if (outer.aborted) controller.abort();
+            else outer.addEventListener('abort', () => controller.abort(), { once: true });
+          }
+          let timedOut = '';
+          let idleTimer = null;
+          const totalTimer = setTimeout(() => { timedOut = 'total'; controller.abort(); }, TOTAL_TIMEOUT_MS);
+          const bump = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => { timedOut = 'idle'; controller.abort(); }, IDLE_TIMEOUT_MS);
+          };
+
+          let useStream = true;
+          let useSchema = true;
+          let serverErrors = 0;
+          let extra = '';
+          let lastError = null;
+          try {
+            for (let attempt = 0; attempt < 6; attempt++) {
+              try {
+                const body = {
+                  systemInstruction: { parts: [{ text: options.system }] },
+                  contents: [{ role: 'user', parts: [{ text: options.prompt + extra }] }],
+                  generationConfig: Object.assign({ responseMimeType: 'application/json' },
+                    useSchema && options.schema ? { responseSchema: options.schema } : {})
+                };
+                if (useStream) bump(); else clearTimeout(idleTimer);
+                const result = await post(options.model, body, controller.signal, useStream ? length => {
+                  bump();
+                  if (options.onProgress) options.onProgress(length);
+                } : null);
+                if (result.finishReason && !['STOP', 'MAX_TOKENS'].includes(result.finishReason)) {
+                  throw new Error('AI가 응답을 멈췄습니다(' + result.finishReason + '). 요청 내용을 바꿔 보세요.');
+                }
+                return parseJson(result.text);
+              } catch (err) {
+                if (timedOut && !(outer && outer.aborted)) {
+                  throw new Error(timedOut === 'idle'
+                    ? 'AI가 3분 동안 응답하지 않아 중단했습니다. 잠시 뒤 다시 시도하거나 더 빠른 모델(flash)로 바꿔 보세요.'
+                    : 'AI 응답이 15분을 넘겨 중단했습니다. 만들 장 수를 줄여 보세요.');
+                }
+                if (err.name === 'AbortError' || (outer && outer.aborted)) {
+                  const aborted = new Error('중단했습니다.');
+                  aborted.aborted = true;
+                  throw aborted;
+                }
+                if (err instanceof TypeError) err.message = '네트워크 연결을 확인해 주세요.';
+                lastError = err;
+                if (err.status === 400 && useSchema) { useSchema = false; continue; }
+                if (err.status >= 500 && err.status < 600) {
+                  serverErrors++;
+                  useStream = !useStream;
+                  await Util.sleep(Math.min(2000 * Math.pow(2, serverErrors - 1), 15000));
+                  continue;
+                }
+                if (err.status === 429) { await Util.sleep(Math.min(3000 * Math.pow(2, attempt), 20000)); continue; }
+                if (err.isJsonParse && !extra) {
+                  extra = '\n\n앞선 응답이 JSON으로 해석되지 않았다. 설명 없이 JSON만 출력하라.';
+                  continue;
+                }
+                throw err;
+              }
+            }
+            throw lastError || new Error('AI 호출에 실패했습니다.');
+          } finally {
+            clearTimeout(totalTimer);
+            clearTimeout(idleTimer);
+          }
+        }
+
+        return { generateJson };
+      })();
+
+      /* ===== 12. AI 슬라이드 생성 창 ===== */
+      const AI_SYSTEM = [
+        '너는 모션이 들어간 HTML 프레젠테이션 슬라이드를 만드는 디자이너다. 결과는 지정한 JSON 형식으로만 출력한다.',
+        '',
+        '[캔버스]',
+        '- 슬라이드 한 장은 가로 1920px, 세로 1080px 고정 캔버스다. 기본 글꼴은 Pretendard, 기본 글자색 #1f2937.',
+        '',
+        '[html 규칙]',
+        '- html의 최상위 요소는 모두 <div class="draggable-box" style="left:..px; top:..px; width:..px; ..."> 형식의 상자다. 사용자가 상자를 끌어 옮기고 글을 고친다.',
+        '- 상자 위치는 left/top(px)으로만 정한다. position, right, bottom, transform으로 위치를 잡지 않는다. 모든 상자는 캔버스 안(0~1920, 0~1080)에 들어가야 한다.',
+        '- 스타일은 style 속성(인라인)으로만 쓴다. <style>, <script>, <a>, 폼 요소, 외부 이미지·글꼴 주소는 쓰지 않는다. 그림이 필요하면 이모지, 색 도형(div), 간단한 인라인 <svg>로 표현한다.',
+        '- 상자 안에서는 h1~h3, p, ul/ol/li, span, b, strong, em, br, div, svg를 쓸 수 있다.',
+        '- 글자 크기: 제목 72~110px, 본문 36~48px, 가장 작은 글자 28px 이상. 한 장에 글은 짧게(핵심 3~5줄).',
+        '- 카드, 색 배경 상자, 큰 숫자, 아이콘 이모지 등으로 PPT처럼 보기 좋게 배치하고, 여백을 넉넉히 둔다.',
+        '',
+        '[모션]',
+        '- 상자 class에 다음 중 하나를 더할 수 있다: anim-fade, anim-fade-up, anim-fade-left, anim-fade-right, anim-zoom, anim-pop, anim-float(반복).',
+        '- 순서대로 나타나게 하려면 style에 animation-delay:0.3s 처럼 지연을 준다. 한 장에 너무 많이 쓰지 않는다.',
+        '- 그 밖의 class 이름은 쓰지 않는다.',
+        '',
+        '[그 밖의 필드]',
+        '- bg: 슬라이드 배경 CSS 값(색 또는 linear-gradient). url()은 쓰지 않는다. 배경이 어두우면 글자는 밝게 한다.',
+        '- title: 이 장의 짧은 제목.',
+        '- notes: 발표자가 읽을 발표 시나리오 2~5문장(말하듯이).',
+        '- deckTitle: 발표 전체 제목.',
+        '- 모든 내용은 한국어로 쓴다. 널리 알려진 사실만 쓰고, 확실하지 않은 수치는 지어내지 않는다.',
+        '- 여러 장일 때는 색·글자 크기·배치 분위기를 통일하고, 장마다 내용이 겹치지 않게 흐름을 이어 간다.'
+      ].join('\n');
+
+      const AI_SCHEMA = {
+        type: 'OBJECT',
+        properties: {
+          deckTitle: { type: 'STRING' },
+          slides: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING' },
+                bg: { type: 'STRING' },
+                html: { type: 'STRING' },
+                notes: { type: 'STRING' }
+              },
+              required: ['title', 'bg', 'html', 'notes']
+            }
+          }
+        },
+        required: ['slides']
+      };
+
+      const AiPanel = {
+        aborter: null,
+        busy: false,
+
+        syncKey() { $('ai-nokey').classList.toggle('d-none', !!Settings.apiKey()); },
+
+        toggle(force) {
+          const panel = $('ai-panel');
+          const open = force !== undefined ? force : panel.classList.contains('collapsed');
+          panel.classList.toggle('collapsed', !open);
+          if (open) $('ai-prompt').focus();
+        },
+
+        message(role, text) {
+          const el = document.createElement('div');
+          el.className = 'ai-msg ' + role;
+          el.textContent = text;
+          $('ai-log').append(el);
+          el.scrollIntoView({ block: 'end' });
+          return {
+            set(next, isError) {
+              el.textContent = next;
+              el.classList.toggle('error', !!isError);
+              el.scrollIntoView({ block: 'end' });
+            }
+          };
+        },
+
+        setBusy(on) {
+          AiPanel.busy = on;
+          $('ai-send').disabled = on;
+          $('ai-stop').classList.toggle('d-none', !on);
+        },
+
+        abort() { if (AiPanel.aborter) AiPanel.aborter.abort(); },
+
+        // 디자인 기준으로 넘길 HTML(넣어 둔 그림 데이터는 길어서 뺀다)
+        reference(slide) {
+          if (!slide || slide.pristine || !slide.html.trim()) return null;
+          return { bg: slide.bg, html: slide.html.replace(/data:image\/[^"')\s]+/g, 'data:image/…').slice(0, 6000) };
+        },
+
+        prompt(topic, total, start, count, madeTitles, reference) {
+          const deckTitle = Editor.deck.title;
+          return [
+            '[발표 주제 및 개요]',
+            topic,
+            '',
+            total > 1
+              ? '[분량] 이 주제로 모두 ' + total + '장짜리 발표를 만든다. 이번에는 ' + (start + 1) + '번째부터 ' + (start + count) + '번째 장까지 ' + count + '장을 만든다.'
+              : '[분량] 슬라이드 1장만 만든다.',
+            madeTitles.length
+              ? '[앞에서 이미 만든 장]\n' + madeTitles.map((title, i) => (i + 1) + '. ' + title).join('\n') + '\n이어지는 내용으로, 앞 장과 겹치지 않게 만든다.'
+              : (total > 1 ? '첫 장은 발표 제목이 크게 들어간 표지로 만든다.' : ''),
+            deckTitle !== DEFAULT_TITLE ? '[발표 자료 제목] ' + deckTitle : '',
+            reference ? '[디자인 기준 장 — 색·글자 크기·배치 분위기를 이 장에 맞춘다]\nbg: ' + reference.bg + '\nhtml:\n' + reference.html : '',
+            '',
+            'slides 배열에 정확히 ' + count + '개를 출력하라.'
+          ].filter(Boolean).join('\n');
+        },
+
+        async generate() {
+          if (AiPanel.busy || !Editor.deck) return;
+          const topic = $('ai-prompt').value.trim();
+          if (!topic) { Util.toast('발표 주제와 개요를 입력해 주세요.', 'warning'); $('ai-prompt').focus(); return; }
+          if (!Settings.apiKey()) { SettingsModal.open(); return; }
+
+          const total = $('ai-multi').checked ? Math.max(2, Math.min(20, parseInt($('ai-count').value, 10) || 5)) : 1;
+          const deck = Editor.deck;
+          Editor.deselect();
+          Editor.syncCurrent();
+
+          AiPanel.message('user', topic + (total > 1 ? '\n(' + total + '장)' : ''));
+          const status = AiPanel.message('ai', '슬라이드를 만드는 중…');
+          $('ai-prompt').value = '';
+          AiPanel.setBusy(true);
+          const controller = new AbortController();
+          AiPanel.aborter = controller;
+
+          // 손대지 않은 첫 표지 한 장만 있으면 그 장을 AI 결과로 바꾼다.
+          const replaceFirst = deck.slides.length === 1 && deck.slides[0].pristine;
+          let reference = AiPanel.reference(Editor.current());
+          let insertAt = replaceFirst ? 0 : Editor.index + 1;
+          const madeTitles = [];
+          let added = 0;
+          let failure = null;
+
+          for (let start = 0; start < total; start += AI_BATCH) {
+            const count = Math.min(AI_BATCH, total - start);
+            const label = total > 1 ? (start + 1) + '~' + (start + count) + '번째 장을 만드는 중… (모두 ' + total + '장)' : '슬라이드를 만드는 중…';
+            status.set(label);
+            let result;
+            try {
+              result = await Gemini.generateJson({
+                model: Settings.model(),
+                system: AI_SYSTEM,
+                prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference),
+                schema: AI_SCHEMA,
+                signal: controller.signal,
+                onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
+              });
+            } catch (err) {
+              failure = err;
+              break;
+            }
+            if (Editor.deck !== deck) break; // 다른 화면으로 나갔다
+            const list = (result && Array.isArray(result.slides) ? result.slides : []).slice(0, count);
+            if (!list.length) { failure = new Error('AI 응답에 슬라이드가 없습니다. 다시 시도해 주세요.'); break; }
+
+            if (result.deckTitle && deck.title === DEFAULT_TITLE) {
+              deck.title = String(result.deckTitle).trim().slice(0, 80) || DEFAULT_TITLE;
+              $('deck-title').value = deck.title;
+              document.title = deck.title + ' - HTML 슬라이드 편집 도구';
+            }
+            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: item.html, bg: item.bg, notes: item.notes }));
+
+            Editor.deselect();
+            Editor.syncCurrent();
+            if (replaceFirst && added === 0 && deck.slides.length === 1 && deck.slides[0].pristine) deck.slides.splice(0, 1);
+            insertAt = Math.min(insertAt, deck.slides.length);
+            deck.slides.splice(insertAt, 0, ...slides);
+            Editor.index = insertAt;
+            insertAt += slides.length;
+            added += slides.length;
+            slides.forEach(slide => madeTitles.push(slide.title || '(제목 없음)'));
+            if (!reference) reference = AiPanel.reference(slides[0]);
+            Editor.renderRail();
+            Editor.renderCanvas();
+            Editor.commit();
+          }
+
+          AiPanel.setBusy(false);
+          AiPanel.aborter = null;
+          if (Editor.deck !== deck) return;
+          if (failure && !added) {
+            status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
+            if (!$('ai-prompt').value) $('ai-prompt').value = topic;
+            if (failure.needsKey) SettingsModal.open();
+          } else if (failure) {
+            status.set(added + '장을 추가했습니다.\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 만들지 못했습니다: ' + failure.message), !failure.aborted);
+          } else {
+            status.set(added + '장을 추가했습니다. 글자를 더블클릭해 고치고, 끌어서 옮겨 보세요.');
+          }
+        },
+
+        init() {
+          $('ai-multi').addEventListener('change', event => $('ai-count-wrap').classList.toggle('d-none', !event.target.checked));
+          $('ai-send').addEventListener('click', AiPanel.generate);
+          $('ai-stop').addEventListener('click', AiPanel.abort);
+          $('ai-close').addEventListener('click', () => AiPanel.toggle(false));
+          $('btn-ai').addEventListener('click', () => AiPanel.toggle());
+          $('ai-prompt').addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
+              event.preventDefault();
+              AiPanel.generate();
+            }
+          });
+        }
+      };
+
+      /* ===== 13. 내보내기 (단독 실행 HTML) ===== */
+      // 내보낸 파일 안에서 그대로 실행되는 보기 프로그램. 바깥 변수를 쓰지 않는다.
+      function exportRuntime() {
+        var data = JSON.parse(document.getElementById('deck-data').textContent);
+        var slides = data.slides || [];
+        var css = document.querySelector('style').textContent;
+        var W = 1920, H = 1080;
+        var index = 0;
+
+        function esc(text) {
+          return String(text).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+          });
+        }
+        function stage(id) {
+          return '<div class="v-scaler" id="' + id + '-scaler"><div class="slide-canvas" id="' + id + '-canvas"></div></div>';
+        }
+        function fit(doc, id) {
+          var host = doc.getElementById(id + '-host'), scaler = doc.getElementById(id + '-scaler');
+          if (!host || !host.clientWidth || !host.clientHeight) return;
+          var s = Math.min(host.clientWidth / W, host.clientHeight / H);
+          scaler.style.transform = 'scale(' + s + ')';
+          scaler.style.left = (host.clientWidth - W * s) / 2 + 'px';
+          scaler.style.top = (host.clientHeight - H * s) / 2 + 'px';
+        }
+        function paint(doc, id, i) {
+          var canvas = doc.getElementById(id + '-canvas'), slide = slides[i];
+          canvas.innerHTML = slide ? slide.html : '';
+          canvas.style.background = slide ? (slide.bg || '#fff') : '#111';
+        }
+        function onKey(event, doc, go) {
+          var k = event.key;
+          if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ' || k === 'Enter') { event.preventDefault(); go(index + 1); }
+          else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { event.preventDefault(); go(index - 1); }
+          else if (k === 'Home') go(0);
+          else if (k === 'End') go(slides.length - 1);
+          else if (k === 'f' || k === 'F') {
+            if (doc.fullscreenElement) doc.exitFullscreen();
+            else if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
+          }
+        }
+
+        function audience() {
+          document.body.className = 'ls-viewer presentation-mode';
+          document.body.innerHTML = '<div class="v-host" id="a-host">' + stage('a') + '</div><div class="v-counter" id="a-counter"></div>';
+          function go(i) {
+            if (i < 0 || i >= slides.length) return;
+            index = i;
+            paint(document, 'a', i);
+            document.getElementById('a-counter').textContent = (i + 1) + ' / ' + slides.length;
+          }
+          document.addEventListener('keydown', function (event) { onKey(event, document, go); });
+          document.getElementById('a-host').addEventListener('click', function () { go(index + 1); });
+          window.addEventListener('resize', function () { fit(document, 'a'); });
+          fit(document, 'a');
+          go(0);
+        }
+
+        function presenter() {
+          var popup = null;
+          var started = Date.now();
+          document.body.className = 'pv-view';
+          document.body.innerHTML =
+            '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span id="pv-timer">00:00</span>' +
+            '<button type="button" id="pv-reset">타이머 다시</button><button type="button" id="pv-prev">◀ 이전</button>' +
+            '<button type="button" id="pv-next">다음 ▶</button><button type="button" class="pv-primary" id="pv-audience">청중 화면 열기</button></header>' +
+            '<main class="pv-main"><section class="pv-col"><div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>' +
+            '<div class="v-host pv-current" id="c-host">' + stage('c') + '</div></section>' +
+            '<aside class="pv-col"><div class="pv-label">다음 장</div><div class="v-host pv-next v-static" id="n-host">' + stage('n') + '</div>' +
+            '<div class="pv-label">발표 시나리오</div><div class="pv-text" id="pv-notes"></div>' +
+            '<div class="pv-label">메모</div><div class="pv-text" id="pv-memo"></div></aside></main>';
+          document.getElementById('pv-title').textContent = data.title || '';
+
+          function fitAll() {
+            fit(document, 'c');
+            fit(document, 'n');
+            if (popup && !popup.closed) fit(popup.document, 'pa');
+          }
+          function go(i) {
+            if (i < 0 || i >= slides.length) return;
+            index = i;
+            paint(document, 'c', i);
+            paint(document, 'n', i + 1);
+            document.getElementById('pv-notes').textContent = slides[i].notes || '(시나리오 없음)';
+            document.getElementById('pv-memo').textContent = slides[i].memo || '(메모 없음)';
+            document.getElementById('pv-count').textContent = (i + 1) + ' / ' + slides.length;
+            if (popup && !popup.closed) paint(popup.document, 'pa', i);
+            fitAll();
+          }
+          function openAudience() {
+            if (popup && !popup.closed) { popup.focus(); return; }
+            popup = window.open('', 'ls_audience_' + Date.now(), 'width=1280,height=760');
+            if (!popup) { alert('팝업이 차단되었습니다. 브라우저에서 이 파일의 팝업을 허용해 주세요.'); return; }
+            try {
+              var doc = popup.document;
+              doc.open();
+              doc.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>' + esc(data.title || '') +
+                ' - 청중 화면</title><style>' + css + '</style></head><body class="ls-viewer presentation-mode">' +
+                '<div class="v-host" id="pa-host">' + stage('pa') + '</div></body></html>');
+              doc.close();
+              doc.addEventListener('keydown', function (event) { onKey(event, doc, go); });
+              doc.getElementById('pa-host').addEventListener('click', function () { go(index + 1); });
+              popup.addEventListener('resize', function () { fit(doc, 'pa'); });
+              paint(doc, 'pa', index);
+              fit(doc, 'pa');
+              setTimeout(function () { fit(doc, 'pa'); }, 100);
+            } catch (err) {
+              alert('청중 화면을 열지 못했습니다. 이 파일을 Chrome이나 Edge에서 열어 주세요.');
+            }
+          }
+
+          document.getElementById('pv-prev').addEventListener('click', function () { go(index - 1); });
+          document.getElementById('pv-next').addEventListener('click', function () { go(index + 1); });
+          document.getElementById('pv-audience').addEventListener('click', openAudience);
+          document.getElementById('pv-reset').addEventListener('click', function () { started = Date.now(); });
+          document.addEventListener('keydown', function (event) { onKey(event, document, go); });
+          window.addEventListener('resize', fitAll);
+          window.addEventListener('beforeunload', function () { if (popup && !popup.closed) popup.close(); });
+          setInterval(function () {
+            var sec = Math.floor((Date.now() - started) / 1000);
+            document.getElementById('pv-timer').textContent =
+              String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+          }, 1000);
+          go(0);
+        }
+
+        if (data.kind === 'presenter') presenter(); else audience();
+      }
+
+      const Exporter = {
+        build(kind) {
+          const deck = Editor.deck;
+          const presenter = kind === 'presenter';
+          const data = {
+            app: 'html-slide-studio',
+            version: 1,
+            kind: presenter ? 'presenter' : 'audience',
+            title: deck.title,
+            exportedAt: new Date().toISOString(),
+            slides: deck.slides.map(slide => ({
+              title: slide.title,
+              html: slide.html,
+              bg: slide.bg,
+              notes: presenter ? slide.notes : '',
+              memo: presenter ? slide.memo : ''
+            }))
+          };
+          // 스크립트 조기 종료와 JS 줄바꿈 문자(U+2028/2029)를 막기 위해 이스케이프한다.
+          const json = JSON.stringify(data).replace(/</g, '\\u003c')
+            .split(String.fromCharCode(0x2028)).join('\\u2028').split(String.fromCharCode(0x2029)).join('\\u2029');
+          return '<!DOCTYPE html>\n<html lang="ko">\n<head>\n<meta charset="UTF-8">\n' +
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+            '<meta name="generator" content="HTML 슬라이드 편집 도구">\n' +
+            '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
+            '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
+            '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
+            '<script>(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+        },
+
+        download(kind) {
+          if (!Editor.deck) return;
+          Editor.deselect();
+          Editor.syncCurrent();
+          const presenter = kind === 'presenter';
+          Util.download(Util.safeFileName(Editor.deck.title) + (presenter ? '_발표자보기' : '_청중화면') + '.html', Exporter.build(kind));
+          Util.toast(presenter
+            ? '발표자 보기 파일을 내려받았습니다. 파일을 열어 [청중 화면 열기]를 누르면 청중용 창이 뜹니다.'
+            : '청중 화면 파일을 내려받았습니다. ← → 키나 클릭으로 넘깁니다.', 'success');
+        }
+      };
+
+      /* ===== 14. 불러오기 ===== */
+      const Importer = {
+        async open(file) {
+          if (!file) return;
+          if (file.size > 100 * 1024 * 1024) { Util.toast('파일이 너무 큽니다(100MB 초과).', 'warning'); return; }
+          let data = null;
+          try {
+            const doc = new DOMParser().parseFromString(await file.text(), 'text/html');
+            const node = doc.getElementById('deck-data');
+            data = node ? JSON.parse(node.textContent) : null;
+          } catch (err) { data = null; }
+          if (!data || data.app !== 'html-slide-studio' || !Array.isArray(data.slides) || !data.slides.length) {
+            Util.toast('이 도구에서 내보낸 HTML 파일만 불러올 수 있습니다.', 'warning');
+            return;
+          }
+          const keepNotes = data.kind === 'presenter';
+          const now = new Date().toISOString();
+          const deck = {
+            id: Util.uid(),
+            title: String(data.title || '불러온 프레젠테이션').slice(0, 80),
+            createdAt: now,
+            updatedAt: now,
+            slides: data.slides.slice(0, 500).map(slide => Editor.normalizeSlide({
+              title: slide.title,
+              html: slide.html,
+              bg: slide.bg,
+              notes: keepNotes ? slide.notes : '',
+              memo: keepNotes ? slide.memo : ''
+            }))
+          };
+          try {
+            await DeckStore.put(deck);
+          } catch (err) {
+            Util.toast('브라우저 저장 공간이 부족해 불러오지 못했습니다.', 'danger');
+            return;
+          }
+          Util.toast(keepNotes
+            ? '발표자 보기 파일을 불러왔습니다. 시나리오와 메모도 함께 편집할 수 있습니다.'
+            : '청중 화면 파일을 불러왔습니다. 시나리오와 메모는 비어 있는 상태입니다.', 'success');
+          location.hash = '#/edit/' + deck.id;
+        }
+      };
+
+      /* ===== 15. 화면 이동 ===== */
+      const Router = {
+        view: '',
+
+        async route() {
+          if (Router.view === 'editor') await Editor.leave();
+          const match = location.hash.match(/^#\/edit\/([\w-]+)$/);
+          if (match) {
+            Router.view = 'editor';
+            await Editor.open(match[1]);
+          } else {
+            Router.view = 'home';
+            await Home.show();
+          }
+        }
+      };
+
+      /* ===== 16. 이벤트 연결 ===== */
+      function onKeyDown(event) {
+        if (Router.view !== 'editor' || !Editor.deck) return;
+        const key = event.key;
+        const mod = event.ctrlKey || event.metaKey;
+        if (mod && (key === 'e' || key === 'E')) { event.preventDefault(); Show.toggle(); return; }
+        if (Show.isOn()) { Show.onKey(event); return; }
+
+        // 편집 모드: 방향키는 슬라이드를 넘기지 않고 선택한 개체를 옮기는 데만 쓴다.
+        if (Editor.editing) {
+          if (key === 'Escape') { event.preventDefault(); Editor.stopEditing(); }
+          return;
+        }
+        if (event.target.closest && event.target.closest('input, textarea, select, .modal, [contenteditable="true"]')) return;
+        const lower = key.toLowerCase();
+        if (mod && lower === 'z') { event.preventDefault(); Editor.history(event.shiftKey ? 1 : -1); return; }
+        if (mod && lower === 'y') { event.preventDefault(); Editor.history(1); return; }
+        const box = Editor.selected;
+        if (!box) return;
+        if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
+        else if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); Editor.boxAction('delete'); }
+        else if (key.startsWith('Arrow')) { event.preventDefault(); Editor.nudge(key, event.shiftKey); }
+        else if (key === 'Escape') Editor.deselect();
+        else if (key === 'Enter' || key === 'F2') { event.preventDefault(); Editor.startEditing(box); }
+      }
+
+      function wireEditor() {
+        const canvas = $('slide-canvas');
+        $('stage-host').addEventListener('pointerdown', Editor.onPointerDown);
+        canvas.addEventListener('dblclick', event => {
+          if (!document.body.classList.contains('edit-mode')) return;
+          const box = event.target.closest('.draggable-box');
+          if (box && canvas.contains(box)) Editor.startEditing(box, event.clientX, event.clientY);
+        });
+        canvas.addEventListener('input', () => { if (Editor.editing) Editor.touch(); });
+        canvas.addEventListener('paste', event => {
+          if (!Editor.editing) return;
+          event.preventDefault(); // 붙여넣기는 일반 글자로만
+          document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+        });
+        canvas.addEventListener('drop', event => { if (Editor.editing) event.preventDefault(); });
+
+        // 그림 붙여넣기·끌어다 놓기
+        document.addEventListener('paste', event => {
+          if (Router.view !== 'editor' || Editor.editing || Show.isOn()) return;
+          if (event.target.closest && event.target.closest('input, textarea')) return;
+          const file = Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/'));
+          if (file) { event.preventDefault(); Editor.insertImage(file); }
+        });
+        $('stage-host').addEventListener('dragover', event => event.preventDefault());
+        $('stage-host').addEventListener('drop', event => {
+          event.preventDefault();
+          const file = Array.from(event.dataTransfer.files || []).find(item => item.type.startsWith('image/'));
+          if (file) Editor.insertImage(file);
+        });
+
+        new ResizeObserver(() => Editor.fit()).observe($('stage-host'));
+        window.addEventListener('resize', () => { if (Show.isOn()) Show.fit(); });
+        document.addEventListener('fullscreenchange', () => {
+          if (!document.fullscreenElement && Show.isOn()) Show.exit();
+          else if (Show.isOn()) Show.fit();
+        });
+
+        $('thumb-list').addEventListener('click', event => {
+          const item = event.target.closest('.thumb-item');
+          if (item) Editor.goTo(Number(item.dataset.index));
+        });
+        document.querySelectorAll('[data-slide]').forEach(button => button.addEventListener('click', () => Editor.slideAction(button.dataset.slide)));
+        document.querySelectorAll('[data-insert]').forEach(button => button.addEventListener('click', () => Editor.insert(button.dataset.insert)));
+        document.querySelectorAll('[data-box]').forEach(button => button.addEventListener('click', () => Editor.boxAction(button.dataset.box)));
+        document.querySelectorAll('[data-export]').forEach(button => button.addEventListener('click', () => Exporter.download(button.dataset.export)));
+
+        const animSelect = $('anim-select');
+        Object.keys(ANIMATIONS).forEach(name => animSelect.add(new Option(ANIMATIONS[name], name)));
+        animSelect.addEventListener('change', () => Editor.setAnimation(animSelect.value, $('anim-delay').value));
+        $('anim-delay').addEventListener('change', () => Editor.setAnimation(animSelect.value, $('anim-delay').value));
+
+        $('fill-color').addEventListener('input', event => {
+          if (!Editor.selected) return;
+          Editor.selected.style.background = event.target.value;
+          Editor.commitSoon();
+        });
+        $('bg-color').addEventListener('input', event => {
+          const slide = Editor.current();
+          slide.bg = event.target.value;
+          slide.pristine = false;
+          $('slide-canvas').style.background = slide.bg;
+          Editor.commitSoon();
+        });
+
+        $('notes-input').addEventListener('input', event => { Editor.current().notes = event.target.value; Editor.scheduleSave(); });
+        $('memo-input').addEventListener('input', event => { Editor.current().memo = event.target.value; Editor.scheduleSave(); });
+        $('notes-input').addEventListener('change', () => Editor.commit());
+        $('memo-input').addEventListener('change', () => Editor.commit());
+
+        $('deck-title').addEventListener('input', event => {
+          Editor.deck.title = event.target.value.trim() || DEFAULT_TITLE;
+          document.title = Editor.deck.title + ' - HTML 슬라이드 편집 도구';
+          Editor.scheduleSave();
+        });
+        $('btn-home').addEventListener('click', () => { location.hash = '#/'; });
+        $('btn-undo').addEventListener('click', () => Editor.history(-1));
+        $('btn-redo').addEventListener('click', () => Editor.history(1));
+        $('btn-mode').addEventListener('click', () => Show.toggle());
+        $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
+        $('show-overlay').addEventListener('click', () => Show.go(Show.index + 1));
+        $('file-image').addEventListener('change', event => {
+          Editor.insertImage(event.target.files[0]);
+          event.target.value = '';
+        });
+      }
+
+      function boot() {
+        const nav = document.querySelector('nav.navbar');
+        const setNavHeight = () => document.documentElement.style.setProperty('--nav-h', (nav ? nav.offsetHeight : 0) + 'px');
+        setNavHeight();
+        window.addEventListener('resize', setNavHeight);
+
+        $('btn-new-deck').addEventListener('click', Home.createDeck);
+        $('btn-clear-recent').addEventListener('click', Home.clearAll);
+        $('set-save').addEventListener('click', SettingsModal.save);
+        document.addEventListener('click', event => {
+          const button = event.target.closest('[data-act]');
+          if (!button) return;
+          if (button.dataset.act === 'settings') SettingsModal.open();
+          if (button.dataset.act === 'import') $('file-import').click();
+        });
+        $('file-import').addEventListener('change', event => {
+          Importer.open(event.target.files[0]);
+          event.target.value = '';
+        });
+        document.addEventListener('keydown', onKeyDown);
+        window.addEventListener('pagehide', () => { if (Editor.deck) { Editor.syncCurrent(); Editor.saveNow(); } });
+
+        wireEditor();
+        FloatBar.init();
+        AiPanel.init();
+        window.addEventListener('hashchange', Router.route);
+        Router.route();
+      }
+
+      boot();
+    })();
+  </script>
+</body>
+
+</html>

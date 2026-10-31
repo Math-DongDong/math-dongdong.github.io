@@ -89,7 +89,8 @@
                 {
                     "title": "수업도구",
                     "items": [
-                        { "name": "수직선 만들기", "path": "pages/automation/class/numberline.html" }
+                        { "name": "수직선 만들기", "path": "pages/automation/class/numberline.html" },
+                        { "name": "HTML 슬라이드 편집 도구", "path": "pages/automation/class/lessonstudio.html" }
                     ]
                 },
 
