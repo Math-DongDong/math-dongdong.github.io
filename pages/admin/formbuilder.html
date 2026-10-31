@@ -1222,15 +1222,18 @@
             return true;
         }
 
-        /* ── 파일 첨부 문항 (학번 인증 설문 전용) ──
-         *  Storage 경로: custom_forms/{방코드}/{학번}/{문항ID}/{슬롯}  ← Storage 규칙과 같아야 합니다
+        /* ── 파일 첨부 문항 (학번 인증 · 빠른 입장 공통) ──
+         *  Storage 경로: custom_forms/{방코드}/{응답ID}/{문항ID}/{슬롯}  ← Storage 규칙과 같아야 합니다
+         *    응답ID = 학번(학번 인증) 또는 익명 응답 ID q_anon_…(빠른 입장, 제출 전에만 업로드 가능)
          *  응답 값: { files: [{ slot, name, ext, size, type, uploadedAt }] }
          *  ★ 다운로드 URL은 저장하지 않습니다 (응답 문서는 학번만 알면 읽을 수 있음) */
         const FILE_MAX_MB = 50;           // 문항 설정에서 고를 수 있는 최대 용량
         const FILE_MAX_COUNT = 10;        // 슬롯 번호 0~9 (규칙: ^[0-9]$)
         const FILE_THUMB_MAX_BYTES = 1.5 * 1024 * 1024;   // 이보다 큰 이미지는 클릭할 때 원본을 불러옵니다
-        const DEFAULT_FILE_NAME_TEMPLATE = '{학번}_{원본파일명}';
-        const FILE_NAME_TOKENS = ['학번', '원본파일명'];
+        // 빠른 입장은 학번이 없으므로 학번 태그를 쓰지 않습니다
+        const isAuthRoom = roomData => roomData?.roomMode === 'auth';
+        const defaultFileNameTemplate = (roomData = currentRoomData) => isAuthRoom(roomData) ? '{학번}_{원본파일명}' : '{원본파일명}';
+        const fileNameTokens = (roomData = currentRoomData) => isAuthRoom(roomData) ? ['학번', '원본파일명'] : ['원본파일명'];
 
         const getFileMaxMB = question => Math.min(FILE_MAX_MB, Math.max(1, Math.floor(Number(question?.maxFileMB) || 10)));
         const getFileMaxCount = question => Math.min(FILE_MAX_COUNT, Math.max(1, Math.floor(Number(question?.maxFileCount) || 1)));
@@ -1268,7 +1271,7 @@
 
         /** 파일명 규칙의 {토큰}을 값으로 바꿉니다. {Q3} = 3번 문항의 응답 */
         function resolveFileNameTemplate(template, values, resolveQuestion) {
-            return String(template || DEFAULT_FILE_NAME_TEMPLATE).replace(/\{([^{}]+)\}/g, (match, rawKey) => {
+            return String(template || defaultFileNameTemplate()).replace(/\{([^{}]+)\}/g, (match, rawKey) => {
                 const key = rawKey.trim();
                 if (key in values) return values[key];
                 const questionNumber = key.match(/^Q(\d+)$/i);
@@ -1279,14 +1282,16 @@
         /** 교사가 내려받을 때 붙일 파일명 (다운로드 순간에 계산 → 규칙을 바꿔도 다시 받으면 반영) */
         function buildDownloadFileName(question, response, meta, order, total, schema = currentRoomData?.formSchema || []) {
             const original = splitFileName(meta.name);
-            const template = question.fileNameTemplate || DEFAULT_FILE_NAME_TEMPLATE;
+            const template = question.fileNameTemplate || defaultFileNameTemplate();
             let name = resolveFileNameTemplate(template, {
-                학번: response.studentId || response.id || '',
+                학번: isAuthRoom(currentRoomData) ? (response.studentId || response.id || '') : '',
                 원본파일명: original.base
             }, number => {
                 const target = schema[number - 1];
                 return target ? formatAnswer(response.answers?.[target.id]).replace(/\s*\n\s*/g, ',') : '';
             });
+            // 빈 토큰(예: 빠른 입장의 {학번})이 남긴 _ 정리
+            name = name.replace(/_{2,}/g, '_').replace(/^[\s_-]+|[\s_-]+$/g, '');
             if (total > 1) name += `_${order}`;
             name = sanitizeFileName(name) || sanitizeFileName(original.base) || 'file';
             const ext = meta.ext || original.ext;
@@ -1783,10 +1788,7 @@
                     return;
                 }
 
-                // 파일 첨부는 학번 인증 전용 → 빠른 입장으로 복제하면 파일 문항을 뺍니다
-                const sourceSchema = Array.isArray(baseData.formSchema) ? structuredClone(baseData.formSchema) : [];
-                const formSchema = selectedMode === 'auth' ? sourceSchema : sourceSchema.filter(question => question.type !== 'file');
-                const removedFileCount = sourceSchema.length - formSchema.length;
+                const formSchema = Array.isArray(baseData.formSchema) ? structuredClone(baseData.formSchema) : [];
                 const roomData = {
                     createdBy: currentUser.uid,        // ★ 보안 규칙 필수 필드
                     creatorUid: currentUser.uid,       // 호환성 유지
@@ -1826,8 +1828,7 @@
                 $('roomSelect').value = createdCode;
                 await selectRoom(createdCode);
                 const modeLabel = selectedMode === 'auth' ? '학생 인증' : '빠른 입장';
-                const removedNote = removedFileCount ? `\n빠른 입장 설문이라 파일 첨부 문항 ${removedFileCount}개는 제외했습니다.` : '';
-                showNotice(source ? `양식이 복제되었습니다. 새 룸 코드: ${createdCode} (${modeLabel})${removedNote}` : `새 설문이 만들어졌습니다. 룸 코드: ${createdCode} (${modeLabel})`);
+                showNotice(source ? `양식이 복제되었습니다. 새 룸 코드: ${createdCode} (${modeLabel})` : `새 설문이 만들어졌습니다. 룸 코드: ${createdCode} (${modeLabel})`);
             } catch (error) {
                 console.error('설문 룸 생성 실패:', error);
                 showNotice(`설문 룸을 만들지 못했습니다: ${error.message || '잠시 후 다시 시도해주세요.'}`, true);
@@ -2026,7 +2027,7 @@
                                 <option value="choice" ${question.type === 'choice' ? 'selected' : ''}>객관식 (단일 선택)</option>
                                 <option value="dropdown" ${question.type === 'dropdown' ? 'selected' : ''}>드롭다운</option>
                                 <option value="pill" ${question.type === 'pill' ? 'selected' : ''}>알약형 다중 선택</option>
-                                ${currentRoomData?.roomMode === 'auth' || question.type === 'file' ? `<option value="file" ${question.type === 'file' ? 'selected' : ''}>파일 첨부 (학번 인증 전용)</option>` : ''}
+                                <option value="file" ${question.type === 'file' ? 'selected' : ''}>파일 첨부</option>
                             </select>
                             ${question.type === 'short' ? `
                                 <select class="field mt-0 py-1 px-2 text-xs font-semibold w-auto min-w-[110px] rounded-lg bg-white border border-line" data-field="validation" aria-label="문항 ${index + 1} 유효성 검사" ${locked ? 'disabled' : ''}>
@@ -2131,10 +2132,10 @@
                     </label>
                     <div class="sm:col-span-2">
                         <label class="text-xs font-bold">다운로드 파일명 규칙 (확장자는 원본 그대로 붙음)
-                            <input class="field mt-1 font-mono" data-field="fileNameTemplate" maxlength="120" value="${escapeHtml(question.fileNameTemplate || DEFAULT_FILE_NAME_TEMPLATE)}" ${locked ? 'disabled' : ''}>
+                            <input class="field mt-1 font-mono" data-field="fileNameTemplate" maxlength="120" value="${escapeHtml(question.fileNameTemplate || defaultFileNameTemplate())}" ${locked ? 'disabled' : ''}>
                         </label>
                         <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            ${FILE_NAME_TOKENS.map(tokenButton).join('')}
+                            ${fileNameTokens().map(tokenButton).join('')}
                             ${otherQuestions.length ? `<select class="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-board" data-file-token-select aria-label="다른 문항 응답 넣기" ${locked ? 'disabled' : ''}>
                                 <option value="">+ 다른 문항 응답</option>
                                 ${otherQuestions.map(({ item, number }) => `<option value="{Q${number}}">Q${number}. ${escapeHtml(stripTags(item.title || '').slice(0, 24) || '(제목 없음)')}</option>`).join('')}
@@ -2147,10 +2148,11 @@
         }
 
         function previewFileNameTemplate(question) {
-            const template = question.fileNameTemplate || DEFAULT_FILE_NAME_TEMPLATE;
+            const template = question.fileNameTemplate || defaultFileNameTemplate();
             let name = resolveFileNameTemplate(template, {
-                학번: '20301', 원본파일명: '활동지'
+                학번: isAuthRoom(currentRoomData) ? '20301' : '', 원본파일명: '활동지'
             }, number => `[Q${number} 응답]`);
+            name = name.replace(/_{2,}/g, '_').replace(/^[\s_-]+|[\s_-]+$/g, '');
             if (getFileMaxCount(question) > 1) name += '_1';
             return `${sanitizeFileName(name) || '활동지'}.pdf`;
         }
@@ -2209,7 +2211,7 @@
                 if (question.type === 'file') {
                     question.maxFileMB = getFileMaxMB(question);
                     question.maxFileCount = getFileMaxCount(question);
-                    question.fileNameTemplate = question.fileNameTemplate || DEFAULT_FILE_NAME_TEMPLATE;
+                    question.fileNameTemplate = question.fileNameTemplate || defaultFileNameTemplate();
                 }
                 if (['choice', 'dropdown', 'pill'].includes(question.type) && !question.options?.length) question.options = ['선택지 1', '선택지 2'];
                 if (question.type !== 'short') question.validation = 'none';
@@ -2419,7 +2421,6 @@
             const schema = currentRoomData.formSchema || [];
             if (schema.some(question => !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
             if (schema.some(question => ['choice', 'dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('객관식, 드롭다운, 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
-            if (hasFileQuestion(schema) && currentRoomData.roomMode !== 'auth') return showNotice('파일 첨부 문항은 학번 인증 설문에서만 사용할 수 있습니다.', true);
             const button = $('saveSchemaButton');
             button.disabled = true;
             try {
@@ -3676,9 +3677,6 @@
 
         function renderStudentFileControl(question, answer, disabled) {
             const qid = escapeHtml(question.id);
-            if (studentSession?.isQuick) {
-                return '<p class="mt-2 rounded-lg bg-amber-50 p-2.5 text-sm text-amber-800">이 문항은 학번 인증 설문에서만 파일을 제출할 수 있습니다.</p>';
-            }
             const submitted = studentSubmittedFiles[question.id];
             const drafts = studentFileDrafts[question.id] || [];
             const maxCount = getFileMaxCount(question);
@@ -4050,6 +4048,7 @@
         /** 빠른 입장: 제출 후 이전 응답을 남기지 않고 새 빈 양식으로 초기화 */
         function resetQuickFormForNextResponse() {
             studentSession.studentId = createAnonymousResponseId();
+            clearStudentFileDrafts();       // 새 응답 ID → 고른 파일도 비움
             studentResponseExists = false;
             window.studentResponseExists = false;
             $('existingResponseNotice').hidden = true;
@@ -4189,7 +4188,6 @@
                     if (answers[question.id] !== undefined) finalAnswers[question.id] = answers[question.id];
                 }
                 if (visibleItems.some(({ question }) => question.type === 'file' && studentFileDrafts[question.id]?.length)) {
-                    if (studentSession.isQuick) throw new Error('파일 첨부는 학번 인증 설문에서만 제출할 수 있습니다.');
                     button.textContent = '파일 업로드 중... 0%';
                     const uploaded = await uploadStudentFileDrafts(visibleItems, ratio => {
                         button.textContent = `파일 업로드 중... ${Math.min(100, Math.round(ratio * 100))}%`;
