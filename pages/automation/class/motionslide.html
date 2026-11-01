@@ -266,7 +266,11 @@
     #slide-canvas .draggable-box.is-selected { outline: 4px solid var(--primary); outline-offset: 4px; }
     #slide-canvas .is-editing { cursor: text; user-select: text; outline: 4px dashed var(--primary); outline-offset: 4px; }
     #slide-canvas img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
-    .ls-handle { position: absolute; right: -18px; bottom: -18px; width: 30px; height: 30px; background: #fff; border: 5px solid var(--primary); border-radius: 6px; cursor: nwse-resize; }
+    /* 크기 손잡이: 오른쪽(가로) · 아래(세로) · 오른쪽 아래 모서리(같은 비율). 캔버스가 축소되어 보이므로 크게 */
+    .ls-handle { position: absolute; z-index: 11; width: 30px; height: 30px; background: #fff; border: 5px solid var(--primary); border-radius: 6px; }
+    .ls-handle[data-dir="se"] { right: -18px; bottom: -18px; cursor: nwse-resize; }
+    .ls-handle[data-dir="e"] { right: -16px; top: calc(50% - 15px); width: 22px; border-radius: 11px; cursor: ew-resize; }
+    .ls-handle[data-dir="s"] { bottom: -16px; left: calc(50% - 15px); height: 22px; border-radius: 11px; cursor: ns-resize; }
     /* 묶인 상자를 골랐을 때 위에 뜨는 [그룹 해제] (캔버스가 축소되어 보이므로 크게) */
     .ls-ungroup { position: absolute; left: -4px; top: -64px; z-index: 10; padding: 6px 18px; font: 600 24px/1.2 Pretendard, sans-serif; color: #fff; background: var(--primary); border-radius: 8px; white-space: nowrap; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
     .ls-ungroup.below { top: auto; bottom: -64px; }
@@ -366,6 +370,12 @@
             <button type="button" class="btn btn-sm btn-light" id="btn-undo" title="되돌리기 (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
             <button type="button" class="btn btn-sm btn-light" id="btn-redo" title="다시 실행 (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button>
             <button type="button" class="btn btn-sm btn-light text-nowrap" data-bs-toggle="modal" data-bs-target="#shortcut-modal" title="단축키 보기"><i class="bi bi-keyboard"></i> 단축키</button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i> 기타</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><button type="button" class="dropdown-item" data-act="merge"><i class="bi bi-intersect"></i> HTML 파일 합치기</button></li>
+              </ul>
+            </div>
             <div class="dropdown">
               <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> 불러오기</button>
               <ul class="dropdown-menu dropdown-menu-end">
@@ -628,6 +638,33 @@
     </div>
   </div>
 
+  <!-- HTML 파일 합치기 -->
+  <div class="modal fade" id="merge-modal" tabindex="-1" aria-hidden="true" aria-labelledby="merge-modal-title">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="merge-modal-title"><i class="bi bi-intersect"></i> HTML 파일 합치기</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted">
+            이 도구에서 내보낸 HTML 파일을 2개 이상 골라 순서대로 이어 붙입니다. <b>발표자 보기</b> 파일은 시나리오까지,
+            <b>청중 화면</b> 파일은 시나리오 없이 합칩니다. 지금 프레젠테이션은 그대로 두고 새 프레젠테이션으로 엽니다.
+          </p>
+          <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="merge-pick"><i class="bi bi-file-earmark-plus"></i> 파일 추가</button>
+          <div class="list-group mb-3" id="merge-list"></div>
+          <p class="text-muted text-center small my-3" id="merge-empty">아직 고른 파일이 없습니다.</p>
+          <label class="form-label small text-muted" for="merge-title">합친 프레젠테이션 제목</label>
+          <input type="text" class="form-control" id="merge-title" maxlength="80" placeholder="제목">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">닫기</button>
+          <button type="button" class="btn btn-primary" id="merge-go" disabled></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 최근 요청 목록: 다음 요청에 AI에게 함께 전달되는 요청만 보인다 -->
   <div class="modal fade" id="recent-req-modal" tabindex="-1" aria-hidden="true" aria-labelledby="recent-req-title">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
@@ -802,6 +839,7 @@
 
   <div id="toast-area" aria-live="polite"></div>
   <input type="file" class="d-none" id="file-import" accept=".html,.htm,text/html">
+  <input type="file" class="d-none" id="file-merge" accept=".html,.htm,text/html" multiple>
   <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp">
   <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm">
   <input type="file" class="d-none" id="file-media">
@@ -2756,18 +2794,20 @@
         },
 
         /* --- 개체 선택·편집 --- */
-        makeHandle() {
+        // dir: 'e' 가로, 's' 세로, 'se' 같은 비율(글자 크기·여백까지 함께)
+        makeHandle(dir) {
           const handle = document.createElement('span');
           handle.className = 'ls-handle';
+          handle.dataset.dir = dir;
           handle.contentEditable = 'false';
-          handle.title = '크기 조절';
+          handle.title = { e: '가로 크기', s: '세로 크기', se: '같은 비율로 크기 (글자 크기도 함께)' }[dir];
           return handle;
         },
 
         // 크기 조절 손잡이와, 묶인 상자면 [그룹 해제] 단추를 붙인다.
         addHandles(box) {
           if (!(box instanceof HTMLElement) || box.querySelector(':scope > .ls-handle')) return;
-          box.append(Editor.makeHandle());
+          box.append(Editor.makeHandle('e'), Editor.makeHandle('s'), Editor.makeHandle('se'));
           if (Editor.groupParts(box).length < 2) return;
           const ungroup = document.createElement('span');
           ungroup.className = 'ls-ungroup' + ((parseFloat(box.style.top) || 0) < 80 ? ' below' : '');
@@ -3012,10 +3052,47 @@
           event.preventDefault();
           if (event.target.closest('.ls-ungroup')) { Editor.ungroup(box); return; }
           Editor.select(box);
-          Editor.drag(event, box, !!handle);
+          Editor.drag(event, box, handle ? handle.dataset.dir || 'se' : null);
         },
 
-        drag(event, box, resizing) {
+        // 같은 비율 크기 조절: 상자와 안쪽 요소의 글자 크기·여백·테두리·둥근 모서리·고정 크기를 처음 값에 비율을 곱해 맞춘다.
+        // 좌우 바깥 여백은 auto(가운데 맞춤)인 경우가 많아 건드리지 않는다.
+        SCALE_PROPS: ['font-size', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'margin-top', 'margin-bottom',
+          'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width', 'border-top-left-radius', 'border-top-right-radius',
+          'border-bottom-right-radius', 'border-bottom-left-radius', 'row-gap', 'column-gap', 'letter-spacing'],
+
+        scaleSnapshot(box) {
+          const list = [];
+          [box].concat(Array.from(box.querySelectorAll('*'))).forEach(el => {
+            if (!(el instanceof HTMLElement) || el.matches('.ls-handle, .ls-ungroup, .iframe-drag-overlay') || el.closest('svg')) return;
+            const style = getComputedStyle(el);
+            const values = {};
+            Editor.SCALE_PROPS.forEach(prop => {
+              const v = parseFloat(style.getPropertyValue(prop));
+              if (v) values[prop] = v; // 0이거나 normal이면 건드리지 않는다
+            });
+            // 직접 적힌 px 크기(그림 폭 등)와 px 줄 간격도 함께
+            ['width', 'height', 'min-height', 'line-height'].forEach(prop => {
+              if (el === box && (prop === 'width' || prop === 'height')) return; // 상자 크기는 따로
+              const inline = el.style.getPropertyValue(prop);
+              if (/^[\d.]+px$/.test(inline)) values[prop] = parseFloat(inline);
+            });
+            if (Object.keys(values).length) list.push({ el, values });
+          });
+          return list;
+        },
+
+        applyScale(list, ratio) {
+          list.forEach(({ el, values }) => {
+            Object.keys(values).forEach(prop => {
+              const next = values[prop] * ratio;
+              el.style.setProperty(prop, (prop === 'font-size' ? Math.max(6, next) : next).toFixed(2).replace(/\.?0+$/, '') + 'px');
+            });
+          });
+        },
+
+        // mode: null(옮기기) | 'e'(가로) | 's'(세로) | 'se'(같은 비율)
+        drag(event, box, mode) {
           const scale = Editor.scale || 1;
           Editor.bakePosition(box);
           const rect = box.getBoundingClientRect();
@@ -3028,6 +3105,7 @@
             height: rect.height / scale
           };
           const fixedHeight = !!box.style.height;
+          let snapshot = null;
           let moved = false;
 
           const move = ev => {
@@ -3035,9 +3113,19 @@
             const dy = (ev.clientY - start.y) / scale;
             if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
             moved = true;
-            if (resizing) {
+            if (mode === 'e') {
               box.style.width = Math.max(40, Math.round(start.width + dx)) + 'px';
-              if (fixedHeight) box.style.height = Math.max(20, Math.round(start.height + dy)) + 'px';
+            } else if (mode === 's') {
+              box.style.height = Math.max(20, Math.round(start.height + dy)) + 'px';
+            } else if (mode === 'se') {
+              // 더 많이 끈 방향을 기준으로 같은 비율로 키우거나 줄인다.
+              const rx = (start.width + dx) / start.width;
+              const ry = (start.height + dy) / start.height;
+              const ratio = Math.max(0.1, Math.abs(rx - 1) >= Math.abs(ry - 1) ? rx : ry);
+              if (!snapshot) snapshot = Editor.scaleSnapshot(box);
+              box.style.width = Math.max(20, Math.round(start.width * ratio)) + 'px';
+              if (fixedHeight) box.style.height = Math.max(10, Math.round(start.height * ratio)) + 'px';
+              Editor.applyScale(snapshot, ratio);
             } else {
               box.style.left = Math.round(start.left + dx) + 'px';
               box.style.top = Math.round(start.top + dy) + 'px';
@@ -5503,24 +5591,20 @@
           return { data, reason: '' };
         },
 
-        async open(file) {
-          if (!file) return;
-          if (file.size > 100 * 1024 * 1024) { Util.toast('파일이 너무 큽니다(100MB 초과).', 'warning'); return; }
+        // 내보낸 HTML 파일 하나를 읽어 { title, keepNotes, slides, sections }로 바꾼다. 실패하면 { error }.
+        // 발표자 보기 파일은 시나리오까지, 청중 화면 파일은 시나리오 없이 가져온다.
+        async read(file) {
+          if (file.size > 100 * 1024 * 1024) return { error: '파일이 너무 큽니다(100MB 초과).' };
           const text = await file.text();
           const { data, reason } = Importer.parse(text);
           if (!data) {
             // 원인을 알 수 있게 받은 크기와 실패 이유를 함께 보인다.
-            Util.toast('이 도구에서 내보낸 HTML 파일만 불러올 수 있습니다.\n(' + reason + ' · ' + file.size.toLocaleString() + '바이트 · 시작: ' +
-              text.slice(0, 40).replace(/\s+/g, ' ') + ')', 'warning');
-            return;
+            return { error: '이 도구에서 내보낸 HTML 파일만 불러올 수 있습니다.\n(' + reason + ' · ' + file.size.toLocaleString() + '바이트 · 시작: ' + text.slice(0, 40).replace(/\s+/g, ' ') + ')' };
           }
           const keepNotes = data.kind === 'presenter';
-          const now = new Date().toISOString();
-          const deck = {
-            id: Util.uid(),
+          return {
             title: String(data.title || '불러온 프레젠테이션').slice(0, 80),
-            createdAt: now,
-            updatedAt: now,
+            keepNotes,
             slides: data.slides.slice(0, 500).map(slide => Editor.normalizeSlide({
               title: slide.title,
               html: slide.html,
@@ -5535,6 +5619,15 @@
               id: String(section.id || ''), name: String(section.name || '구역').slice(0, 40), collapsed: !!section.collapsed
             })).filter(section => section.id)
           };
+        },
+
+        async open(file) {
+          if (!file) return;
+          const read = await Importer.read(file);
+          if (read.error) { Util.toast(read.error, 'warning'); return; }
+          const keepNotes = read.keepNotes;
+          const now = new Date().toISOString();
+          const deck = { id: Util.uid(), title: read.title, createdAt: now, updatedAt: now, slides: read.slides, sections: read.sections };
           try {
             await DeckStore.put(deck);
           } catch (err) {
@@ -5546,6 +5639,143 @@
             ? '발표자 보기 파일을 불러왔습니다. 발표 시나리오도 함께 편집할 수 있습니다.'
             : '청중 화면 파일을 불러왔습니다. 발표 시나리오는 비어 있는 상태입니다.', 'success');
           location.hash = '#/edit/' + deck.id;
+        }
+      };
+
+      /* ===== 14-0. HTML 파일 합치기 =====
+         내보낸 HTML 파일 여러 개를 고른 순서대로 이어 붙여 새 프레젠테이션으로 연다.
+         발표자 보기 파일은 시나리오까지, 청중 화면 파일은 시나리오 없이 합친다(Importer.read와 같은 규칙).
+         파일마다 구역을 지켜 어느 파일에서 온 장인지 알 수 있게 한다(구역이 없던 파일은 파일 제목으로 구역 하나). */
+      const Merger = {
+        items: [], // { name, read }
+
+        titleTouched: false,
+
+        open() {
+          Merger.items = [];
+          Merger.titleTouched = false;
+          $('merge-title').value = '';
+          Merger.draw();
+          bootstrap.Modal.getOrCreateInstance($('merge-modal')).show();
+        },
+
+        async add(files) {
+          const list = Array.from(files || []);
+          for (const file of list) {
+            const read = await Importer.read(file);
+            if (read.error) { Util.toast(file.name + ': ' + read.error.split('\n')[0], 'warning'); continue; }
+            Merger.items.push({ name: file.name, read });
+          }
+          Merger.draw();
+        },
+
+        draw() {
+          const host = $('merge-list');
+          host.textContent = '';
+          Merger.items.forEach((item, i) => {
+            const row = document.createElement('div');
+            row.className = 'list-group-item d-flex align-items-center gap-2';
+            const num = document.createElement('span');
+            num.className = 'fw-bold text-primary';
+            num.textContent = (i + 1) + '.';
+            const text = document.createElement('div');
+            text.className = 'flex-grow-1';
+            text.style.minWidth = '0';
+            const title = document.createElement('div');
+            title.className = 'fw-semibold text-truncate';
+            title.textContent = item.read.title;
+            const meta = document.createElement('div');
+            meta.className = 'small text-muted text-truncate';
+            meta.textContent = item.read.slides.length + '장 · ' + item.name;
+            const badge = document.createElement('span');
+            badge.className = 'badge ms-1 ' + (item.read.keepNotes ? 'text-bg-primary' : 'text-bg-secondary');
+            badge.textContent = item.read.keepNotes ? '발표자 보기 · 시나리오 포함' : '청중 화면 · 시나리오 없음';
+            meta.append(' ', badge);
+            text.append(title, meta);
+            row.append(num, text);
+            [['up', 'bi-arrow-up', '위로'], ['down', 'bi-arrow-down', '아래로'], ['remove', 'bi-x-lg', '빼기']].forEach(([act, icon, label]) => {
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'btn btn-sm btn-light';
+              button.title = label;
+              button.setAttribute('aria-label', item.read.title + ' ' + label);
+              button.innerHTML = '<i class="bi ' + icon + '"></i>';
+              button.addEventListener('click', () => {
+                const at = Merger.items.indexOf(item);
+                if (act === 'remove') Merger.items.splice(at, 1);
+                else {
+                  const to = act === 'up' ? at - 1 : at + 1;
+                  if (to < 0 || to >= Merger.items.length) return;
+                  Merger.items.splice(at, 1);
+                  Merger.items.splice(to, 0, item);
+                }
+                Merger.draw();
+              });
+              row.append(button);
+            });
+            host.append(row);
+          });
+          const total = Merger.items.reduce((sum, item) => sum + item.read.slides.length, 0);
+          // 제목을 직접 고치지 않았으면 맨 위 파일의 제목을 따른다.
+          if (!Merger.titleTouched) $('merge-title').value = Merger.items.length ? Merger.items[0].read.title + (Merger.items.length > 1 ? ' 외' : '') : '';
+          $('merge-empty').classList.toggle('d-none', Merger.items.length > 0);
+          $('merge-go').disabled = Merger.items.length < 2;
+          $('merge-go').innerHTML = '<i class="bi bi-intersect"></i> ';
+          $('merge-go').append('합쳐서 열기 (' + Merger.items.length + '개 파일 · ' + total + '장)');
+        },
+
+        async merge() {
+          if (Merger.items.length < 2) return;
+          const slides = [];
+          const sections = [];
+          Merger.items.forEach(item => {
+            // 파일마다 구역 id를 새로 붙여 서로 섞이지 않게 한다.
+            const ids = {};
+            item.read.sections.forEach(section => {
+              ids[section.id] = 'sec' + Util.uid();
+              sections.push({ id: ids[section.id], name: section.name, collapsed: false });
+            });
+            let whole = null;
+            if (!item.read.sections.length) {
+              whole = 'sec' + Util.uid();
+              sections.push({ id: whole, name: item.read.title.slice(0, 40), collapsed: false });
+            }
+            item.read.slides.forEach(slide => {
+              slides.push(Object.assign({}, slide, { id: Util.uid(), section: whole || ids[slide.section] || null }));
+            });
+          });
+          if (slides.length > 500) { Util.toast('합친 장이 500장을 넘습니다. 파일 수를 줄여 주세요.', 'warning'); return; }
+          const now = new Date().toISOString();
+          const deck = {
+            id: Util.uid(),
+            title: ($('merge-title').value.trim() || Merger.items[0].read.title).slice(0, 80),
+            createdAt: now,
+            updatedAt: now,
+            slides: Editor.normalizeSections(slides),
+            sections
+          };
+          try {
+            await DeckStore.put(deck);
+          } catch (err) {
+            Util.toast('브라우저 저장 공간이 부족해 합치지 못했습니다.', 'danger');
+            return;
+          }
+          bootstrap.Modal.getOrCreateInstance($('merge-modal')).hide();
+          const withNotes = Merger.items.filter(item => item.read.keepNotes).length;
+          Util.toast(Merger.items.length + '개 파일을 합쳐 ' + slides.length + '장짜리 새 프레젠테이션을 만들었습니다.' +
+            (withNotes < Merger.items.length ? '\n청중 화면 파일 ' + (Merger.items.length - withNotes) + '개는 시나리오 없이 합쳤습니다.' : ''), 'success');
+          Merger.items = [];
+          location.hash = '#/edit/' + deck.id;
+        },
+
+        init() {
+          $('merge-pick').addEventListener('click', () => $('file-merge').click());
+          $('file-merge').addEventListener('change', async event => {
+            await Merger.add(event.target.files);
+            event.target.value = '';
+          });
+          $('merge-go').addEventListener('click', Merger.merge);
+          $('merge-title').addEventListener('input', () => { Merger.titleTouched = true; });
         }
       };
 
@@ -6074,6 +6304,7 @@
           if (button.dataset.act === 'recent') RecentPicker.open();
           if (button.dataset.act === 'cloud-save') CloudUI.save();
           if (button.dataset.act === 'cloud-list') CloudUI.open();
+          if (button.dataset.act === 'merge') Merger.open();
         });
         $('file-import').addEventListener('change', event => {
           Importer.open(event.target.files[0]);
@@ -6087,6 +6318,7 @@
         AiPanel.init();
         MathEditor.init();
         Planner.init();
+        Merger.init();
         AppEditor.init();
         window.addEventListener('slideCloudChanged', CloudUI.sync);
         CloudUI.sync();
