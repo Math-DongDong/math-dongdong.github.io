@@ -233,12 +233,28 @@
     .ai-status { flex: none; height: 1.9rem; display: flex; align-items: center; overflow: hidden; }
     .ai-status-inner { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ai-status-inner > span:last-child { overflow: hidden; text-overflow: ellipsis; }
-    /* 여러 장 계획표(모달) */
-    .plan-item { padding: 0.45rem; margin-bottom: 0.4rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #fff; }
-    .plan-num { min-width: 1.4rem; font-weight: 700; color: var(--primary); }
-    .plan-points { resize: vertical; }
-    .plan-el-kind { min-width: 7.2rem; text-align: left; font-weight: 500; }
-    .plan-el-source { flex: 0 0 13rem; }
+    /* 여러 장 계획표(모달): 장마다 번호 원과 이어지는 선(흐름), 요소는 종류별 색 */
+    #plan-body { background: #f1f5f9; }
+    .plan-list { position: relative; }
+    .plan-item { display: grid; grid-template-columns: 2.4rem 1fr; gap: 0.9rem; position: relative; margin-bottom: 0.9rem; }
+    .plan-item:not(:last-child)::before { content: ""; position: absolute; left: 1.15rem; top: 2.6rem; bottom: -0.9rem; width: 2px; background: #c7d2fe; }
+    .plan-num { width: 2.4rem; height: 2.4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--primary); color: #fff; font-weight: 700; box-shadow: 0 0 0 4px #e0e7ff; position: relative; z-index: 1; }
+    .plan-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 0.8rem 1rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); }
+    .plan-card:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .plan-title { border: 0; padding: 0.15rem 0.25rem; font-size: 1.05rem; font-weight: 700; background: transparent; }
+    .plan-title:focus { background: #f8fafc; box-shadow: none; }
+    .plan-points { resize: vertical; background: #f8fafc; border-color: #e2e8f0; }
+    .plan-el { --k: #64748b; --kbg: #f8fafc; border-left: 4px solid var(--k); background: var(--kbg); border-radius: 8px; padding: 0.3rem 0.4rem; }
+    .plan-el[data-kind="math"], .plan-add-el[data-plan="add-math"], .plan-chip[data-kind="math"] { --k: #4f46e5; --kbg: #eef2ff; }
+    .plan-el[data-kind="image"], .plan-add-el[data-plan="add-image"], .plan-chip[data-kind="image"] { --k: #059669; --kbg: #ecfdf5; }
+    .plan-el[data-kind="video"], .plan-add-el[data-plan="add-video"], .plan-chip[data-kind="video"] { --k: #dc2626; --kbg: #fef2f2; }
+    .plan-el[data-kind="app"], .plan-add-el[data-plan="add-app"], .plan-chip[data-kind="app"] { --k: #d97706; --kbg: #fffbeb; }
+    .plan-chip { color: var(--k); background: var(--kbg); border: 1px solid var(--k); }
+    .plan-el-kind { flex: 0 0 auto; min-width: 7.6rem; color: var(--k); font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+    .plan-el .form-control, .plan-el .form-select { border-color: transparent; background-color: #fff; }
+    .plan-el-source { flex: 0 0 14rem; }
+    .plan-add-el { color: var(--k); border: 1px dashed var(--k); background: #fff; border-radius: 999px; font-size: 0.78rem; padding: 0.1rem 0.6rem; }
+    .plan-add-el:hover { background: var(--kbg); color: var(--k); border-color: var(--k); }
 
     @media (max-width: 1199.98px) {
       .ai-panel { --ai-w: 300px; }
@@ -296,6 +312,7 @@
 
     /* 알림은 아래 가운데: 오른쪽 AI 창의 입력칸·보내기 단추를 가리지 않게 */
     #toast-area { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 2100; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; max-width: calc(100vw - 2rem); }
+    body.modal-open #toast-area { top: 1rem; bottom: auto; } /* 창이 열려 있으면 창 아래 단추를 가리지 않게 위로 */
   </style>
 </head>
 
@@ -467,10 +484,8 @@
           <div class="ai-compose p-2">
             <p class="small text-muted mb-2" id="ai-hint"></p>
             <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="ai-files"></div>
-            <textarea class="form-control" id="ai-prompt"
+            <textarea class="form-control mb-2" id="ai-prompt"
               placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
-            <!-- AI 진행 상황: 입력칸과 보내기 단추 사이 한 줄(높이 고정이라 입력칸이 늘었다 줄었다 하지 않는다). 결과는 알림으로 -->
-            <div class="ai-status small text-primary" id="ai-status" role="status"><span class="ai-status-inner d-none" id="ai-status-on"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span id="ai-status-text"></span></span></div>
             <div class="d-flex gap-2">
               <button type="button" class="btn btn-light btn-sm" id="ai-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
               <div class="dropup">
@@ -485,7 +500,9 @@
               </div>
               <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> <span id="ai-send-label">생성</span> <span class="opacity-75" id="ai-send-hint">Ctrl+Enter</span></button>
             </div>
-            <p class="small text-muted mt-2 mb-0">요청 내용과 첨부 자료는 Google Gemini API로 전송됩니다. 개인정보가 담긴 자료는 넣지 마세요.</p>
+            <!-- AI 진행 상황: 보내기 단추 아래 한 줄(높이 고정이라 입력칸이 늘었다 줄었다 하지 않는다). 결과는 알림으로 -->
+            <div class="ai-status small text-primary" id="ai-status" role="status"><span class="ai-status-inner d-none" id="ai-status-on"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span id="ai-status-text"></span></span></div>
+            <p class="small text-muted mb-0">요청 내용과 첨부 자료는 Google Gemini API로 전송됩니다. 개인정보가 담긴 자료는 넣지 마세요.</p>
           </div>
         </aside>
       </div>
@@ -692,11 +709,12 @@
 
   <!-- 여러 장 계획표: 직접 고치고 승인하면 계획대로 만든다(실수로 닫히지 않게 [취소]로만 닫는다) -->
   <div class="modal fade" id="plan-modal" tabindex="-1" aria-hidden="true" aria-labelledby="plan-modal-title" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title h5 me-2" id="plan-modal-title"><i class="bi bi-list-check"></i> 슬라이드 계획</h2>
-          <span class="badge text-bg-primary plan-count"></span>
+        <div class="modal-header flex-wrap gap-2">
+          <h2 class="modal-title h5 me-1" id="plan-modal-title"><i class="bi bi-list-check"></i> 슬라이드 계획</h2>
+          <span class="badge rounded-pill text-bg-primary plan-count"></span>
+          <span class="plan-summary d-flex flex-wrap gap-1" id="plan-summary"></span>
           <span class="small text-muted ms-auto">고칠 곳을 바로 고친 뒤 [이대로 만들기]를 누르세요.</span>
         </div>
         <div class="modal-body" id="plan-body"></div>
@@ -841,8 +859,8 @@
   <input type="file" class="d-none" id="file-import" accept=".html,.htm,text/html">
   <input type="file" class="d-none" id="file-merge" accept=".html,.htm,text/html" multiple>
   <input type="file" class="d-none" id="file-plan">
-  <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp">
-  <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm">
+  <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+  <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm" multiple>
   <input type="file" class="d-none" id="file-media">
   <input type="file" class="d-none" id="ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
 
@@ -3984,16 +4002,18 @@
         row(item) {
           const li = document.createElement('li');
           li.className = 'plan-item';
-          const top = document.createElement('div');
-          top.className = 'd-flex align-items-center gap-1 mb-1';
           const num = document.createElement('span');
           num.className = 'plan-num';
+          const card = document.createElement('div');
+          card.className = 'plan-card';
+          const top = document.createElement('div');
+          top.className = 'd-flex align-items-center gap-1 mb-2';
           const title = document.createElement('input');
-          title.className = 'form-control form-control-sm fw-semibold plan-title';
+          title.className = 'form-control plan-title';
           title.placeholder = '소제목';
           title.setAttribute('aria-label', '소제목');
           title.value = item.title || '';
-          top.append(num, title);
+          top.append(title);
           [['up', 'bi-arrow-up', '위로'], ['down', 'bi-arrow-down', '아래로'], ['remove', 'bi-x-lg', '이 장 빼기']].forEach(([act, icon, label]) => {
             const button = document.createElement('button');
             button.type = 'button';
@@ -4014,17 +4034,18 @@
           elements.className = 'plan-elements';
           (item.elements || []).forEach(el => elements.append(Planner.elementRow(el)));
           const adds = document.createElement('div');
-          adds.className = 'd-flex flex-wrap gap-1 mt-1';
+          adds.className = 'd-flex flex-wrap gap-1 mt-2';
           Object.keys(Planner.KINDS).forEach(kind => {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'btn btn-sm btn-outline-secondary py-0 plan-add-el';
+            button.className = 'btn btn-sm plan-add-el';
             button.dataset.plan = 'add-' + kind;
             button.innerHTML = '<i class="bi ' + Planner.KINDS[kind].icon + '"></i> ';
             button.append('+ ' + Planner.KINDS[kind].label);
             adds.append(button);
           });
-          li.append(top, points, elements, adds);
+          card.append(top, points, elements, adds);
+          li.append(num, card);
           return li;
         },
 
@@ -4036,7 +4057,7 @@
           row.dataset.kind = el.kind;
           row.lsMedia = el.media || null;
           const tag = document.createElement('span');
-          tag.className = 'badge text-bg-light border text-nowrap plan-el-kind';
+          tag.className = 'plan-el-kind';
           tag.innerHTML = '<i class="bi ' + info.icon + '"></i> ';
           tag.append(info.label);
           const text = document.createElement('input');
@@ -4145,8 +4166,22 @@
             const full = li.querySelectorAll('.plan-el').length >= Planner.MAX_ELEMENTS;
             li.querySelectorAll('.plan-add-el').forEach(button => { button.disabled = full || AiPanel.busy; });
           });
-          const count = Planner.read().slides.length;
+          const plan = Planner.read();
+          const count = plan.slides.length;
           modal.querySelector('.plan-count').textContent = count + '장';
+          // 종류별 요소 수 요약(머리줄)
+          const summary = $('plan-summary');
+          summary.textContent = '';
+          Object.keys(Planner.KINDS).forEach(kind => {
+            const n = plan.slides.reduce((sum, item) => sum + item.elements.filter(el => el.kind === kind).length, 0);
+            if (!n) return;
+            const chip = document.createElement('span');
+            chip.className = 'badge rounded-pill plan-chip';
+            chip.dataset.kind = kind;
+            chip.innerHTML = '<i class="bi ' + Planner.KINDS[kind].icon + '"></i> ';
+            chip.append(Planner.KINDS[kind].label + ' ' + n);
+            summary.append(chip);
+          });
           const approve = modal.querySelector('.plan-approve');
           approve.disabled = !count || AiPanel.busy;
           approve.innerHTML = '<i class="bi bi-magic"></i> ';
@@ -4476,22 +4511,39 @@
         },
 
         /* --- 슬라이드에 넣을 개체(그림·동영상) --- */
-        async stageImage(file) {
-          if (!file) return;
+        async stageImage(file, quiet) {
+          if (!file) return false;
           try {
             const image = await readImage(file);
-            AiPanel.addMedia({ kind: 'image', name: file.name || '붙여 넣은 그림', url: image.url, width: image.width, height: image.height });
+            return AiPanel.addMedia({ kind: 'image', name: file.name || '붙여 넣은 그림', url: image.url, width: image.width, height: image.height }, null, quiet);
           } catch (err) {
-            Util.toast(err.message, 'warning');
+            Util.toast(file.name + ': ' + err.message, 'warning');
+            return false;
           }
         },
 
-        async stageVideo(file) {
-          if (!file) return;
+        async stageVideo(file, quiet) {
+          if (!file) return false;
           try {
-            AiPanel.addMedia({ kind: 'video', name: file.name, url: await readVideo(file) });
+            return AiPanel.addMedia({ kind: 'video', name: file.name, url: await readVideo(file) }, null, quiet);
           } catch (err) {
-            Util.toast(err.message, 'warning');
+            Util.toast(file.name + ': ' + err.message, 'warning');
+            return false;
+          }
+        },
+
+        // 여러 개를 한 번에 담는다. 알림은 끝에 한 번만.
+        async stageMany(files, kind) {
+          const list = Array.from(files || []);
+          if (list.length <= 1) { if (list[0]) await (kind === 'image' ? AiPanel.stageImage(list[0]) : AiPanel.stageVideo(list[0])); return; }
+          const added = [];
+          for (const file of list) {
+            if (AiPanel.media.length >= 6) { Util.toast('넣을 개체는 한 번에 6개까지 담을 수 있어 ' + (list.length - added.length) + '개는 담지 못했습니다.', 'warning'); break; }
+            if (await (kind === 'image' ? AiPanel.stageImage(file, true) : AiPanel.stageVideo(file, true))) added.push(file.name);
+          }
+          if (added.length) {
+            Util.toast('🧩 ' + added.length + '개를 담았습니다: ' + added.join(', ') + '\n입력칸에 어디에 어떻게 넣을지 적고 [' + $('ai-send-label').textContent + ']을 누르세요.', 'primary');
+            $('ai-prompt').focus();
           }
         },
 
@@ -4511,13 +4563,16 @@
             '예) "a 값을 슬라이더로 바꾸며 y=ax² 그래프가 어떻게 변하는지 보기", "주사위를 여러 번 던져 상대도수 막대그래프 그리기"');
         },
 
-        addMedia(item, hint) {
-          if (AiPanel.media.length >= 6) { Util.toast('넣을 개체는 한 번에 6개까지 담을 수 있습니다.', 'warning'); return; }
+        // quiet: 여러 개를 담을 때는 알림을 모아서 한 번만 보인다. 담았으면 true.
+        addMedia(item, hint, quiet) {
+          if (AiPanel.media.length >= 6) { if (!quiet) Util.toast('넣을 개체는 한 번에 6개까지 담을 수 있습니다.', 'warning'); return false; }
           AiPanel.media.push(item);
           AiPanel.drawFiles();
+          if (quiet) return true;
           Util.toast('🧩 ' + item.name + '을(를) 담았습니다. ' + (hint || '아래 입력칸에 어디에 어떻게 넣을지 적고 [' + $('ai-send-label').textContent +
             ']을 누르면 AI가 슬라이드에 넣어 줍니다.\n예) "오른쪽에 크게 넣고 아래에서 올라오는 효과"'), 'primary');
           $('ai-prompt').focus();
+          return true;
         },
 
         mediaNote(items) { return items.length ? '\n🧩 ' + items.map(item => item.name).join(', ') : ''; },
@@ -6508,12 +6563,13 @@
           if (action === 'audience') Show.openAudience();
           if (action === 'exit') Show.exit();
         });
+        // 그림·동영상은 여러 개를 한 번에 골라 담을 수 있다.
         $('file-image').addEventListener('change', event => {
-          AiPanel.stageImage(event.target.files[0]);
+          AiPanel.stageMany(event.target.files, 'image');
           event.target.value = '';
         });
         $('file-video').addEventListener('change', event => {
-          AiPanel.stageVideo(event.target.files[0]);
+          AiPanel.stageMany(event.target.files, 'video');
           event.target.value = '';
         });
         $('file-media').addEventListener('change', event => {
