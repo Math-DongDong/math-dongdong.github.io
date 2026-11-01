@@ -4187,17 +4187,30 @@
             ].filter(Boolean).join('\n');
             const label = revision ? 'AI가 계획을 다시 짜는 중…' : '장별 계획을 짜는 중…';
             status.set(label);
-            result = await Gemini.generateJson({
+            // 처음 계획은 장 수를 응답 형식으로 못 박는다(다시 짜기는 '3장으로 줄여'처럼 장 수가 바뀔 수 있어 두지 않는다).
+            const schema = JSON.parse(JSON.stringify(Planner.SCHEMA));
+            if (!revision) { schema.properties.slides.minItems = total; schema.properties.slides.maxItems = total; }
+            const prompt = AiPanel.pastRequests(deck) + Prompts.text('plan.request', { topic, total, context }) +
+              (revision && previous ? '\n' + Prompts.text('plan.revise', { plan: Planner.text(previous.plan), request: revision }) : '') +
+              AiPanel.filePrompt(files);
+            const ask = extra => Gemini.generateJson({
               model: Settings.model(),
               system: Prompts.text('plan.system'),
-              prompt: AiPanel.pastRequests(deck) + Prompts.text('plan.request', { topic, total, context }) +
-                (revision && previous ? '\n' + Prompts.text('plan.revise', { plan: Planner.text(previous.plan), request: revision }) : '') +
-                AiPanel.filePrompt(files),
+              prompt: prompt + extra,
               parts,
-              schema: Planner.SCHEMA,
+              schema,
               signal: controller.signal,
               onProgress: length => status.set(label + ' ' + length.toLocaleString('ko-KR') + '자 받음')
             });
+            result = await ask('');
+            // 그래도 장 수가 모자라면 한 번 더 분명히 요청한다.
+            const got = result && Array.isArray(result.slides) ? result.slides.filter(item => item && String(item.title || '').trim()).length : 0;
+            if (!revision && got && got < total) {
+              status.set('계획이 ' + got + '장만 와서 ' + total + '장으로 다시 요청하는 중…');
+              const again = await ask('\n\n' + Prompts.text('plan.countRetry', { got, total }));
+              const count = again && Array.isArray(again.slides) ? again.slides.filter(item => item && String(item.title || '').trim()).length : 0;
+              if (count > got) result = again;
+            }
           } catch (err) {
             failure = err;
           }
@@ -4217,6 +4230,12 @@
             return;
           }
           if (revision && previous) Planner.keepMedia(previous.plan, slides);
+          // 끝내 모자라면 빈 장으로 채워 고른 장 수만큼 보이게 하고 알린다.
+          if (!revision && slides.length < total) {
+            const short = total - slides.length;
+            for (let i = 0; i < short; i++) slides.push({ title: '', points: '', elements: [] });
+            Util.toast('AI가 ' + (total - short) + '장만 계획해 나머지 ' + short + '장은 비워 두었습니다. 직접 채우거나 [AI에게 다시 짜기]를 눌러 주세요.', 'warning');
+          }
           const plan = { deckTitle: String((result && result.deckTitle) || '').trim(), slides };
           if (revision) {
             Planner.fill(topic, plan);
