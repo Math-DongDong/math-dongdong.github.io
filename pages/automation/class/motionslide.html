@@ -4641,7 +4641,8 @@
           else AiPanel.generate();
         },
 
-        revisePrompt(slide, html, request, previous) {
+        // previous·next: 앞뒤 장의 원본(있는 장만). 내용 흐름과 디자인을 맞추는 참고용이고, 고치는 것은 이 장 하나다.
+        revisePrompt(slide, html, request, previous, next) {
           return [
             Prompts.text('reviseSlide.head', {
               request,
@@ -4651,8 +4652,9 @@
               html
             }),
             previous ? Prompts.text('reviseSlide.previous', { previous }) : Prompts.text('reviseSlide.first'),
+            next ? Prompts.text('reviseSlide.next', { next }) : '',
             Prompts.text('reviseSlide.rules')
-          ].join('\n');
+          ].filter(Boolean).join('\n');
         },
 
         async revise() {
@@ -4690,7 +4692,9 @@
               model: Settings.model(),
               system: Prompts.slideSystem(),
               // 이 장에서 보낸 요청만 함께 보낸다(장마다 따로 기억).
-              prompt: AiPanel.pastRequests(deck, target.id) + AiPanel.revisePrompt(target, html, request, number > 1 ? AiPanel.reference(deck.slides[number - 2]) : null) + AiPanel.filePrompt(files) + mediaRequest.text,
+              prompt: AiPanel.pastRequests(deck, target.id) +
+                AiPanel.revisePrompt(target, html, request, AiPanel.reference(deck.slides[number - 2]), AiPanel.reference(deck.slides[number])) + // 앞뒤 장은 있는 것만
+                AiPanel.filePrompt(files) + mediaRequest.text,
               parts,
               schema: AI_SCHEMA,
               signal: controller.signal,
