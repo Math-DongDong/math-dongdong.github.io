@@ -238,6 +238,11 @@
     .ai-status { flex: none; height: 1.9rem; display: flex; align-items: center; overflow: hidden; }
     .ai-status-inner { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ai-status-inner > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+    /* 수식 기호판 */
+    .math-palette { padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #f8fafc; }
+    .math-palette .nav-link { font-size: 0.78rem; }
+    .math-key { min-width: 2.4rem; font-size: 0.9rem; padding: 0.15rem 0.5rem; background: #fff; }
+
     /* 여러 장 계획표(모달): 장마다 번호 원과 이어지는 선(흐름), 요소는 종류별 색 */
     #plan-body { background: #f1f5f9; }
     .plan-list { position: relative; }
@@ -659,8 +664,13 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-lg-5">
+              <!-- 수식 기호판: 누르면 LaTeX가 들어가고 □(채울 칸)가 골라진다. Tab으로 다음 칸 -->
+              <div class="math-palette mb-2 d-none" id="math-palette">
+                <ul class="nav nav-pills nav-sm flex-wrap gap-1 mb-2" id="math-palette-tabs" role="tablist"></ul>
+                <div class="d-flex flex-wrap gap-1" id="math-palette-keys"></div>
+              </div>
               <label class="form-label small text-muted" for="math-input" id="math-help"></label>
-              <textarea class="form-control font-monospace small" id="math-input" rows="14" spellcheck="false"></textarea>
+              <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
             </div>
             <div class="col-lg-7">
               <div class="small text-muted mb-1">미리보기</div>
@@ -2004,7 +2014,7 @@
         KINDS: {
           tex: {
             attr: 'data-tex', tag: 'span', title: '수식 고치기',
-            help: 'LaTeX로 적습니다. 예) x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}  ·  \\angle ABC=90^\\circ  ·  \\sqrt{2}'
+            help: '위 기호를 누르면 LaTeX가 들어갑니다. □는 채울 칸이고 Tab(Shift+Tab)으로 다음(앞) 칸으로 갑니다. 고른 글자가 있으면 첫 칸에 들어갑니다.'
           },
           graph: {
             attr: 'data-graph', tag: 'div', title: '그래프 고치기',
@@ -2025,8 +2035,114 @@
           let value = el.getAttribute(info.attr) || '';
           if (kind !== 'tex') { try { value = JSON.stringify(JSON.parse(value), null, 2); } catch (err) { /* 그대로 보여 준다 */ } }
           $('math-input').value = value;
+          $('math-palette').classList.toggle('d-none', kind !== 'tex'); // 기호판은 수식에서만
           bootstrap.Modal.getOrCreateInstance($('math-modal')).show();
           MathEditor.preview();
+        },
+
+        /* --- 수식 기호판(한글 수식 편집기처럼): [보이는 글자, LaTeX, 설명] · □는 채울 칸 --- */
+        BLANK: '□',
+        PALETTE: [
+          ['자주 쓰는 식', [
+            ['근의 공식', 'x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}'], ['피타고라스', 'a^2+b^2=c^2'], ['일차함수', 'y=ax+b'],
+            ['이차함수', 'y=a(x-p)^2+q'], ['연립방정식', '\\begin{cases} □ \\\\ □ \\end{cases}'], ['비례식', '□:□=□:□'],
+            ['두 점 거리', '\\sqrt{(x_2-x_1)^2+(y_2-y_1)^2}'], ['기울기', '\\frac{y_2-y_1}{x_2-x_1}']
+          ]],
+          ['분수·근호·첨자', [
+            ['□/□ 분수', '\\frac{□}{□}'], ['√□ 제곱근', '\\sqrt{□}'], ['ⁿ√□ 거듭제곱근', '\\sqrt[□]{□}'], ['□ⁿ 지수', '□^{□}'],
+            ['□ₙ 아래첨자', '□_{□}'], ['□²', '□^2'], ['(□) 괄호', '\\left(□\\right)'], ['|□| 절댓값', '\\left|□\\right|'],
+            ['[□] 대괄호', '\\left[□\\right]'], ['{□} 중괄호', '\\left\\{□\\right\\}']
+          ]],
+          ['연산·관계', [
+            ['×', '\\times '], ['÷', '\\div '], ['±', '\\pm '], ['∓', '\\mp '], ['·', '\\cdot '], ['≠', '\\ne '], ['≤', '\\le '],
+            ['≥', '\\ge '], ['<', '<'], ['>', '>'], ['≈', '\\approx '], ['≡', '\\equiv '], ['∝', '\\propto '], ['∞', '\\infty ']
+          ]],
+          ['기하', [
+            ['∠ 각', '\\angle '], ['°', '^\\circ'], ['△ 삼각형', '\\triangle '], ['⊥ 수직', '\\perp '], ['∥ 평행', '\\parallel '],
+            ['≡ 합동', '\\equiv '], ['∽ 닮음', '\\sim '], ['AB̅ 선분', '\\overline{□}'], ['AB⃗ 반직선', '\\overrightarrow{□}'],
+            ['AB⌒ 호', '\\overset{\\frown}{□}'], ['π', '\\pi ']
+          ]],
+          ['그리스 문자', [
+            ['α', '\\alpha '], ['β', '\\beta '], ['γ', '\\gamma '], ['θ', '\\theta '], ['π', '\\pi '], ['σ', '\\sigma '], ['μ', '\\mu '],
+            ['ω', '\\omega '], ['Δ', '\\Delta '], ['Σ', '\\Sigma '], ['Ω', '\\Omega ']
+          ]],
+          ['집합·논리', [
+            ['∈', '\\in '], ['∉', '\\notin '], ['⊂', '\\subset '], ['⊄', '\\not\\subset '], ['∪', '\\cup '], ['∩', '\\cap '],
+            ['∅', '\\emptyset '], ['∴ 그러므로', '\\therefore '], ['∵ 왜냐하면', '\\because '], ['⇒', '\\Rightarrow '], ['⇔', '\\Leftrightarrow '],
+            ['{ } 집합', '\\{□\\}']
+          ]],
+          ['함수·기타', [
+            ['f(□)', 'f(□)'], ['∑ 합', '\\sum_{□}^{□}'], ['lim', '\\lim_{□ \\to □}'], ['log', '\\log_{□}□'], ['sin', '\\sin □'],
+            ['cos', '\\cos □'], ['tan', '\\tan □'], ['→', '\\to '], ['⋯', '\\cdots '], ['빈칸 띄우기', '\\;'], ['한글 글자', '\\text{□}']
+          ]]
+        ],
+
+        buildPalette() {
+          const tabs = $('math-palette-tabs');
+          MathEditor.PALETTE.forEach(([group], i) => {
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'nav-link py-1 px-2 small' + (i === 0 ? ' active' : '');
+            button.dataset.group = i;
+            button.textContent = group;
+            li.append(button);
+            tabs.append(li);
+          });
+          tabs.addEventListener('click', event => {
+            const button = event.target.closest('[data-group]');
+            if (!button) return;
+            tabs.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', el === button));
+            MathEditor.showGroup(Number(button.dataset.group));
+          });
+          // 기호판을 눌러도 입력칸의 커서(초점)를 지킨다.
+          $('math-palette').addEventListener('mousedown', event => { if (event.target.closest('button')) event.preventDefault(); });
+          $('math-palette-keys').addEventListener('click', event => {
+            const key = event.target.closest('[data-tex]');
+            if (key) MathEditor.insert(key.dataset.tex);
+          });
+          MathEditor.showGroup(0);
+        },
+
+        showGroup(i) {
+          const host = $('math-palette-keys');
+          host.textContent = '';
+          MathEditor.PALETTE[i][1].forEach(([label, tex]) => {
+            const key = document.createElement('button');
+            key.type = 'button';
+            key.className = 'btn btn-sm btn-outline-secondary math-key';
+            key.dataset.tex = tex;
+            key.title = tex;
+            key.textContent = label;
+            host.append(key);
+          });
+        },
+
+        // 커서 자리에 넣는다. 고른 글자가 있으면 첫 칸에 넣고, 남은 첫 칸(□)을 골라 바로 적게 한다.
+        insert(tex) {
+          const box = $('math-input');
+          const start = box.selectionStart;
+          const end = box.selectionEnd;
+          const picked = box.value.slice(start, end);
+          let text = tex;
+          if (picked && text.includes(MathEditor.BLANK)) text = text.replace(MathEditor.BLANK, picked);
+          box.setRangeText(text, start, end, 'end');
+          const blank = box.value.indexOf(MathEditor.BLANK, start);
+          if (blank >= 0 && blank < start + text.length) box.setSelectionRange(blank, blank + 1);
+          box.focus();
+          box.dispatchEvent(new Event('input'));
+        },
+
+        // Tab / Shift+Tab: 다음 / 앞 채울 칸(□)으로
+        jumpBlank(back) {
+          const box = $('math-input');
+          const value = box.value;
+          let at = back ? value.lastIndexOf(MathEditor.BLANK, box.selectionStart - 1) : value.indexOf(MathEditor.BLANK, box.selectionEnd);
+          if (at < 0) at = back ? value.lastIndexOf(MathEditor.BLANK) : value.indexOf(MathEditor.BLANK); // 끝에 닿으면 처음부터
+          if (at < 0) return false;
+          box.setSelectionRange(at, at + 1);
+          return true;
         },
 
         // 입력값으로 새 개체를 만들어 그려 본다.
@@ -2054,6 +2170,14 @@
           if (!el || !el.isConnected) return;
           const { error, value, attr } = await MathEditor.build();
           if (error) { $('math-error').textContent = error; return; }
+          if (attr === 'data-tex' && value.includes(MathEditor.BLANK)) {
+            $('math-error').textContent = '빈 칸(□)을 채워 주세요. Tab으로 빈 칸을 찾아갈 수 있습니다.';
+            const box = $('math-input');
+            const first = box.value.indexOf(MathEditor.BLANK);
+            box.focus();
+            box.setSelectionRange(first, first + 1); // 첫 빈 칸부터
+            return;
+          }
           el.setAttribute(attr, value);
           await MathKit.render(el);
           bootstrap.Modal.getOrCreateInstance($('math-modal')).hide();
@@ -2063,7 +2187,12 @@
         init() {
           const later = Util.debounce(MathEditor.preview, 350);
           $('math-input').addEventListener('input', later);
+          $('math-input').addEventListener('keydown', event => {
+            if (event.key !== 'Tab' || !MathEditor.target || MathKit.kind(MathEditor.target) !== 'tex') return;
+            if (MathEditor.jumpBlank(event.shiftKey)) event.preventDefault(); // 빈 칸이 없으면 원래대로 다음 칸으로
+          });
           $('math-apply').addEventListener('click', MathEditor.apply);
+          MathEditor.buildPalette();
           $('math-modal').addEventListener('hidden.bs.modal', () => { MathEditor.target = null; $('math-preview').replaceChildren(); });
         }
       };
@@ -4883,9 +5012,67 @@
         },
 
         // 디자인 기준으로 넘길 장
+        // 앞뒤 장을 AI에게 알려 줄 때: HTML 원본(배치·색·카드 모양)은 보내지 않고 내용과 화면 전환만 보낸다.
+        // 원본을 보내면 AI가 디자인을 그대로 따라 해 장마다 똑같아지기 때문이다.
         reference(slide) {
           if (!slide || slide.pristine || !slide.html.trim()) return null;
-          return AiPanel.source(slide).slice(0, 12000);
+          const template = document.createElement('template');
+          template.innerHTML = AppKit.forAi(MathKit.strip(slide.html)).html;
+          const root = template.content;
+          const lines = [];
+          if (slide.title) lines.push('소제목: ' + slide.title);
+          // 상자마다 글을 한 줄로(수식은 LaTeX로)
+          const text = [];
+          Array.from(root.children).filter(el => el.classList.contains('draggable-box')).forEach(box => { // 조각(fragment)에는 :scope가 듣지 않는다
+            const copy = box.cloneNode(true);
+            copy.querySelectorAll('.math-tex').forEach(el => el.replaceWith('$' + (el.getAttribute('data-tex') || '') + '$'));
+            copy.querySelectorAll('.math-graph, .math-geo, .app-frame, style').forEach(el => el.remove());
+            // 글 요소마다 ' / '로 나눠 제목과 본문이 붙지 않게 한다.
+            const pieces = Array.from(copy.querySelectorAll('.editable-text')).filter(el => !el.parentElement.closest('.editable-text'))
+              .map(el => el.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean);
+            const line = (pieces.length ? pieces.join(' / ') : copy.textContent).replace(/\s+/g, ' ').trim();
+            if (line) text.push('- ' + line.slice(0, 300));
+          });
+          if (text.length) lines.push('글 내용:\n' + text.join('\n'));
+          // 그림·그래프·도형·영상·인터랙티브는 무엇이 있는지만
+          const parts = [];
+          root.querySelectorAll('.math-graph').forEach(el => {
+            let fns = '';
+            try { fns = (JSON.parse(el.getAttribute('data-graph') || '{}').functions || []).map(f => (typeof f === 'string' ? f : f.expr)).join(', '); } catch (err) { /* 무시 */ }
+            parts.push('그래프' + (fns ? '(' + fns + ')' : ''));
+          });
+          if (root.querySelector('.math-geo')) parts.push('도형 ' + root.querySelectorAll('.math-geo').length + '개');
+          if (root.querySelector('img')) parts.push('그림 ' + root.querySelectorAll('img').length + '개');
+          if (root.querySelector('video, iframe')) parts.push('영상 ' + root.querySelectorAll('video, iframe').length + '개');
+          if (root.querySelector('.app-frame')) parts.push('인터랙티브 요소 ' + root.querySelectorAll('.app-frame').length + '개');
+          if (parts.length) lines.push('들어 있는 요소: ' + parts.join(', '));
+          const notes = Util.htmlToText(slide.notes);
+          if (notes) lines.push('발표 시나리오: ' + notes.replace(/\s+/g, ' ').slice(0, 400));
+          // 화면 전환은 자연스럽게 이어지도록 배경과 .slide 전환 규칙만 알려 준다.
+          const transition = AiPanel.transitionOf(slide);
+          lines.push('배경: ' + (slide.bg || '#ffffff') + (transition ? '\n화면 전환(.slide 등장 효과):\n' + transition : ''));
+          return lines.join('\n').slice(0, 4000);
+        },
+
+        // 슬라이드 CSS에서 .slide 전환 규칙과 그 규칙이 쓰는 @keyframes만 꺼낸다.
+        transitionOf(slide) {
+          const css = String(slide.css || '');
+          const rule = css.match(/(^|\})\s*(\.slide\s*\{[^}]*animation[^}]*\})/);
+          if (!rule) return '';
+          const out = [rule[2].trim()];
+          const names = (rule[2].match(/animation(?:-name)?\s*:\s*([^;}]+)/) || [])[1] || '';
+          names.split(',').map(part => part.trim().split(/\s+/).find(word => /^[a-z_-][\w-]*$/i.test(word) &&
+            !/^(ease|linear|both|forwards|backwards|none|infinite|alternate|normal|reverse|running|paused|ease-in|ease-out|ease-in-out|step-start|step-end)$/i.test(word)))
+            .filter(Boolean).forEach(name => {
+              const start = css.search(new RegExp('@keyframes\\s+' + name.replace(/[-]/g, '\\-') + '\\s*\\{'));
+              if (start < 0) return;
+              let depth = 0;
+              for (let i = css.indexOf('{', start); i < css.length; i++) {
+                if (css[i] === '{') depth++;
+                else if (css[i] === '}' && --depth === 0) { out.push(css.slice(start, i + 1).trim()); break; }
+              }
+            });
+          return out.join('\n').slice(0, 1500);
         },
 
         // previous: 새 장들이 이어질 바로 앞 장의 원본(내용·디자인·화면 전환의 기준)
