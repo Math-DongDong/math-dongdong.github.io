@@ -622,6 +622,32 @@
     </div>
   </div>
 
+  <!-- 인터랙티브 요소 고치기 (슬라이드에서 더블클릭 → Gemini가 코드를 고친다) -->
+  <div class="modal fade" id="app-modal" tabindex="-1" aria-hidden="true" aria-labelledby="app-modal-title">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="app-modal-title"><i class="bi bi-puzzle"></i> 인터랙티브 요소 고치기</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label small text-muted" for="app-request">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고쳐 다시 넣습니다.</label>
+          <textarea class="form-control" id="app-request" rows="4" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
+          <div class="small mt-2" id="app-status" role="status"></div>
+          <details class="mt-2">
+            <summary class="small text-muted">지금 코드 보기</summary>
+            <pre class="small bg-light border rounded p-2 mt-1 mb-0" id="app-code" style="max-height: 260px; overflow: auto; white-space: pre-wrap;"></pre>
+          </details>
+        </div>
+        <div class="modal-footer">
+          <span class="small text-muted me-auto">요청 내용과 코드는 Google Gemini API로 전송됩니다.</span>
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">닫기</button>
+          <button type="button" class="btn btn-primary" id="app-send"><i class="bi bi-magic"></i> 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 단축키 안내 -->
   <div class="modal fade" id="shortcut-modal" tabindex="-1" aria-hidden="true" aria-labelledby="shortcut-modal-title">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -1072,7 +1098,7 @@
             canvas.prepend(tag);
             SlideStyle.renameInline(canvas, built);
           }
-          AppKit.hydrate(canvas, mode !== 'static'); // 썸네일·PDF(static)에서는 실행하지 않고 자리만 보인다
+          AppKit.hydrate(canvas, mode || 'show'); // 썸네일·PDF(static)에서는 실행하지 않고 자리만 보인다
           if (mode === 'static') SlideView.freeze(canvas);
           if (mode === 'edit') SlideView.addOverlays(canvas);
         },
@@ -1626,7 +1652,7 @@
          화면에 넣을 때만 sandbox="allow-scripts" iframe의 srcdoc으로 실행한다. 같은 출처 권한이 없어
          바깥 페이지·저장소·API 키에 닿을 수 없고, CSP로 인터넷 요청·외부 파일을 막는다. */
       const AppKit = {
-        CSP: "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:",
+        CSP: "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; form-action 'none'",
 
         // 코드는 base64로 담는다(정리기는 '</style>' 같은 글이 든 속성을 지우므로, 글자 그대로 두면 다시 열 때 사라진다).
         encode(code) {
@@ -1670,12 +1696,15 @@
           return hash >>> 0;
         },
 
-        // live면 실행하고, 아니면(썸네일·PDF) 자리표시만 둔다.
-        hydrate(canvas, live) {
+        // mode: 'edit'·'show'면 실행하고, 'static'(썸네일·PDF)이면 자리표시만 둔다.
+        hydrate(canvas, mode) {
           const doc = canvas.ownerDocument;
           canvas.querySelectorAll('.app-frame').forEach(host => {
             const code = AppKit.decode(host.getAttribute('data-code'));
-            if (!live || !code) {
+            // 발표 화면에서는 장식 상자에 가려 클릭이 막히지 않게 맨 앞으로 올린다.
+            const box = host.closest('.draggable-box');
+            if (mode === 'show' && box) box.style.zIndex = '1000';
+            if (mode === 'static' || !code) {
               const holder = doc.createElement('div');
               holder.className = 'app-placeholder';
               holder.textContent = code ? '🧩 인터랙티브 요소' : '🧩 인터랙티브 요소 (코드 없음)';
@@ -1683,7 +1712,8 @@
               return;
             }
             const frame = doc.createElement('iframe');
-            frame.setAttribute('sandbox', 'allow-scripts');
+            // allow-forms: 폼의 submit 처리기가 돌게 한다(실제 전송은 CSP form-action 'none'으로 막는다).
+            frame.setAttribute('sandbox', 'allow-scripts allow-forms');
             frame.setAttribute('referrerpolicy', 'no-referrer');
             frame.setAttribute('title', '인터랙티브 요소');
             frame.srcdoc = AppKit.doc(code);
@@ -1724,6 +1754,120 @@
             if (code) el.setAttribute('data-code', AppKit.encode(code));
           });
           return template.innerHTML;
+        }
+      };
+
+      // 인터랙티브 요소를 더블클릭하면 Gemini에게 고칠 점을 보내 코드를 다시 받는 창
+      const AppEditor = {
+        slideId: null,
+        appId: null,
+        aborter: null,
+        SCHEMA: {
+          type: 'OBJECT',
+          properties: { code: { type: 'STRING' }, summary: { type: 'STRING' } },
+          required: ['code']
+        },
+
+        open(el) {
+          if (!el.getAttribute('data-app')) el.setAttribute('data-app', 'app' + Util.uid().slice(-6));
+          AppEditor.slideId = Editor.current().id;
+          AppEditor.appId = el.getAttribute('data-app');
+          $('app-code').textContent = AppKit.decode(el.getAttribute('data-code')) || '(코드 없음)';
+          $('app-status').textContent = '';
+          $('app-status').className = 'small mt-2';
+          AppEditor.setBusy(false);
+          bootstrap.Modal.getOrCreateInstance($('app-modal')).show();
+        },
+
+        setBusy(on) {
+          $('app-send').disabled = on;
+          $('app-request').disabled = on;
+        },
+
+        status(text, tone) {
+          $('app-status').textContent = text;
+          $('app-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
+        },
+
+        // 지금 슬라이드(또는 기다리는 사이 바뀌었으면 저장된 슬라이드)에서 그 요소를 찾는다.
+        find() {
+          const deck = Editor.deck;
+          if (!deck) return null;
+          const index = deck.slides.findIndex(slide => slide.id === AppEditor.slideId);
+          if (index < 0) return null;
+          if (index === Editor.index) {
+            const el = $('slide-canvas').querySelector('.app-frame[data-app="' + CSS.escape(AppEditor.appId) + '"]');
+            if (el) return { index, el };
+          }
+          return { index, el: null };
+        },
+
+        async send() {
+          const request = $('app-request').value.trim();
+          if (!request) { AppEditor.status('어떻게 바꿀지 적어 주세요.', 'danger'); $('app-request').focus(); return; }
+          if (!Settings.apiKey()) { bootstrap.Modal.getOrCreateInstance($('app-modal')).hide(); SettingsModal.open(); return; }
+          if (!await Prompts.ready()) return;
+          const target = AppEditor.find();
+          const code = target && target.el ? AppKit.decode(target.el.getAttribute('data-code')) : '';
+          const deck = Editor.deck;
+          const controller = new AbortController();
+          AppEditor.aborter = controller;
+          AppEditor.setBusy(true);
+          AppEditor.status('Gemini가 코드를 고치는 중…');
+          let result = null;
+          try {
+            result = await Gemini.generateJson({
+              model: Settings.model(),
+              system: Prompts.text('appRevise.system'),
+              prompt: Prompts.text('appRevise.request', { request, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }),
+              schema: AppEditor.SCHEMA,
+              signal: controller.signal,
+              onProgress: length => AppEditor.status('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음')
+            });
+          } catch (err) {
+            AppEditor.aborter = null;
+            AppEditor.setBusy(false);
+            AppEditor.status(err && err.aborted ? '중단했습니다.' : '⚠ ' + ((err && err.message) || '고치지 못했습니다.'), 'danger');
+            return;
+          }
+          AppEditor.aborter = null;
+          AppEditor.setBusy(false);
+          const next = result && typeof result.code === 'string' ? result.code.trim() : '';
+          if (!next) { AppEditor.status('⚠ AI 응답에 코드가 없습니다. 다시 시도해 주세요.', 'danger'); return; }
+          if (Editor.deck !== deck) return;
+          const now = AppEditor.find();
+          if (!now) { AppEditor.status('⚠ 그 슬라이드가 지워져 반영하지 못했습니다.', 'danger'); return; }
+          const encoded = AppKit.encode(next.slice(0, 300000));
+          if (now.el) {
+            now.el.setAttribute('data-code', encoded);
+            AppKit.hydrate(now.el.closest('.draggable-box') || now.el, 'edit');
+            Editor.commit();
+          } else {
+            // 다른 장으로 옮겨 갔으면 저장된 슬라이드 HTML을 고친다.
+            const slide = deck.slides[now.index];
+            const template = document.createElement('template');
+            template.innerHTML = slide.html;
+            const el = template.content.querySelector('.app-frame[data-app="' + CSS.escape(AppEditor.appId) + '"]');
+            if (!el) { AppEditor.status('⚠ 그 요소가 지워져 반영하지 못했습니다.', 'danger'); return; }
+            el.setAttribute('data-code', encoded);
+            slide.html = template.innerHTML;
+            Editor.refreshThumb(now.index);
+            Editor.scheduleSave();
+          }
+          AiPanel.remember(deck, '[인터랙티브 요소 수정] ' + request);
+          $('app-request').value = '';
+          bootstrap.Modal.getOrCreateInstance($('app-modal')).hide();
+          Util.toast('인터랙티브 요소를 고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') + '\n발표 화면에서 조작해 보세요. 되돌리려면 Ctrl+Z', 'success');
+        },
+
+        init() {
+          $('app-send').addEventListener('click', AppEditor.send);
+          $('app-request').addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); AppEditor.send(); }
+          });
+          $('app-modal').addEventListener('shown.bs.modal', () => $('app-request').focus());
+          // 창을 닫으면 기다리던 요청도 멈춘다.
+          $('app-modal').addEventListener('hidden.bs.modal', () => { if (AppEditor.aborter) AppEditor.aborter.abort(); });
         }
       };
 
@@ -4240,8 +4384,23 @@
         Element.prototype.setPointerCapture = function (id) { captured = this; try { setCapture.call(this, id); } catch (err) { /* 다시 일으킨 입력 */ } };
         Element.prototype.releasePointerCapture = function (id) { if (captured === this) captured = null; try { releaseCapture.call(this, id); } catch (err) { /* 무시 */ } };
 
+        // 격리된 칸에서는 alert·confirm·prompt 창이 뜨지 않으므로, 칸 안에 잠깐 보이는 알림으로 바꾼다.
+        var note = function (text) {
+          var box = document.createElement('div');
+          box.textContent = String(text === undefined ? '' : text);
+          box.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:99998;max-width:90%;padding:12px 24px;' +
+            'border-radius:12px;background:#1f2937;color:#fff;font:600 24px/1.4 system-ui,sans-serif;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.25);';
+          (document.body || document.documentElement).appendChild(box);
+          setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 2500);
+        };
+        window.alert = note;
+        window.confirm = function (text) { note(text); return true; };
+        window.prompt = function (text, value) { note(text); return value === undefined ? '' : String(value); };
+
         var FIELDS = 'input, select, textarea';
         var send = function (message) { try { parent.postMessage(message, '*'); } catch (err) { /* 무시 */ } };
+        // 칸 안을 누른 뒤에도 Esc로 발표를 끝낼 수 있게 바깥에 알린다.
+        window.addEventListener('keydown', function (e) { if (e.isTrusted && e.key === 'Escape') send({ lsApp: 'escape' }); }, true);
         ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown', 'keyup'].forEach(function (type) {
           window.addEventListener(type, function (e) {
             if (!e.isTrusted) return;
@@ -4433,6 +4592,13 @@
 
         win.addEventListener('message', function (event) {
           if (event.data && event.data.lsApp === 'evt') { onAppInput(event); return; }
+          if (event.data && event.data.lsApp === 'escape') {
+            // 이 창의 인터랙티브 칸에서 온 것만: 바깥 문서에 Esc를 대신 눌러 발표를 끝낸다.
+            var mine = false;
+            each(win.document.querySelectorAll('.app-frame > iframe'), function (item) { if (item.contentWindow === event.source) mine = true; });
+            if (mine) win.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+            return;
+          }
           if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(event.origin)) return;
           var data;
           try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (err) { return; }
@@ -5248,6 +5414,12 @@
           // 수식·그래프·도형은 설계값을 고치는 창을 연다.
           const mathEl = event.target.closest(MathKit.SELECTOR);
           if (mathEl && box.contains(mathEl)) { Editor.stopEditing(); Editor.select(box); MathEditor.open(mathEl); return; }
+          // 인터랙티브 요소는 투명 막에 덮여 있으므로 좌표로 찾아, Gemini에게 고칠 점을 보내는 창을 연다.
+          const appEl = Array.from(box.querySelectorAll('.app-frame')).find(el => {
+            const r = el.getBoundingClientRect();
+            return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+          });
+          if (appEl) { Editor.stopEditing(); Editor.select(box); AppEditor.open(appEl); return; }
           const text = event.target.closest('.editable-text');
           if (text && box.contains(text)) { Editor.startEditing(text, event.clientX, event.clientY); return; }
           // 그림·영상은 편집 모드에서 마우스를 받지 않으므로 좌표로 찾는다.
@@ -5509,6 +5681,7 @@
         FloatBar.init();
         AiPanel.init();
         MathEditor.init();
+        AppEditor.init();
         window.addEventListener('slideCloudChanged', CloudUI.sync);
         CloudUI.sync();
 
