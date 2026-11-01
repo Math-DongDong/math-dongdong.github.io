@@ -4319,7 +4319,26 @@
               modal.hide();
               $('ai-prompt').focus();
             });
-            row.append(text, load);
+            // 이 요청만 기록에서 빼기(다음 요청부터 AI에게 보내지 않는다)
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-sm btn-light text-danger';
+            remove.title = '이 요청을 기록에서 빼기';
+            remove.setAttribute('aria-label', '이 요청을 기록에서 빼기');
+            remove.innerHTML = '<i class="bi bi-x-lg"></i>';
+            remove.addEventListener('click', () => {
+              if (AiPanel.busy || !Editor.deck) return;
+              const session = AiPanel.session(Editor.deck, slideId);
+              const at = session.indexOf(turn);
+              if (at >= 0) session.splice(at, 1);
+              row.remove();
+              const left = host.children.length;
+              $('recent-req-empty').classList.toggle('d-none', left > 0);
+              $('recent-req-clear').disabled = !left;
+              Editor.scheduleSave();
+              AiPanel.syncRecent();
+            });
+            row.append(text, load, remove);
             host.append(row);
           });
           modal.show();
@@ -4739,7 +4758,8 @@
           let fileParts = [];
           try { fileParts = await AiPanel.prepareFiles(files, status); } catch (err) { failure = err; }
           const mediaRequest = AiPanel.mediaRequest(media, refs);
-          const pastRequests = AiPanel.pastRequests(deck);
+          // 승인된 계획이 있으면 계획이 의도를 대신하므로 이전 요청 기록은 보내지 않는다(계획 짜기 단계에서만 보낸다).
+          const pastRequests = plan ? '' : AiPanel.pastRequests(deck);
 
           for (let start = 0; !failure && start < total; start += AI_BATCH) {
             if (start > 0) {
