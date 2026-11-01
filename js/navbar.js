@@ -90,7 +90,7 @@
                     "title": "수업도구",
                     "items": [
                         { "name": "수직선 만들기", "path": "pages/automation/class/numberline.html" },
-                        { "name": "AI 모션 슬라이드", "path": "pages/automation/class/motionslide.html" }
+                        { "name": "AI 모션 슬라이드", "path": "pages/automation/class/motionslide.html", "external": true }
                     ]
                 },
 
