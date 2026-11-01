@@ -230,11 +230,15 @@
     /* 대화창 없이 입력칸이 남은 높이를 채운다 */
     .ai-compose { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .ai-compose #ai-prompt { flex: 1; min-height: 160px; resize: none; font-size: 0.95rem; }
-    .ai-status { white-space: pre-wrap; }
+    .ai-status { flex: none; height: 1.9rem; display: flex; align-items: center; overflow: hidden; }
+    .ai-status-inner { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ai-status-inner > span:last-child { overflow: hidden; text-overflow: ellipsis; }
     /* 여러 장 계획표(모달) */
     .plan-item { padding: 0.45rem; margin-bottom: 0.4rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #fff; }
     .plan-num { min-width: 1.4rem; font-weight: 700; color: var(--primary); }
     .plan-points { resize: vertical; }
+    .plan-el-kind { min-width: 7.2rem; text-align: left; font-weight: 500; }
+    .plan-el-source { flex: 0 0 13rem; }
 
     @media (max-width: 1199.98px) {
       .ai-panel { --ai-w: 300px; }
@@ -463,10 +467,10 @@
           <div class="ai-compose p-2">
             <p class="small text-muted mb-2" id="ai-hint"></p>
             <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="ai-files"></div>
-            <!-- AI 진행 상황(끝나면 결과는 알림으로 보인다) -->
-            <div class="ai-status small text-primary mb-2 d-none" id="ai-status" role="status"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span id="ai-status-text"></span></div>
-            <textarea class="form-control mb-2" id="ai-prompt"
+            <textarea class="form-control" id="ai-prompt"
               placeholder="예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문"></textarea>
+            <!-- AI 진행 상황: 입력칸과 보내기 단추 사이 한 줄(높이 고정이라 입력칸이 늘었다 줄었다 하지 않는다). 결과는 알림으로 -->
+            <div class="ai-status small text-primary" id="ai-status" role="status"><span class="ai-status-inner d-none" id="ai-status-on"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span id="ai-status-text"></span></span></div>
             <div class="d-flex gap-2">
               <button type="button" class="btn btn-light btn-sm" id="ai-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
               <div class="dropup">
@@ -840,6 +844,7 @@
   <div id="toast-area" aria-live="polite"></div>
   <input type="file" class="d-none" id="file-import" accept=".html,.htm,text/html">
   <input type="file" class="d-none" id="file-merge" accept=".html,.htm,text/html" multiple>
+  <input type="file" class="d-none" id="file-plan">
   <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp">
   <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm">
   <input type="file" class="d-none" id="file-media">
@@ -3765,10 +3770,20 @@
 
       /* ===== 11-2. 여러 장 계획 =====
          [여러 장]을 켜고 생성하면 바로 만들지 않고 장별 계획(소제목·핵심 내용·넣을 요소)을 먼저 받아 계획표 창에 보여 준다.
-         계획표는 그 자리에서 고칠 수 있고(순서·추가·삭제 포함), 승인하면 그 계획대로 한 장씩 만든다. */
+         계획표는 그 자리에서 고칠 수 있고(순서·추가·삭제 포함), 승인하면 그 계획대로 한 장씩 만든다.
+         넣을 요소는 종류별(수식·그래프·도형 / 그림 / 영상 / 인터랙티브)로 장마다 정하고,
+         그림·영상은 AI 창에 담아 둔 것을 배정하거나 계획표에서 바로 고른다. 만들 때는 그 장의 요소만 그 장 요청에 보낸다. */
       const Planner = {
         active: null, // { topic, plan }
+        staged: [],   // 계획표를 열 때 AI 창에 담겨 있던 개체(배정할 수 있는 것)
         MAX: 20,
+        MAX_ELEMENTS: 6,
+        KINDS: {
+          math: { label: '수식·그래프·도형', icon: 'bi-calculator', placeholder: '예) 근의 공식 수식, y=x²−2x 그래프(꼭짓점 표시), 직각삼각형' },
+          image: { label: '그림', icon: 'bi-image', placeholder: '어떤 그림인지 (예: 놀이공원 입장권 사진)' },
+          video: { label: '영상', icon: 'bi-camera-video', placeholder: '어떤 영상인지 (예: 포물선 운동 실험 영상)' },
+          app: { label: '인터랙티브', icon: 'bi-puzzle', placeholder: '어떤 조작 도구인지 (예: a 슬라이더로 y=ax² 그래프 변화 보기)' }
+        },
         SCHEMA: {
           type: 'OBJECT',
           properties: {
@@ -3777,7 +3792,14 @@
               type: 'ARRAY',
               items: {
                 type: 'OBJECT',
-                properties: { title: { type: 'STRING' }, points: { type: 'STRING' }, elements: { type: 'STRING' } },
+                properties: {
+                  title: { type: 'STRING' },
+                  points: { type: 'STRING' },
+                  math: { type: 'STRING' },
+                  image: { type: 'STRING' },
+                  video: { type: 'STRING' },
+                  interactive: { type: 'STRING' }
+                },
                 required: ['title', 'points']
               }
             }
@@ -3785,12 +3807,54 @@
           required: ['slides']
         },
 
+        // AI에게 보낼 계획 글(한 장)
         itemText(item, i) {
-          const points = String(item.points || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => '   - ' + line.replace(/^[-•·]\s*/, ''));
-          return [(i + 1) + '. ' + item.title].concat(points, item.elements ? ['   넣을 요소: ' + item.elements] : []).join('\n');
+          const lines = [(i + 1) + '. ' + item.title];
+          String(item.points || '').split('\n').map(line => line.trim()).filter(Boolean)
+            .forEach(line => lines.push('   - ' + line.replace(/^[-•·]\s*/, '')));
+          (item.elements || []).forEach(el => {
+            let note = '';
+            if (el.kind === 'image') note = el.media ? ' (사용자가 넣을 그림: ' + el.media.name + ')' : ' (실제 그림 없음 — 도형·이모지·인라인 SVG로 표현)';
+            if (el.kind === 'video') note = el.media ? ' (사용자가 넣을 영상: ' + el.media.name + ')' : ' (실제 영상 없음 — 넣지 말고 그림·도형으로 대신)';
+            if (el.kind === 'app') note = ' (이 장에 인터랙티브 요소로 만든다)';
+            lines.push('   [' + Planner.KINDS[el.kind].label + '] ' + (el.text || '') + note);
+          });
+          return lines.join('\n');
         },
 
         text(plan) { return plan.slides.map(Planner.itemText).join('\n'); },
+
+        // 만들 때 그 장에 보낼 개체(그림·영상·인터랙티브). mediaRequest가 받는 꼴로 만든다.
+        mediaFor(item) {
+          const list = [];
+          (item.elements || []).forEach(el => {
+            // 같은 개체를 여러 장에 배정해도 장마다 표식이 따로 붙게 복사해 보낸다(source: 원래 개체).
+            if ((el.kind === 'image' || el.kind === 'video') && el.media) list.push(Object.assign({}, el.media, { source: el.media, slideTitle: item.title }));
+            if (el.kind === 'app') list.push({ kind: 'app', name: '인터랙티브 요소', id: 'app' + Util.uid().slice(-6), note: el.text, slideTitle: item.title });
+          });
+          return list;
+        },
+
+        // AI가 준 계획 한 장 → 요소 목록. 담아 둔 개체 이름이 적혀 있으면 그 개체를 미리 골라 둔다.
+        fromAi(item) {
+          const elements = [];
+          const split = text => String(text || '').split(/\n|;|·(?=\s)/).map(part => part.trim()).filter(Boolean);
+          split(item.math).forEach(text => elements.push({ kind: 'math', text }));
+          split(item.image).forEach(text => elements.push({ kind: 'image', text, media: Planner.match(text, ['image']) }));
+          split(item.video).forEach(text => elements.push({ kind: 'video', text, media: Planner.match(text, ['video', 'youtube']) }));
+          split(item.interactive).forEach(text => elements.push({ kind: 'app', text }));
+          return {
+            title: String(item.title || '').trim().slice(0, 80),
+            points: String(item.points || '').trim().slice(0, 800),
+            elements: elements.slice(0, Planner.MAX_ELEMENTS)
+          };
+        },
+
+        match(text, kinds) {
+          const lower = String(text).toLowerCase();
+          return Planner.staged.find(media => kinds.includes(media.kind) &&
+            (lower.includes(media.name.toLowerCase()) || lower.includes(media.name.toLowerCase().replace(/\.[a-z0-9]+$/, '')))) || null;
+        },
 
         modal() { return bootstrap.Modal.getOrCreateInstance($('plan-modal')); },
 
@@ -3804,7 +3868,7 @@
 
         setBusy(on) {
           // [취소]는 다시 짜는 중에도 눌러 멈출 수 있게 둔다.
-          $('plan-modal').querySelectorAll('input, textarea, button:not([data-plan="cancel"])').forEach(el => { el.disabled = on; });
+          $('plan-modal').querySelectorAll('input, textarea, select, button:not([data-plan="cancel"])').forEach(el => { el.disabled = on; });
           $('plan-modal').querySelector('[data-plan="cancel"]').textContent = on ? '중단' : '취소';
           if (!on) Planner.refresh();
         },
@@ -3813,10 +3877,12 @@
         async start(topic, total, revision) {
           const deck = Editor.deck;
           const files = AiPanel.files.slice();
-          const media = AiPanel.media.slice();
           const previous = Planner.active;
-          if (!revision) $('ai-prompt').value = '';
-          // 처음 계획은 입력칸 위에, 다시 짜기는 계획표 창 안에 진행 상황을 보인다.
+          if (!revision) {
+            $('ai-prompt').value = '';
+            Planner.staged = AiPanel.media.filter(item => item.kind !== 'app');
+          }
+          // 처음 계획은 입력칸 아래 한 줄에, 다시 짜기는 계획표 창 안에 진행 상황을 보인다.
           const status = revision
             ? { set: (text, isError) => Planner.status(text, isError) }
             : AiPanel.message('ai', '장별 계획을 짜는 중…');
@@ -3831,7 +3897,7 @@
             const context = [
               deck.title !== DEFAULT_TITLE ? Prompts.text('newSlides.deckTitle', { title: deck.title }) : '',
               deck.slides.some(slide => !slide.pristine) ? Prompts.text('plan.context', { outline: AiPanel.outline(deck), after: Editor.index + 1 }) : '',
-              media.length ? Prompts.text('plan.media', { list: media.map(item => item.name).join(', ') }) : ''
+              Planner.staged.length ? Prompts.text('plan.media', { list: Planner.staged.map(item => item.name + '(' + (item.kind === 'image' ? '그림' : '영상') + ')').join(', ') }) : ''
             ].filter(Boolean).join('\n');
             const label = revision ? 'AI가 계획을 다시 짜는 중…' : '장별 계획을 짜는 중…';
             status.set(label);
@@ -3853,9 +3919,7 @@
           AiPanel.aborter = null;
           if (revision) Planner.setBusy(false);
           if (Editor.deck !== deck) return;
-          const slides = (result && Array.isArray(result.slides) ? result.slides : []).slice(0, Planner.MAX)
-            .map(item => ({ title: String(item.title || '').trim().slice(0, 80), points: String(item.points || '').trim().slice(0, 800), elements: String(item.elements || '').trim().slice(0, 200) }))
-            .filter(item => item.title);
+          const slides = (result && Array.isArray(result.slides) ? result.slides : []).slice(0, Planner.MAX).map(Planner.fromAi).filter(item => item.title);
           if (failure || !slides.length) {
             const message = failure && failure.aborted ? '중단했습니다.' : '⚠ ' + ((failure && failure.message) || 'AI 응답에 계획이 없습니다. 다시 시도해 주세요.');
             if (revision) Planner.status(message + ' 지금 계획은 그대로입니다.', true); // 원래 계획을 그대로 둔다
@@ -3866,6 +3930,7 @@
             }
             return;
           }
+          if (revision && previous) Planner.keepMedia(previous.plan, slides);
           const plan = { deckTitle: String((result && result.deckTitle) || '').trim(), slides };
           if (revision) {
             Planner.fill(topic, plan);
@@ -3878,6 +3943,19 @@
             Planner.status('');
             Planner.modal().show();
           }
+        },
+
+        // 다시 짠 계획에서도, 같은 소제목 장에 골라 두었던 그림·영상은 같은 종류 순서대로 이어 붙인다.
+        keepMedia(oldPlan, slides) {
+          slides.forEach(item => {
+            const old = oldPlan.slides.find(prev => prev.title === item.title);
+            if (!old) return;
+            ['image', 'video'].forEach(kind => {
+              const picked = old.elements.filter(el => el.kind === kind && el.media);
+              item.elements.filter(el => el.kind === kind && !el.media).forEach((el, k) => { if (picked[k]) el.media = picked[k].media; });
+              picked.slice(item.elements.filter(el => el.kind === kind).length).forEach(el => item.elements.push(Object.assign({}, el)));
+            });
+          });
         },
 
         // 고칠 수 있는 계획표를 창에 채운다.
@@ -3930,18 +4008,119 @@
             top.append(button);
           });
           const points = document.createElement('textarea');
-          points.className = 'form-control form-control-sm mb-1 plan-points';
-          points.rows = 3;
+          points.className = 'form-control form-control-sm mb-2 plan-points';
+          points.rows = 2;
           points.placeholder = '이 장에 들어갈 핵심 내용·문구 (줄마다 하나)';
           points.setAttribute('aria-label', '핵심 내용');
           points.value = item.points || '';
-          const elements = document.createElement('input');
-          elements.className = 'form-control form-control-sm plan-elements';
-          elements.placeholder = '넣을 요소 (예: 근의 공식 수식, y=x² 그래프, 인터랙티브 슬라이더)';
-          elements.setAttribute('aria-label', '넣을 요소');
-          elements.value = item.elements || '';
-          li.append(top, points, elements);
+          const elements = document.createElement('div');
+          elements.className = 'plan-elements';
+          (item.elements || []).forEach(el => elements.append(Planner.elementRow(el)));
+          const adds = document.createElement('div');
+          adds.className = 'd-flex flex-wrap gap-1 mt-1';
+          Object.keys(Planner.KINDS).forEach(kind => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-sm btn-outline-secondary py-0 plan-add-el';
+            button.dataset.plan = 'add-' + kind;
+            button.innerHTML = '<i class="bi ' + Planner.KINDS[kind].icon + '"></i> ';
+            button.append('+ ' + Planner.KINDS[kind].label);
+            adds.append(button);
+          });
+          li.append(top, points, elements, adds);
           return li;
+        },
+
+        // 넣을 요소 한 줄: 종류 · 설명 · (그림·영상이면) 가져올 곳 · 빼기
+        elementRow(el) {
+          const info = Planner.KINDS[el.kind];
+          const row = document.createElement('div');
+          row.className = 'plan-el d-flex align-items-center gap-1 mb-1';
+          row.dataset.kind = el.kind;
+          row.lsMedia = el.media || null;
+          const tag = document.createElement('span');
+          tag.className = 'badge text-bg-light border text-nowrap plan-el-kind';
+          tag.innerHTML = '<i class="bi ' + info.icon + '"></i> ';
+          tag.append(info.label);
+          const text = document.createElement('input');
+          text.className = 'form-control form-control-sm plan-el-text';
+          text.placeholder = info.placeholder;
+          text.setAttribute('aria-label', info.label + ' 설명');
+          text.value = el.text || '';
+          row.append(tag, text);
+          if (el.kind === 'image' || el.kind === 'video') {
+            const source = document.createElement('select');
+            source.className = 'form-select form-select-sm plan-el-source';
+            source.setAttribute('aria-label', info.label + ' 가져올 곳');
+            Planner.fillSource(source, el.kind, row.lsMedia);
+            row.append(source);
+          }
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'btn btn-sm btn-link text-muted p-0 px-1';
+          remove.dataset.plan = 'remove-el';
+          remove.title = '이 요소 빼기';
+          remove.setAttribute('aria-label', '이 요소 빼기');
+          remove.innerHTML = '<i class="bi bi-x"></i>';
+          row.append(remove);
+          return row;
+        },
+
+        // 가져올 곳 고르기: 자리만 / 담아 둔 개체 / 고른 파일 / 새로 고르기
+        fillSource(select, kind, current) {
+          select.textContent = '';
+          const option = (value, label) => { const o = document.createElement('option'); o.value = value; o.textContent = label; select.append(o); return o; };
+          option('', kind === 'image' ? '그림 없이 (AI가 도형·이모지로)' : '영상 없이 (넣지 않음)');
+          Planner.staged.forEach((media, i) => {
+            if (kind === 'image' ? media.kind === 'image' : (media.kind === 'video' || media.kind === 'youtube')) option('staged:' + i, '담아 둔 ' + (kind === 'image' ? '그림' : '영상') + ': ' + media.name);
+          });
+          if (current && !Planner.staged.includes(current)) option('picked', '고른 파일: ' + current.name);
+          option('file', kind === 'image' ? '내 컴퓨터에서 그림 고르기…' : '내 컴퓨터에서 동영상 고르기…');
+          if (kind === 'video') option('youtube', '유튜브 주소 넣기…');
+          select.value = current ? (Planner.staged.includes(current) ? 'staged:' + Planner.staged.indexOf(current) : 'picked') : '';
+        },
+
+        async onSource(select) {
+          const row = select.closest('.plan-el');
+          const kind = row.dataset.kind;
+          const value = select.value;
+          if (value.startsWith('staged:')) row.lsMedia = Planner.staged[Number(value.slice(7))] || null;
+          else if (value === '') row.lsMedia = null;
+          else if (value === 'youtube') {
+            const text = await Util.ask('유튜브 동영상', '유튜브 주소 (예: https://www.youtube.com/watch?v=...)', '');
+            const embed = text ? youtubeEmbed(text) : '';
+            if (text && !embed) Util.toast('유튜브 주소를 알아볼 수 없습니다.', 'warning');
+            if (embed) row.lsMedia = { kind: 'youtube', name: '유튜브 동영상', embed };
+          } else if (value === 'file') {
+            const input = $('file-plan');
+            input.accept = kind === 'image' ? 'image/png,image/jpeg,image/gif,image/webp' : 'video/mp4,video/webm';
+            Planner.pickTarget = row;
+            input.click();
+            return; // 고른 뒤 pick()에서 마무리
+          }
+          Planner.fillSource(select, kind, row.lsMedia);
+        },
+
+        async pick(file) {
+          const row = Planner.pickTarget;
+          Planner.pickTarget = null;
+          if (!row || !row.isConnected) return;
+          const select = row.querySelector('.plan-el-source');
+          if (file) {
+            try {
+              if (row.dataset.kind === 'image') {
+                const image = await readImage(file);
+                row.lsMedia = { kind: 'image', name: file.name, url: image.url, width: image.width, height: image.height };
+              } else {
+                row.lsMedia = { kind: 'video', name: file.name, url: await readVideo(file) };
+              }
+              const text = row.querySelector('.plan-el-text');
+              if (!text.value.trim()) text.value = file.name.replace(/\.[a-z0-9]+$/i, '');
+            } catch (err) {
+              Util.toast(err.message, 'warning');
+            }
+          }
+          Planner.fillSource(select, row.dataset.kind, row.lsMedia);
         },
 
         // 계획표에서 지금 적힌 값을 읽는다(소제목이 빈 장은 뺀다).
@@ -3950,7 +4129,11 @@
           const slides = Array.from(body.querySelectorAll('.plan-item')).map(li => ({
             title: li.querySelector('.plan-title').value.trim(),
             points: li.querySelector('.plan-points').value.trim(),
-            elements: li.querySelector('.plan-elements').value.trim()
+            elements: Array.from(li.querySelectorAll('.plan-el')).map(row => ({
+              kind: row.dataset.kind,
+              text: row.querySelector('.plan-el-text').value.trim(),
+              media: row.lsMedia || null
+            })).filter(el => el.text || el.media)
           })).filter(item => item.title);
           const title = body.querySelector('.plan-deck-title');
           return { deckTitle: title ? title.value.trim() : '', slides };
@@ -3960,7 +4143,11 @@
           if (!Planner.active) return;
           const modal = $('plan-modal');
           const items = modal.querySelectorAll('.plan-item');
-          items.forEach((li, i) => { li.querySelector('.plan-num').textContent = (i + 1) + '.'; });
+          items.forEach((li, i) => {
+            li.querySelector('.plan-num').textContent = (i + 1) + '.';
+            const full = li.querySelectorAll('.plan-el').length >= Planner.MAX_ELEMENTS;
+            li.querySelectorAll('.plan-add-el').forEach(button => { button.disabled = full || AiPanel.busy; });
+          });
           const count = Planner.read().slides.length;
           modal.querySelector('.plan-count').textContent = count + '장';
           const approve = modal.querySelector('.plan-approve');
@@ -3979,8 +4166,13 @@
           if (act === 'up' && li && li.previousElementSibling) li.parentNode.insertBefore(li, li.previousElementSibling);
           else if (act === 'down' && li && li.nextElementSibling) li.parentNode.insertBefore(li.nextElementSibling, li);
           else if (act === 'remove' && li) li.remove();
-          else if (act === 'add') {
-            const row = Planner.row({ title: '', points: '', elements: '' });
+          else if (act === 'remove-el') button.closest('.plan-el').remove();
+          else if (act.startsWith('add-') && li) {
+            const row = Planner.elementRow({ kind: act.slice(4), text: '' });
+            li.querySelector('.plan-elements').append(row);
+            row.querySelector('.plan-el-text').focus();
+          } else if (act === 'add') {
+            const row = Planner.row({ title: '', points: '', elements: [] });
             $('plan-body').querySelector('.plan-list').append(row);
             row.querySelector('.plan-title').focus();
           } else if (act === 'redo') { Planner.redo(); return; }
@@ -4022,8 +4214,13 @@
           const modal = $('plan-modal');
           modal.addEventListener('click', Planner.onClick);
           modal.addEventListener('input', Planner.refresh);
+          modal.addEventListener('change', event => { if (event.target.matches('.plan-el-source')) Planner.onSource(event.target); });
           modal.querySelector('.plan-redo').addEventListener('keydown', event => {
             if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); Planner.redo(); }
+          });
+          $('file-plan').addEventListener('change', event => {
+            Planner.pick(event.target.files[0]);
+            event.target.value = '';
           });
         }
       };
@@ -4164,13 +4361,16 @@
           };
         },
 
+        // 한 줄 자리에 맞게 줄바꿈은 ' · '로 이어 보인다(전체 글은 마우스를 올리면 보인다).
         showStatus(text, isError) {
-          $('ai-status').classList.remove('d-none');
+          const line = String(text).replace(/\s*\n\s*/g, ' · ');
+          $('ai-status-on').classList.remove('d-none');
           $('ai-status').classList.toggle('text-danger', !!isError);
-          $('ai-status-text').textContent = text;
+          $('ai-status-text').textContent = line;
+          $('ai-status').title = line;
         },
 
-        hideStatus() { $('ai-status').classList.add('d-none'); },
+        hideStatus() { $('ai-status-on').classList.add('d-none'); $('ai-status').title = ''; },
 
         setBusy(on) {
           AiPanel.busy = on;
@@ -4313,7 +4513,7 @@
           const lines = items.map(item => {
             if (item.kind === 'app') {
               item.token = 'data-app="' + item.id + '"';
-              return '- 인터랙티브 요소: <div class="app-frame" data-app="' + item.id + '" style="width:100%; height:600px;"></div> ' +
+              return '- 인터랙티브 요소' + (item.note ? '("' + item.note + '")' : '') + ': <div class="app-frame" data-app="' + item.id + '" style="width:100%; height:600px;"></div> ' +
                 '(코드는 html에 쓰지 말고 이 장의 apps 배열에 {"id":"' + item.id + '","code":"..."}로 따로 출력한다. 높이는 내용에 맞게 정한다)';
             }
             if (item.kind === 'youtube') {
@@ -4341,6 +4541,20 @@
         },
 
         // AI가 실제로 넣은 개체만 목록에서 뺀다. 빠뜨린 개체는 남겨 두고 알린다.
+        // 계획대로 만든 뒤: 실제로 넣은 담아 둔 개체는 AI 창에서 빼고, 빠진 것은 어느 장인지 알린다.
+        finishPlanMedia(items, rawHtml) {
+          if (!items.length) return;
+          const used = items.filter(item => item.token && rawHtml.indexOf(item.token) >= 0);
+          const usedSources = used.map(item => item.source).filter(Boolean);
+          AiPanel.media = AiPanel.media.filter(item => !usedSources.includes(item));
+          AiPanel.drawFiles();
+          const missed = items.filter(item => !used.includes(item));
+          if (missed.length) {
+            Util.toast('AI가 계획의 개체 일부를 넣지 않았습니다: ' + missed.map(item => item.slideTitle + ' → ' + item.name).join(', ') +
+              '\n그 장에서 [현재 슬라이드 수정]으로 다시 요청해 보세요.', 'warning');
+          }
+        },
+
         finishMedia(items, rawHtml) {
           if (!items.length) return;
           const used = items.filter(item => item.token && rawHtml.indexOf(item.token) >= 0);
@@ -4502,7 +4716,9 @@
           }
 
           const files = AiPanel.files.slice();
-          const media = AiPanel.media.slice();
+          // 계획대로 만들 때는 장마다 배정된 개체만 그 장에 보내므로, 담아 둔 개체 전체를 매번 보내지 않는다.
+          const media = plan ? [] : AiPanel.media.slice();
+          const planMedia = [];
           const refs = [];
           let rawHtml = '';
           if (!plan) {
@@ -4536,15 +4752,20 @@
             const count = Math.min(AI_BATCH, total - start);
             const label = total > 1 ? (start + 1) + ' / ' + total + '번째 장을 만드는 중…' : '슬라이드를 만드는 중…';
             status.set(label);
-            // 넣을 개체를 앞 장에 이미 다 넣었으면 다음 장 요청에는 보내지 않는다.
-            const mediaLeft = media.some(item => rawHtml.indexOf(item.token) < 0);
+            // 계획대로 만들 때: 이 장에 배정된 그림·영상·인터랙티브만 보낸다.
+            // 그냥 만들 때: 담아 둔 개체를 앞 장에 이미 다 넣었으면 다음 장 요청에는 보내지 않는다.
+            const slideMedia = plan ? Planner.mediaFor(plan.slides[start]) : null;
+            const slideRequest = slideMedia && slideMedia.length ? AiPanel.mediaRequest(slideMedia, refs) : null;
+            if (slideMedia) planMedia.push(...slideMedia);
+            const mediaLeft = !plan && media.some(item => rawHtml.indexOf(item.token) < 0);
+            const sending = slideRequest || (mediaLeft ? mediaRequest : null);
             let result;
             try {
               result = await Gemini.generateJson({
                 model: Settings.model(),
                 system: Prompts.slideSystem(),
-                prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference, plan) + AiPanel.filePrompt(files) + (mediaLeft ? mediaRequest.text : ''),
-                parts: mediaLeft ? fileParts.concat(mediaRequest.parts) : fileParts,
+                prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference, plan) + AiPanel.filePrompt(files) + (sending ? sending.text : ''),
+                parts: sending ? fileParts.concat(sending.parts) : fileParts,
                 schema: AI_SCHEMA,
                 signal: controller.signal,
                 onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -4594,7 +4815,8 @@
           if (Editor.deck !== deck) return;
           if (added) {
             AiPanel.clearFiles(files);
-            AiPanel.finishMedia(media, rawHtml);
+            if (plan) AiPanel.finishPlanMedia(planMedia, rawHtml);
+            else AiPanel.finishMedia(media, rawHtml);
             const list = madeIds.map((id, i) => (deck.slides.findIndex(slide => slide.id === id) + 1) + '번 장: ' + madeTitles[i]).join(', ');
             AiPanel.remember(deck, '[새 슬라이드 생성' + (total > 1 ? ', ' + total + '장' : '') + '] ' + topic + AiPanel.fileNote(files), topic);
           }
