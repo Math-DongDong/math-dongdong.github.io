@@ -54,6 +54,13 @@
     @keyframes ls-pop { 0% { opacity: 0; scale: 0.5; } 100% { opacity: 1; scale: 1; } }
     @keyframes ls-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -18px; } }
 
+    /* 수학 개체: 수식(math-tex)·그래프(math-graph)·도형(math-geo). 그림은 프로그램이 SVG로 그려 넣는다. */
+    .math-tex svg { overflow: visible; }
+    .math-graph svg, .math-geo svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .math-graph .math-draw, .math-geo .math-draw { stroke-dasharray: 1; animation: ls-math-draw 1.4s cubic-bezier(0.4, 0, 0.2, 1) 0.8s both; }
+    .math-graph .math-show, .math-geo .math-show { animation: ls-fade 0.5s ease 1.8s both; }
+    @keyframes ls-math-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
     /* 내보낸 파일의 보기 화면 */
     body.ls-viewer { margin: 0; height: 100vh; overflow: hidden; background: #000; }
     .v-host { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
@@ -583,6 +590,35 @@
   </div>
 
   <!-- Firebase Storage 목록 (관리자 전용) -->
+  <!-- 수식·그래프·도형 고치기 (슬라이드에서 더블클릭) -->
+  <div class="modal fade" id="math-modal" tabindex="-1" aria-hidden="true" aria-labelledby="math-modal-title">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="math-modal-title">수식 고치기</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-lg-5">
+              <label class="form-label small text-muted" for="math-input" id="math-help"></label>
+              <textarea class="form-control font-monospace small" id="math-input" rows="14" spellcheck="false"></textarea>
+            </div>
+            <div class="col-lg-7">
+              <div class="small text-muted mb-1">미리보기</div>
+              <div class="border rounded p-3 bg-white d-flex align-items-center justify-content-center overflow-auto" id="math-preview" style="min-height: 320px; font-size: 44px; color: #1f2937;"></div>
+              <div class="small text-danger mt-1" id="math-error" role="alert"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">취소</button>
+          <button type="button" class="btn btn-primary" id="math-apply">적용</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 단축키 안내 -->
   <div class="modal fade" id="shortcut-modal" tabindex="-1" aria-hidden="true" aria-labelledby="shortcut-modal-title">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -609,7 +645,7 @@
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>10px씩 옮기기 (<kbd>Shift</kbd>와 함께: 50px)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기, 수식·그래프·도형은 고치기 창)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>글자 편집 끝내기 · 선택 해제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Delete</kbd></td><td>개체 삭제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>개체 복제</td></tr>
@@ -878,7 +914,9 @@
           return DOMPurify.sanitize(String(html || ''), {
             USE_PROFILES: { html: true, svg: true },
             ADD_TAGS: ['iframe'],
-            ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop'],
+            ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop',
+              'data-tex', 'data-graph', 'data-geo', 'pathLength', 'paint-order'],
+            ADD_URI_SAFE_ATTR: ['data-tex', 'data-graph', 'data-geo'], // 수학 개체의 설계값(LaTeX·JSON)은 주소가 아니다
             FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'object',
               'embed', 'link', 'meta', 'audio', 'track', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
             FORBID_ATTR: ['id', 'name', 'contenteditable', 'tabindex', 'srcset', 'href', 'xlink:href', 'action', 'formaction'],
@@ -1081,6 +1119,570 @@
             overlay.className = 'iframe-drag-overlay';
             box.append(overlay);
           });
+        }
+      };
+
+      /* ===== 3-2. 수학 개체: 수식(LaTeX)·함수 그래프·도형 =====
+         AI는 무엇을 그릴지만 적는다(data-tex / data-graph / data-geo). 계산과 그리기는 이 코드가 맡는다.
+         그린 SVG를 슬라이드 HTML에 함께 저장하므로, 내보낸 파일·PDF는 이 코드 없이도 그대로 보인다. */
+      const MathKit = {
+        SELECTOR: '.math-tex, .math-graph, .math-geo',
+        NS: 'http://www.w3.org/2000/svg',
+        PALETTE: ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c'],
+        FONT: "'Pretendard Variable', Pretendard, 'Malgun Gothic', sans-serif",
+        mathjax: null,
+
+        // HTML 안의 수학 개체를 모두 그려 넣는다(AI 응답을 정리한 뒤에 부른다).
+        async renderHtml(html) {
+          if (!/math-(tex|graph|geo)/.test(html)) return html;
+          const template = document.createElement('template');
+          template.innerHTML = html;
+          for (const el of template.content.querySelectorAll(MathKit.SELECTOR)) await MathKit.render(el);
+          return template.innerHTML;
+        },
+
+        // AI에게 보낼 때는 그린 SVG를 비우고 설계값만 남긴다(글자 수 절약).
+        strip(html) {
+          if (!/math-(tex|graph|geo)/.test(html)) return html;
+          const template = document.createElement('template');
+          template.innerHTML = html;
+          template.content.querySelectorAll(MathKit.SELECTOR).forEach(el => el.replaceChildren());
+          return template.innerHTML;
+        },
+
+        kind(el) {
+          if (el.classList.contains('math-tex')) return 'tex';
+          return el.classList.contains('math-graph') ? 'graph' : 'geo';
+        },
+
+        // 하나를 그린다. 실패하면 이유를 보이고 그 글을 돌려준다(성공하면 '').
+        async render(el) {
+          const kind = MathKit.kind(el);
+          try {
+            if (kind === 'tex') await MathKit.renderTex(el);
+            else el.replaceChildren(kind === 'graph' ? MathKit.graph(MathKit.spec(el.getAttribute('data-graph'))) : MathKit.geo(MathKit.spec(el.getAttribute('data-geo'))));
+            return '';
+          } catch (err) {
+            if (kind === 'tex') {
+              el.textContent = el.getAttribute('data-tex') || '';
+            } else {
+              const note = document.createElement('div');
+              note.style.cssText = 'color:#b91c1c;font-size:24px;padding:12px;border:3px dashed #fca5a5;border-radius:12px;';
+              note.textContent = '⚠ ' + (kind === 'graph' ? '그래프' : '도형') + '를 그리지 못했습니다: ' + err.message;
+              el.replaceChildren(note);
+            }
+            return err.message;
+          }
+        },
+
+        /* --- 수식: MathJax(SVG 출력)는 처음 쓸 때만 불러온다 --- */
+        loadMathJax() {
+          if (!MathKit.mathjax) {
+            MathKit.mathjax = new Promise((resolve, reject) => {
+              window.MathJax = {
+                svg: { fontCache: 'none' }, // 글자 모양을 SVG 안에 바로 넣는다(id·use 참조 없음)
+                startup: {
+                  typeset: false,
+                  ready() { window.MathJax.startup.defaultReady(); window.MathJax.startup.promise.then(() => resolve(window.MathJax)); }
+                }
+              };
+              const script = document.createElement('script');
+              script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js';
+              script.async = true;
+              script.onerror = () => {
+                MathKit.mathjax = null;
+                script.remove();
+                Util.toast('수식 도구(MathJax)를 불러오지 못해 수식을 LaTeX 글자로 두었습니다. 인터넷 연결을 확인한 뒤 수식을 더블클릭해 다시 적용해 주세요.', 'warning');
+                reject(new Error('수식 도구(MathJax)를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.'));
+              };
+              document.head.append(script);
+            });
+          }
+          return MathKit.mathjax;
+        },
+
+        async renderTex(el) {
+          const tex = (el.getAttribute('data-tex') || '').trim();
+          if (!tex) throw new Error('수식이 비어 있습니다.');
+          const mathjax = await MathKit.loadMathJax();
+          const node = await mathjax.tex2svgPromise(tex, { display: true });
+          const svg = node.querySelector('svg');
+          if (!svg) throw new Error('수식을 그리지 못했습니다.');
+          const error = svg.querySelector('[data-mml-node="merror"]');
+          if (error) throw new Error('LaTeX 오류: ' + (error.getAttribute('data-mjx-error') || error.textContent || tex));
+          ['role', 'focusable', 'aria-hidden'].forEach(name => svg.removeAttribute(name));
+          svg.setAttribute('aria-label', tex);
+          el.replaceChildren(svg);
+        },
+
+        /* --- 그래프·도형의 설계값(JSON) --- */
+        spec(text) {
+          let data = null;
+          try { data = JSON.parse(text); } catch (err) {
+            try { data = JSON.parse(String(text).replace(/'/g, '"')); } catch (err2) { /* 아래에서 안내 */ }
+          }
+          if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('설계값(JSON)을 읽을 수 없습니다.');
+          return data;
+        },
+
+        // 식을 x의 함수로 바꾼다. eval을 쓰지 않고 정해진 연산·함수만 읽는다.
+        compile(source) {
+          const src = String(source || '').replace(/\s+/g, '').replace(/^y=/i, '').replace(/\*\*/g, '^')
+            .replace(/[−–]/g, '-').replace(/[×·]/g, '*').replace(/÷/g, '/').replace(/π/g, 'pi').replace(/√/g, 'sqrt')
+            .replace(/²/g, '^2').replace(/³/g, '^3').toLowerCase();
+          if (!src) throw new Error('식이 비어 있습니다.');
+          const FUNCS = { sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, abs: Math.abs, exp: Math.exp, ln: Math.log, log: Math.log10 };
+          const WORDS = ['sqrt', 'sin', 'cos', 'tan', 'abs', 'exp', 'ln', 'log', 'pi', 'x', 'e'];
+          let pos = 0;
+          const fail = () => { throw new Error('식을 읽을 수 없습니다: ' + source); };
+          const startsAtom = ch => /[0-9.a-z(]/.test(ch || '');
+
+          function expr() {
+            let left = term();
+            while (src[pos] === '+' || src[pos] === '-') {
+              const op = src[pos++];
+              const right = term();
+              const a = left;
+              left = op === '+' ? x => a(x) + right(x) : x => a(x) - right(x);
+            }
+            return left;
+          }
+          function term() {
+            let left = unary();
+            for (;;) {
+              const ch = src[pos];
+              let right;
+              let divide = false;
+              if (ch === '*' || ch === '/') { pos++; divide = ch === '/'; right = unary(); }
+              else if (startsAtom(ch)) right = power(); // 2x, 3(x+1), x sin(x) 같은 생략된 곱셈
+              else return left;
+              const a = left;
+              const b = right;
+              left = divide ? x => a(x) / b(x) : x => a(x) * b(x);
+            }
+          }
+          function unary() {
+            if (src[pos] === '-') { pos++; const inner = unary(); return x => -inner(x); }
+            if (src[pos] === '+') { pos++; return unary(); }
+            return power();
+          }
+          function power() {
+            const base = atom();
+            if (src[pos] !== '^') return base;
+            pos++;
+            const exponent = unary(); // 2^-x, x^2^3(오른쪽부터)
+            return x => Math.pow(base(x), exponent(x));
+          }
+          function atom() {
+            const ch = src[pos];
+            if (ch === '(') {
+              pos++;
+              const inner = expr();
+              if (src[pos++] !== ')') fail();
+              return inner;
+            }
+            if (ch === '|') {
+              pos++;
+              const inner = expr();
+              if (src[pos++] !== '|') fail();
+              return x => Math.abs(inner(x));
+            }
+            const number = src.slice(pos).match(/^(\d+\.?\d*|\.\d+)/);
+            if (number) { pos += number[0].length; const value = parseFloat(number[0]); return () => value; }
+            const word = WORDS.find(name => src.startsWith(name, pos));
+            if (!word) fail();
+            pos += word.length;
+            if (word === 'x') return x => x;
+            if (word === 'pi') return () => Math.PI;
+            if (word === 'e') return () => Math.E;
+            const fn = FUNCS[word];
+            const arg = src[pos] === '(' ? atom() : power(); // sin(x) 또는 sinx
+            return x => fn(arg(x));
+          }
+
+          const compiled = expr();
+          if (pos !== src.length) fail();
+          return compiled;
+        },
+
+        svg(width, height) {
+          const svg = document.createElementNS(MathKit.NS, 'svg');
+          svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+          svg.setAttribute('width', width);
+          svg.setAttribute('height', height);
+          return svg;
+        },
+
+        node(parent, tag, attrs, text) {
+          const el = document.createElementNS(MathKit.NS, tag);
+          Object.keys(attrs || {}).forEach(name => { if (attrs[name] !== undefined && attrs[name] !== null) el.setAttribute(name, attrs[name]); });
+          if (text !== undefined) el.textContent = text;
+          parent.append(el);
+          return el;
+        },
+
+        label(parent, x, y, text, attrs) {
+          return MathKit.node(parent, 'text', Object.assign({
+            x: x.toFixed(1), y: y.toFixed(1), 'font-family': MathKit.FONT, 'font-size': 26, fill: '#1f2937',
+            'text-anchor': 'middle', 'dominant-baseline': 'middle',
+            style: 'paint-order: stroke; stroke: #ffffff; stroke-width: 6px; stroke-linejoin: round;'
+          }, attrs || {}), String(text));
+        },
+
+        // 숫자 이름표: 소수 오차를 없애고 음수는 수학 기호(−)로
+        num(value) { return String(+value.toFixed(4)).replace('-', '−'); },
+
+        range(value, fallback) {
+          return Array.isArray(value) && value.length === 2 && value.every(Number.isFinite) && value[0] < value[1]
+            ? [Number(value[0]), Number(value[1])] : fallback;
+        },
+
+        niceStep(span) {
+          const raw = span / 8; // 눈금이 6~10개 안팎이 되게
+          const power = Math.pow(10, Math.floor(Math.log10(raw)));
+          const unit = raw / power;
+          return (unit < 1.5 ? 1 : unit < 3 ? 2 : unit < 7 ? 5 : 10) * power;
+        },
+
+        /* --- 함수 그래프 --- */
+        graph(spec) {
+          const W = 800;
+          const H = Math.max(300, Math.min(1000, Number(spec.height) || 600));
+          const PAD = 56;
+          const functions = (Array.isArray(spec.functions) ? spec.functions : []).slice(0, 6).map((item, i) => {
+            const data = typeof item === 'string' ? { expr: item } : (item || {});
+            return Object.assign({}, data, { fn: MathKit.compile(data.expr), color: data.color || MathKit.PALETTE[i % MathKit.PALETTE.length] });
+          });
+          const points = (Array.isArray(spec.points) ? spec.points : []).filter(p => p && typeof p.x === 'number' && typeof p.y === 'number' && Number.isFinite(p.x) && Number.isFinite(p.y));
+          if (!functions.length && !points.length) throw new Error('그릴 함수나 점이 없습니다.');
+
+          let [x0, x1] = MathKit.range(spec.x, [-5, 5]);
+          let yRange = MathKit.range(spec.y, null);
+          if (!yRange) {
+            const values = points.map(p => +p.y);
+            functions.forEach(item => {
+              const [a, b] = MathKit.range(item.domain, [x0, x1]);
+              for (let i = 0; i <= 200; i++) {
+                const x = Math.max(x0, a) + (Math.min(x1, b) - Math.max(x0, a)) * i / 200;
+                const y = item.fn(x);
+                if (Number.isFinite(y)) values.push(y);
+              }
+            });
+            values.sort((p, q) => p - q);
+            let lo = values.length ? values[Math.floor(values.length * 0.02)] : -5;
+            let hi = values.length ? values[Math.max(0, Math.ceil(values.length * 0.98) - 1)] : 5;
+            if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+            const margin = (hi - lo) * 0.12;
+            lo -= margin;
+            hi += margin;
+            if (lo > 0) lo = -(hi - lo) * 0.08; // 원점이 보이게
+            if (hi < 0) hi = (hi - lo) * 0.08;
+            yRange = [lo, hi];
+          }
+          const [y0, y1] = yRange;
+          const sx = x => PAD + (x - x0) / (x1 - x0) * (W - 2 * PAD);
+          const sy = y => H - PAD - (y - y0) / (y1 - y0) * (H - 2 * PAD);
+          const pt = (x, y) => sx(x).toFixed(1) + ' ' + sy(y).toFixed(1);
+
+          const svg = MathKit.svg(W, H);
+          const ax = y0 <= 0 && y1 >= 0 ? sy(0) : sy(y0); // x축이 놓일 높이
+          const ay = x0 <= 0 && x1 >= 0 ? sx(0) : sx(x0); // y축이 놓일 자리
+          const stepX = Number(spec.stepX) > 0 ? Number(spec.stepX) : MathKit.niceStep(x1 - x0);
+          const stepY = Number(spec.stepY) > 0 ? Number(spec.stepY) : MathKit.niceStep(y1 - y0);
+          const ticks = (a, b, step) => {
+            const list = [];
+            for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) if (Math.abs(v) > step * 1e-6) list.push(+v.toFixed(10));
+            return list;
+          };
+
+          // 모눈
+          if (spec.grid !== false) {
+            const grid = MathKit.node(svg, 'g', { stroke: '#e5e7eb', 'stroke-width': 1.5 });
+            ticks(x0, x1, stepX).forEach(v => MathKit.node(grid, 'line', { x1: sx(v), y1: PAD, x2: sx(v), y2: H - PAD }));
+            ticks(y0, y1, stepY).forEach(v => MathKit.node(grid, 'line', { x1: PAD, y1: sy(v), x2: W - PAD, y2: sy(v) }));
+          }
+          // 좌표축·화살표·눈금
+          const axes = MathKit.node(svg, 'g', { stroke: '#374151', 'stroke-width': 2.5, fill: '#374151' });
+          MathKit.node(axes, 'line', { x1: PAD - 10, y1: ax, x2: W - PAD + 22, y2: ax });
+          MathKit.node(axes, 'line', { x1: ay, y1: H - PAD + 10, x2: ay, y2: PAD - 22 });
+          MathKit.node(axes, 'polygon', { points: (W - PAD + 34) + ',' + ax + ' ' + (W - PAD + 18) + ',' + (ax - 8) + ' ' + (W - PAD + 18) + ',' + (ax + 8), stroke: 'none' });
+          MathKit.node(axes, 'polygon', { points: ay + ',' + (PAD - 34) + ' ' + (ay - 8) + ',' + (PAD - 18) + ' ' + (ay + 8) + ',' + (PAD - 18), stroke: 'none' });
+          ticks(x0, x1, stepX).forEach(v => {
+            MathKit.node(axes, 'line', { x1: sx(v), y1: ax - 6, x2: sx(v), y2: ax + 6 });
+            MathKit.label(svg, sx(v), ax + 24, MathKit.num(v), { 'font-size': 20, fill: '#4b5563' });
+          });
+          ticks(y0, y1, stepY).forEach(v => {
+            MathKit.node(axes, 'line', { x1: ay - 6, y1: sy(v), x2: ay + 6, y2: sy(v) });
+            MathKit.label(svg, ay - 12, sy(v), MathKit.num(v), { 'font-size': 20, fill: '#4b5563', 'text-anchor': 'end' });
+          });
+          MathKit.label(svg, W - PAD + 34, ax + 26, 'x', { 'font-size': 28, 'font-style': 'italic' });
+          MathKit.label(svg, ay + 22, PAD - 34, 'y', { 'font-size': 28, 'font-style': 'italic' });
+          if (x0 <= 0 && x1 >= 0 && y0 <= 0 && y1 >= 0) MathKit.label(svg, ay - 16, ax + 24, 'O', { 'font-size': 24, 'font-style': 'italic' });
+
+          // 보조선: x=a, y=b
+          (Array.isArray(spec.lines) ? spec.lines : []).forEach(line => {
+            if (!line) return;
+            const color = line.color || '#6b7280';
+            const dash = line.dashed === false ? null : '10 8';
+            if (typeof line.x === 'number' && Number.isFinite(line.x)) {
+              MathKit.node(svg, 'line', { x1: sx(+line.x), y1: PAD, x2: sx(+line.x), y2: H - PAD, stroke: color, 'stroke-width': 2.5, 'stroke-dasharray': dash });
+              if (line.label) MathKit.label(svg, sx(+line.x) + 10, PAD + 16, line.label, { 'text-anchor': 'start', fill: color, 'font-size': 24 });
+            } else if (typeof line.y === 'number' && Number.isFinite(line.y)) {
+              MathKit.node(svg, 'line', { x1: PAD, y1: sy(+line.y), x2: W - PAD, y2: sy(+line.y), stroke: color, 'stroke-width': 2.5, 'stroke-dasharray': dash });
+              if (line.label) MathKit.label(svg, W - PAD - 6, sy(+line.y) - 18, line.label, { 'text-anchor': 'end', fill: color, 'font-size': 24 });
+            }
+          });
+          (Array.isArray(spec.segments) ? spec.segments : []).forEach(seg => {
+            const a = seg && Array.isArray(seg.from) ? seg.from : null;
+            const b = seg && Array.isArray(seg.to) ? seg.to : null;
+            if (!a || !b || ![a[0], a[1], b[0], b[1]].every(v => Number.isFinite(+v))) return;
+            MathKit.node(svg, 'line', { x1: sx(+a[0]), y1: sy(+a[1]), x2: sx(+b[0]), y2: sy(+b[1]), stroke: seg.color || '#6b7280', 'stroke-width': 3, 'stroke-dasharray': seg.dashed ? '10 8' : null });
+          });
+
+          // 곡선: 촘촘히 계산하고, 보이는 범위 밖으로 나가는 곳은 경계에서 끊는다(점근선도 이어 그리지 않는다).
+          functions.forEach(item => {
+            const [a, b] = MathKit.range(item.domain, [x0, x1]);
+            const from = Math.max(x0, a);
+            const to = Math.min(x1, b);
+            if (from >= to) return;
+            const N = 600;
+            let d = '';
+            let prev = null;
+            let last = null;
+            for (let i = 0; i <= N; i++) {
+              const x = from + (to - from) * i / N;
+              let y = NaN;
+              try { y = item.fn(x); } catch (err) { /* 정의되지 않은 곳 */ }
+              if (!Number.isFinite(y)) { prev = null; continue; }
+              const inside = y >= y0 && y <= y1;
+              if (prev && inside && prev.inside && Math.abs(y - prev.y) > (y1 - y0) * 0.9) prev = null; // 갑자기 튀면 끊기
+              if (prev) {
+                if (inside && prev.inside) d += ' L' + pt(x, y);
+                else if (inside) {
+                  const edge = prev.y > y1 ? y1 : y0;
+                  d += ' M' + pt(prev.x + (x - prev.x) * (edge - prev.y) / (y - prev.y), edge) + ' L' + pt(x, y);
+                } else if (prev.inside) {
+                  const edge = y > y1 ? y1 : y0;
+                  d += ' L' + pt(prev.x + (x - prev.x) * (edge - prev.y) / (y - prev.y), edge);
+                }
+              } else if (inside) d += ' M' + pt(x, y);
+              if (inside) last = { x, y };
+              prev = { x, y, inside };
+            }
+            if (!d) return;
+            MathKit.node(svg, 'path', { d: d.trim(), fill: 'none', stroke: item.color, 'stroke-width': 4.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: 'math-draw', pathLength: 1 });
+            if (item.label && last) {
+              const right = sx(last.x) > W - PAD - 160;
+              MathKit.label(svg, sx(last.x) + (right ? -10 : 10), Math.max(PAD, Math.min(H - PAD, sy(last.y))) - 22, item.label,
+                { fill: item.color, 'text-anchor': right ? 'end' : 'start', 'font-size': 28, 'font-weight': 600, class: 'math-show' });
+            }
+          });
+
+          // 점과 이름표(guide: 좌표축까지 점선)
+          points.forEach(p => {
+            const x = sx(+p.x);
+            const y = sy(+p.y);
+            const color = p.color || '#111827';
+            if (p.guide) {
+              MathKit.node(svg, 'line', { x1: x, y1: y, x2: x, y2: ax, stroke: '#9ca3af', 'stroke-width': 2, 'stroke-dasharray': '6 6', class: 'math-show' });
+              MathKit.node(svg, 'line', { x1: x, y1: y, x2: ay, y2: y, stroke: '#9ca3af', 'stroke-width': 2, 'stroke-dasharray': '6 6', class: 'math-show' });
+            }
+            MathKit.node(svg, 'circle', { cx: x.toFixed(1), cy: y.toFixed(1), r: 7, fill: p.open ? '#ffffff' : color, stroke: color, 'stroke-width': 3, class: 'math-show' });
+            if (p.label) {
+              const right = x > W - PAD - 180;
+              MathKit.label(svg, x + (right ? -14 : 14), y - 22, p.label, { 'text-anchor': right ? 'end' : 'start', 'font-size': 26, fill: color, class: 'math-show' });
+            }
+          });
+          return svg;
+        },
+
+        /* --- 도형 --- */
+        geo(spec) {
+          const W = 800;
+          const PAD = 70;
+          const points = {};
+          Object.keys(spec.points || {}).forEach(name => {
+            const v = spec.points[name];
+            if (Array.isArray(v) && v.length >= 2 && Number.isFinite(+v[0]) && Number.isFinite(+v[1])) points[name] = { x: +v[0], y: +v[1] };
+          });
+          const names = Object.keys(points);
+          if (!names.length) throw new Error('점 좌표(points)가 없습니다.');
+          const get = ref => {
+            if (Array.isArray(ref) && ref.length >= 2) return { x: +ref[0], y: +ref[1] };
+            if (!points[ref]) throw new Error('점 ' + ref + '의 좌표가 없습니다.');
+            return points[ref];
+          };
+          const circles = (Array.isArray(spec.circles) ? spec.circles : []).map(c => {
+            const center = get(c.center);
+            const r = typeof c.radius === 'number' && c.radius > 0 ? c.radius : Math.hypot(get(c.through).x - center.x, get(c.through).y - center.y);
+            return { center, r, color: c.color, fill: c.fill, dashed: c.dashed };
+          });
+
+          // 화면에 맞춰 같은 비율로 줄이거나 늘린다(각·길이 비율이 그대로).
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          const grow = (x, y) => { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); };
+          names.forEach(name => grow(points[name].x, points[name].y));
+          circles.forEach(c => { grow(c.center.x - c.r, c.center.y - c.r); grow(c.center.x + c.r, c.center.y + c.r); });
+          const bw = Math.max(maxX - minX, 1e-6);
+          const bh = Math.max(maxY - minY, 1e-6);
+          const scale = Math.min((W - 2 * PAD) / bw, (900 - 2 * PAD) / bh);
+          const H = Math.max(300, Math.round(bh * scale + 2 * PAD));
+          const offsetX = (W - 2 * PAD - bw * scale) / 2;
+          const offsetY = (H - 2 * PAD - bh * scale) / 2;
+          const X = p => PAD + offsetX + (p.x - minX) * scale;
+          const Y = p => H - PAD - offsetY - (p.y - minY) * scale;
+          const screen = p => ({ x: X(p), y: Y(p) });
+          const centroid = names.reduce((acc, name) => ({ x: acc.x + X(points[name]) / names.length, y: acc.y + Y(points[name]) / names.length }), { x: 0, y: 0 });
+          const unit = (dx, dy, fallback) => { const len = Math.hypot(dx, dy); return len > 1e-6 ? { x: dx / len, y: dy / len } : fallback; };
+
+          const svg = MathKit.svg(W, H);
+          const stroke = { stroke: '#1f2937', 'stroke-width': 4, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
+          const vertices = new Set();
+
+          (Array.isArray(spec.polygons) ? spec.polygons : []).forEach(poly => {
+            const list = Array.isArray(poly) ? poly : (poly && poly.points) || [];
+            if (list.length < 2) return;
+            list.forEach(name => { if (typeof name === 'string') vertices.add(name); });
+            const coords = list.map(ref => { const p = screen(get(ref)); return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+            const fill = !Array.isArray(poly) && poly.fill ? poly.fill : 'none';
+            MathKit.node(svg, 'polygon', Object.assign({}, stroke, { points: coords, fill, 'fill-opacity': fill === 'none' ? null : 0.6, stroke: (!Array.isArray(poly) && poly.color) || '#1f2937', class: 'math-draw', pathLength: 1 }));
+          });
+          circles.forEach(c => {
+            const p = screen(c.center);
+            MathKit.node(svg, 'circle', Object.assign({}, stroke, { cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: (c.r * scale).toFixed(1), fill: c.fill || 'none', 'fill-opacity': c.fill ? 0.5 : null, stroke: c.color || '#1f2937', 'stroke-dasharray': c.dashed ? '10 8' : null, class: c.dashed ? null : 'math-draw', pathLength: c.dashed ? null : 1 }));
+          });
+
+          const segments = (Array.isArray(spec.segments) ? spec.segments : []).map(seg => (Array.isArray(seg) ? { from: seg[0], to: seg[1] } : seg)).filter(seg => seg && seg.from !== undefined && seg.to !== undefined);
+          segments.forEach(seg => {
+            const a = screen(get(seg.from));
+            const b = screen(get(seg.to));
+            if (!seg.hidden) {
+              MathKit.node(svg, 'line', Object.assign({}, stroke, { x1: a.x.toFixed(1), y1: a.y.toFixed(1), x2: b.x.toFixed(1), y2: b.y.toFixed(1),
+                stroke: seg.color || '#1f2937', 'stroke-width': seg.dashed ? 3 : 4, 'stroke-dasharray': seg.dashed ? '10 8' : null,
+                class: seg.dashed ? 'math-show' : 'math-draw', pathLength: seg.dashed ? null : 1 }));
+            }
+            const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            const dir = unit(b.x - a.x, b.y - a.y, { x: 1, y: 0 });
+            let normal = { x: -dir.y, y: dir.x };
+            if ((mid.x - centroid.x) * normal.x + (mid.y - centroid.y) * normal.y < 0) normal = { x: dir.y, y: -dir.x }; // 도형 바깥쪽으로
+            const marks = Math.max(0, Math.min(3, parseInt(seg.marks, 10) || 0));
+            for (let k = 0; k < marks; k++) {
+              const shift = (k - (marks - 1) / 2) * 9;
+              const c = { x: mid.x + dir.x * shift, y: mid.y + dir.y * shift };
+              MathKit.node(svg, 'line', { x1: c.x - normal.x * 11, y1: c.y - normal.y * 11, x2: c.x + normal.x * 11, y2: c.y + normal.y * 11, stroke: '#1f2937', 'stroke-width': 3, class: 'math-show' });
+            }
+            if (seg.label) MathKit.label(svg, mid.x + normal.x * 30, mid.y + normal.y * 30, seg.label, { 'font-size': 28, fill: seg.color || '#1f2937', class: 'math-show' });
+          });
+
+          (Array.isArray(spec.angles) ? spec.angles : []).forEach(angle => {
+            if (!angle) return;
+            const v = screen(get(angle.vertex));
+            const p = screen(get(angle.from));
+            const q = screen(get(angle.to));
+            const u1 = unit(p.x - v.x, p.y - v.y, { x: 1, y: 0 });
+            const u2 = unit(q.x - v.x, q.y - v.y, { x: 0, y: -1 });
+            const bis = unit(u1.x + u2.x, u1.y + u2.y, { x: -u1.y, y: u1.x });
+            const color = angle.color || '#dc2626';
+            if (angle.right) {
+              const s = 24;
+              const a = { x: v.x + u1.x * s, y: v.y + u1.y * s };
+              const c = { x: v.x + u2.x * s, y: v.y + u2.y * s };
+              const b = { x: a.x + u2.x * s, y: a.y + u2.y * s };
+              MathKit.node(svg, 'polyline', { points: [a, b, c].map(o => o.x.toFixed(1) + ',' + o.y.toFixed(1)).join(' '), fill: 'none', stroke: color, 'stroke-width': 3, class: 'math-show' });
+            } else {
+              const sweep = u1.x * u2.y - u1.y * u2.x > 0 ? 1 : 0;
+              const arcs = Math.max(1, Math.min(3, parseInt(angle.arcs, 10) || 1));
+              for (let k = 0; k < arcs; k++) {
+                const r = 38 + k * 9;
+                MathKit.node(svg, 'path', { d: 'M' + (v.x + u1.x * r).toFixed(1) + ' ' + (v.y + u1.y * r).toFixed(1) + ' A' + r + ' ' + r + ' 0 0 ' + sweep + ' ' +
+                  (v.x + u2.x * r).toFixed(1) + ' ' + (v.y + u2.y * r).toFixed(1), fill: 'none', stroke: color, 'stroke-width': 3, class: 'math-show' });
+              }
+            }
+            if (angle.label) MathKit.label(svg, v.x + bis.x * 72, v.y + bis.y * 72, angle.label, { 'font-size': 26, fill: color, class: 'math-show' });
+          });
+
+          // 점: 다각형 꼭짓점이 아닌 점(원의 중심 등)에는 점을 찍는다. 이름은 도형 바깥쪽에 쓴다.
+          const hidden = new Set(Array.isArray(spec.hide) ? spec.hide : []);
+          names.forEach(name => {
+            const p = screen(points[name]);
+            if (spec.dots === true || (spec.dots !== false && !vertices.has(name))) {
+              MathKit.node(svg, 'circle', { cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 6, fill: '#1f2937', class: 'math-show' });
+            }
+            if (hidden.has(name)) return;
+            const out = unit(p.x - centroid.x, p.y - centroid.y, { x: -0.7071, y: -0.7071 });
+            MathKit.label(svg, p.x + out.x * 32, p.y + out.y * 32, name, { 'font-size': 32, 'font-weight': 600, class: 'math-show' });
+          });
+          return svg;
+        }
+      };
+
+      // 슬라이드의 수식·그래프·도형을 더블클릭하면 설계값을 고치는 창
+      const MathEditor = {
+        target: null,
+        KINDS: {
+          tex: {
+            attr: 'data-tex', tag: 'span', title: '수식 고치기',
+            help: 'LaTeX로 적습니다. 예) x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}  ·  \\angle ABC=90^\\circ  ·  \\sqrt{2}'
+          },
+          graph: {
+            attr: 'data-graph', tag: 'div', title: '그래프 고치기',
+            help: 'functions: 식 목록(x^2-2x, 2x+1, sqrt(x), sin(x)…) · x / y: 보이는 범위 · points: 점 {x, y, label, guide} · lines: {x} 또는 {y} 보조선'
+          },
+          geo: {
+            attr: 'data-geo', tag: 'div', title: '도형 고치기',
+            help: 'points: 점 좌표 · polygons: 다각형 · segments: 선분 {from, to, label, marks, dashed} · circles: {center, radius} · angles: {vertex, from, to, label, right}'
+          }
+        },
+
+        open(el) {
+          const kind = MathKit.kind(el);
+          const info = MathEditor.KINDS[kind];
+          MathEditor.target = el;
+          $('math-modal-title').textContent = info.title;
+          $('math-help').textContent = info.help;
+          let value = el.getAttribute(info.attr) || '';
+          if (kind !== 'tex') { try { value = JSON.stringify(JSON.parse(value), null, 2); } catch (err) { /* 그대로 보여 준다 */ } }
+          $('math-input').value = value;
+          bootstrap.Modal.getOrCreateInstance($('math-modal')).show();
+          MathEditor.preview();
+        },
+
+        // 입력값으로 새 개체를 만들어 그려 본다.
+        async build() {
+          const info = MathEditor.KINDS[MathKit.kind(MathEditor.target)];
+          const probe = document.createElement(info.tag);
+          probe.className = MathEditor.target.className;
+          let value = $('math-input').value.trim();
+          if (info.attr !== 'data-tex') { try { value = JSON.stringify(JSON.parse(value)); } catch (err) { /* render가 안내한다 */ } }
+          probe.setAttribute(info.attr, value);
+          const error = await MathKit.render(probe);
+          return { probe, error, value, attr: info.attr };
+        },
+
+        async preview() {
+          if (!MathEditor.target) return;
+          const { probe, error } = await MathEditor.build();
+          $('math-preview').replaceChildren(probe);
+          probe.style.width = probe.tagName === 'DIV' ? '100%' : '';
+          $('math-error').textContent = error;
+        },
+
+        async apply() {
+          const el = MathEditor.target;
+          if (!el || !el.isConnected) return;
+          const { error, value, attr } = await MathEditor.build();
+          if (error) { $('math-error').textContent = error; return; }
+          el.setAttribute(attr, value);
+          await MathKit.render(el);
+          bootstrap.Modal.getOrCreateInstance($('math-modal')).hide();
+          Editor.commit();
+        },
+
+        init() {
+          const later = Util.debounce(MathEditor.preview, 350);
+          $('math-input').addEventListener('input', later);
+          $('math-apply').addEventListener('click', MathEditor.apply);
+          $('math-modal').addEventListener('hidden.bs.modal', () => { MathEditor.target = null; $('math-preview').replaceChildren(); });
         }
       };
 
@@ -1880,8 +2482,8 @@
           for (;;) {
             const kids = Array.from(node.children).filter(el => !el.matches('.ls-handle, .ls-ungroup, style, .iframe-drag-overlay'));
             const ownText = Array.from(node.childNodes).some(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
-            if (ownText || node.matches('.editable-text, .editable-image, .editable-video')) return [];
-            if (kids.length === 1 && !kids[0].matches('.editable-text, .editable-image, .editable-video, img, video, iframe, svg')) { node = kids[0]; continue; }
+            if (ownText || node.matches('.editable-text, .editable-image, .editable-video, .math-tex, .math-graph, .math-geo')) return [];
+            if (kids.length === 1 && !kids[0].matches('.editable-text, .editable-image, .editable-video, .math-tex, .math-graph, .math-geo, img, video, iframe, svg')) { node = kids[0]; continue; }
             return kids.length >= 2 ? kids : [];
           }
         },
@@ -1980,6 +2582,8 @@
           Editor.editing = target;
           target.classList.add('is-editing');
           target.contentEditable = 'true';
+          // 글 속 수식은 한 덩어리로 다룬다(지우기는 되지만 안을 고치려면 더블클릭).
+          target.querySelectorAll('.math-tex').forEach(el => { el.contentEditable = 'false'; });
           target.focus({ preventScroll: true });
 
           let range = null;
@@ -3080,7 +3684,7 @@
         // AI에게 보여 줄 슬라이드 원본(<div class="slide"> 형태). 넣어 둔 그림·영상 데이터는 짧은 표식으로 바꾼다.
         source(slide, media) {
           const full = '<div class="slide" style="position: relative; width: 1920px; height: 1080px; background: ' + slide.bg + '; overflow: hidden;">' +
-            (slide.css ? '<style>\n' + slide.css + '\n</style>' : '') + slide.html + '</div>';
+            (slide.css ? '<style>\n' + slide.css + '\n</style>' : '') + MathKit.strip(slide.html) + '</div>';
           return full.replace(/data:(?:image|video)\/[a-z0-9+.-]+;base64,[a-z0-9+/=]+/gi, url => {
             if (!media) return 'data:image/png;omitted';
             media.push(url);
@@ -3184,6 +3788,9 @@
             }
             list.forEach(item => { rawHtml += String(item.html || ''); });
             const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(item.html, refs), bg: item.bg, notes: item.notes }));
+            status.set(label + '\n수식·그래프를 그리는 중…');
+            for (const slide of slides) slide.html = await MathKit.renderHtml(slide.html);
+            if (Editor.deck !== deck) break;
 
             Editor.deselect();
             Editor.syncCurrent();
@@ -3329,24 +3936,25 @@
           }
 
           const restored = AiPanel.restoreMedia(item.html, images);
+          const fresh = Editor.normalizeSlide({ id: target.id, html: restored, bg: item.bg || target.bg });
+          status.set(number + '번 장의 수식·그래프를 그리는 중…');
+          fresh.html = await MathKit.renderHtml(fresh.html);
+          const at = deck.slides.findIndex(slide => slide.id === target.id);
+          if (Editor.deck !== deck || at < 0) return;
           Editor.deselect();
           Editor.syncCurrent();
-          const current = deck.slides[index];
-          deck.slides[index] = Editor.normalizeSlide({
-            id: current.id,
-            title: item.title || current.title,
-            html: restored,
-            bg: item.bg || current.bg,
-            notes: item.notes || current.notes,
-            notesFormat: item.notes ? 'text' : 'html',
+          const current = deck.slides[at];
+          deck.slides[at] = Object.assign(fresh, {
+            title: String(item.title || current.title || '').slice(0, 120),
+            notes: item.notes ? Editor.normalizeNotes({ notes: item.notes, notesFormat: 'text' }) : current.notes,
             section: current.section
           });
-          if (Editor.index === index) Editor.renderCanvas();
+          if (Editor.index === at) Editor.renderCanvas();
           Editor.commit();
           AiPanel.clearFiles(files);
           AiPanel.finishMedia(media, String(item.html || ''));
           AiPanel.remember(deck, '[' + number + '번 장 재생성] ' + request + AiPanel.fileNote(files));
-          Editor.refreshThumb(index);
+          Editor.refreshThumb(at);
           status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.');
         },
 
@@ -4371,6 +4979,9 @@
           if (!document.body.classList.contains('edit-mode') || event.target.closest('.ls-ungroup')) return;
           const box = event.target.closest('.draggable-box');
           if (!box || !canvas.contains(box)) return;
+          // 수식·그래프·도형은 설계값을 고치는 창을 연다.
+          const mathEl = event.target.closest(MathKit.SELECTOR);
+          if (mathEl && box.contains(mathEl)) { Editor.stopEditing(); Editor.select(box); MathEditor.open(mathEl); return; }
           const text = event.target.closest('.editable-text');
           if (text && box.contains(text)) { Editor.startEditing(text, event.clientX, event.clientY); return; }
           // 그림·영상은 편집 모드에서 마우스를 받지 않으므로 좌표로 찾는다.
@@ -4632,6 +5243,7 @@
         wireEditor();
         FloatBar.init();
         AiPanel.init();
+        MathEditor.init();
         window.addEventListener('slideCloudChanged', CloudUI.sync);
         CloudUI.sync();
 
