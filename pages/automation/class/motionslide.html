@@ -250,6 +250,9 @@
     #slide-canvas .is-editing { cursor: text; user-select: text; outline: 4px dashed var(--primary); outline-offset: 4px; }
     #slide-canvas img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
     .ls-handle { position: absolute; right: -18px; bottom: -18px; width: 30px; height: 30px; background: #fff; border: 5px solid var(--primary); border-radius: 6px; cursor: nwse-resize; }
+    /* 묶인 상자를 골랐을 때 위에 뜨는 [그룹 해제] (캔버스가 축소되어 보이므로 크게) */
+    .ls-ungroup { position: absolute; left: -4px; top: -64px; z-index: 10; padding: 6px 18px; font: 600 24px/1.2 Pretendard, sans-serif; color: #fff; background: var(--primary); border-radius: 8px; white-space: nowrap; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
+    .ls-ungroup.below { top: auto; bottom: -64px; }
 
     /* ---------- 발표 모드 ---------- */
     #show-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; }
@@ -1560,7 +1563,7 @@
         /* --- 저장과 되돌리기 --- */
         canvasHtml() {
           const clone = $('slide-canvas').cloneNode(true);
-          clone.querySelectorAll('.ls-handle, .ls-slide-style, .iframe-drag-overlay').forEach(el => el.remove());
+          clone.querySelectorAll('.ls-handle, .ls-ungroup, .ls-slide-style, .iframe-drag-overlay').forEach(el => el.remove());
           clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
           clone.querySelectorAll('.is-selected, .is-editing').forEach(el => el.classList.remove('is-selected', 'is-editing'));
           clone.querySelectorAll('[class=""]').forEach(el => el.removeAttribute('class'));
@@ -1764,12 +1767,29 @@
           return handle;
         },
 
+        // 크기 조절 손잡이와, 묶인 상자면 [그룹 해제] 단추를 붙인다.
+        addHandles(box) {
+          if (!(box instanceof HTMLElement) || box.querySelector(':scope > .ls-handle')) return;
+          box.append(Editor.makeHandle());
+          if (Editor.groupParts(box).length < 2) return;
+          const ungroup = document.createElement('span');
+          ungroup.className = 'ls-ungroup' + ((parseFloat(box.style.top) || 0) < 80 ? ' below' : '');
+          ungroup.contentEditable = 'false';
+          ungroup.title = '묶인 개체를 하나씩 따로 움직이게 나눕니다 (Ctrl+Shift+G)';
+          ungroup.textContent = '그룹 해제';
+          box.append(ungroup);
+        },
+
+        removeHandles(box) {
+          box.querySelectorAll(':scope > .ls-handle, :scope > .ls-ungroup').forEach(el => el.remove());
+        },
+
         select(box) {
           if (Editor.selected === box) return;
           Editor.deselect();
           Editor.selected = box;
           box.classList.add('is-selected');
-          if (box instanceof HTMLElement) box.append(Editor.makeHandle());
+          Editor.addHandles(box);
         },
 
         deselect() {
@@ -1777,9 +1797,98 @@
           const box = Editor.selected;
           if (box) {
             box.classList.remove('is-selected');
-            box.querySelectorAll(':scope > .ls-handle').forEach(handle => handle.remove());
+            Editor.removeHandles(box);
           }
           Editor.selected = null;
+        },
+
+        // 상자 안에서 따로 떼어 낼 수 있는 덩어리들. 감싸기만 하는 한 겹짜리 요소는 건너뛰고 내려간다.
+        groupParts(box) {
+          let node = box.querySelector(':scope > .motion-content') || box;
+          for (;;) {
+            const kids = Array.from(node.children).filter(el => !el.matches('.ls-handle, .ls-ungroup, style, .iframe-drag-overlay'));
+            const ownText = Array.from(node.childNodes).some(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
+            if (ownText || node.matches('.editable-text, .editable-image, .editable-video')) return [];
+            if (kids.length === 1 && !kids[0].matches('.editable-text, .editable-image, .editable-video, img, video, iframe, svg')) { node = kids[0]; continue; }
+            return kids.length >= 2 ? kids : [];
+          }
+        },
+
+        // 그룹 해제: 덩어리마다 지금 보이는 자리·폭·글자 모양 그대로 독립 상자로 꺼낸다.
+        ungroup(box) {
+          const parts = Editor.groupParts(box);
+          if (parts.length < 2) return;
+          Editor.stopEditing();
+          Editor.removeHandles(box);
+          const canvas = $('slide-canvas');
+          const scale = Editor.scale || 1;
+          const origin = canvas.getBoundingClientRect();
+          const motion = box.querySelector(':scope > .motion-content');
+          const TEXT_PROPS = ['color', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'text-align', 'text-transform', 'text-shadow', 'white-space'];
+          const VISUAL = /^(background|border|box-shadow|padding|width|height|min-|max-|outline|display|flex|grid|gap|justify|align)/;
+
+          // 꺼낸 뒤에도 카드(배경·테두리)가 그 크기 그대로 남도록, 감싼 요소들의 지금 높이를 적어 둔다.
+          const shells = [];
+          for (let el = parts[0].parentElement; el && el !== canvas; el = el.parentElement) {
+            const style = getComputedStyle(el);
+            const full = el.getBoundingClientRect().height / scale;
+            // min-height가 테두리·여백을 포함하는지(box-sizing)에 맞춰 적는다.
+            const inner = style.boxSizing === 'border-box' ? full : full - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) -
+              parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth);
+            shells.push({ el, inner, sizing: style.boxSizing });
+            if (el === box) break;
+          }
+
+          const made = parts.map(part => {
+            const rect = part.getBoundingClientRect();
+            const style = getComputedStyle(part);
+            const clone = part.cloneNode(true);
+            // 바깥에서 물려받던 글자 모양을 직접 적어 둔다(꺼내도 모습이 바뀌지 않게).
+            TEXT_PROPS.forEach(prop => { if (!clone.style.getPropertyValue(prop)) clone.style.setProperty(prop, style.getPropertyValue(prop)); });
+            clone.style.margin = '0';
+            const next = document.createElement('div');
+            next.className = 'draggable-box';
+            next.style.position = 'absolute';
+            next.style.left = Math.round((rect.left - origin.left) / scale) + 'px';
+            next.style.top = Math.round((rect.top - origin.top) / scale) + 'px';
+            next.style.width = Math.max(40, Math.round(rect.width / scale)) + 'px';
+            if (box.style.zIndex) next.style.zIndex = box.style.zIndex;
+            const content = document.createElement('div');
+            content.className = 'motion-content';
+            if (motion) {
+              // 등장 효과는 이어받고, 카드 모양(배경·테두리·여백)은 빼고 옮긴다.
+              content.className = motion.className;
+              for (let i = 0; i < motion.style.length; i++) {
+                const prop = motion.style[i];
+                if (!VISUAL.test(prop)) content.style.setProperty(prop, motion.style.getPropertyValue(prop));
+              }
+            }
+            content.append(clone);
+            next.append(content);
+            return next;
+          });
+
+          parts.forEach(part => part.remove());
+          shells.forEach(({ el, inner, sizing }) => {
+            if (inner <= 0) return;
+            el.style.minHeight = Math.round(inner) + 'px';
+            el.style.boxSizing = sizing; // 내보낸 파일(부트스트랩 없음)에서도 같은 크기로 보이게
+          });
+          // 남은 껍데기에 배경·테두리·그림자가 없으면 지운다.
+          const painted = [box].concat(Array.from(box.querySelectorAll('*'))).some(node => {
+            const style = getComputedStyle(node);
+            return Util.toHex(style.backgroundColor, '') !== '' || style.backgroundImage !== 'none' ||
+              parseFloat(style.borderTopWidth) > 0 || parseFloat(style.borderLeftWidth) > 0 || style.boxShadow !== 'none';
+          });
+          box.after(...made);
+          if (!painted) box.remove();
+          else box.querySelectorAll(':scope > .iframe-drag-overlay').forEach(el => { if (!box.querySelector('iframe')) el.remove(); });
+          SlideView.addOverlays(canvas); // 꺼낸 유튜브도 끌어 옮길 수 있게
+          Editor.selected = null;
+          box.classList.remove('is-selected');
+          Editor.select(made[0]);
+          Editor.commit();
+          Util.toast(made.length + '개 개체로 나눴습니다. 되돌리려면 Ctrl+Z', 'success');
         },
 
         // target: 글상자(.draggable-box) 또는 그 안의 .editable-text
@@ -1795,7 +1904,7 @@
           if (Editor.editing === target) return;
           if (Editor.editing) Editor.stopEditing();
           Editor.select(box);
-          box.querySelectorAll(':scope > .ls-handle').forEach(handle => handle.remove());
+          Editor.removeHandles(box);
           Editor.editing = target;
           target.classList.add('is-editing');
           target.contentEditable = 'true';
@@ -1835,8 +1944,8 @@
           if (!box.textContent.trim() && !box.querySelector('img, svg, video, iframe') && !painted) {
             box.remove();
             if (Editor.selected === box) Editor.selected = null;
-          } else if (Editor.selected === box && box instanceof HTMLElement && !box.querySelector(':scope > .ls-handle')) {
-            box.append(Editor.makeHandle());
+          } else if (Editor.selected === box) {
+            Editor.addHandles(box);
           }
           Editor.commit();
         },
@@ -1902,6 +2011,7 @@
           if (Editor.editing) Editor.stopEditing();
           if (!box || !canvas.contains(box)) { Editor.deselect(); return; }
           event.preventDefault();
+          if (event.target.closest('.ls-ungroup')) { Editor.ungroup(box); return; }
           Editor.select(box);
           Editor.drag(event, box, !!handle);
         },
@@ -1964,7 +2074,7 @@
           } else if (action === 'copy') {
             const copy = box.cloneNode(true);
             copy.classList.remove('is-selected', 'is-editing');
-            copy.querySelectorAll('.ls-handle').forEach(handle => handle.remove());
+            copy.querySelectorAll('.ls-handle, .ls-ungroup').forEach(el => el.remove());
             copy.style.left = (parseFloat(box.style.left) || 0) + 40 + 'px';
             copy.style.top = (parseFloat(box.style.top) || 0) + 40 + 'px';
             box.after(copy);
@@ -4172,7 +4282,8 @@
           }
           return;
         }
-        if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
+        if (mod && event.shiftKey && lower === 'g') { event.preventDefault(); Editor.ungroup(box); }
+        else if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
         else if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); Editor.boxAction('delete'); }
         else if (key.startsWith('Arrow')) { event.preventDefault(); Editor.nudge(key, event.shiftKey); }
         else if (key === 'Escape') Editor.deselect();
@@ -4184,7 +4295,7 @@
         $('stage-host').addEventListener('pointerdown', () => $('thumb-list').blur()); // 캔버스를 누르면 목록 단축키를 끈다
         $('stage-host').addEventListener('pointerdown', Editor.onPointerDown);
         canvas.addEventListener('dblclick', event => {
-          if (!document.body.classList.contains('edit-mode')) return;
+          if (!document.body.classList.contains('edit-mode') || event.target.closest('.ls-ungroup')) return;
           const box = event.target.closest('.draggable-box');
           if (!box || !canvas.contains(box)) return;
           const text = event.target.closest('.editable-text');
