@@ -253,10 +253,10 @@
     .plan-card:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
     .plan-title { border: 0; padding: 0.15rem 0.25rem; font-size: 1.05rem; font-weight: 700; background: transparent; }
     .plan-title:focus { background: #f8fafc; box-shadow: none; }
-    .plan-points { resize: vertical; background: #f8fafc; border-color: #e2e8f0; }
+    .plan-points { resize: none; overflow: hidden; background: #f8fafc; border-color: #e2e8f0; } /* 글에 맞춰 높이가 늘어난다 */
     .plan-el { --k: #64748b; --kbg: #f8fafc; background: var(--kbg); border-radius: 8px; padding: 0.3rem 0.4rem; align-items: flex-start !important; }
     .plan-el .plan-el-kind { padding-top: 0.3rem; }
-    .plan-el textarea.plan-el-text { resize: none; overflow-y: auto; line-height: 1.5; }
+    .plan-el textarea.plan-el-text { resize: none; overflow: hidden; line-height: 1.5; }
     .plan-el[data-kind="math"], .plan-add-el[data-plan="add-math"], .plan-chip[data-kind="math"] { --k: #4f46e5; --kbg: #eef2ff; }
     .plan-el[data-kind="image"], .plan-add-el[data-plan="add-image"], .plan-chip[data-kind="image"] { --k: #059669; --kbg: #ecfdf5; }
     .plan-el[data-kind="video"], .plan-add-el[data-plan="add-video"], .plan-chip[data-kind="video"] { --k: #dc2626; --kbg: #fef2f2; }
@@ -4042,7 +4042,14 @@
         LINES: ['math', 'app'], // 한 칸에 줄마다 하나씩 적는 종류
 
         // 줄 수만큼 칸 높이를 늘린다.
-        grow(box) { box.rows = Math.max(1, Math.min(8, box.value.split('\n').length)); },
+        // 글 길이에 맞춰 칸 높이를 늘린다(스크롤 대신). 창이 숨어 있으면 잴 수 없어 창이 열릴 때 다시 맞춘다.
+        grow(box) {
+          if (!box.offsetParent) return;
+          box.style.height = 'auto';
+          box.style.height = box.scrollHeight + 2 + 'px';
+        },
+
+        growAll() { $('plan-modal').querySelectorAll('textarea').forEach(Planner.grow); },
 
         // 수식·인터랙티브는 같은 종류를 한 칸으로 모아 보여 준다(줄마다 하나).
         mergeLines(elements) {
@@ -4116,8 +4123,9 @@
           const elements = [];
           const split = text => String(text || '').split(/\n|;|·(?=\s)/).map(part => part.trim()).filter(Boolean);
           split(item.math).forEach(text => elements.push({ kind: 'math', text }));
-          split(item.image).forEach(text => elements.push({ kind: 'image', text, media: Planner.match(text, ['image']) }));
-          split(item.video).forEach(text => elements.push({ kind: 'video', text, media: Planner.match(text, ['video', 'youtube']) }));
+          // 그림·영상은 담아 둔 실제 파일과 이어지는 것만 둔다. 그 밖의 꾸밈은 슬라이드를 만들 때 AI가 알아서 한다.
+          split(item.image).forEach(text => { const media = Planner.match(text, ['image']); if (media) elements.push({ kind: 'image', text, media }); });
+          split(item.video).forEach(text => { const media = Planner.match(text, ['video', 'youtube']); if (media) elements.push({ kind: 'video', text, media }); });
           split(item.interactive).forEach(text => elements.push({ kind: 'app', text }));
           return {
             title: String(item.title || '').trim().slice(0, 80),
@@ -4293,6 +4301,8 @@
           points.placeholder = '이 장에 들어갈 핵심 내용·문구 (줄마다 하나)';
           points.setAttribute('aria-label', '핵심 내용');
           points.value = item.points || '';
+          points.addEventListener('input', () => Planner.grow(points));
+          requestAnimationFrame(() => Planner.grow(points));
           const elements = document.createElement('div');
           elements.className = 'plan-elements';
           Planner.mergeLines(item.elements).forEach(el => elements.append(Planner.elementRow(el)));
@@ -4354,11 +4364,14 @@
           return row;
         },
 
-        // 가져올 곳 고르기: 자리만 / 담아 둔 개체 / 고른 파일 / 새로 고르기
+        // 가져올 곳 고르기: 담아 둔 개체 / 고른 파일 / 새로 고르기. 아직 고르지 않았으면 안내 줄만 보인다.
         fillSource(select, kind, current) {
           select.textContent = '';
           const option = (value, label) => { const o = document.createElement('option'); o.value = value; o.textContent = label; select.append(o); return o; };
-          option('', kind === 'image' ? '그림 없이 (AI가 도형·이모지로)' : '영상 없이 (넣지 않음)');
+          if (!current) {
+            const hint = option('', kind === 'image' ? '넣을 그림을 고르세요' : '넣을 영상을 고르세요');
+            hint.disabled = true;
+          }
           Planner.staged.forEach((media, i) => {
             if (kind === 'image' ? media.kind === 'image' : (media.kind === 'video' || media.kind === 'youtube')) option('staged:' + i, '담아 둔 ' + (kind === 'image' ? '그림' : '영상') + ': ' + media.name);
           });
@@ -4387,6 +4400,7 @@
             return; // 고른 뒤 pick()에서 마무리
           }
           Planner.fillSource(select, kind, row.lsMedia);
+          Planner.refresh(); // 요약(그림·영상 개수) 갱신
         },
 
         async pick(file) {
@@ -4409,6 +4423,7 @@
             }
           }
           Planner.fillSource(select, row.dataset.kind, row.lsMedia);
+          Planner.refresh(); // 요약(그림·영상 개수) 갱신
         },
 
         // 계획표에서 지금 적힌 값을 읽는다(소제목이 빈 장은 뺀다).
@@ -4423,7 +4438,8 @@
               if (Planner.LINES.includes(row.dataset.kind)) {
                 return text.split('\n').map(line => line.trim()).filter(Boolean).map(line => ({ kind: row.dataset.kind, text: line, media: null }));
               }
-              return [{ kind: row.dataset.kind, text: text.trim(), media: row.lsMedia || null }];
+              // 그림·영상은 실제 파일을 고른 것만(고르지 않은 줄은 AI가 알아서 꾸미게 둔다)
+              return row.lsMedia ? [{ kind: row.dataset.kind, text: text.trim(), media: row.lsMedia }] : [];
             }).filter(el => el.text || el.media)
           })).filter(item => item.title);
           const title = body.querySelector('.plan-deck-title');
@@ -4485,7 +4501,13 @@
             } else {
               const row = Planner.elementRow({ kind, text: '' });
               li.querySelector('.plan-elements').append(row);
-              row.querySelector('.plan-el-text').focus();
+              const source = row.querySelector('.plan-el-source');
+              // 그림: 담아 둔 그림이 없으면 바로 파일 고르기를 연다. 그 밖에는 가져올 곳 목록에 초점.
+              if (kind === 'image' && !Planner.staged.some(media => media.kind === 'image')) {
+                source.value = 'file';
+                Planner.onSource(source);
+              } else if (source) source.focus();
+              else row.querySelector('.plan-el-text').focus();
             }
           } else if (act === 'add') {
             const row = Planner.row({ title: '', points: '', elements: [] });
@@ -4531,6 +4553,7 @@
           modal.addEventListener('click', Planner.onClick);
           modal.addEventListener('input', Planner.refresh);
           modal.addEventListener('change', event => { if (event.target.matches('.plan-el-source')) Planner.onSource(event.target); });
+          modal.addEventListener('shown.bs.modal', Planner.growAll); // 창이 보인 뒤에야 글 높이를 잴 수 있다
           modal.querySelector('.plan-redo').addEventListener('keydown', event => {
             if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); Planner.redo(); }
           });
@@ -4538,6 +4561,7 @@
             Planner.pick(event.target.files[0]);
             event.target.value = '';
           });
+          $('file-plan').addEventListener('cancel', () => Planner.pick(null)); // 고르기를 취소하면 목록을 원래대로
         }
       };
 
