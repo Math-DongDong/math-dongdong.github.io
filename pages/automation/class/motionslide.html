@@ -246,7 +246,9 @@
     .plan-title { border: 0; padding: 0.15rem 0.25rem; font-size: 1.05rem; font-weight: 700; background: transparent; }
     .plan-title:focus { background: #f8fafc; box-shadow: none; }
     .plan-points { resize: vertical; background: #f8fafc; border-color: #e2e8f0; }
-    .plan-el { --k: #64748b; --kbg: #f8fafc; border-left: 4px solid var(--k); background: var(--kbg); border-radius: 8px; padding: 0.3rem 0.4rem; }
+    .plan-el { --k: #64748b; --kbg: #f8fafc; background: var(--kbg); border-radius: 8px; padding: 0.3rem 0.4rem; align-items: flex-start !important; }
+    .plan-el .plan-el-kind { padding-top: 0.3rem; }
+    .plan-el textarea.plan-el-text { resize: none; overflow-y: auto; line-height: 1.5; }
     .plan-el[data-kind="math"], .plan-add-el[data-plan="add-math"], .plan-chip[data-kind="math"] { --k: #4f46e5; --kbg: #eef2ff; }
     .plan-el[data-kind="image"], .plan-add-el[data-plan="add-image"], .plan-chip[data-kind="image"] { --k: #059669; --kbg: #ecfdf5; }
     .plan-el[data-kind="video"], .plan-add-el[data-plan="add-video"], .plan-chip[data-kind="video"] { --k: #dc2626; --kbg: #fef2f2; }
@@ -450,7 +452,7 @@
               <span class="small fw-semibold" id="notes-label"><i class="bi bi-chat-square-text"></i> 발표 시나리오</span>
               <span class="small text-muted d-none d-lg-inline">글자를 블록 지정하면 서식 도구가 나옵니다</span>
               <div class="input-group input-group-sm ms-auto slide-title-group">
-                <label class="input-group-text" for="slide-title-input"><i class="bi bi-type-h3"></i>&nbsp;소제목</label>
+                <label class="input-group-text" for="slide-title-input">소제목</label>
                 <input type="text" class="form-control" id="slide-title-input" maxlength="120" placeholder="이 장의 소제목 (모든 슬라이드 보기에 표시)">
               </div>
             </div>
@@ -3793,6 +3795,21 @@
         staged: [],   // 계획표를 열 때 AI 창에 담겨 있던 개체(배정할 수 있는 것)
         MAX: 20,
         MAX_ELEMENTS: 6,
+        LINES: ['math', 'app'], // 한 칸에 줄마다 하나씩 적는 종류
+
+        // 줄 수만큼 칸 높이를 늘린다.
+        grow(box) { box.rows = Math.max(1, Math.min(8, box.value.split('\n').length)); },
+
+        // 수식·인터랙티브는 같은 종류를 한 칸으로 모아 보여 준다(줄마다 하나).
+        mergeLines(elements) {
+          const out = [];
+          (elements || []).forEach(el => {
+            const same = Planner.LINES.includes(el.kind) && out.find(other => other.kind === el.kind);
+            if (same) same.text = same.text + '\n' + (el.text || '');
+            else out.push(Object.assign({}, el));
+          });
+          return out;
+        },
         KINDS: {
           math: { label: '수식·그래프·도형', icon: 'bi-calculator', placeholder: '예) 근의 공식 수식, y=x²−2x 그래프(꼭짓점 표시), 직각삼각형' },
           image: { label: '그림', icon: 'bi-image', placeholder: '어떤 그림인지 (예: 놀이공원 입장권 사진)' },
@@ -4034,7 +4051,7 @@
           points.value = item.points || '';
           const elements = document.createElement('div');
           elements.className = 'plan-elements';
-          (item.elements || []).forEach(el => elements.append(Planner.elementRow(el)));
+          Planner.mergeLines(item.elements).forEach(el => elements.append(Planner.elementRow(el)));
           const adds = document.createElement('div');
           adds.className = 'd-flex flex-wrap gap-1 mt-2';
           Object.keys(Planner.KINDS).forEach(kind => {
@@ -4062,11 +4079,18 @@
           tag.className = 'plan-el-kind';
           tag.innerHTML = '<i class="bi ' + info.icon + '"></i> ';
           tag.append(info.label);
-          const text = document.createElement('input');
+          // 수식·인터랙티브는 한 칸에 여러 개(줄마다 하나), 그림·영상은 파일마다 한 칸
+          const multi = Planner.LINES.includes(el.kind);
+          const text = document.createElement(multi ? 'textarea' : 'input');
           text.className = 'form-control form-control-sm plan-el-text';
-          text.placeholder = info.placeholder;
+          text.placeholder = info.placeholder + (multi ? '  — 여러 개는 줄을 바꿔 적기' : '');
           text.setAttribute('aria-label', info.label + ' 설명');
           text.value = el.text || '';
+          if (multi) {
+            text.rows = 1;
+            text.addEventListener('input', () => Planner.grow(text));
+            requestAnimationFrame(() => Planner.grow(text));
+          }
           row.append(tag, text);
           if (el.kind === 'image' || el.kind === 'video') {
             const source = document.createElement('select');
@@ -4149,11 +4173,14 @@
           const slides = Array.from(body.querySelectorAll('.plan-item')).map(li => ({
             title: li.querySelector('.plan-title').value.trim(),
             points: li.querySelector('.plan-points').value.trim(),
-            elements: Array.from(li.querySelectorAll('.plan-el')).map(row => ({
-              kind: row.dataset.kind,
-              text: row.querySelector('.plan-el-text').value.trim(),
-              media: row.lsMedia || null
-            })).filter(el => el.text || el.media)
+            // 수식·인터랙티브 칸은 한 칸에 줄마다 하나씩 적으므로 줄을 각각의 요소로 나눈다.
+            elements: Array.from(li.querySelectorAll('.plan-el')).flatMap(row => {
+              const text = row.querySelector('.plan-el-text').value;
+              if (Planner.LINES.includes(row.dataset.kind)) {
+                return text.split('\n').map(line => line.trim()).filter(Boolean).map(line => ({ kind: row.dataset.kind, text: line, media: null }));
+              }
+              return [{ kind: row.dataset.kind, text: text.trim(), media: row.lsMedia || null }];
+            }).filter(el => el.text || el.media)
           })).filter(item => item.title);
           const title = body.querySelector('.plan-deck-title');
           return { deckTitle: title ? title.value.trim() : '', slides };
@@ -4202,9 +4229,20 @@
           else if (act === 'remove' && li) li.remove();
           else if (act === 'remove-el') button.closest('.plan-el').remove();
           else if (act.startsWith('add-') && li) {
-            const row = Planner.elementRow({ kind: act.slice(4), text: '' });
-            li.querySelector('.plan-elements').append(row);
-            row.querySelector('.plan-el-text').focus();
+            const kind = act.slice(4);
+            const existing = Planner.LINES.includes(kind) && li.querySelector('.plan-el[data-kind="' + kind + '"]');
+            if (existing) {
+              // 같은 종류 칸이 이미 있으면 새 칸 대신 그 칸에 한 줄을 더한다.
+              const box = existing.querySelector('.plan-el-text');
+              if (box.value.trim()) box.value = box.value.replace(/\s+$/, '') + '\n';
+              Planner.grow(box);
+              box.focus();
+              box.setSelectionRange(box.value.length, box.value.length);
+            } else {
+              const row = Planner.elementRow({ kind, text: '' });
+              li.querySelector('.plan-elements').append(row);
+              row.querySelector('.plan-el-text').focus();
+            }
           } else if (act === 'add') {
             const row = Planner.row({ title: '', points: '', elements: [] });
             $('plan-body').querySelector('.plan-list').append(row);
