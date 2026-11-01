@@ -238,6 +238,9 @@
     .ai-status { flex: none; height: 1.9rem; display: flex; align-items: center; overflow: hidden; }
     .ai-status-inner { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ai-status-inner > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+    /* 고치기 창 미리보기: 발표용 그려지는 모션 없이 바로 보인다 */
+    #math-preview * { animation: none !important; }
+
     /* 수식 기호판 */
     .math-palette { padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #f8fafc; }
     .math-palette .nav-link { font-size: 0.78rem; }
@@ -664,13 +667,27 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-lg-5">
+              <!-- 그래프·도형: 말로 고치기(AI가 설계값을 고쳐 오른쪽 미리보기에 바로 보인다. [적용]을 눌러야 슬라이드에 반영) -->
+              <div class="d-none mb-3" id="math-ai">
+                <label class="form-label fw-semibold small" for="math-ai-request"><i class="bi bi-chat-dots"></i> 말로 고치기</label>
+                <textarea class="form-control" id="math-ai-request" rows="4"></textarea>
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                  <button type="button" class="btn btn-primary btn-sm" id="math-ai-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
+                  <button type="button" class="btn btn-light btn-sm d-none" id="math-ai-undo"><i class="bi bi-arrow-counterclockwise"></i> AI 고치기 전으로</button>
+                </div>
+                <div class="small mt-2" id="math-ai-status" role="status"></div>
+                <p class="small text-muted mt-2 mb-0">고친 결과는 오른쪽 미리보기에 바로 보입니다. 마음에 들면 [적용]을 누르세요. 요청 내용은 Google Gemini API로 전송됩니다.</p>
+              </div>
               <!-- 수식 기호판: 누르면 LaTeX가 들어가고 □(채울 칸)가 골라진다. Tab으로 다음 칸 -->
               <div class="math-palette mb-2 d-none" id="math-palette">
                 <ul class="nav nav-pills nav-sm flex-wrap gap-1 mb-2" id="math-palette-tabs" role="tablist"></ul>
                 <div class="d-flex flex-wrap gap-1" id="math-palette-keys"></div>
               </div>
-              <label class="form-label small text-muted" for="math-input" id="math-help"></label>
-              <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
+              <details id="math-code" open>
+                <summary class="small text-muted mb-1" id="math-code-summary">설계값 직접 고치기 (고급)</summary>
+                <label class="form-label small text-muted" for="math-input" id="math-help"></label>
+                <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
+              </details>
             </div>
             <div class="col-lg-7">
               <div class="small text-muted mb-1">미리보기</div>
@@ -2036,6 +2053,17 @@
           if (kind !== 'tex') { try { value = JSON.stringify(JSON.parse(value), null, 2); } catch (err) { /* 그대로 보여 준다 */ } }
           $('math-input').value = value;
           $('math-palette').classList.toggle('d-none', kind !== 'tex'); // 기호판은 수식에서만
+          // 그래프·도형은 말로 고치기를 앞에 두고, 설계값(JSON)은 접어 둔다. 수식은 LaTeX 입력칸을 그대로 보인다.
+          $('math-ai').classList.toggle('d-none', kind === 'tex');
+          $('math-code-summary').classList.toggle('d-none', kind === 'tex');
+          $('math-code').open = kind === 'tex';
+          $('math-ai-request').value = '';
+          $('math-ai-request').placeholder = kind === 'graph'
+            ? '예) y=x²−4로 바꾸고 꼭짓점을 표시해 줘\n예) x 범위를 −3~3으로, 직선 y=2x+1도 함께 그려 줘'
+            : '예) ∠B를 직각으로 바꾸고 직각 표시해 줘\n예) AC에 길이 5를 적고, BC의 중점 M을 추가해 줘';
+          MathEditor.aiStatus('');
+          MathEditor.history = [];
+          $('math-ai-undo').classList.add('d-none');
           bootstrap.Modal.getOrCreateInstance($('math-modal')).show();
           MathEditor.preview();
         },
@@ -2165,6 +2193,83 @@
           $('math-error').textContent = error;
         },
 
+        /* --- 그래프·도형 말로 고치기 --- */
+        history: [],   // AI가 고치기 전 설계값(되돌리기용)
+        aborter: null,
+        SPEC_SCHEMA: {
+          type: 'OBJECT',
+          properties: { spec: { type: 'STRING' }, summary: { type: 'STRING' } },
+          required: ['spec']
+        },
+
+        aiStatus(text, tone) {
+          $('math-ai-status').textContent = text;
+          $('math-ai-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
+        },
+
+        setAiBusy(on) {
+          $('math-ai-send').disabled = on;
+          $('math-ai-request').disabled = on;
+          $('math-apply').disabled = on;
+        },
+
+        // 요청과 지금 설계값을 보내 고친 설계값 전체를 받는다. 미리보기에만 반영하고, [적용]은 사용자가 누른다.
+        async aiSend() {
+          const el = MathEditor.target;
+          if (!el || MathEditor.aborter) return;
+          const request = $('math-ai-request').value.trim();
+          if (!request) { MathEditor.aiStatus('어떻게 고칠지 적어 주세요.', 'danger'); $('math-ai-request').focus(); return; }
+          if (!Settings.apiKey()) { bootstrap.Modal.getOrCreateInstance($('math-modal')).hide(); SettingsModal.open(); return; }
+          if (!await Prompts.ready()) return;
+          const kind = MathKit.kind(el);
+          const before = $('math-input').value;
+          const controller = new AbortController();
+          MathEditor.aborter = controller;
+          MathEditor.setAiBusy(true);
+          MathEditor.aiStatus('AI가 고치는 중…', 'primary');
+          let result = null;
+          let failure = null;
+          try {
+            result = await Gemini.generateJson({
+              model: Settings.model(),
+              system: Prompts.text('specRevise.system'),
+              prompt: Prompts.text('specRevise.request', { kind: kind === 'graph' ? '함수 그래프(data-graph)' : '도형(data-geo)', request, spec: before }),
+              schema: MathEditor.SPEC_SCHEMA,
+              signal: controller.signal,
+              onProgress: length => MathEditor.aiStatus('AI가 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary')
+            });
+          } catch (err) {
+            failure = err;
+          }
+          MathEditor.aborter = null;
+          MathEditor.setAiBusy(false);
+          if (MathEditor.target !== el) return; // 창을 닫았다
+          let spec = null;
+          if (!failure) {
+            try { spec = JSON.parse(String(result && result.spec || '')); } catch (err) { failure = new Error('AI가 준 설계값을 읽지 못했습니다. 다시 시도해 주세요.'); }
+          }
+          if (failure || !spec || typeof spec !== 'object') {
+            MathEditor.aiStatus(failure && failure.aborted ? '중단했습니다.' : '⚠ ' + ((failure && failure.message) || '고치지 못했습니다.'), 'danger');
+            return;
+          }
+          MathEditor.history.push(before);
+          $('math-ai-undo').classList.remove('d-none');
+          $('math-input').value = JSON.stringify(spec, null, 2);
+          await MathEditor.preview();
+          const error = $('math-error').textContent;
+          MathEditor.aiStatus(error ? '⚠ 고친 설계값으로 그리지 못했습니다. 다시 요청하거나 [AI 고치기 전으로]를 눌러 주세요.'
+            : '고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') + ' 미리보기를 확인하고 [적용]을 누르세요.', error ? 'danger' : 'success');
+          if (!error) $('math-ai-request').value = '';
+        },
+
+        async aiUndo() {
+          if (!MathEditor.history.length) return;
+          $('math-input').value = MathEditor.history.pop();
+          $('math-ai-undo').classList.toggle('d-none', !MathEditor.history.length);
+          await MathEditor.preview();
+          MathEditor.aiStatus('AI가 고치기 전으로 되돌렸습니다.');
+        },
+
         async apply() {
           const el = MathEditor.target;
           if (!el || !el.isConnected) return;
@@ -2193,6 +2298,13 @@
           });
           $('math-apply').addEventListener('click', MathEditor.apply);
           MathEditor.buildPalette();
+          $('math-ai-send').addEventListener('click', MathEditor.aiSend);
+          $('math-ai-undo').addEventListener('click', MathEditor.aiUndo);
+          $('math-ai-request').addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); MathEditor.aiSend(); }
+          });
+          // 창을 닫으면 기다리던 AI 요청도 멈춘다.
+          $('math-modal').addEventListener('hide.bs.modal', () => { if (MathEditor.aborter) MathEditor.aborter.abort(); });
           $('math-modal').addEventListener('hidden.bs.modal', () => { MathEditor.target = null; $('math-preview').replaceChildren(); });
         }
       };
