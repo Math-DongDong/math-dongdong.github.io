@@ -627,7 +627,7 @@
       const CANVAS_H = 1080;
       const DEFAULT_MODEL = 'gemini-3.5-flash';
       const DEFAULT_TITLE = '제목 없는 프레젠테이션';
-      const AI_BATCH = 4; // 여러 장 생성 시 한 번에 요청하는 장 수(응답 시간이 길어지지 않게)
+      const AI_BATCH = 1; // 여러 장 생성 시 한 번에 요청하는 장 수(한 장씩 따로 요청해 장마다 집중해서 만든다)
 
       const $ = id => document.getElementById(id);
 
@@ -2573,7 +2573,7 @@
           '[현재 슬라이드 재생성]: 지금 보고 있는 장을 고칠 점만 적어 보내면 그 장을 다시 만들어 줍니다.\n' +
           '📎로 이미지·PDF·PPTX 같은 참고 자료를 붙이면 그 내용을 참고합니다.\n' +
           '앞에서 나눈 대화는 [새 채팅]을 누르기 전까지 기억합니다.',
-        HISTORY_LIMIT: 20, // AI에게 함께 보내는 이전 대화(요청·결과 각각 1개씩 센다)
+        HISTORY_LIMIT: 10, // AI에게 함께 보내는 이전 요청 수(사용자 질문만)
 
         chat(deck) {
           const target = deck || Editor.deck;
@@ -2619,18 +2619,22 @@
           };
         },
 
-        // 성공한 요청과 결과 요약을 대화 맥락으로 남긴다.
-        remember(deck, userText, modelText) {
+        // 성공한 요청(사용자 질문)을 대화 맥락으로 남긴다. AI 답변 요약은 담긴 정보가 없어 남기지 않는다.
+        remember(deck, userText) {
           const chat = AiPanel.chat(deck);
           if (!chat) return;
-          chat.history.push({ role: 'user', text: userText }, { role: 'model', text: modelText });
+          chat.history = chat.history.filter(turn => turn.role === 'user');
+          chat.history.push({ role: 'user', text: userText });
           if (chat.history.length > AiPanel.HISTORY_LIMIT) chat.history.splice(0, chat.history.length - AiPanel.HISTORY_LIMIT);
           if (Editor.deck === deck) Editor.scheduleSave();
         },
 
-        history(deck) {
+        // 앞서 했던 요청을 모아 이번 질문 앞에 붙인다.
+        pastRequests(deck) {
           const chat = AiPanel.chat(deck);
-          return chat ? chat.history.slice() : [];
+          const list = chat ? chat.history.filter(turn => turn.role === 'user').slice(-AiPanel.HISTORY_LIMIT) : [];
+          if (!list.length) return '';
+          return Prompts.text('pastRequests', { list: list.map((turn, i) => (i + 1) + '. ' + turn.text).join('\n') }) + '\n\n';
         },
 
         async newChat() {
@@ -2957,10 +2961,10 @@
           let added = 0;
           let failure = null;
 
-          let parts = [];
-          try { parts = await AiPanel.prepareFiles(files, status); } catch (err) { failure = err; }
+          let fileParts = [];
+          try { fileParts = await AiPanel.prepareFiles(files, status); } catch (err) { failure = err; }
           const mediaRequest = AiPanel.mediaRequest(media, refs);
-          parts = parts.concat(mediaRequest.parts);
+          const pastRequests = AiPanel.pastRequests(deck);
 
           for (let start = 0; !failure && start < total; start += AI_BATCH) {
             if (start > 0) {
@@ -2968,16 +2972,17 @@
               if (controller.signal.aborted) { failure = { aborted: true }; break; }
             }
             const count = Math.min(AI_BATCH, total - start);
-            const label = total > 1 ? (start + 1) + '~' + (start + count) + '번째 장을 만드는 중… (모두 ' + total + '장)' : '슬라이드를 만드는 중…';
+            const label = total > 1 ? (start + 1) + ' / ' + total + '번째 장을 만드는 중…' : '슬라이드를 만드는 중…';
             status.set(label);
+            // 넣을 개체를 앞 장에 이미 다 넣었으면 다음 장 요청에는 보내지 않는다.
+            const mediaLeft = media.some(item => rawHtml.indexOf(item.token) < 0);
             let result;
             try {
               result = await Gemini.generateJson({
                 model: Settings.model(),
                 system: Prompts.slideSystem(),
-                prompt: AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files) + mediaRequest.text,
-                parts,
-                history: AiPanel.history(deck),
+                prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference) + AiPanel.filePrompt(files) + (mediaLeft ? mediaRequest.text : ''),
+                parts: mediaLeft ? fileParts.concat(mediaRequest.parts) : fileParts,
                 schema: AI_SCHEMA,
                 signal: controller.signal,
                 onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -3012,7 +3017,7 @@
               madeTitles.push(slide.title || '(제목 없음)');
               madeIds.push(slide.id);
             });
-            reference = AiPanel.reference(slides[slides.length - 1]) || reference; // 다음 묶음은 방금 만든 마지막 장에서 이어진다
+            reference = AiPanel.reference(slides[slides.length - 1]) || reference; // 다음 장은 방금 만든 장에서 이어진다
             Editor.renderRail();
             Editor.renderCanvas();
             Editor.commit();
@@ -3025,8 +3030,7 @@
             AiPanel.clearFiles(files);
             AiPanel.finishMedia(media, rawHtml);
             const list = madeIds.map((id, i) => (deck.slides.findIndex(slide => slide.id === id) + 1) + '번 장: ' + madeTitles[i]).join(', ');
-            AiPanel.remember(deck, '[새 슬라이드 생성' + (total > 1 ? ', ' + total + '장' : '') + '] ' + topic + AiPanel.fileNote(files),
-              '슬라이드 ' + added + '장을 만들어 추가했다(' + list + '). 발표 자료 제목: ' + deck.title);
+            AiPanel.remember(deck, '[새 슬라이드 생성' + (total > 1 ? ', ' + total + '장' : '') + '] ' + topic + AiPanel.fileNote(files));
           }
           if (failure && !added) {
             status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
@@ -3118,9 +3122,8 @@
             result = await Gemini.generateJson({
               model: Settings.model(),
               system: Prompts.slideSystem(),
-              prompt: AiPanel.revisePrompt(target, html, request, number > 1 ? AiPanel.reference(deck.slides[number - 2]) : null) + AiPanel.filePrompt(files) + mediaRequest.text,
+              prompt: AiPanel.pastRequests(deck) + AiPanel.revisePrompt(target, html, request, number > 1 ? AiPanel.reference(deck.slides[number - 2]) : null) + AiPanel.filePrompt(files) + mediaRequest.text,
               parts,
-              history: AiPanel.history(deck),
               schema: AI_SCHEMA,
               signal: controller.signal,
               onProgress: length => status.set(number + '번 장을 다시 만드는 중…\n' + length.toLocaleString('ko-KR') + '자 받음')
@@ -3160,8 +3163,7 @@
           Editor.commit();
           AiPanel.clearFiles(files);
           AiPanel.finishMedia(media, String(item.html || ''));
-          AiPanel.remember(deck, '[' + number + '번 장 재생성] ' + request + AiPanel.fileNote(files),
-            number + '번 장(' + (deck.slides[index].title || '제목 없음') + ')을 요청대로 고쳤다.');
+          AiPanel.remember(deck, '[' + number + '번 장 재생성] ' + request + AiPanel.fileNote(files));
           Editor.refreshThumb(index);
           status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.');
         },
