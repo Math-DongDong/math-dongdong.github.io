@@ -272,16 +272,21 @@
   <script src="../../../js/navbar.js"></script>
 
   <main id="app">
-    <!-- ========== 휴대폰 크기 안내 (이 크기에서는 앱을 열지 않는다) ========== -->
-    <section id="mobile-block" class="page-wrap text-center d-none">
-      <div class="mx-auto py-5" style="max-width: 420px;">
-        <i class="bi bi-laptop display-3 text-primary"></i>
-        <h1 class="h4 fw-bold mt-3">AI 모션 슬라이드</h1>
-        <p class="text-muted mt-3 mb-4">
-          이 도구는 넓은 화면에서 슬라이드를 편집하도록 만들어져 휴대폰 화면에서는 쓸 수 없습니다.<br>
-          <b>태블릿, 노트북, 데스크톱</b>에서 접속해 주세요.
-        </p>
-        <button type="button" class="btn btn-outline-primary btn-sm" id="btn-mobile-recheck"><i class="bi bi-arrow-clockwise"></i> 다시 확인</button>
+    <!-- ========== 휴대폰 화면 (편집 없이 청중 화면으로 발표만) ========== -->
+    <section id="mobile-block" class="page-wrap d-none">
+      <div class="mx-auto py-4" style="max-width: 480px;">
+        <div class="text-center">
+          <i class="bi bi-phone-landscape display-4 text-primary"></i>
+          <h1 class="h4 fw-bold mt-2">AI 모션 슬라이드</h1>
+          <p class="text-muted small mt-2 mb-3">
+            휴대폰 화면에서는 슬라이드를 <b>편집할 수 없고</b>, <b>청중 화면 모드</b>로 발표만 할 수 있습니다.<br>
+            편집은 태블릿·노트북·데스크톱에서 해 주세요. 휴대폰을 가로로 돌리면 슬라이드가 크게 보입니다.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm" data-act="import"><i class="bi bi-folder2-open"></i> HTML 파일 열기</button>
+        </div>
+        <h2 class="h6 fw-bold mt-4 mb-2">이 브라우저에 저장된 슬라이드 <span class="text-muted fw-normal" id="mobile-count"></span></h2>
+        <div class="list-group" id="mobile-list"></div>
+        <p class="text-muted small text-center mt-3 d-none" id="mobile-empty">저장된 슬라이드가 없습니다. 내보낸 HTML 파일을 열어 주세요.</p>
       </div>
     </section>
 
@@ -2153,9 +2158,11 @@
 
         enter(kind) {
           if (!Editor.deck) return;
-          Editor.deselect();
-          Editor.syncCurrent();
-          Editor.saveNow();
+          if (!MobileView.on) { // 휴대폰은 편집 화면이 없으니 저장할 것도 없다
+            Editor.deselect();
+            Editor.syncCurrent();
+            Editor.saveNow();
+          }
           Show.kind = kind === 'presenter' ? 'presenter' : 'audience';
           Show.index = Editor.index;
           document.body.classList.remove('edit-mode');
@@ -2196,6 +2203,7 @@
           if (Show.popup && !Show.popup.closed) Show.popup.close();
           Show.popup = null;
           if (document.fullscreenElement) document.exitFullscreen().catch(() => { /* 무시 */ });
+          if (MobileView.on) { MobileView.back(); return; }
           if (Editor.deck && Show.index !== Editor.index) {
             Editor.index = Show.index;
             Editor.renderCanvas();
@@ -4012,6 +4020,93 @@
         }
       };
 
+      /* ===== 15-1. 휴대폰 화면: 편집 없이 청중 화면으로 발표만 =====
+         최근 목록이나 HTML 파일에서 고른 슬라이드를 바로 청중 화면으로 연다. 저장은 하지 않는다. */
+      const MobileView = {
+        on: false,
+
+        async route() {
+          const match = location.hash.match(/^#\/edit\/([\w-]+)$/);
+          if (match && await MobileView.play(match[1])) return;
+          if (Show.isOn()) Show.exit();
+          Editor.deck = null;
+          $('mobile-block').classList.remove('d-none');
+          await MobileView.draw();
+        },
+
+        async play(id) {
+          let deck = null;
+          try { deck = await DeckStore.get(id); } catch (err) { /* 아래에서 안내 */ }
+          if (!deck || !(deck.slides || []).length) {
+            Util.toast('슬라이드를 찾을 수 없습니다.', 'warning');
+            return false;
+          }
+          deck.slides = deck.slides.map(Editor.normalizeSlide);
+          deck.title = deck.title || DEFAULT_TITLE;
+          Editor.deck = deck;
+          Editor.index = 0;
+          document.title = deck.title + ' - AI 모션 슬라이드';
+          $('mobile-block').classList.add('d-none');
+          Show.enter('audience');
+          return true;
+        },
+
+        // 발표를 끝내면 목록으로 돌아간다.
+        back() {
+          Editor.deck = null;
+          document.title = 'AI 모션 슬라이드';
+          if (location.hash) location.hash = '#/';
+          else MobileView.route();
+        },
+
+        async draw() {
+          const list = $('mobile-list');
+          list.textContent = '';
+          let decks = [];
+          try { decks = await DeckStore.all(); } catch (err) { /* 빈 목록으로 안내 */ }
+          decks = decks.filter(deck => (deck.slides || []).length)
+            .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+          $('mobile-empty').classList.toggle('d-none', decks.length > 0);
+          $('mobile-count').textContent = decks.length ? '(' + decks.length + '개)' : '';
+          decks.forEach(deck => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'list-group-item list-group-item-action d-flex align-items-center gap-2';
+            const text = document.createElement('div');
+            text.className = 'flex-grow-1';
+            text.style.minWidth = '0';
+            const title = document.createElement('div');
+            title.className = 'fw-semibold text-truncate';
+            title.textContent = deck.title || DEFAULT_TITLE;
+            const meta = document.createElement('div');
+            meta.className = 'small text-muted';
+            meta.textContent = deck.slides.length + '장 · ' + Util.formatTime(deck.updatedAt) + ' 수정';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-play-circle-fill fs-4 text-primary';
+            text.append(title, meta);
+            item.append(text, icon);
+            item.addEventListener('click', () => { location.hash = '#/edit/' + deck.id; });
+            list.append(item);
+          });
+        },
+
+        start() {
+          MobileView.on = true;
+          $('show-exit').textContent = '목록으로';
+          // 쓸어 넘기기: 왼쪽으로 밀면 다음 장, 오른쪽으로 밀면 이전 장
+          let startX = null;
+          $('show-overlay').addEventListener('touchstart', event => { startX = event.touches[0].clientX; }, { passive: true });
+          $('show-overlay').addEventListener('touchend', event => {
+            if (startX === null) return;
+            const dx = event.changedTouches[0].clientX - startX;
+            startX = null;
+            if (Math.abs(dx) > 50) Show.go(Show.index + (dx < 0 ? 1 : -1));
+          });
+          window.addEventListener('hashchange', MobileView.route);
+          MobileView.route();
+        }
+      };
+
       /* ===== 16. 이벤트 연결 ===== */
       function onKeyDown(event) {
         if (Router.view !== 'editor' || !Editor.deck) return;
@@ -4249,7 +4344,8 @@
         $('show-overview').addEventListener('click', event => { event.stopPropagation(); Show.openOverview(); });
         $('show-overlay').addEventListener('click', event => {
           if (event.target.closest('video')) return; // 재생바를 누른 것은 장 넘김이 아니다
-          Show.go(Show.index + 1);
+          // 휴대폰: 화면 왼쪽 1/3을 누르면 이전 장
+          Show.go(Show.index + (MobileView.on && event.clientX < window.innerWidth / 3 ? -1 : 1));
         });
         $('presenter-overlay').addEventListener('click', event => {
           const button = event.target.closest('[data-pv]');
@@ -4313,23 +4409,12 @@
         window.addEventListener('slideCloudChanged', CloudUI.sync);
         CloudUI.sync();
 
-        // 휴대폰 크기(폭 768px 미만)나 휴대폰 기기에서는 안내만 보이고 앱을 열지 않는다.
+        // 휴대폰 크기(폭 768px 미만)나 휴대폰 기기에서는 편집 없이 청중 화면으로 발표만 한다.
         const tooSmall = () => window.innerWidth < 768 || /Android.+Mobile|iPhone|iPod|Windows Phone/i.test(navigator.userAgent);
-        const start = () => {
-          $('mobile-block').classList.add('d-none');
-          window.addEventListener('hashchange', Router.route);
-          Prompts.load().catch(() => { /* AI를 쓸 때 다시 시도하고 안내한다 */ });
-          Router.route();
-        };
-        if (tooSmall()) {
-          $('mobile-block').classList.remove('d-none');
-          $('btn-mobile-recheck').addEventListener('click', () => {
-            if (tooSmall()) Util.toast('아직 화면이 좁습니다. 태블릿·노트북·데스크톱에서 열어 주세요.', 'warning');
-            else start();
-          });
-          return;
-        }
-        start();
+        if (tooSmall()) { MobileView.start(); return; }
+        window.addEventListener('hashchange', Router.route);
+        Prompts.load().catch(() => { /* AI를 쓸 때 다시 시도하고 안내한다 */ });
+        Router.route();
       }
 
       boot();
