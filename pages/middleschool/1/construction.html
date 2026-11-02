@@ -322,6 +322,7 @@
 
             <div id="compass-choice" class="compass-choice d-none d-flex flex-column gap-1">
                 <button type="button" class="btn btn-sm btn-primary shadow-sm d-none" id="btn-keep-radius">길이 유지</button>
+                <button type="button" class="btn btn-sm btn-primary shadow-sm d-none" id="btn-draw-arc">그리기</button>
                 <button type="button" class="btn btn-sm btn-light border shadow-sm d-none" id="btn-skip-drawing">길이 재기</button>
             </div>
 
@@ -664,7 +665,7 @@
                 description: '눈금 없는 자와 컴퍼스로 자유롭게 작도해 보세요.',
                 steps: [
                     '점·교점 근처를 클릭하면 자동으로 정확한 위치에 달라붙어요.',
-                    '컴퍼스: ① 중심 클릭 → ② 벌릴 점 클릭 → ③ 시작할 곳 클릭 → ④ 돌려서 끝낼 곳 클릭 (같은 간격은 [길이 유지], 길이만 옮길 땐 [길이 재기])',
+                    '컴퍼스: ① 중심 클릭 → ② 벌릴 점 클릭 → ③ [그리기] 선택 → ④ 시작할 곳 클릭 → ⑤ 돌려서 끝낼 곳 클릭 (같은 간격은 [길이 유지], 길이만 옮길 땐 [길이 재기])',
                     '정삼각형, 정육각형, 직각 등 다양한 도형의 작도에 도전해 보세요!'
                 ],
                 build: () => [],
@@ -1003,7 +1004,7 @@
             Object.assign(compassState, {
                 // 항상 두 점 재기부터 (벌린 간격 radius는 [길이 재기 / 길이 유지]로 다시 쓸 수 있게 기억)
                 stage: 'measure1', centerSnap: null, startAngle: null, lastAngle: null,
-                sweep: 0, sweepPressed: false, startedOnPress: false, justStarted: false, measureSnap: null,
+                sweep: 0, sweepPressed: false, startedOnPress: false, justStarted: false, measureSnap: null, measureEnd: null,
                 keepRadiusOnce: false,  // [길이 재기 / 길이 유지] 직후 다음 중심 한 번만 같은 간격으로 그리기
                 drawingMeasuredArc: false,  // [길이 재기]로 잰 길이를 옮겨 그리는 중 (완성 후 [길이 유지] 없음)
                 keepAnchor: null  // 방금 그린 원의 중심 ([길이 유지] 버튼 위치, null이면 버튼 숨김)
@@ -1115,7 +1116,8 @@
             } else if (c.stage === 'sweep') {
                 c.sweepPressed = true;
                 updateSweep(screenToWorld(pointer.downScreen));
-            } else if (c.stage === 'measure1') {
+            } else if (c.stage === 'measure1' || c.stage === 'choose') {
+                // [그리기 / 길이 재기] 선택 중 다른 곳을 클릭하면 그 점에서 새로 재기
                 c.keepAnchor = null;
                 c.measureSnap = snap;
                 c.stage = 'measure2';
@@ -1139,10 +1141,11 @@
                 if (c.justStarted && !pointer.moved) return;
                 const length = dist(c.measureSnap, snap);
                 if (length * view.scale < 3) return;
-                // 첫 번째 점에 바늘을 꽂은 채로 바로 그리기 단계로 ([길이 재기]로 간격만 기억 가능)
+                // 첫 번째 점에 바늘을 꽂은 채로 [그리기 / 길이 재기] 선택
                 c.radius = length;
                 c.centerSnap = c.measureSnap;
-                beginPencilStart();
+                c.measureEnd = snap;
+                c.stage = 'choose';
             }
         }
 
@@ -1436,6 +1439,10 @@
                     pencilAngle = Math.atan2(world.y - c.centerSnap.y, world.x - c.centerSnap.x);
                 }
                 drawCompass(c.centerSnap, arcPointAt(arcPreview, pencilAngle));
+            } else if (c.stage === 'choose') {
+                // 벌린 컴퍼스와 그 간격의 보조선 표시
+                drawArc({ cx: c.centerSnap.x, cy: c.centerSnap.y, r: c.radius, start: 0, sweep: TWO_PI }, 'rgba(100,116,139,0.55)', 1.2, [4, 5]);
+                drawCompass(c.centerSnap, c.measureEnd);
             } else if (c.stage === 'center' && hover) {
                 drawArc({ cx: hover.x, cy: hover.y, r: c.radius, start: 0, sweep: TWO_PI }, 'rgba(100,116,139,0.35)', 1, [4, 5]);
                 drawCompass(hover, { x: hover.x - c.radius, y: hover.y });
@@ -1570,8 +1577,8 @@
             };
             const compassMessages = {
                 center: '바늘을 꽂을 중심을 클릭하세요. 벌린 간격이 그대로 유지돼요.',
-                start: '연필로 그리기 시작할 곳을 클릭하세요. (터치: 시작할 곳을 누른 채 돌린 뒤 떼기)'
-                    + (c.measureSnap ? ' 그리지 않고 길이만 옮기려면 [길이 재기]' : ''),
+                choose: '[그리기] 또는 [길이 재기]를 선택하세요. (다른 곳을 클릭하면 그 점에서 새로 재요)',
+                start: '연필로 그리기 시작할 곳을 클릭하세요. (터치: 시작할 곳을 누른 채 돌린 뒤 떼기)',
                 sweep: '컴퍼스를 돌려 그린 뒤, 끝낼 곳을 클릭하세요.',
                 measure1: c.keepAnchor ? '같은 간격으로 또 그리려면 [길이 유지], 새로 벌리려면 바늘을 꽂을 첫 번째 점을 클릭하세요.'
                     : '컴퍼스의 바늘을 꽂을 첫 번째 점을 클릭하세요.',
@@ -1583,15 +1590,16 @@
         // 컴퍼스 버튼을 중심 옆에 배치 (확대·이동 시에도 따라감)
         // 연필 시작 단계: [길이 재기], 원을 다 그린 뒤: [길이 유지]
         function updateCompassChoice() {
-            const { stage, keepAnchor, measureSnap } = compassState;
+            const { stage, keepAnchor } = compassState;
             const isKeepVisible = stage === 'measure1' && !!keepAnchor;
-            // 이미 잰 길이(길이 재기 / 길이 유지)로 중심을 찍었다면 [길이 재기] 없이 바로 그리기
-            const isSkipVisible = stage === 'start' && !!measureSnap;
-            const isVisible = !demoState.active && state.activeTool === 'compass' && (isSkipVisible || isKeepVisible);
+            // 두 점을 재어 벌린 직후에만 [그리기 / 길이 재기] (이미 잰 길이로 중심을 찍으면 바로 그리기)
+            const isChooseVisible = stage === 'choose';
+            const isVisible = !demoState.active && state.activeTool === 'compass' && (isChooseVisible || isKeepVisible);
             compassChoice.classList.toggle('d-none', !isVisible);
             if (!isVisible) return;
             document.getElementById('btn-keep-radius').classList.toggle('d-none', !isKeepVisible);
-            document.getElementById('btn-skip-drawing').classList.toggle('d-none', !isSkipVisible);
+            document.getElementById('btn-draw-arc').classList.toggle('d-none', !isChooseVisible);
+            document.getElementById('btn-skip-drawing').classList.toggle('d-none', !isChooseVisible);
             placeChoiceNear(compassChoice, isKeepVisible ? keepAnchor : compassState.centerSnap);
         }
 
@@ -2095,9 +2103,17 @@
         document.getElementById('btn-draw-segment').addEventListener('click', () => finishRuler('segment'));
         document.getElementById('btn-draw-ray').addEventListener('click', () => finishRuler('ray'));
 
+        // 그리기: 벌린 간격으로 첫 번째 점을 중심으로 그리기
+        document.getElementById('btn-draw-arc').addEventListener('click', () => {
+            if (compassState.stage !== 'choose') return;
+            beginPencilStart();
+            updateStatus();
+            render();
+        });
+
         // 길이 재기: 그리지 않고 벌린 간격만 기억, 다음 중심에서 그 간격으로 바로 그리기
         document.getElementById('btn-skip-drawing').addEventListener('click', () => {
-            if (compassState.stage !== 'start' || !compassState.measureSnap) return;
+            if (compassState.stage !== 'choose') return;
             resetToolState();
             Object.assign(compassState, { stage: 'center', keepRadiusOnce: true, drawingMeasuredArc: true });
             updateStatus();
