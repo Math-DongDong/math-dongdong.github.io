@@ -197,6 +197,31 @@
         </div>
     </div>
 
+    <!-- 작도 시연 방식 선택 모달 -->
+    <div class="modal fade" id="demoModeModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">▶️ 작도 시연</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-secondary small mb-3">어떤 방식으로 작도 시연을 볼까요?</p>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-outline-primary text-start p-3 rounded-3" id="btn-demo-mode-step">
+                            <div class="fw-bold"><i class="bi bi-list-ol"></i> 단계별 작도 시연</div>
+                            <div class="small">한 단계씩 보고 바로 따라 해요.</div>
+                        </button>
+                        <button type="button" class="btn btn-outline-primary text-start p-3 rounded-3" id="btn-demo-mode-continuous">
+                            <div class="fw-bold"><i class="bi bi-collection-play"></i> 연속 작도 시연</div>
+                            <div class="small">처음부터 끝까지 한 번에 본 뒤 따라 해요.</div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 정답 확인 결과 (화면 중앙 토스트) -->
     <div class="toast-container position-fixed top-50 start-50 translate-middle p-3">
         <div id="check-toast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true"
@@ -1919,6 +1944,7 @@
         }
 
         function setDemoButtonLabel(isNextStep) {
+            isDemoNextStep = isNextStep;
             demoButton.innerHTML = `<i class="bi ${isNextStep ? 'bi-skip-forward-circle' : 'bi-play-circle'}"></i> ${isNextStep ? '다음 단계' : '작도 시연'}`;
         }
 
@@ -1931,6 +1957,7 @@
             setFollowGuide(isStepDone ? demoState.focusStep : (isAllDone ? 'all' : null));
             const hasNextStep = isStepDone && demoState.focusStep < lastDemoStep();
             if (hasNextStep) demoState.focusStep++;
+            else if (isStepDone) demoState.focusStep = 0;  // 마지막 단계까지 봤다면 다음 단계별 시연은 처음부터
             setDemoButtonLabel(hasNextStep);
             demoState.active = false;
             demoState.objects = [];
@@ -2147,7 +2174,26 @@
             loadMission(nextMissionId);
         });
 
-        demoButton.addEventListener('click', startDemo);
+        // [작도 시연]: 단계별 / 연속 중 선택, [다음 단계]: 단계별로 이어서 바로 재생
+        const demoModeModalElement = document.getElementById('demoModeModal');
+        let isDemoNextStep = false;
+
+        function startDemoWithMode(isContinuous) {
+            demoState.continuous = isContinuous;
+            document.getElementById('demo-continuous').checked = isContinuous;
+            startDemo();
+        }
+
+        demoButton.addEventListener('click', () => {
+            if (isDemoNextStep) startDemoWithMode(false);
+            else bootstrap.Modal.getOrCreateInstance(demoModeModalElement).show();
+        });
+        [['btn-demo-mode-step', false], ['btn-demo-mode-continuous', true]].forEach(([id, isContinuous]) => {
+            document.getElementById(id).addEventListener('click', () => {
+                bootstrap.Modal.getOrCreateInstance(demoModeModalElement).hide();
+                startDemoWithMode(isContinuous);
+            });
+        });
         demoPlayButton.addEventListener('click', () => demoState.playing ? pauseDemo() : playDemo());
         document.getElementById('btn-demo-prev').addEventListener('click', () => playDemoStep(demoState.focusStep - 1));
         document.getElementById('btn-demo-replay').addEventListener('click', () => playDemoStep(demoState.focusStep));
@@ -2251,7 +2297,7 @@
 
         document.addEventListener('keydown', event => {
             if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
-            if (customModalElement.classList.contains('show') || answerModalElement.classList.contains('show')) return;
+            if ([customModalElement, answerModalElement, demoModeModalElement].some(element => element.classList.contains('show'))) return;
             if (demoState.active) {
                 if (event.key === 'Escape') closeDemo();
                 return;
