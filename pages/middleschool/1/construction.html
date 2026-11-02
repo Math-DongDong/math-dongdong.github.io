@@ -286,6 +286,8 @@
                         </div>
 
                         <div class="d-flex gap-2 ms-auto">
+                            <button type="button" class="btn btn-outline-primary d-none" id="btn-demo-replay-step"><i
+                                    class="bi bi-arrow-repeat"></i> 다시 보기</button>
                             <button type="button" class="btn btn-outline-primary" id="btn-demo"><i
                                     class="bi bi-play-circle"></i> 작도 시연</button>
                             <button type="button" class="btn btn-primary" id="btn-check"><i
@@ -317,10 +319,6 @@
                 <div id="demo-panel" class="d-none">
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <span class="badge text-bg-primary fs-6" id="demo-step-badge" style="min-width: 6.5em">1 / 1 단계</span>
-                        <div class="form-check form-switch mb-0">
-                            <input class="form-check-input" type="checkbox" role="switch" id="demo-continuous">
-                            <label class="form-check-label small" for="demo-continuous">연속 재생</label>
-                        </div>
                         <!-- 연속 재생: 재생 / 일시정지 -->
                         <button type="button" class="btn btn-outline-dark" id="btn-demo-play" title="재생 / 일시정지"><i
                                 class="bi bi-play-fill pe-none" id="demo-play-icon"></i></button>
@@ -765,6 +763,7 @@
         const backgroundMenu = document.getElementById('background-menu');
         const checkToast = document.getElementById('check-toast');
         const demoButton = document.getElementById('btn-demo');
+        const demoReplayButton = document.getElementById('btn-demo-replay-step');
         const demoPlayButton = document.getElementById('btn-demo-play');
         const demoPlayIcon = document.getElementById('demo-play-icon');
         const demoCaption = document.getElementById('demo-caption');
@@ -1908,18 +1907,6 @@
             playDemo();
         }
 
-        function setDemoContinuous(isContinuous) {
-            demoState.continuous = isContinuous;
-            pauseDemo();
-            if (isContinuous) {
-                jumpToDemoStep(0);  // 연속 재생은 항상 1단계부터
-                playDemo();
-            } else {
-                demoState.focusStep = Math.min(currentDemoStep(), lastDemoStep());
-            }
-            updateDemoUi();
-        }
-
         function startDemo() {
             const mission = MISSIONS[state.missionId];
             if (!mission.demo) return;
@@ -1946,6 +1933,9 @@
         function setDemoButtonLabel(isNextStep) {
             isDemoNextStep = isNextStep;
             demoButton.innerHTML = `<i class="bi ${isNextStep ? 'bi-skip-forward-circle' : 'bi-play-circle'}"></i> ${isNextStep ? '다음 단계' : '작도 시연'}`;
+            // 단계별 시연을 본 뒤에는 [다시 보기], 단계 진행 중에는 [정답 확인] 숨김
+            demoReplayButton.classList.toggle('d-none', typeof followGuide.step !== 'number');
+            checkButton.classList.toggle('d-none', isNextStep || !MISSIONS[state.missionId].check);
         }
 
         function closeDemo() {
@@ -2013,8 +2003,8 @@
         function loadMission(id) {
             if (demoState.active) closeDemo();
             demoState.focusStep = 0;
-            setDemoButtonLabel(false);
             setFollowGuide(null);
+            setDemoButtonLabel(false);
             const mission = MISSIONS[id];
             state.missionId = id;
             state.givenObjects = mission.build();
@@ -2180,9 +2170,15 @@
 
         function startDemoWithMode(isContinuous) {
             demoState.continuous = isContinuous;
-            document.getElementById('demo-continuous').checked = isContinuous;
             startDemo();
         }
+
+        // 다시 보기: 방금 따라 한 단계를 단계별 시연으로 다시 재생
+        demoReplayButton.addEventListener('click', () => {
+            if (typeof followGuide.step !== 'number') return;
+            demoState.focusStep = followGuide.step;
+            startDemoWithMode(false);
+        });
 
         demoButton.addEventListener('click', () => {
             if (isDemoNextStep) startDemoWithMode(false);
@@ -2198,7 +2194,6 @@
         document.getElementById('btn-demo-prev').addEventListener('click', () => playDemoStep(demoState.focusStep - 1));
         document.getElementById('btn-demo-replay').addEventListener('click', () => playDemoStep(demoState.focusStep));
         document.getElementById('btn-demo-next').addEventListener('click', () => playDemoStep(demoState.focusStep + 1));
-        document.getElementById('demo-continuous').addEventListener('change', event => setDemoContinuous(event.target.checked));
 
         // ===== 자유 작도 배경 불러오기 =====
         const BACKGROUND_FOLDER = '../../../assets/images/construction/';
