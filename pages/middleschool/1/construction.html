@@ -472,7 +472,7 @@
                 steps: [
                     '점 A, 점 B를 차례로 클릭해 컴퍼스를 선분 AB의 길이만큼 벌린 뒤, [길이 재기]를 누릅니다.',
                     '점 P를 클릭해 바늘을 꽂으면 벌린 간격이 그대로 유지돼요. 반직선과 만나도록 원의 일부를 그립니다.',
-                    '점 도구로 원의 일부와 반직선의 교점을 찍고, 그 점을 다시 클릭해 이름을 Q로 바꿉니다.'
+                    '점 도구로 원의 일부와 반직선의 교점을 클릭하고, 이름을 Q로 입력합니다.'
                 ],
                 A: { x: 120, y: 170 }, B: { x: 380, y: 110 }, P: { x: 470, y: 430 }, direction: { x: 900, y: 400 },
                 build() {
@@ -1002,26 +1002,40 @@
                 if (!snap.ref.given) renamePoint(snap.ref);
                 return;
             }
+            createNamedPoint(snap);
+        }
+
+        // 점 이름 입력받기 (취소·사용 불가 시 null, 중복된 기존 점은 duplicate로 반환)
+        async function askPointLabel(title, defaultLabel, point = null) {
+            const toPointLabel = value => value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+            const input = await showCustomModal(title, '이름을 영어 대문자로 입력하세요. (비우면 이름 없음)', { type: 'prompt', defaultValue: defaultLabel, inputFilter: toPointLabel });
+            if (input === null) return null;
+            const label = toPointLabel(input);
+            const duplicate = label ? allObjects().find(o => o.kind === 'point' && o !== point && o.label === label) : null;
+            if (duplicate?.given) {
+                await showCustomModal('⚠️ 이름 중복', `${label}은(는) 주어진 점의 이름이라 사용할 수 없어요.`);
+                return null;
+            }
+            if (duplicate && !await showCustomModal('⚠️ 이름 중복', `이미 점 ${label}이(가) 있어요. 기존 점의 이름을 지우고 이 점을 ${label}(으)로 할까요?`, { type: 'confirm' })) return null;
+            return { label, duplicate };
+        }
+
+        // 점 도구: 이름을 먼저 입력받은 뒤 점 생성 (취소하면 찍지 않음)
+        async function createNamedPoint(snap) {
+            const result = await askPointLabel('📍 점 이름 입력', nextPointLabel());
+            if (!result) return;
             pushHistory();
-            ensurePointAt(snap);
+            if (result.duplicate) result.duplicate.label = '';
+            state.userObjects.push(createPoint(snap, result.label));
             geometryChanged();
         }
 
         async function renamePoint(point) {
-            const toPointLabel = value => value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
-            const input = await showCustomModal('✏️ 점 이름 바꾸기', '새 이름을 영어 대문자로 입력하세요. (비우면 이름 없음)', { type: 'prompt', defaultValue: point.label, inputFilter: toPointLabel });
-            if (input === null) return;
-            const newLabel = toPointLabel(input);
-            if (newLabel === point.label) return;
-            const duplicate = newLabel ? allObjects().find(o => o.kind === 'point' && o !== point && o.label === newLabel) : null;
-            if (duplicate?.given) {
-                await showCustomModal('⚠️ 이름 중복', `${newLabel}은(는) 주어진 점의 이름이라 사용할 수 없어요.`);
-                return;
-            }
-            if (duplicate && !await showCustomModal('⚠️ 이름 중복', `이미 점 ${newLabel}이(가) 있어요. 기존 점의 이름을 지우고 이 점을 ${newLabel}(으)로 바꿀까요?`, { type: 'confirm' })) return;
+            const result = await askPointLabel('✏️ 점 이름 바꾸기', point.label, point);
+            if (!result || result.label === point.label) return;
             pushHistory();
-            if (duplicate) duplicate.label = '';
-            point.label = newLabel;
+            if (result.duplicate) result.duplicate.label = '';
+            point.label = result.label;
             geometryChanged();
         }
 
@@ -1495,7 +1509,7 @@
         function updateStatus() {
             const c = compassState;
             const messages = {
-                point: '클릭하여 점을 찍어요. 이미 있는 점을 클릭하면 이름을 바꿀 수 있어요.',
+                point: '클릭한 뒤 이름을 입력하면 점이 찍혀요. 이미 있는 점을 클릭하면 이름을 바꿀 수 있어요.',
                 ruler: rulerState.end ? '[선분 긋기] 또는 [반직선 긋기]를 선택하세요. (다른 곳을 클릭하면 새로 시작해요)'
                     : rulerState.start ? '두 번째 점을 클릭하세요. (Esc: 취소)' : '첫 번째 점을 클릭하세요.',
                 eraser: '지울 도형을 클릭하세요. (주어진 도형은 지울 수 없어요)',
@@ -1801,7 +1815,12 @@
         function setDemoContinuous(isContinuous) {
             demoState.continuous = isContinuous;
             pauseDemo();
-            if (!isContinuous) demoState.focusStep = Math.min(currentDemoStep(), lastDemoStep());
+            if (isContinuous) {
+                jumpToDemoStep(0);  // 연속 재생은 항상 1단계부터
+                playDemo();
+            } else {
+                demoState.focusStep = Math.min(currentDemoStep(), lastDemoStep());
+            }
             updateDemoUi();
         }
 
