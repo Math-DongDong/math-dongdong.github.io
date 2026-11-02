@@ -1134,6 +1134,7 @@
             resetToolState();
             // 다시 두 점을 재어 벌리기부터, 길이 재기 없이 그렸다면 [길이 유지]로 같은 간격 이어 쓰기 가능
             if (!wasMeasuredArc) c.keepAnchor = center;
+            lockCanvasInput();
             geometryChanged();
         }
 
@@ -1206,10 +1207,13 @@
         let canvasInputLockedUntil = 0;
         const isChoiceShown = () => !!rulerState.end || compassState.stage === 'choose' || !!compassState.keepAnchor;
 
+        // 선을 다 긋거나 [길이 유지]를 누른 직후에도 이어진 터치가 새 작도로 이어지지 않게 잠그기
+        const lockCanvasInput = () => { canvasInputLockedUntil = performance.now() + CHOICE_INPUT_LOCK; };
+
         function handleRelease(screenPos) {
             const wasChoiceShown = isChoiceShown();
             releaseTool(screenPos);
-            if (!wasChoiceShown && isChoiceShown()) canvasInputLockedUntil = performance.now() + CHOICE_INPUT_LOCK;
+            if (!wasChoiceShown && isChoiceShown()) lockCanvasInput();
         }
 
         function releaseTool(screenPos) {
@@ -2148,6 +2152,7 @@
             if (!compassState.keepAnchor) return;
             resetToolState();
             Object.assign(compassState, { stage: 'center', keepRadiusOnce: true });
+            lockCanvasInput();
             updateStatus();
             render();
         });
@@ -2158,6 +2163,7 @@
             const startSnap = rulerState.start, endSnap = rulerState.end;
             rulerState.start = rulerState.end = null;
             commitRulerLine(startSnap, endSnap, lineType);
+            lockCanvasInput();
         };
         document.getElementById('btn-draw-segment').addEventListener('click', () => finishRuler('segment'));
         document.getElementById('btn-draw-ray').addEventListener('click', () => finishRuler('ray'));
