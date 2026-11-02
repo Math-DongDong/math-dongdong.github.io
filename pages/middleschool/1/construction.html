@@ -1191,7 +1191,18 @@
             }
         }
 
+        // 선택 버튼이 막 나타났을 때 이어진 터치로 바로 사라지지 않도록 잠시 캔버스 입력 무시
+        const CHOICE_INPUT_LOCK = 1000;
+        let canvasInputLockedUntil = 0;
+        const isChoiceShown = () => !!rulerState.end || compassState.stage === 'choose' || !!compassState.keepAnchor;
+
         function handleRelease(screenPos) {
+            const wasChoiceShown = isChoiceShown();
+            releaseTool(screenPos);
+            if (!wasChoiceShown && isChoiceShown()) canvasInputLockedUntil = performance.now() + CHOICE_INPUT_LOCK;
+        }
+
+        function releaseTool(screenPos) {
             switch (state.activeTool) {
                 case 'point':
                     if (!pointer.moved) handlePointTap(pointer.hoverSnap);
@@ -1933,8 +1944,8 @@
         function setDemoButtonLabel(isNextStep) {
             isDemoNextStep = isNextStep;
             demoButton.innerHTML = `<i class="bi ${isNextStep ? 'bi-skip-forward-circle' : 'bi-play-circle'}"></i> ${isNextStep ? '다음 단계' : '작도 시연'}`;
-            // 단계별 시연을 본 뒤에는 [다시 보기], 단계 진행 중에는 [정답 확인] 숨김
-            demoReplayButton.classList.toggle('d-none', typeof followGuide.step !== 'number');
+            // 단계 진행 중에만 [다시 보기] 표시, [정답 확인] 숨김 (마지막 단계를 마치면 반대로)
+            demoReplayButton.classList.toggle('d-none', !isNextStep);
             checkButton.classList.toggle('d-none', isNextStep || !MISSIONS[state.missionId].check);
         }
 
@@ -2035,6 +2046,7 @@
 
         canvas.addEventListener('pointerdown', event => {
             if (demoState.active || (event.pointerType === 'mouse' && event.button !== 0)) return;
+            if (['ruler', 'compass'].includes(state.activeTool) && performance.now() < canvasInputLockedUntil) return;
             canvas.setPointerCapture(event.pointerId);
             const screenPos = getScreenPos(event);
             Object.assign(pointer, { isDown: true, downScreen: screenPos, moved: false, type: event.pointerType, hoverScreen: screenPos });
