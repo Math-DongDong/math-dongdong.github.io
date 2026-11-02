@@ -1206,6 +1206,7 @@
         // 선택 버튼이 막 나타났을 때 이어진 터치로 바로 사라지지 않도록 잠시 캔버스 입력 무시
         const CHOICE_INPUT_LOCK = 1000;
         let canvasInputLockedUntil = 0;
+        let ignoredPointerId = null;  // 잠금 중에 시작되어 무시하는 포인터
         const isChoiceShown = () => !!rulerState.end || compassState.stage === 'choose' || !!compassState.keepAnchor;
 
         // 선을 다 긋거나 [길이 유지]를 누른 직후에도 이어진 터치가 새 작도로 이어지지 않게 잠그기
@@ -2083,7 +2084,13 @@
 
         canvas.addEventListener('pointerdown', event => {
             if (demoState.active || (event.pointerType === 'mouse' && event.button !== 0)) return;
-            if (['ruler', 'compass'].includes(state.activeTool) && performance.now() < canvasInputLockedUntil) return;
+            if (['ruler', 'compass'].includes(state.activeTool) && performance.now() < canvasInputLockedUntil) {
+                // 무시한 터치는 손을 뗄 때까지 미리보기도 움직이지 않게 (작도된 것처럼 보이지 않도록)
+                ignoredPointerId = event.pointerId;
+                return;
+            }
+            // 무시한 클릭을 캔버스 밖에서 떼어 pointerup을 못 받았어도 새 클릭은 정상 처리
+            ignoredPointerId = null;
             canvas.setPointerCapture(event.pointerId);
             const screenPos = getScreenPos(event);
             Object.assign(pointer, { isDown: true, downScreen: screenPos, moved: false, type: event.pointerType, hoverScreen: screenPos });
@@ -2095,7 +2102,7 @@
         });
 
         canvas.addEventListener('pointermove', event => {
-            if (demoState.active) return;
+            if (demoState.active || event.pointerId === ignoredPointerId) return;
             const screenPos = getScreenPos(event);
             const previous = pointer.hoverScreen;
             pointer.type = event.pointerType;
@@ -2119,6 +2126,10 @@
         });
 
         canvas.addEventListener('pointerup', event => {
+            if (event.pointerId === ignoredPointerId) {
+                ignoredPointerId = null;
+                return;
+            }
             if (!pointer.isDown) return;
             const screenPos = getScreenPos(event);
             pointer.hoverScreen = screenPos;
@@ -2130,10 +2141,14 @@
             render();
         });
 
-        canvas.addEventListener('pointercancel', () => { pointer.isDown = false; });
+        canvas.addEventListener('pointercancel', () => {
+            pointer.isDown = false;
+            ignoredPointerId = null;
+        });
 
         canvas.addEventListener('pointerleave', event => {
             if (event.pointerType !== 'mouse') return;
+            if (event.pointerId === ignoredPointerId) ignoredPointerId = null;
             pointer.hoverSnap = null;
             pointer.hoverScreen = null;
             pointer.hoverErase = null;
@@ -2185,7 +2200,6 @@
             if (compassState.stage !== 'choose') return;
             resetToolState();
             Object.assign(compassState, { stage: 'center', keepRadiusOnce: true, drawingMeasuredArc: true });
-            lockCanvasInput();
             updateStatus();
             render();
         });
