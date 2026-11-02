@@ -267,6 +267,12 @@
                                     class="bi bi-check2-circle"></i> 정답 확인</button>
                             <button type="button" class="btn btn-outline-success" id="btn-answer"><i
                                     class="bi bi-eye"></i> 정답 보기</button>
+                            <!-- 자유 작도: 배경 이미지 불러오기 -->
+                            <div class="dropdown d-none" id="background-dropdown">
+                                <button type="button" class="btn btn-outline-success dropdown-toggle" data-bs-toggle="dropdown"
+                                    aria-expanded="false"><i class="bi bi-image"></i> 배경 불러오기</button>
+                                <ul class="dropdown-menu dropdown-menu-end" id="background-menu"></ul>
+                            </div>
                         </div>
 
                         <div class="btn-group" role="group" aria-label="편집">
@@ -701,7 +707,8 @@
             userObjects: [],
             undoStack: [],
             redoStack: [],
-            activeTool: 'ruler'
+            activeTool: 'ruler',
+            backgroundImage: null  // 자유 작도 배경 이미지 (Image)
         };
         const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null,
             continuous: false, focusStep: 0,  // continuous=false면 단계 보기 (focusStep: 보고 있는 단계)
@@ -728,6 +735,7 @@
         const compassChoice = document.getElementById('compass-choice');
         const rulerChoice = document.getElementById('ruler-choice');
         const checkButton = document.getElementById('btn-check');
+        const backgroundMenu = document.getElementById('background-menu');
         const checkToast = document.getElementById('check-toast');
         const demoButton = document.getElementById('btn-demo');
         const demoPlayButton = document.getElementById('btn-demo-play');
@@ -1455,6 +1463,7 @@
             ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, width, height);
+            drawBackgroundImage();
 
             // 시연 중에는 학생 작도 대신 시연 도형을 표시
             const objects = demoState.active ? state.givenObjects.concat(demoState.objects) : allObjects();
@@ -1488,6 +1497,16 @@
 
             drawToolPreview();
             drawSnapIndicator();
+        }
+
+        // 배경 이미지를 작도 영역(WORLD) 안에 비율 유지로 맞춰 그리기 (확대·이동을 따라감)
+        function drawBackgroundImage() {
+            const image = state.backgroundImage;
+            if (!image?.complete || !image.naturalWidth) return;
+            const fitScale = Math.min(WORLD_WIDTH / image.naturalWidth, WORLD_HEIGHT / image.naturalHeight);
+            const worldWidth = image.naturalWidth * fitScale, worldHeight = image.naturalHeight * fitScale;
+            const topLeft = worldToScreen({ x: (WORLD_WIDTH - worldWidth) / 2, y: (WORLD_HEIGHT - worldHeight) / 2 });
+            ctx.drawImage(image, topLeft.x, topLeft.y, worldWidth * view.scale, worldHeight * view.scale);
         }
 
         // 따라 하기: 단계 보기 후에는 그 단계 도형을 주황 점선으로, 연속 재생 후에는 전체 시연 흔적을 흐리게
@@ -1962,6 +1981,8 @@
             state.givenObjects = mission.build();
             demoButton.classList.toggle('d-none', !mission.demo);
             document.getElementById('btn-answer').classList.toggle('d-none', !mission.demo);
+            document.getElementById('background-dropdown').classList.toggle('d-none', id !== 'free');
+            state.backgroundImage = null;
             state.userObjects = [];
             state.undoStack = [];
             state.redoStack = [];
@@ -2111,6 +2132,41 @@
         document.getElementById('btn-demo-replay').addEventListener('click', () => playDemoStep(demoState.focusStep));
         document.getElementById('btn-demo-next').addEventListener('click', () => playDemoStep(demoState.focusStep + 1));
         document.getElementById('demo-continuous').addEventListener('change', event => setDemoContinuous(event.target.checked));
+
+        // ===== 자유 작도 배경 불러오기 =====
+        const BACKGROUND_FOLDER = '../../../assets/images/construction/';
+        // construction 폴더에 이미지를 추가하면 여기에 파일 이름도 추가
+        const BACKGROUND_IMAGES = ['문제해결.png', '착시문제1.png', '착시문제2.png'];
+
+        function setBackgroundImage(name) {
+            if (!name) {
+                state.backgroundImage = null;
+                render();
+                return;
+            }
+            const image = new Image();
+            image.onload = render;
+            image.onerror = () => showCustomModal('⚠️ 배경 불러오기', '이미지를 불러오지 못했어요.');
+            image.src = BACKGROUND_FOLDER + encodeURIComponent(name);
+            state.backgroundImage = image;
+        }
+
+        function buildBackgroundMenu() {
+            const items = [{ name: null, text: '배경 없음' }, ...BACKGROUND_IMAGES.map(name => ({ name, text: name.replace(/\.[^.]+$/, '') }))];
+            backgroundMenu.innerHTML = '';
+            items.forEach((item, index) => {
+                const listItem = document.createElement('li');
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'dropdown-item';
+                button.textContent = item.text;
+                button.addEventListener('click', () => setBackgroundImage(item.name));
+                listItem.appendChild(button);
+                backgroundMenu.appendChild(listItem);
+                if (index === 0) backgroundMenu.insertAdjacentHTML('beforeend', '<li><hr class="dropdown-divider"></li>');
+            });
+        }
+        buildBackgroundMenu();
 
         // ===== 정답 보기 =====
         const answerModalElement = document.getElementById('answerModal');
