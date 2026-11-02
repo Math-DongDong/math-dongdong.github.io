@@ -708,7 +708,8 @@
             undoStack: [],
             redoStack: [],
             activeTool: 'ruler',
-            backgroundImage: null  // 자유 작도 배경 이미지 (Image)
+            backgroundImage: null,  // 자유 작도 배경 이미지 (Image)
+            backgroundName: null
         };
         const demoState = { active: false, playing: false, actions: [], objects: [], index: 0, progress: 0, hold: 0, speed: 1, lastTime: null, frameId: null,
             continuous: false, focusStep: 0,  // continuous=false면 단계 보기 (focusStep: 보고 있는 단계)
@@ -1569,7 +1570,8 @@
             };
             const compassMessages = {
                 center: '바늘을 꽂을 중심을 클릭하세요. 벌린 간격이 그대로 유지돼요.',
-                start: '연필로 그리기 시작할 곳을 클릭하세요. (터치: 시작할 곳을 누른 채 돌린 뒤 떼기) 그리지 않고 길이만 옮기려면 [길이 재기]',
+                start: '연필로 그리기 시작할 곳을 클릭하세요. (터치: 시작할 곳을 누른 채 돌린 뒤 떼기)'
+                    + (c.measureSnap ? ' 그리지 않고 길이만 옮기려면 [길이 재기]' : ''),
                 sweep: '컴퍼스를 돌려 그린 뒤, 끝낼 곳을 클릭하세요.',
                 measure1: c.keepAnchor ? '같은 간격으로 또 그리려면 [길이 유지], 새로 벌리려면 바늘을 꽂을 첫 번째 점을 클릭하세요.'
                     : '컴퍼스의 바늘을 꽂을 첫 번째 점을 클릭하세요.',
@@ -1581,13 +1583,15 @@
         // 컴퍼스 버튼을 중심 옆에 배치 (확대·이동 시에도 따라감)
         // 연필 시작 단계: [길이 재기], 원을 다 그린 뒤: [길이 유지]
         function updateCompassChoice() {
-            const { stage, keepAnchor } = compassState;
+            const { stage, keepAnchor, measureSnap } = compassState;
             const isKeepVisible = stage === 'measure1' && !!keepAnchor;
-            const isVisible = !demoState.active && state.activeTool === 'compass' && (stage === 'start' || isKeepVisible);
+            // 이미 잰 길이(길이 재기 / 길이 유지)로 중심을 찍었다면 [길이 재기] 없이 바로 그리기
+            const isSkipVisible = stage === 'start' && !!measureSnap;
+            const isVisible = !demoState.active && state.activeTool === 'compass' && (isSkipVisible || isKeepVisible);
             compassChoice.classList.toggle('d-none', !isVisible);
             if (!isVisible) return;
             document.getElementById('btn-keep-radius').classList.toggle('d-none', !isKeepVisible);
-            document.getElementById('btn-skip-drawing').classList.toggle('d-none', stage !== 'start');
+            document.getElementById('btn-skip-drawing').classList.toggle('d-none', !isSkipVisible);
             placeChoiceNear(compassChoice, isKeepVisible ? keepAnchor : compassState.centerSnap);
         }
 
@@ -1983,6 +1987,7 @@
             document.getElementById('btn-answer').classList.toggle('d-none', !mission.demo);
             document.getElementById('background-dropdown').classList.toggle('d-none', id !== 'free');
             state.backgroundImage = null;
+            state.backgroundName = null;
             state.userObjects = [];
             state.undoStack = [];
             state.redoStack = [];
@@ -2092,7 +2097,7 @@
 
         // 길이 재기: 그리지 않고 벌린 간격만 기억, 다음 중심에서 그 간격으로 바로 그리기
         document.getElementById('btn-skip-drawing').addEventListener('click', () => {
-            if (compassState.stage !== 'start') return;
+            if (compassState.stage !== 'start' || !compassState.measureSnap) return;
             resetToolState();
             Object.assign(compassState, { stage: 'center', keepRadiusOnce: true, drawingMeasuredArc: true });
             updateStatus();
@@ -2136,9 +2141,22 @@
         // ===== 자유 작도 배경 불러오기 =====
         const BACKGROUND_FOLDER = '../../../assets/images/construction/';
         // construction 폴더에 이미지를 추가하면 여기에 파일 이름도 추가
-        const BACKGROUND_IMAGES = ['문제해결.png', '착시문제1.png', '착시문제2.png'];
+        const BACKGROUND_IMAGES = ['착시문제1.png', '착시문제2.png', '문제해결.png'];
+
+        // 배경이 바뀌면 작도 흔적도 초기화 (되돌리기로 복구 가능)
+        function clearUserConstruction() {
+            if (state.userObjects.length) {
+                pushHistory();
+                state.userObjects = [];
+            }
+            resetToolState();
+            geometryChanged();
+        }
 
         function setBackgroundImage(name) {
+            if (name === state.backgroundName) return;
+            state.backgroundName = name;
+            clearUserConstruction();
             if (!name) {
                 state.backgroundImage = null;
                 render();
