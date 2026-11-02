@@ -533,8 +533,8 @@
                 title: '크기가 같은 각의 작도',
                 description: '반직선 PQ를 한 변으로 하여 ∠XOY와 크기가 같은 ∠DPQ를 작도하세요.',
                 steps: [
-                    '점 O를 중심으로 원의 일부를 그려 변 OX, OY와 만나는 두 교점을 A, B라 합니다.',
-                    '[길이 유지]를 누르고 점 P를 클릭해 같은 반지름으로 원의 일부를 크게 그리고, 반직선 PQ와 만나는 교점을 C라 합니다.',
+                    '점 O를 중심으로 원의 일부를 그린 뒤 [길이 유지]를 누르고, 점 도구로 변 OX, OY와 만나는 두 교점을 찍어 A, B라 합니다.',
+                    '컴퍼스로 돌아와 점 P를 클릭하면 같은 반지름이 유지돼요. 원의 일부를 크게 그리고, 점 도구로 반직선 PQ와 만나는 교점을 찍어 C라 합니다.',
                     `점 A, 점 B를 차례로 클릭해 컴퍼스를 ${seg('AB')}만큼 벌린 뒤, [길이 재기]를 누릅니다.`,
                     `점 C를 클릭해 바늘을 꽂으면 벌린 간격(${seg('AB')})이 그대로 유지돼요. 원의 일부를 그려, 2에서 그린 원의 일부와 만나는 교점을 D라 합니다.`,
                     '자 도구의 [반직선 긋기]로 반직선 PD를 그으면 ∠DPQ = ∠XOY입니다.'
@@ -1748,10 +1748,24 @@
             return result;
         }
 
+        // 아직 쓰지 않은 [길이 재기 / 길이 유지]: 다른 도구로 교점을 찍거나 시연을 보고 와도 이어서 쓸 수 있게 보관
+        let savedCompassState = null;
+
+        function getPendingCompassState() {
+            const c = compassState;
+            if (c.stage !== 'center' && !c.keepAnchor) return null;
+            return { stage: c.stage, keepRadiusOnce: c.keepRadiusOnce, drawingMeasuredArc: c.drawingMeasuredArc, keepAnchor: c.keepAnchor };
+        }
+
         function setActiveTool(tool) {
+            if (state.activeTool === 'compass' && tool !== 'compass') savedCompassState = getPendingCompassState();
             state.activeTool = tool;
             document.getElementById(`tool-${tool}`).checked = true;
             resetToolState();
+            if (tool === 'compass' && savedCompassState) {
+                Object.assign(compassState, savedCompassState);
+                savedCompassState = null;
+            }
             canvas.style.cursor = tool === 'pan' ? 'grab' : (tool === 'eraser' ? 'pointer' : 'crosshair');
             pointer.hoverErase = null;
             updateStatus();
@@ -1924,11 +1938,7 @@
         function startDemo() {
             const mission = MISSIONS[state.missionId];
             if (!mission.demo) return;
-            // 아직 쓰지 않은 [길이 재기 / 길이 유지]는 시연을 보고 와도 이어서 쓸 수 있게 보관
-            const c = compassState;
-            demoState.savedCompass = c.stage === 'center' || c.keepAnchor
-                ? { stage: c.stage, keepRadiusOnce: c.keepRadiusOnce, drawingMeasuredArc: c.drawingMeasuredArc, keepAnchor: c.keepAnchor }
-                : null;
+            if (state.activeTool === 'compass') savedCompassState = getPendingCompassState();
             resetToolState();
             pointer.hoverSnap = null;
             demoState.active = true;
@@ -1968,12 +1978,6 @@
             document.getElementById('tool-panel').classList.remove('d-none');
             document.getElementById('demo-panel').classList.add('d-none');
             setActiveTool(state.activeTool);
-            if (demoState.savedCompass && state.activeTool === 'compass') {
-                Object.assign(compassState, demoState.savedCompass);
-                updateStatus();
-                render();
-            }
-            demoState.savedCompass = null;
         }
 
         function updateDemoUi() {
@@ -2019,6 +2023,7 @@
             demoState.focusStep = 0;
             setFollowGuide(null);
             setDemoButtonLabel(false);
+            savedCompassState = null;
             const mission = MISSIONS[id];
             state.missionId = id;
             state.givenObjects = mission.build();
