@@ -286,6 +286,8 @@
                         </div>
 
                         <div class="d-flex gap-2 ms-auto">
+                            <button type="button" class="btn btn-outline-primary d-none" id="btn-demo-prev-step" title="이전 단계"
+                                aria-label="이전 단계"><i class="bi bi-skip-backward-circle"></i><span class="d-none d-md-inline"> 이전 단계</span></button>
                             <button type="button" class="btn btn-outline-primary d-none" id="btn-demo-replay-step" title="다시 보기"
                                 aria-label="다시 보기"><i class="bi bi-arrow-repeat"></i><span class="d-none d-md-inline"> 다시 보기</span></button>
                             <button type="button" class="btn btn-outline-primary" id="btn-demo"><i
@@ -758,6 +760,7 @@
         const checkToast = document.getElementById('check-toast');
         const demoButton = document.getElementById('btn-demo');
         const demoReplayButton = document.getElementById('btn-demo-replay-step');
+        const demoPrevButton = document.getElementById('btn-demo-prev-step');
         const demoPlayButton = document.getElementById('btn-demo-play');
         const demoPlayIcon = document.getElementById('demo-play-icon');
         const demoCaption = document.getElementById('demo-caption');
@@ -1965,8 +1968,10 @@
             demoButton.innerHTML = `<i class="bi ${isNextStep ? 'bi-skip-forward-circle' : 'bi-play-circle'}"></i><span class="d-none d-md-inline"> ${label}</span>`;
             demoButton.title = label;
             demoButton.setAttribute('aria-label', label);
-            // 단계 진행 중에만 [다시 보기] 표시, [정답 확인] 숨김 (마지막 단계를 마치면 반대로)
-            demoReplayButton.classList.toggle('d-none', !isNextStep);
+            // 단계별 시연을 본 뒤: [다시 보기]는 모든 단계, [이전 단계]는 2단계부터 / 단계 진행 중에는 [정답 확인] 숨김
+            const viewedStep = typeof followGuide.step === 'number' ? followGuide.step : null;
+            demoReplayButton.classList.toggle('d-none', viewedStep === null);
+            demoPrevButton.classList.toggle('d-none', !(viewedStep >= 1));
             checkButton.classList.toggle('d-none', isNextStep || !MISSIONS[state.missionId].check);
         }
 
@@ -2200,12 +2205,14 @@
             startDemo();
         }
 
-        // 다시 보기: 방금 따라 한 단계를 단계별 시연으로 다시 재생
-        demoReplayButton.addEventListener('click', () => {
-            if (typeof followGuide.step !== 'number') return;
-            demoState.focusStep = followGuide.step;
+        // 다시 보기 / 이전 단계: 방금 따라 한 단계(offset 0) 또는 그 앞 단계(offset -1)를 단계별 시연으로 재생
+        const replayViewedStep = offset => {
+            if (typeof followGuide.step !== 'number' || followGuide.step + offset < 0) return;
+            demoState.focusStep = followGuide.step + offset;
             startDemoWithMode(false);
-        });
+        };
+        demoReplayButton.addEventListener('click', () => replayViewedStep(0));
+        demoPrevButton.addEventListener('click', () => replayViewedStep(-1));
 
         demoButton.addEventListener('click', () => {
             if (isDemoNextStep) startDemoWithMode(false);
