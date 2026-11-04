@@ -2119,9 +2119,15 @@
                             </div>
                         ` : ''}
                         ${question.hasTail && ['short', 'choice', 'pill'].includes(question.type) ? `
-                            <label class="text-xs font-bold sm:col-span-2">꼬리 질문 제목
-                                <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="${question.type === 'short' ? '추가 질문이나 이유를 작성해주세요' : '[{option}]에 대해 설명해주세요'}" ${locked ? 'disabled' : ''}>
-                            </label>
+                            <div class="sm:col-span-2">
+                                <label class="text-xs font-bold">꼬리 질문 제목
+                                    <input class="field mt-1" data-field="tailTitle" maxlength="200" value="${escapeHtml(question.tailTitle || '')}" placeholder="${question.type === 'short' ? '추가 질문이나 이유를 작성해주세요' : '[{option}]에 대해 설명해주세요'}" ${locked ? 'disabled' : ''}>
+                                </label>
+                                ${question.type === 'short' ? '' : `<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                    <button type="button" class="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-board hover:bg-page" data-tail-token="{option}" ${locked ? 'disabled' : ''}>+ option</button>
+                                    <span class="text-[11px] text-muted">{option}은 학생이 고른 선택지 이름으로 바뀝니다</span>
+                                </div>`}
+                            </div>
                             <label class="text-xs font-bold sm:col-span-2">꼬리 질문 안내 문구
                                 <input class="field mt-1" data-field="tailPlaceholder" maxlength="160" value="${escapeHtml(question.tailPlaceholder || '')}" placeholder="자세히 적어주세요" ${locked ? 'disabled' : ''}>
                             </label>
@@ -2231,6 +2237,18 @@
             markSchemaDirty();
         }
 
+        function insertTailTitleToken(card, question, token) {
+            const input = card.querySelector('[data-field="tailTitle"]');
+            if (!input || input.disabled) return;
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? input.value.length;
+            input.value = `${input.value.slice(0, start)}${token}${input.value.slice(end)}`.slice(0, 200);
+            input.focus();
+            input.setSelectionRange(start + token.length, start + token.length);
+            question.tailTitle = input.value;
+            markSchemaDirty();
+        }
+
         function markSchemaDirty() { schemaDirty = true; }
 
         $('builderQuestions').addEventListener('input', event => {
@@ -2309,6 +2327,13 @@
                 const card = tokenButton.closest('.builder-card');
                 const question = currentRoomData.formSchema[Number(card.dataset.index)];
                 if (question) insertFileNameToken(card, question, tokenButton.dataset.fileToken);
+                return;
+            }
+            const tailTokenButton = event.target.closest('button[data-tail-token]');
+            if (tailTokenButton && currentRoomData) {
+                const card = tailTokenButton.closest('.builder-card');
+                const question = currentRoomData.formSchema[Number(card.dataset.index)];
+                if (question) insertTailTitleToken(card, question, tailTokenButton.dataset.tailToken);
                 return;
             }
             const button = event.target.closest('button[data-action]');
