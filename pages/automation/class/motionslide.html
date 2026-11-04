@@ -65,6 +65,8 @@
 
     /* 단계별 공개: 아직 차례가 아닌 상자(발표 중) */
     .slide-canvas .draggable-box.step-hidden { visibility: hidden; }
+    /* 하이라이트(H): 마우스 둘레만 밝게, 나머지는 어둡게. 클릭은 그대로 통과한다. */
+    .slide-canvas > .ls-spot { position: absolute; inset: 0; z-index: 3000; pointer-events: none; }
 
     /* 인터랙티브 요소: AI가 쓴 코드를 격리된 iframe에서 실행한다 */
     .app-frame { position: relative; min-height: 300px; }
@@ -84,6 +86,8 @@
     /* 모든 슬라이드 보기 (발표 화면·내보낸 파일 공용) */
     .ov-open { position: fixed; top: 10px; right: 10px; z-index: 5; opacity: 0.3; border: 1px solid rgba(255, 255, 255, 0.5); background: rgba(17, 24, 39, 0.6); color: #fff; border-radius: 8px; padding: 6px 12px; font: 14px 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; cursor: pointer; }
     .ov-open:hover { opacity: 1; }
+    .ov-spot { right: 136px; }
+    .ov-open.on, .pv-bar button.on { opacity: 1; background: #f59e0b; border-color: #f59e0b; color: #111827; }
     .ov-backdrop { position: fixed; inset: 0; z-index: 3000; background: rgba(15, 23, 42, 0.65); display: flex; align-items: center; justify-content: center; padding: 24px; font-family: 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; }
     .ov-panel { background: #fff; color: #111827; border-radius: 14px; width: min(1240px, 100%); height: min(860px, 100%); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); }
     .ov-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
@@ -583,6 +587,7 @@
   <!-- 발표 모드 화면 -->
   <div id="show-overlay" aria-label="발표 화면">
     <div class="show-tools">
+      <button type="button" class="btn btn-sm btn-light" id="show-spot" aria-pressed="false"><i class="bi bi-brightness-high"></i> 하이라이트 (H)</button>
       <button type="button" class="btn btn-sm btn-light" id="show-overview"><i class="bi bi-grid-3x3-gap"></i> 모든 슬라이드</button>
       <button type="button" class="btn btn-sm btn-light" id="show-exit">편집 모드로 (Esc)</button>
     </div>
@@ -599,6 +604,7 @@
       <button type="button" data-pv="prev">◀ 이전</button>
       <button type="button" data-pv="next">다음 ▶</button>
       <button type="button" data-pv="overview">모든 슬라이드 보기</button>
+      <button type="button" data-pv="spot" aria-pressed="false">하이라이트 (H)</button>
       <button type="button" class="pv-primary" data-pv="audience">청중 화면 열기</button>
       <button type="button" data-pv="exit">편집 모드로 (Esc)</button>
     </header>
@@ -899,6 +905,7 @@
                   <tr><td class="text-nowrap"><kbd>→</kbd> <kbd>↓</kbd> <kbd>Space</kbd> <kbd>Enter</kbd> / 화면 클릭</td><td>다음 단계 (단계를 다 보이면 다음 장)</td></tr>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>Backspace</kbd></td><td>이전 단계 (없으면 이전 장)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Home</kbd> / <kbd>End</kbd></td><td>첫 장 / 마지막 장</td></tr>
+                  <tr><td class="text-nowrap"><kbd>H</kbd></td><td>하이라이트 켜기·끄기 (마우스 둘레만 밝게)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>발표 끝내기</td></tr>
                 </tbody>
               </table>
@@ -3739,6 +3746,8 @@
         timer: null,
         step: 0,    // 이 장에서 지금까지 보인 단계(단계별 공개)
         maxStep: 0, // 이 장의 마지막 단계
+        spot: false,    // 하이라이트 켜짐
+        spotPos: null,  // 슬라이드 안 마우스 위치(0~1 비율), 밖이면 null
 
         isOn() { return document.body.classList.contains('presentation-mode'); },
         toggle() { if (Show.isOn()) Show.exit(); else Show.enter('audience'); },
@@ -3790,6 +3799,9 @@
           document.querySelectorAll('.v-leaving').forEach(el => el.remove());
           if (Show.popup && !Show.popup.closed) Show.popup.close();
           Show.popup = null;
+          Show.spot = false;
+          Show.spotPos = null;
+          Show.spotButtons();
           if (document.fullscreenElement) document.exitFullscreen().catch(() => { /* 무시 */ });
           if (MobileView.on) { MobileView.back(); return; }
           if (Editor.deck && Show.index !== Editor.index) {
@@ -3836,7 +3848,37 @@
           Show.maxStep = slideSteps(Show.canvases()[0]);
           Show.step = Math.min(Show.step, Show.maxStep);
           Show.applyStep(false);
+          Show.applySpot();
           Show.fit();
+        },
+
+        // 하이라이트: 발표자 보기에서는 발표자 화면의 마우스 위치를 청중 창에도 같은 자리로 보인다.
+        toggleSpot() {
+          Show.spot = !Show.spot;
+          if (!Show.spot) Show.spotPos = null;
+          Show.spotButtons();
+          Show.applySpot();
+        },
+
+        applySpot() {
+          const pos = Show.spot ? Show.spotPos : null;
+          Show.canvases().forEach(canvas => spotlight(canvas, pos));
+        },
+
+        moveSpot(event, canvas) {
+          if (!Show.spot) return;
+          Show.spotPos = event ? canvasPoint(canvas, event) : null;
+          Show.applySpot();
+        },
+
+        spotButtons() {
+          const button = $('show-spot');
+          button.classList.toggle('btn-warning', Show.spot);
+          button.classList.toggle('btn-light', !Show.spot);
+          button.setAttribute('aria-pressed', String(Show.spot));
+          const pvButton = document.querySelector('[data-pv="spot"]');
+          pvButton.classList.toggle('on', Show.spot);
+          pvButton.setAttribute('aria-pressed', String(Show.spot));
         },
 
         // 지금 발표 중인 캔버스들(발표자 보기면 청중 창까지)
@@ -3908,6 +3950,8 @@
           const audienceCanvas = doc.getElementById('pa-canvas');
           Show.paintCanvas(audienceCanvas, Editor.deck.slides[Show.index]);
           applySteps(audienceCanvas, Show.step, false); // 발표자 쪽과 같은 단계까지
+          Show.applySpot();
+          doc.getElementById('pa-host').addEventListener('mousemove', event => Show.moveSpot(event, audienceCanvas));
           Show.media.prepare(audienceCanvas, 'mirror');
           Show.media.syncAll();
           Show.fit();
@@ -3921,6 +3965,7 @@
           else if (key === 'Home') Show.go(0);
           else if (key === 'End') Show.go(Editor.deck.slides.length - 1);
           else if (key === 'Escape') { event.preventDefault(); Show.exit(); }
+          else if (['h', 'H', 'ㅗ'].includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); Show.toggleSpot(); }
         }
       };
 
@@ -5712,6 +5757,29 @@
         });
       }
 
+      // 하이라이트: pos({x, y}, 0~1 비율) 둘레만 밝고 나머지는 어둡게. pos가 없으면 지운다.
+      function spotlight(canvas, pos) {
+        if (!canvas) return;
+        var spot = null;
+        Array.prototype.forEach.call(canvas.children, function (el) { if (el.classList.contains('ls-spot')) spot = el; });
+        if (!pos) { if (spot) spot.parentNode.removeChild(spot); return; }
+        if (!spot) {
+          spot = canvas.ownerDocument.createElement('div');
+          spot.className = 'ls-spot';
+          canvas.appendChild(spot);
+        }
+        var x = Math.round(pos.x * 1920), y = Math.round(pos.y * 1080);
+        spot.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, rgba(0,0,0,0) 0, rgba(0,0,0,0) 190px, rgba(0,0,0,0.6) 260px)';
+      }
+
+      // 화면의 마우스 위치를 슬라이드 안 비율로 바꾼다(슬라이드 밖이면 null).
+      function canvasPoint(canvas, event) {
+        var rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        var x = (event.clientX - rect.left) / rect.width, y = (event.clientY - rect.top) / rect.height;
+        return x < 0 || x > 1 || y < 0 || y > 1 ? null : { x: x, y: y };
+      }
+
       /* ===== 12-1. 인터랙티브 칸(iframe) 안의 도우미 =====
          AppKit이 사용자 코드보다 먼저 칸 안에 글자로 넣어 실행한다. 그래서 바깥 변수를 쓰지 않는다.
          · 같은 코드면 같은 난수가 나오게 해 발표자 칸과 청중 칸의 결과(주사위 등)를 맞춘다.
@@ -6068,6 +6136,7 @@
           else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { event.preventDefault(); nav.prev(); }
           else if (k === 'Home') nav.go(0);
           else if (k === 'End') nav.go(slides.length - 1);
+          else if ((k === 'h' || k === 'H' || k === 'ㅗ') && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); nav.spot(); }
           else if (k === 'f' || k === 'F') {
             if (doc.fullscreenElement) doc.exitFullscreen();
             else if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
@@ -6077,7 +6146,15 @@
         function audience() {
           document.body.className = 'ls-viewer presentation-mode';
           document.body.innerHTML = '<div class="v-host" id="a-host">' + stage('a') + '</div><div class="v-counter" id="a-counter"></div>' +
-            '<button type="button" class="ov-open" id="a-overview">모든 슬라이드</button>';
+            '<button type="button" class="ov-open" id="a-overview">모든 슬라이드</button>' +
+            '<button type="button" class="ov-open ov-spot" id="a-spot" aria-pressed="false">하이라이트 (H)</button>';
+          var spotOn = false, spotPos = null;
+          function showSpot() {
+            spotlight(document.getElementById('a-canvas'), spotOn ? spotPos : null);
+            var button = document.getElementById('a-spot');
+            button.classList.toggle('on', spotOn);
+            button.setAttribute('aria-pressed', String(spotOn));
+          }
           function counter() {
             document.getElementById('a-counter').textContent = (index + 1) + ' / ' + slides.length + (maxStep ? ' · 단계 ' + step + '/' + maxStep : '');
           }
@@ -6092,6 +6169,7 @@
             step = all ? maxStep : 0;
             applySteps(canvas, step, false);
             counter();
+            showSpot();
           }
           var nav = {
             go: go,
@@ -6102,7 +6180,8 @@
             prev: function () {
               if (step > 0) { step--; applySteps(document.getElementById('a-canvas'), step, false); counter(); }
               else go(index - 1, true);
-            }
+            },
+            spot: function () { spotOn = !spotOn; showSpot(); }
           };
           var audienceMedia = createMediaSync(window, null);
           document.addEventListener('keydown', function (event) { onKey(event, document, nav); });
@@ -6111,6 +6190,13 @@
             nav.next();
           });
           document.getElementById('a-overview').addEventListener('click', function () { openOverview(go); });
+          document.getElementById('a-spot').addEventListener('click', nav.spot);
+          document.getElementById('a-host').addEventListener('mousemove', function (event) {
+            if (!spotOn) return;
+            spotPos = canvasPoint(document.getElementById('a-canvas'), event);
+            showSpot();
+          });
+          document.getElementById('a-host').addEventListener('mouseleave', function () { spotPos = null; showSpot(); });
           window.addEventListener('resize', function () { fit(document, 'a'); });
           fit(document, 'a');
           go(0);
@@ -6128,6 +6214,7 @@
             '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span id="pv-clock" title="현재 시각"></span>' +
             '<button type="button" id="pv-prev">◀ 이전</button>' +
             '<button type="button" id="pv-next">다음 ▶</button><button type="button" id="pv-overview">모든 슬라이드 보기</button>' +
+            '<button type="button" id="pv-spot" aria-pressed="false">하이라이트 (H)</button>' +
             '<button type="button" class="pv-primary" id="pv-audience">청중 화면 열기</button></header>' +
             '<main class="pv-main"><section class="pv-col"><div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>' +
             '<div class="v-host pv-current" id="c-host">' + stage('c') + '</div></section>' +
@@ -6147,6 +6234,21 @@
             if (popup && !popup.closed) applySteps(popup.document.getElementById('pa-canvas'), step, replay);
             document.getElementById('pv-count').textContent = (index + 1) + ' / ' + slides.length + (maxStep ? ' · 단계 ' + step + '/' + maxStep : '');
           }
+          // 하이라이트: 발표자 화면의 마우스 자리를 청중 창에도 같은 자리로 보인다.
+          var spotOn = false, spotPos = null;
+          function showSpot() {
+            var pos = spotOn ? spotPos : null;
+            spotlight(document.getElementById('c-canvas'), pos);
+            if (popup && !popup.closed) spotlight(popup.document.getElementById('pa-canvas'), pos);
+            var button = document.getElementById('pv-spot');
+            button.classList.toggle('on', spotOn);
+            button.setAttribute('aria-pressed', String(spotOn));
+          }
+          function moveSpot(canvas, event) {
+            if (!spotOn) return;
+            spotPos = event ? canvasPoint(canvas, event) : null;
+            showSpot();
+          }
           function go(i, all) {
             if (i < 0 || i >= slides.length) return;
             index = i;
@@ -6163,12 +6265,14 @@
             maxStep = slideSteps(document.getElementById('c-canvas'));
             step = all ? maxStep : 0;
             showStep(false);
+            showSpot();
             fitAll();
           }
           var nav = {
             go: go,
             next: function () { if (step < maxStep) { step++; showStep(true); } else go(index + 1); },
-            prev: function () { if (step > 0) { step--; showStep(false); } else go(index - 1, true); }
+            prev: function () { if (step > 0) { step--; showStep(false); } else go(index - 1, true); },
+            spot: function () { spotOn = !spotOn; if (!spotOn) spotPos = null; showSpot(); }
           };
           function openAudience() {
             if (popup && !popup.closed) { popup.focus(); return; }
@@ -6186,6 +6290,8 @@
               popup.addEventListener('resize', function () { fit(doc, 'pa'); });
               paint(doc, 'pa', index);
               applySteps(doc.getElementById('pa-canvas'), step, false);
+              showSpot();
+              doc.getElementById('pa-host').addEventListener('mousemove', function (event) { moveSpot(doc.getElementById('pa-canvas'), event); });
               media.prepare(doc.getElementById('pa-canvas'), 'mirror');
               media.syncAll();
               fit(doc, 'pa');
@@ -6198,6 +6304,9 @@
           document.getElementById('pv-prev').addEventListener('click', nav.prev);
           document.getElementById('pv-next').addEventListener('click', nav.next);
           document.getElementById('pv-audience').addEventListener('click', openAudience);
+          document.getElementById('pv-spot').addEventListener('click', nav.spot);
+          document.getElementById('c-host').addEventListener('mousemove', function (event) { moveSpot(document.getElementById('c-canvas'), event); });
+          document.getElementById('c-host').addEventListener('mouseleave', function () { moveSpot(null, null); });
           document.getElementById('pv-overview').addEventListener('click', function () { openOverview(go); });
           document.addEventListener('keydown', function (event) { onKey(event, document, nav); });
           window.addEventListener('resize', fitAll);
@@ -6258,7 +6367,7 @@
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
-            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + spotlight.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
         },
 
         download(kind) {
@@ -7141,6 +7250,11 @@
         document.querySelectorAll('[data-show]').forEach(button => button.addEventListener('click', () => Show.enter(button.dataset.show)));
         $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
         $('show-overview').addEventListener('click', event => { event.stopPropagation(); Show.openOverview(); });
+        $('show-spot').addEventListener('click', event => { event.stopPropagation(); Show.toggleSpot(); });
+        $('show-overlay').addEventListener('mousemove', event => Show.moveSpot(event, $('show-canvas')));
+        $('show-overlay').addEventListener('mouseleave', () => Show.moveSpot(null));
+        $('pv-c-host').addEventListener('mousemove', event => Show.moveSpot(event, $('pv-c-canvas')));
+        $('pv-c-host').addEventListener('mouseleave', () => Show.moveSpot(null));
         $('show-overlay').addEventListener('click', event => {
           if (event.target.closest('video')) return; // 재생바를 누른 것은 장 넘김이 아니다
           // 휴대폰: 화면 왼쪽 1/3을 누르면 이전 장
@@ -7155,6 +7269,7 @@
           if (action === 'next') Show.next();
           if (action === 'overview') Show.openOverview();
           if (action === 'audience') Show.openAudience();
+          if (action === 'spot') Show.toggleSpot();
           if (action === 'exit') Show.exit();
         });
         // 그림·동영상은 여러 개를 한 번에 골라 담을 수 있다.
