@@ -1209,6 +1209,48 @@
             maxSelect: 0
         });
 
+        /* ── 이미지 삽입 문항: 응답 없이 이미지만 보여줍니다 ──
+         *  이미지는 줄여서 data URL로 formSchema에 저장합니다 (Firestore 문서 1MB 한도 안에 들도록). */
+        const isImageItem = question => question?.type === 'image';
+        const answerItems = schema => (schema || []).filter(question => !isImageItem(question));
+        const IMAGE_MAX_SIDE = 1280;
+        const IMAGE_MAX_CHARS = 300 * 1024;
+
+        async function compressImageToDataUrl(file) {
+            const objectUrl = URL.createObjectURL(file);
+            try {
+                const image = await new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
+                    img.src = objectUrl;
+                });
+                let side = IMAGE_MAX_SIDE;
+                let quality = 0.85;
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const scale = Math.min(1, side / Math.max(image.naturalWidth, image.naturalHeight));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                    const context = canvas.getContext('2d');
+                    context.fillStyle = '#FFFFFF';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    if (dataUrl.length <= IMAGE_MAX_CHARS) return dataUrl;
+                    if (quality > 0.6) quality -= 0.1;
+                    else side = Math.round(side * 0.8);
+                }
+                throw new Error('이미지가 너무 커서 줄이지 못했습니다.');
+            } finally {
+                URL.revokeObjectURL(objectUrl);
+            }
+        }
+
+        const renderImageItem = question => question.imageUrl
+            ? `<img src="${escapeHtml(question.imageUrl)}" alt="${escapeHtml(stripTags(question.title || '설문 이미지'))}" class="mx-auto block h-auto max-w-full rounded-lg" loading="lazy">`
+            : '';
+
         function getPillLimit(question) {
             const limit = Math.floor(Number(question?.maxSelect) || 0);
             return limit > 0 ? limit : 0;
@@ -2028,6 +2070,7 @@
                                 <option value="dropdown" ${question.type === 'dropdown' ? 'selected' : ''}>드롭다운</option>
                                 <option value="pill" ${question.type === 'pill' ? 'selected' : ''}>알약형 다중 선택</option>
                                 <option value="file" ${question.type === 'file' ? 'selected' : ''}>파일 첨부</option>
+                                <option value="image" ${question.type === 'image' ? 'selected' : ''}>이미지 삽입</option>
                             </select>
                             ${question.type === 'short' ? `
                                 <select class="field mt-0 py-1 px-2 text-xs font-semibold w-auto min-w-[110px] rounded-lg bg-white border border-line" data-field="validation" aria-label="문항 ${index + 1} 유효성 검사" ${locked ? 'disabled' : ''}>
@@ -2044,6 +2087,7 @@
                         </div>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2">
+                        ${isImageItem(question) ? renderImageItemSettings(question, locked) : `
                         <div class="sm:col-span-2">
                             <label class="text-xs font-bold">문항 제목
                                 <input class="field mt-1" data-field="title" maxlength="200" value="${escapeHtml(question.title || '')}" placeholder="질문을 입력하세요" ${locked ? 'disabled' : ''}>
@@ -2082,6 +2126,7 @@
                                 <input class="field mt-1" data-field="tailPlaceholder" maxlength="160" value="${escapeHtml(question.tailPlaceholder || '')}" placeholder="자세히 적어주세요" ${locked ? 'disabled' : ''}>
                             </label>
                         ` : ''}
+                        `}
                         ${ctx.inBranch ? `
                             <div class="branch-zone-config sm:col-span-2 mt-1 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3">
                                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -2117,10 +2162,25 @@
             }).join('');
         }
 
+        /** 폼 빌더: 이미지 삽입 설정 */
+        function renderImageItemSettings(question, locked) {
+            return `
+                <div class="sm:col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                    <div class="mb-2 text-xs font-bold text-amber-900 flex items-center gap-1.5"><i class="bi bi-image"></i> 이미지 삽입 <span class="font-normal text-amber-800">(응답자에게는 문항 번호·입력란 없이 이미지만 표시됩니다)</span></div>
+                    ${question.imageUrl
+                        ? `<div class="rounded-lg border border-line bg-white p-2">${renderImageItem(question)}</div>`
+                        : '<p class="rounded-lg border border-dashed border-line bg-white p-4 text-center text-sm text-muted">아직 이미지가 없습니다.</p>'}
+                    <label class="btn btn-light mt-2 !px-3 !py-1 text-sm ${locked ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}">
+                        <i class="bi bi-upload"></i> ${question.imageUrl ? '이미지 바꾸기' : '이미지 선택'}
+                        <input type="file" accept="image/*" class="hidden" data-image-upload ${locked ? 'disabled' : ''}>
+                    </label>
+                </div>`;
+        }
+
         /** 폼 빌더: 파일 문항 설정 (용량·개수·파일명 규칙) */
         function renderFileQuestionSettings(question, index, schema, locked) {
             const otherQuestions = schema.map((item, itemIndex) => ({ item, number: itemIndex + 1 }))
-                .filter(({ item, number }) => number !== index + 1 && item.type !== 'file');
+                .filter(({ item, number }) => number !== index + 1 && item.type !== 'file' && !isImageItem(item));
             const tokenButton = token => `<button type="button" class="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-board hover:bg-page" data-file-token="{${token}}" ${locked ? 'disabled' : ''}>+ ${token}</button>`;
             return `
                 <div class="sm:col-span-2 rounded-xl border border-sky-200 bg-sky-50/70 p-3 grid gap-3 sm:grid-cols-2">
@@ -2196,6 +2256,18 @@
             const index = Number(card.dataset.index);
             const question = currentRoomData.formSchema[index];
             if (!question) return;
+            if (event.target.matches('[data-image-upload]')) {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                if (!file.type.startsWith('image/')) return showNotice('이미지 파일만 넣을 수 있습니다.', true);
+                compressImageToDataUrl(file).then(dataUrl => {
+                    question.imageUrl = dataUrl;
+                    if (!question.title) question.title = file.name.replace(/\.[^.]+$/, '');
+                    renderBuilder(currentRoomData.formSchema);
+                    markSchemaDirty();
+                }).catch(error => showNotice(error.message || '이미지를 넣지 못했습니다.', true));
+                return;
+            }
             const field = event.target.dataset.field;
             if (field === 'options') question.options = asOptions(event.target.value);
             else if (field === 'required' || field === 'hasTail' || field === 'hasBranch') question[field] = event.target.checked;
@@ -2220,6 +2292,8 @@
                 if (!['choice', 'dropdown'].includes(question.type)) { question.hasBranch = false; }
                 if (!['short', 'long'].includes(question.type)) { question.placeholder = ''; }
                 if (question.type !== 'pill') { question.maxSelect = 0; }
+                if (isImageItem(question)) question.required = false;
+                else delete question.imageUrl;
                 renderBuilder(currentRoomData.formSchema);
             }
             if (field === 'options' || field === 'hasTail' || field === 'tailCondition' || field === 'hasBranch' || field === 'branchOption') renderBuilder(currentRoomData.formSchema);
@@ -2285,7 +2359,10 @@
                 return;
             }
             const visibleItems = getVisibleQuestions(schema, answers);
-            container.innerHTML = visibleItems.map(({ question }, visibleIndex) => {
+            let questionNumber = 0;
+            container.innerHTML = visibleItems.map(({ question }) => {
+                if (isImageItem(question)) return `<div class="py-1" data-preview-q="${escapeHtml(question.id)}">${renderImageItem(question)}</div>`;
+                const visibleIndex = questionNumber++;
                 const answer = answers?.[question.id];
                 const selected = Array.isArray(answer?.selected) ? answer.selected : [];
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
@@ -2353,7 +2430,7 @@
                 } else if (question.type === 'choice') {
                     const radio = block.querySelector(`input[data-preview-choice="${CSS.escape(question.id)}"]:checked`);
                     answers[question.id] = { selected: radio ? radio.value : '', tailAnswers };
-                } else if (question.type === 'file') {
+                } else if (question.type === 'file' || isImageItem(question)) {
                     continue;
                 } else {
                     const selected = [...block.querySelectorAll(`[data-preview-pill="${CSS.escape(question.id)}"][aria-pressed="true"]`)].map(btn => btn.dataset.option);
@@ -2423,7 +2500,9 @@
         $('saveSchemaButton').addEventListener('click', async () => {
             if (!currentRoom || !currentRoomData || Number(currentRoomData.responseCount) > 0) return;
             const schema = currentRoomData.formSchema || [];
-            if (schema.some(question => !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
+            if (schema.some(question => !isImageItem(question) && !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
+            if (schema.some(question => isImageItem(question) && !question.imageUrl)) return showNotice('이미지 삽입 문항에 이미지를 넣어주세요.', true);
+            if (JSON.stringify(schema).length > 900 * 1024) return showNotice('이미지가 너무 많아 저장할 수 없습니다. 이미지 문항을 줄여주세요.', true);
             if (schema.some(question => ['choice', 'dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('객관식, 드롭다운, 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
             const button = $('saveSchemaButton');
             button.disabled = true;
@@ -2685,7 +2764,7 @@
         const responseTimeMillis = response => response.updatedAt?.toMillis ? response.updatedAt.toMillis() : 0;
 
         function renderResponses(responses) {
-            const schema = currentRoomData.formSchema || [];
+            const schema = answerItems(currentRoomData.formSchema);
             const showStudentId = !isQuickRoom(currentRoomData);
             $('responseCountBadge').textContent = `${Math.max(Number(currentRoomData.responseCount) || 0, responses.length)}명 응답`;
             // 표 서식은 우리반 관계지도의 .th / .td 와 같습니다
@@ -2978,7 +3057,7 @@
 
         function renderStatistics(responses = currentResponses || []) {
             if (!$('statsPanel') || !currentRoomData) return;
-            const schema = Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : [];
+            const schema = answerItems(Array.isArray(currentRoomData.formSchema) ? currentRoomData.formSchema : []);
             const totalResponses = responses.length;
             const totalCount = Math.max(Number(currentRoomData.responseCount) || 0, totalResponses);
 
@@ -3574,7 +3653,7 @@
             if (!currentRoom || !currentRoomData) return;
             try {
                 const snapshot = await getDocs(collection(db, 'custom_forms', currentRoom, 'responses'));
-                const schema = currentRoomData.formSchema || [];
+                const schema = answerItems(currentRoomData.formSchema);
                 const responses = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
                 const showStudentId = !isQuickRoom(currentRoomData);
                 if (!showStudentId) responses.sort((a, b) => responseTimeMillis(a) - responseTimeMillis(b));
@@ -3611,7 +3690,10 @@
         function renderStudentQuestions(schema, answers, disabled, containerId = 'dynamicQuestions') {
             const container = $(containerId);
             const visibleItems = getVisibleQuestions(schema, answers);
-            container.innerHTML = visibleItems.map(({ question }, visibleIndex) => {
+            let questionNumber = 0;
+            container.innerHTML = visibleItems.map(({ question }) => {
+                if (isImageItem(question)) return `<div class="py-1" data-question="${escapeHtml(question.id)}">${renderImageItem(question)}</div>`;
+                const visibleIndex = questionNumber++;
                 const answer = answers?.[question.id];
                 const selected = Array.isArray(answer?.selected) ? answer.selected : [];
                 const selectedDropdown = typeof answer === 'string' ? answer : answer?.selected || '';
@@ -3809,6 +3891,7 @@
             const answers = { ...baseAnswers };
             const container = $(containerId);
             for (const question of schema) {
+                if (isImageItem(question)) continue;
                 const block = container.querySelector(`[data-question="${CSS.escape(question.id)}"]`);
                 if (!block) continue;
                 const tailAnswers = {};
