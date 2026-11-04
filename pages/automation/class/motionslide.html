@@ -906,6 +906,7 @@
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>Backspace</kbd></td><td>이전 단계 (없으면 이전 장)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Home</kbd> / <kbd>End</kbd></td><td>첫 장 / 마지막 장</td></tr>
                   <tr><td class="text-nowrap"><kbd>H</kbd></td><td>하이라이트 켜기·끄기 (마우스 둘레만 밝게)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>+</kbd> / <kbd>-</kbd></td><td>하이라이트 범위 키우기 / 줄이기</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>발표 끝내기</td></tr>
                 </tbody>
               </table>
@@ -3748,6 +3749,7 @@
         maxStep: 0, // 이 장의 마지막 단계
         spot: false,    // 하이라이트 켜짐
         spotPos: null,  // 슬라이드 안 마우스 위치(0~1 비율), 밖이면 null
+        spotRadius: 190, // 밝게 보일 반지름(px, 1920 기준)
 
         isOn() { return document.body.classList.contains('presentation-mode'); },
         toggle() { if (Show.isOn()) Show.exit(); else Show.enter('audience'); },
@@ -3862,7 +3864,7 @@
 
         applySpot() {
           const pos = Show.spot ? Show.spotPos : null;
-          Show.canvases().forEach(canvas => spotlight(canvas, pos));
+          Show.canvases().forEach(canvas => spotlight(canvas, pos, Show.spotRadius));
         },
 
         moveSpot(event, canvas) {
@@ -3966,6 +3968,11 @@
           else if (key === 'End') Show.go(Editor.deck.slides.length - 1);
           else if (key === 'Escape') { event.preventDefault(); Show.exit(); }
           else if (['h', 'H', 'ㅗ'].includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); Show.toggleSpot(); }
+          else if ((key === '+' || key === '-') && Show.spot && !event.ctrlKey && !event.metaKey) {
+            event.preventDefault();
+            Show.spotRadius = spotResize(Show.spotRadius, key === '+' ? 1 : -1);
+            Show.applySpot();
+          }
         }
       };
 
@@ -5757,8 +5764,8 @@
         });
       }
 
-      // 하이라이트: pos({x, y}, 0~1 비율) 둘레만 밝고 나머지는 어둡게. pos가 없으면 지운다.
-      function spotlight(canvas, pos) {
+      // 하이라이트: pos({x, y}, 0~1 비율) 둘레 radius(px)만 밝고 나머지는 어둡게. pos가 없으면 지운다.
+      function spotlight(canvas, pos, radius) {
         if (!canvas) return;
         var spot = null;
         Array.prototype.forEach.call(canvas.children, function (el) { if (el.classList.contains('ls-spot')) spot = el; });
@@ -5768,8 +5775,13 @@
           spot.className = 'ls-spot';
           canvas.appendChild(spot);
         }
-        var x = Math.round(pos.x * 1920), y = Math.round(pos.y * 1080);
-        spot.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, rgba(0,0,0,0) 0, rgba(0,0,0,0) 190px, rgba(0,0,0,0.6) 260px)';
+        var x = Math.round(pos.x * 1920), y = Math.round(pos.y * 1080), r = radius || 190;
+        spot.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, rgba(0,0,0,0) 0, rgba(0,0,0,0) ' + r + 'px, rgba(0,0,0,0.6) ' + (r + 70) + 'px)';
+      }
+
+      // 하이라이트 크기: dir 1이면 키우고 -1이면 줄인다.
+      function spotResize(radius, dir) {
+        return Math.max(70, Math.min(700, (radius || 190) + dir * 40));
       }
 
       // 화면의 마우스 위치를 슬라이드 안 비율로 바꾼다(슬라이드 밖이면 null).
@@ -6137,6 +6149,7 @@
           else if (k === 'Home') nav.go(0);
           else if (k === 'End') nav.go(slides.length - 1);
           else if ((k === 'h' || k === 'H' || k === 'ㅗ') && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); nav.spot(); }
+          else if ((k === '+' || k === '-') && !event.ctrlKey && !event.metaKey && nav.spotSize(k === '+' ? 1 : -1)) event.preventDefault();
           else if (k === 'f' || k === 'F') {
             if (doc.fullscreenElement) doc.exitFullscreen();
             else if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
@@ -6148,9 +6161,9 @@
           document.body.innerHTML = '<div class="v-host" id="a-host">' + stage('a') + '</div><div class="v-counter" id="a-counter"></div>' +
             '<button type="button" class="ov-open" id="a-overview">모든 슬라이드</button>' +
             '<button type="button" class="ov-open ov-spot" id="a-spot" aria-pressed="false">하이라이트 (H)</button>';
-          var spotOn = false, spotPos = null;
+          var spotOn = false, spotPos = null, spotRadius = 190;
           function showSpot() {
-            spotlight(document.getElementById('a-canvas'), spotOn ? spotPos : null);
+            spotlight(document.getElementById('a-canvas'), spotOn ? spotPos : null, spotRadius);
             var button = document.getElementById('a-spot');
             button.classList.toggle('on', spotOn);
             button.setAttribute('aria-pressed', String(spotOn));
@@ -6181,7 +6194,8 @@
               if (step > 0) { step--; applySteps(document.getElementById('a-canvas'), step, false); counter(); }
               else go(index - 1, true);
             },
-            spot: function () { spotOn = !spotOn; showSpot(); }
+            spot: function () { spotOn = !spotOn; showSpot(); },
+            spotSize: function (dir) { if (!spotOn) return false; spotRadius = spotResize(spotRadius, dir); showSpot(); return true; }
           };
           var audienceMedia = createMediaSync(window, null);
           document.addEventListener('keydown', function (event) { onKey(event, document, nav); });
@@ -6235,11 +6249,11 @@
             document.getElementById('pv-count').textContent = (index + 1) + ' / ' + slides.length + (maxStep ? ' · 단계 ' + step + '/' + maxStep : '');
           }
           // 하이라이트: 발표자 화면의 마우스 자리를 청중 창에도 같은 자리로 보인다.
-          var spotOn = false, spotPos = null;
+          var spotOn = false, spotPos = null, spotRadius = 190;
           function showSpot() {
             var pos = spotOn ? spotPos : null;
-            spotlight(document.getElementById('c-canvas'), pos);
-            if (popup && !popup.closed) spotlight(popup.document.getElementById('pa-canvas'), pos);
+            spotlight(document.getElementById('c-canvas'), pos, spotRadius);
+            if (popup && !popup.closed) spotlight(popup.document.getElementById('pa-canvas'), pos, spotRadius);
             var button = document.getElementById('pv-spot');
             button.classList.toggle('on', spotOn);
             button.setAttribute('aria-pressed', String(spotOn));
@@ -6272,7 +6286,8 @@
             go: go,
             next: function () { if (step < maxStep) { step++; showStep(true); } else go(index + 1); },
             prev: function () { if (step > 0) { step--; showStep(false); } else go(index - 1, true); },
-            spot: function () { spotOn = !spotOn; if (!spotOn) spotPos = null; showSpot(); }
+            spot: function () { spotOn = !spotOn; if (!spotOn) spotPos = null; showSpot(); },
+            spotSize: function (dir) { if (!spotOn) return false; spotRadius = spotResize(spotRadius, dir); showSpot(); return true; }
           };
           function openAudience() {
             if (popup && !popup.closed) { popup.focus(); return; }
@@ -6367,7 +6382,7 @@
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
-            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + spotlight.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + spotlight.toString() + '\n' + spotResize.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
         },
 
         download(kind) {
