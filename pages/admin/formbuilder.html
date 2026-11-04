@@ -762,6 +762,13 @@
         #formatFloatingToolbar button:focus {
             outline: none;
         }
+        /* 이미지 삽입 문항: 여러 장일 때 옆으로 넘기는 슬라이드 */
+        [data-slider-track] {
+            scrollbar-width: none;
+        }
+        [data-slider-track]::-webkit-scrollbar {
+            display: none;
+        }
     </style>
 </head>
 
@@ -1214,7 +1221,7 @@
         const isImageItem = question => question?.type === 'image';
         const answerItems = schema => (schema || []).filter(question => !isImageItem(question));
         const IMAGE_MAX_SIDE = 1280;
-        const IMAGE_MAX_CHARS = 300 * 1024;
+        const IMAGE_MAX_CHARS = 200 * 1024;
 
         async function compressImageToDataUrl(file) {
             const objectUrl = URL.createObjectURL(file);
@@ -1247,9 +1254,59 @@
             }
         }
 
-        const renderImageItem = question => question.imageUrl
-            ? `<img src="${escapeHtml(question.imageUrl)}" alt="${escapeHtml(stripTags(question.title || '설문 이미지'))}" class="mx-auto block h-auto max-w-full rounded-lg" loading="lazy">`
-            : '';
+        // 예전 형식(imageUrl 한 장)도 함께 읽습니다
+        const getItemImages = question => Array.isArray(question?.images) && question.images.length
+            ? question.images
+            : question?.imageUrl ? [question.imageUrl] : [];
+
+        function renderImageItem(question) {
+            const images = getItemImages(question);
+            const alt = escapeHtml(stripTags(question.title || '설문 이미지'));
+            if (!images.length) return '';
+            if (images.length === 1) return `<img src="${escapeHtml(images[0])}" alt="${alt}" class="mx-auto block h-auto max-w-full rounded-lg" loading="lazy">`;
+            const navButton = (direction, icon, side) => `<button type="button" ${direction < 0 ? 'disabled' : ''} class="absolute ${side} top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-ink shadow ring-1 ring-black/10 hover:bg-white disabled:opacity-0" data-slider-move="${direction}" aria-label="${direction < 0 ? '이전' : '다음'} 이미지"><i class="bi ${icon}"></i></button>`;
+            return `
+                <div class="relative select-none" data-image-slider>
+                    <div class="flex snap-x snap-mandatory overflow-x-auto scroll-smooth rounded-lg" data-slider-track>
+                        ${images.map((src, imageIndex) => `<div class="flex w-full shrink-0 snap-center items-center justify-center"><img src="${escapeHtml(src)}" alt="${alt} ${imageIndex + 1}" class="block h-auto max-h-[70vh] max-w-full rounded-lg object-contain" loading="lazy" draggable="false"></div>`).join('')}
+                    </div>
+                    ${navButton(-1, 'bi-chevron-left', 'left-2')}
+                    ${navButton(1, 'bi-chevron-right', 'right-2')}
+                    <div class="mt-2 flex items-center justify-center gap-1.5">
+                        ${images.map((_, imageIndex) => `<button type="button" class="h-2 w-2 rounded-full ${imageIndex === 0 ? 'bg-board' : 'bg-line'}" data-slider-dot="${imageIndex}" aria-label="${imageIndex + 1}번째 이미지"></button>`).join('')}
+                        <span class="ml-1 text-xs tabular-nums text-muted" data-slider-count>1 / ${images.length}</span>
+                    </div>
+                </div>`;
+        }
+
+        function updateImageSlider(slider) {
+            const track = slider.querySelector('[data-slider-track]');
+            const total = track.children.length;
+            const current = Math.min(total - 1, Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
+            slider.querySelectorAll('[data-slider-dot]').forEach((dot, dotIndex) => {
+                dot.classList.toggle('bg-board', dotIndex === current);
+                dot.classList.toggle('bg-line', dotIndex !== current);
+            });
+            slider.querySelector('[data-slider-count]').textContent = `${current + 1} / ${total}`;
+            slider.querySelector('[data-slider-move="-1"]').disabled = current === 0;
+            slider.querySelector('[data-slider-move="1"]').disabled = current === total - 1;
+        }
+
+        // 슬라이드는 미리보기·학생 화면·응답 수정 창에서 다시 그려지므로 문서 전체에서 한 번만 연결합니다
+        document.addEventListener('click', event => {
+            const control = event.target.closest('[data-slider-move], [data-slider-dot]');
+            const slider = control?.closest('[data-image-slider]');
+            if (!slider) return;
+            const track = slider.querySelector('[data-slider-track]');
+            const target = control.dataset.sliderDot !== undefined
+                ? Number(control.dataset.sliderDot)
+                : Math.round(track.scrollLeft / track.clientWidth) + Number(control.dataset.sliderMove);
+            track.scrollTo({ left: target * track.clientWidth });
+        });
+        document.addEventListener('scroll', event => {
+            const slider = event.target.closest?.('[data-image-slider]');
+            if (slider && event.target.matches('[data-slider-track]')) updateImageSlider(slider);
+        }, true);
 
         function getPillLimit(question) {
             const limit = Math.floor(Number(question?.maxSelect) || 0);
@@ -2170,16 +2227,25 @@
 
         /** 폼 빌더: 이미지 삽입 설정 */
         function renderImageItemSettings(question, locked) {
+            const images = getItemImages(question);
             return `
                 <div class="sm:col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
                     <div class="mb-2 text-xs font-bold text-amber-900 flex items-center gap-1.5"><i class="bi bi-image"></i> 이미지 삽입 <span class="font-normal text-amber-800">(응답자에게는 문항 번호·입력란 없이 이미지만 표시됩니다)</span></div>
-                    ${question.imageUrl
-                        ? `<div class="rounded-lg border border-line bg-white p-2">${renderImageItem(question)}</div>`
+                    ${images.length
+                        ? `<div class="grid grid-cols-3 gap-2 sm:grid-cols-5">${images.map((src, imageIndex) => `
+                            <div class="relative overflow-hidden rounded-lg border border-line bg-white">
+                                <img src="${escapeHtml(src)}" alt="이미지 ${imageIndex + 1}" class="block aspect-square w-full object-cover">
+                                <span class="absolute left-1 top-1 rounded bg-black/60 px-1.5 text-[11px] font-bold text-white">${imageIndex + 1}</span>
+                                <button type="button" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-xs text-red-700 shadow" data-image-remove="${imageIndex}" aria-label="이미지 ${imageIndex + 1} 빼기" ${locked ? 'disabled' : ''}><i class="bi bi-x-lg"></i></button>
+                            </div>`).join('')}</div>`
                         : '<p class="rounded-lg border border-dashed border-line bg-white p-4 text-center text-sm text-muted">아직 이미지가 없습니다.</p>'}
-                    <label class="btn btn-light mt-2 !px-3 !py-1 text-sm ${locked ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}">
-                        <i class="bi bi-upload"></i> ${question.imageUrl ? '이미지 바꾸기' : '이미지 선택'}
-                        <input type="file" accept="image/*" class="hidden" data-image-upload ${locked ? 'disabled' : ''}>
-                    </label>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <label class="btn btn-light !px-3 !py-1 text-sm ${locked ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}">
+                            <i class="bi bi-upload"></i> 이미지 추가
+                            <input type="file" accept="image/*" multiple class="hidden" data-image-upload ${locked ? 'disabled' : ''}>
+                        </label>
+                        <span class="text-[11px] text-muted">여러 장을 넣으면 응답자는 옆으로 넘기며 봅니다</span>
+                    </div>
                 </div>`;
         }
 
@@ -2275,12 +2341,12 @@
             const question = currentRoomData.formSchema[index];
             if (!question) return;
             if (event.target.matches('[data-image-upload]')) {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                if (!file.type.startsWith('image/')) return showNotice('이미지 파일만 넣을 수 있습니다.', true);
-                compressImageToDataUrl(file).then(dataUrl => {
-                    question.imageUrl = dataUrl;
-                    if (!question.title) question.title = file.name.replace(/\.[^.]+$/, '');
+                const files = [...(event.target.files || [])].filter(file => file.type.startsWith('image/'));
+                if (!files.length) return showNotice('이미지 파일만 넣을 수 있습니다.', true);
+                Promise.all(files.map(compressImageToDataUrl)).then(dataUrls => {
+                    question.images = [...getItemImages(question), ...dataUrls];
+                    delete question.imageUrl;
+                    if (!question.title) question.title = files[0].name.replace(/\.[^.]+$/, '');
                     renderBuilder(currentRoomData.formSchema);
                     markSchemaDirty();
                 }).catch(error => showNotice(error.message || '이미지를 넣지 못했습니다.', true));
@@ -2311,7 +2377,7 @@
                 if (!['short', 'long'].includes(question.type)) { question.placeholder = ''; }
                 if (question.type !== 'pill') { question.maxSelect = 0; }
                 if (isImageItem(question)) question.required = false;
-                else delete question.imageUrl;
+                else { delete question.imageUrl; delete question.images; }
                 renderBuilder(currentRoomData.formSchema);
             }
             if (field === 'options' || field === 'hasTail' || field === 'tailCondition' || field === 'hasBranch' || field === 'branchOption') renderBuilder(currentRoomData.formSchema);
@@ -2327,6 +2393,16 @@
                 const card = tokenButton.closest('.builder-card');
                 const question = currentRoomData.formSchema[Number(card.dataset.index)];
                 if (question) insertFileNameToken(card, question, tokenButton.dataset.fileToken);
+                return;
+            }
+            const imageRemoveButton = event.target.closest('button[data-image-remove]');
+            if (imageRemoveButton && currentRoomData && !(Number(currentRoomData.responseCount) > 0)) {
+                const question = currentRoomData.formSchema[Number(imageRemoveButton.closest('.builder-card').dataset.index)];
+                if (!question) return;
+                question.images = getItemImages(question).filter((_, imageIndex) => imageIndex !== Number(imageRemoveButton.dataset.imageRemove));
+                delete question.imageUrl;
+                renderBuilder(currentRoomData.formSchema);
+                markSchemaDirty();
                 return;
             }
             const tailTokenButton = event.target.closest('button[data-tail-token]');
@@ -2526,7 +2602,7 @@
             if (!currentRoom || !currentRoomData || Number(currentRoomData.responseCount) > 0) return;
             const schema = currentRoomData.formSchema || [];
             if (schema.some(question => !isImageItem(question) && !String(question.title || '').trim())) return showNotice('모든 문항에 제목을 입력해주세요.', true);
-            if (schema.some(question => isImageItem(question) && !question.imageUrl)) return showNotice('이미지 삽입 문항에 이미지를 넣어주세요.', true);
+            if (schema.some(question => isImageItem(question) && !getItemImages(question).length)) return showNotice('이미지 삽입 문항에 이미지를 넣어주세요.', true);
             if (JSON.stringify(schema).length > 900 * 1024) return showNotice('이미지가 너무 많아 저장할 수 없습니다. 이미지 문항을 줄여주세요.', true);
             if (schema.some(question => ['choice', 'dropdown', 'pill'].includes(question.type) && !(question.options || []).length)) return showNotice('객관식, 드롭다운, 알약형 문항에는 선택지를 한 개 이상 입력해주세요.', true);
             const button = $('saveSchemaButton');
