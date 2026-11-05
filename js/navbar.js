@@ -10,7 +10,8 @@
             "menu": [
                 {
                     "title": "아하! 수학",
-                    "path": "pages/middleschool/ahamath.html"
+                    "path": "pages/middleschool/ahamath.html",
+                    "external": true
                 },
                 {
                     "title": "중1 수학",
