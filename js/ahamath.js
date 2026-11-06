@@ -818,10 +818,18 @@
             }
         });
 
+        const gateJump = document.getElementById('gateJump');
+
+        /* 도전 버튼 표시 : 심화 문항이 있고, '아직은....' 을 누르지 않았을 때만 보여요 */
+        function setGateJumpVisible(isVisible) {
+            if (gateJump) { gateJump.hidden = !(isVisible && FLOW.challenge.ids.length); }
+        }
+
         document.getElementById('gateAha').addEventListener('click', function () {
             record.gate = 'aha';
             saveRecord();
             document.getElementById('gateWaitNote').hidden = true;
+            setGateJumpVisible(true);
             startMission('basic', 'full', null);
         });
 
@@ -829,14 +837,14 @@
             record.gate = 'notYet';
             saveRecord();
             document.getElementById('gateWaitNote').hidden = false;
+            setGateJumpVisible(false);   // 아직 어려운 학생에게는 도전 코스를 감춰요
         });
 
         document.getElementById('gateOpenAnyway').addEventListener('click', function () { startMission('basic', 'full', null); });
 
-        const gateJump = document.getElementById('gateJump');
         if (gateJump) {
             gateJump.addEventListener('click', function () { showView('view-cread'); });
-            if (!FLOW.challenge.ids.length) { gateJump.hidden = true; }   // 심화 문항이 없으면 버튼 숨김
+            setGateJumpVisible(true);
         }
 
         const cgateAha = document.getElementById('cgateAha');
