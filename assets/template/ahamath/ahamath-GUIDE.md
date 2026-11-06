@@ -75,11 +75,22 @@ pages/
 | `linearaddsub` | `1/linearaddsub.html` | 일차식의 덧셈과 뺄셈 | 5 / 3 |
 | `equation` | `1/equation.html` | 등식과 방정식 | 5 / 3 |
 | `linearequation` | `1/linearequation.html` | 일차방정식의 풀이 | 5 / 3 |
+| `basicfigure` | `1/basicfigure.html` | 점, 선, 면과 거리 | 5 / 3 |
+| `angle` | `1/angle.html` | 각과 맞꼭지각 | 5 / 3 |
+| `parallel` | `1/parallel.html` | 평행선의 성질 | 5 / 3 |
+| `position` | `1/position.html` | 위치 관계 | 5 / 3 |
+| `construct` | `1/construct.html` | 작도와 삼각형의 작도 | 5 / 3 |
+| `congruent` | `1/congruent.html` | 삼각형의 합동 조건 | 5 / 3 |
 
 > 문자와 식 단원 5개 페이지는 `js/ahamath-algebra.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
 > 이 파일에 단원 전용 시각 자료 6종(`border` · `terms` · `tiles` · `area` · `balance` · `chain`)과
 > 문자 분수 표기(`AhaAlgebra.fracText('(x + 2)/3')`)가 들어 있고, 본문의 영문자를 기울인 글꼴로 바꿔 x 와 × 를 구별합니다.
 > 쓰는 법은 그 파일 맨 위 주석에 있습니다.
+
+> 기본 도형과 작도 단원 6개 페이지는 `js/ahamath-geometry.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
+> 점 · 선 · 각 · 원을 좌표로 적어 단계별로 그리는 `geo`(작도 애니메이션 포함)와 `dense` 가 들어 있고,
+> 본문에 `‾AB` · `→AB` · `↔AB` 라고 적으면 선분 · 반직선 · 직선 기호로 바뀝니다. 홀로 쓴 소문자(l, ∠a)는 기울인 글꼴이 됩니다.
+> 그리기 명령과 점 계산(중점 · 수선의 발 · 두 원의 교점 등)은 그 파일 맨 위 주석에 모두 있습니다.
 
 > 줄기와 잎 그림은 따로 만들지 않고 `frequency.html` 의 도입부(개념 카드 1~4)에서 다룹니다.
 
