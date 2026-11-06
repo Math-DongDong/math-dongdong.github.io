@@ -159,11 +159,22 @@
 
                 <hr class="my-4">
 
-                <h2 class="h6 fw-bold mb-3"><i class="bi bi-paperclip"></i> 파일 첨부 <span
-                        class="text-muted fw-normal small">(아직 올리지 않은 파일)</span></h2>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <h2 class="h6 fw-bold mb-0 me-auto"><i class="bi bi-paperclip"></i> 파일 첨부 <span
+                            class="text-muted fw-normal small">(아직 올리지 않은 파일)</span></h2>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="첨부 파일 학년">
+                        <input type="radio" class="btn-check" name="attachGrade" id="attachGrade1" value="1" checked>
+                        <label class="btn btn-outline-primary" for="attachGrade1">중1</label>
+                        <input type="radio" class="btn-check" name="attachGrade" id="attachGrade2" value="2">
+                        <label class="btn btn-outline-primary" for="attachGrade2">중2</label>
+                        <input type="radio" class="btn-check" name="attachGrade" id="attachGrade3" value="3">
+                        <label class="btn btn-outline-primary" for="attachGrade3">중3</label>
+                    </div>
+                </div>
                 <div class="upload-area p-4 text-center" id="dropZone">
                     <i class="bi bi-cloud-arrow-up fs-2 text-primary"></i>
-                    <p class="fw-bold mt-1 mb-0 small">ahamath/1 폴더의 HTML 파일을 끌어다 놓거나 클릭해서 선택하세요</p>
+                    <p class="fw-bold mt-1 mb-0 small">위에서 학년을 고른 뒤, ahamath/<span id="attachGradeLabel">1</span>
+                        폴더의 HTML 파일을 끌어다 놓거나 클릭해서 선택하세요</p>
                     <input type="file" id="htmlFileInput" accept=".html,.htm,text/html" class="d-none">
                 </div>
             </div>
@@ -362,6 +373,8 @@
         const HISTORY_LIMIT = 60;
         const TOPICS_PAGE_URL = new URL('./ahamath.html', location.href).href;
         const AHAMATH_FOLDER_URL = new URL('./ahamath/1/', location.href).href;
+        // 학년별 학습 페이지 폴더 (ahamath/1, ahamath/2, ahamath/3)
+        const gradeFolderUrl = grade => new URL(`./ahamath/${grade}/`, location.href).href;
 
         // 편집 화면에서만 쓰는 스타일 (저장 파일에는 들어가지 않음)
         const FRAME_EDITOR_CSS = `
@@ -462,10 +475,13 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
                 });
                 if (!topics.length) throw new Error('empty');
 
-                const units = [...new Set(topics.map(topic => topic.unit))];
-                select.innerHTML = '<option value="">주제를 선택하세요</option>' + units.map(unit => `<optgroup label="${escapeHtml(unit)}">`
-                    + topics.filter(topic => topic.unit === unit).map(topic =>
-                        `<option value="${escapeHtml(topic.path)}">${escapeHtml(topic.title)} (${escapeHtml(topic.path.split('/').pop())})${topic.status === 'ready' ? '' : ' · 준비 중'}</option>`
+                // 단원 이름 앞부분('중1.', '중2.', '중3.')으로 학년을 묶습니다 (목록 페이지의 학년 탭과 같은 규칙)
+                const gradeOf = topic => topic.unit.split('.')[0].trim();
+                const unitName = topic => topic.unit.replace(/^[^.]*\.\s*/, '');
+                const grades = [...new Set(topics.map(gradeOf))];
+                select.innerHTML = '<option value="">주제를 선택하세요</option>' + grades.map(grade => `<optgroup label="${escapeHtml(grade)}">`
+                    + topics.filter(topic => gradeOf(topic) === grade).map(topic =>
+                        `<option value="${escapeHtml(topic.path)}">[${escapeHtml(unitName(topic))}] ${escapeHtml(topic.title)} (${escapeHtml(topic.path.split('/').pop())})${topic.status === 'ready' ? '' : ' · 준비 중'}</option>`
                     ).join('') + '</optgroup>').join('');
             } catch (error) {
                 select.innerHTML = '<option value="">주제 목록을 불러오지 못했습니다</option>';
@@ -1775,8 +1791,13 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
                 alert('HTML 파일(.html, .htm)만 불러올 수 있습니다.');
                 return;
             }
-            loadHtmlIntoEditor(await readHtmlFile(file), file.name, AHAMATH_FOLDER_URL);
+            const grade = document.querySelector('input[name="attachGrade"]:checked').value;
+            loadHtmlIntoEditor(await readHtmlFile(file), file.name, gradeFolderUrl(grade));
         }
+
+        document.querySelectorAll('input[name="attachGrade"]').forEach(radio => radio.addEventListener('change', () => {
+            byId('attachGradeLabel').textContent = radio.value;
+        }));
 
         byId('openTopicButton').addEventListener('click', () => openServerFile(byId('topicSelect').value));
 
