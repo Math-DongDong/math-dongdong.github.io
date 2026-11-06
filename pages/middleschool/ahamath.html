@@ -110,12 +110,44 @@
             border-color: var(--wait-line);
         }
 
+        /* ---------- 학년 탭 (Bootstrap nav-tabs) ---------- */
+        .grade-tabs {
+            margin-top: 1.4rem;
+        }
+
+        .grade-tabs .nav-link {
+            font-weight: 800;
+            color: var(--muted);
+            padding: 0.55rem 1.15rem;
+        }
+
+        .grade-tabs .nav-link.active {
+            color: var(--primary);
+        }
+
+        .grade-tabs .nav-link.empty {
+            color: #b6bec9;
+        }
+
+        .grade-tabs .gt-n {
+            margin-left: 0.3rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #94a3b8;
+        }
+
+        .grade-empty {
+            padding: 3rem 1rem;
+            text-align: center;
+            color: var(--muted);
+        }
+
         /* ---------- 단원 탭 (가로 스크롤) ---------- */
         .unit-tabs {
             display: flex;
             gap: 0.4rem;
             overflow-x: auto;
-            padding: 1.4rem 0 0.25rem;
+            padding: 1rem 0 0.25rem;
             scrollbar-width: none;
         }
 
@@ -237,11 +269,9 @@
         }
 
         /* ---------- 주제 목록 (한 줄에 한 주제) ---------- */
+        /* 테두리 상자 없이 연한 가로선으로만 구분해요 */
         .topic-list {
-            background: var(--card);
-            border: 1px solid #eef2f7;
-            border-radius: 16px;
-            overflow: hidden;
+            border-top: 1px solid #eef2f7;
         }
 
         .topic-row {
@@ -250,14 +280,10 @@
             gap: 0.7rem;
             flex-wrap: wrap;
             padding: 0.78rem 0.95rem;
-            border-top: 1px solid #f1f5f9;
+            border-bottom: 1px solid #eef2f7;
             text-decoration: none;
             color: inherit;
             transition: background .15s ease;
-        }
-
-        .topic-row:first-child {
-            border-top: none;
         }
 
         a.topic-row:hover {
@@ -453,6 +479,9 @@
             </div>
         </section>
 
+        <!-- 학년 탭 (자동으로 그려집니다) -->
+        <ul class="nav nav-tabs grade-tabs" id="gradeTabs" role="tablist" aria-label="학년 선택"></ul>
+
         <!-- 단원 탭 (자동으로 그려집니다) -->
         <div class="unit-tabs" id="unitTabs" role="tablist" aria-label="단원 선택"></div>
 
@@ -478,6 +507,9 @@
 
            id     : 학습 페이지에서 쓰는 주제 ID (저장 키 'ahamath.{id}.v1' 와 반드시 같게)
            unit   : 단원 이름 (같은 unit끼리 자동으로 한 탭에 묶임. 띄어쓰기까지 똑같이!)
+                    반드시 '중1. ', '중2. ', '중3. ' 으로 시작하세요 → 이 앞부분으로 학년 탭이 나뉩니다.
+                    중2 · 중3 주제는 ahamath/2/, ahamath/3/ 폴더에 두고,
+                    id 는 'm2-…', 'm3-…' 처럼 학년을 붙여 다른 학년과 겹치지 않게 하세요.
            no     : 목록 왼쪽 번호
            title  : 주제 이름
            desc   : 한 줄 소개 (목록에서 제목 아래 한 줄로 보입니다)
@@ -882,12 +914,64 @@
                 '</a>';
         }
 
+        /* ---------- 학년 구분 ----------
+           단원 이름 앞부분('중1.', '중2.', '중3.')으로 학년을 자동으로 나눕니다. */
+        const GRADES = ['중1', '중2', '중3'];
+        const GRADE_KEY = 'ahamath.ui.grade';
+        let activeGrade = null;
+
+        function gradeOf(topic) {
+            return topic.unit.split('.')[0].trim();
+        }
+
+        function topicsOfGrade(grade) {
+            return TOPICS.filter(function (t) { return gradeOf(t) === grade; });
+        }
+
+        function readActiveGrade() {
+            try { return window.localStorage.getItem(GRADE_KEY) || null; } catch (e) { return null; }
+        }
+
+        function saveActiveGrade() {
+            try { window.localStorage.setItem(GRADE_KEY, activeGrade); } catch (e) { /* 저장소를 쓸 수 없는 환경 */ }
+        }
+
+        /* 저장된 학년 → 최근 학습 학년 → 중1 순서로 선택합니다 */
+        function initActiveGrade() {
+            if (GRADES.indexOf(activeGrade) >= 0) { return; }
+            const saved = readActiveGrade();
+            if (GRADES.indexOf(saved) >= 0) { activeGrade = saved; return; }
+            const latest = latestTopic();
+            activeGrade = latest ? gradeOf(latest.topic) : GRADES[0];
+        }
+
+        function renderGradeTabs() {
+            const tabs = document.getElementById('gradeTabs');
+            tabs.innerHTML = GRADES.map(function (grade) {
+                const stat = unitStat({ items: topicsOfGrade(grade) });
+                const active = grade === activeGrade;
+                return '<li class="nav-item" role="presentation">' +
+                    '<button type="button" role="tab" aria-selected="' + (active ? 'true' : 'false') + '"' +
+                    ' class="nav-link' + (active ? ' active' : '') + (stat.ready ? '' : ' empty') + '" data-grade="' + grade + '">' +
+                    grade + '<span class="gt-n">' + stat.aha + '/' + stat.ready + '</span></button></li>';
+            }).join('');
+
+            Array.prototype.slice.call(tabs.querySelectorAll('.nav-link')).forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    if (btn.dataset.grade === activeGrade) { return; }
+                    activeGrade = btn.dataset.grade;
+                    saveActiveGrade();
+                    renderTopics();
+                });
+            });
+        }
+
         /* ---------- 단원 묶기 · 단원별 진행 상황 ---------- */
         const UI_KEY = 'ahamath.ui.unit';
 
         function groupTopics() {
             const groups = [];
-            TOPICS.forEach(function (t) {
+            topicsOfGrade(activeGrade).forEach(function (t) {
                 let group = groups.filter(function (g) { return g.unit === t.unit; })[0];
                 if (!group) { group = { unit: t.unit, items: [] }; groups.push(group); }
                 group.items.push(t);
@@ -948,11 +1032,24 @@
 
         /* ---------- 화면 그리기 ---------- */
         function renderTopics() {
+            initActiveGrade();
+            renderGradeTabs();
+
             const groups = groupTopics();
+            const unitTabs = document.getElementById('unitTabs');
+
+            /* 아직 주제가 없는 학년 */
+            if (!groups.length) {
+                unitTabs.hidden = true;
+                document.getElementById('topicArea').innerHTML =
+                    '<p class="grade-empty"><i class="bi bi-hourglass-split"></i> ' + activeGrade + ' 주제는 준비 중이에요.</p>';
+                return;
+            }
+            unitTabs.hidden = false;
             initActiveUnit(groups);
 
             /* 상단 단원 탭 */
-            document.getElementById('unitTabs').innerHTML = groups.map(function (group, i) {
+            unitTabs.innerHTML = groups.map(function (group, i) {
                 const stat = unitStat(group);
                 const done = stat.ready > 0 && stat.aha >= stat.ready;
                 const active = group.unit === activeUnit;
