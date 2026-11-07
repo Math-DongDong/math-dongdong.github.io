@@ -6082,6 +6082,15 @@
 
         init() {
           $('ai-multi').addEventListener('change', event => $('ai-count-wrap').classList.toggle('d-none', !event.target.checked));
+          // 한 번에 만들 수 있는 장 수는 최대 20장: 넘게 적으면 20으로 되돌리고 알린다.
+          $('ai-count').addEventListener('input', event => {
+            const box = event.target;
+            const max = Number(box.max) || 20;
+            if ((parseInt(box.value, 10) || 0) > max) {
+              box.value = max;
+              Util.toast('한 번에 여러 장은 최대 ' + max + '장까지 만들 수 있습니다. 더 필요하면 나눠서 만들어 주세요.', 'warning');
+            }
+          });
           $('ai-tabs').addEventListener('click', event => {
             const tab = event.target.closest('[data-mode]');
             if (tab) AiPanel.setMode(tab.dataset.mode);
@@ -6869,11 +6878,16 @@
         async print(withNotes) {
           if (!Editor.deck || PdfExporter.busy) return;
           PdfExporter.busy = true;
+          // 인쇄 창이 뜨면 토스트가 가려지므로, 먼저 안내 창을 보이고 [확인]을 누르면 인쇄 창을 연다.
+          // 쪽보다 넓은 요소가 있으면 Chrome이 쪽 전체를 줄여 인쇄하므로 배율로 맞추게 안내한다.
+          const go = await Util.confirm(
+            'PDF로 저장하는 방법\n\n' +
+            '1. 인쇄 창의 대상(프린터)에서 \'Microsoft Print to PDF\'를 고르세요. 배율을 바꿀 수 있습니다.\n' +
+            '2. 슬라이드가 작게 보이면 [설정 더보기] → [배율]을 \'맞춤설정\'으로 바꾸고 숫자를 키워 폭에 맞추세요. (예: 150)\n\n' +
+            '[확인]을 누르면 인쇄 창이 열립니다.', '확인', false, '취소');
+          if (!go || !Editor.deck) { PdfExporter.busy = false; return; }
           Editor.deselect();
           Editor.syncCurrent();
-          Util.toast('PDF를 준비하는 중… 인쇄 창이 열리면 대상에서 \'PDF로 저장\'을 고르세요.');
-          // 쪽보다 넓은 요소가 있으면 Chrome이 쪽 전체를 줄여 인쇄한다. 그때는 인쇄 창의 배율로 맞춘다.
-          Util.toast('슬라이드가 작게 보이면 인쇄 창의 [설정 더보기] → [배율]을 \'맞춤설정\'으로 바꾸고 숫자를 키워 폭에 맞춰 주세요. (예: 150)', 'info');
           let frame = null;
           try {
             frame = PdfExporter.build(withNotes);
