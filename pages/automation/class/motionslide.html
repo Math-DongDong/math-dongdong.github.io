@@ -252,8 +252,22 @@
 
     /* AI 창: 폭이 바뀌며 부드럽게 열리고 닫힌다(안쪽 내용은 폭을 고정해 찌그러지지 않게). */
     .ai-panel { --ai-w: 360px; width: var(--ai-w); flex: none; background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
-      transition: width 0.3s ease, opacity 0.3s ease, visibility 0.3s, transform 0.3s ease; }
+      position: relative; transition: width 0.3s ease, opacity 0.3s ease, visibility 0.3s, transform 0.3s ease; }
     .ai-panel > * { min-width: var(--ai-w); }
+    .ai-panel.resizing { transition: none; user-select: none; }
+    /* 오른쪽 창 폭 조절 손잡이(왼쪽 가장자리를 좌우로 끈다) */
+    .ai-panel > .panel-resizer { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; min-width: 0; z-index: 6; cursor: col-resize; display: flex; align-items: center; justify-content: center; }
+    .panel-resizer::before { content: ''; width: 3px; height: 40px; border-radius: 2px; background: #d1d5db; }
+    .panel-resizer:hover::before, .panel-resizer.active::before { background: var(--primary); }
+    /* AI 창 ↔ 개체 편집 창: 같은 자리에서 바꿔 끼운다 */
+    .panel-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .obj-head { background: #f5f3ff; border-bottom: 1px solid #ddd6fe; }
+    .obj-head h2 { color: #5b21b6; }
+    .obj-body { flex: 1; min-height: 0; overflow-y: auto; }
+    #slide-canvas .ls-obj-editing { outline: 4px dashed #7c3aed; outline-offset: 6px; }
+    /* 고치는 중인 인터랙티브 요소는 편집 화면에서도 직접 조작해 볼 수 있다 */
+    #slide-canvas .app-frame.ls-obj-editing iframe { pointer-events: auto; }
+    #slide-canvas .draggable-box:has(.app-frame.ls-obj-editing) > .iframe-drag-overlay { display: none; }
 
     /* AI 창 모드 색: 새 슬라이드 생성 = 파랑, 현재 슬라이드 수정 = 초록 */
     .ai-panel { --ai-accent: #2563eb; --ai-accent-dark: #1d4ed8; --ai-soft: #bfdbfe; --ai-ring: rgba(37, 99, 235, 0.18); }
@@ -277,9 +291,6 @@
     .ai-status { flex: none; height: 1.9rem; display: flex; align-items: center; overflow: hidden; }
     .ai-status-inner { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ai-status-inner > span:last-child { overflow: hidden; text-overflow: ellipsis; }
-    /* 고치기 창 미리보기: 발표용 그려지는 모션 없이 바로 보인다 */
-    #math-preview * { animation: none !important; }
-
     /* 수식 기호판 */
     .math-palette { padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #f8fafc; }
     .math-palette .nav-link { font-size: 0.78rem; }
@@ -530,7 +541,9 @@
           </div>
         </section>
 
-        <aside class="ai-panel" id="ai-panel" aria-label="AI 슬라이드 생성">
+        <aside class="ai-panel" id="ai-panel" aria-label="AI 슬라이드 생성" data-view="ai">
+          <div class="panel-resizer" id="panel-resizer" title="좌우로 끌어 폭 조절" role="separator" aria-orientation="vertical"></div>
+          <div class="panel-view" id="ai-view">
           <!-- 모드 고르기(세그먼트 버튼): 새 슬라이드 생성은 파랑, 현재 슬라이드 수정은 초록으로 창 전체 강조색이 바뀐다 -->
           <div class="px-3 pt-2"><!-- 창 너비를 채우는 바깥 상자의 안쪽 여백으로 좌우 여백을 준다 -->
             <div class="ai-seg" id="ai-tabs" role="tablist" aria-label="AI 작업 고르기">
@@ -578,6 +591,58 @@
             <!-- AI 진행 상황: 보내기 단추 아래 한 줄(높이 고정이라 입력칸이 늘었다 줄었다 하지 않는다). 결과는 알림으로 -->
             <div class="ai-status small text-primary" id="ai-status" role="status"><span class="ai-status-inner d-none" id="ai-status-on"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span id="ai-status-text"></span></span></div>
             <p class="small text-muted mb-0">요청 내용과 첨부 자료는 Google Gemini API로 전송됩니다. 개인정보가 담긴 자료는 넣지 마세요.</p>
+          </div>
+          </div>
+
+          <!-- 개체 편집 창: 수식·그래프·도형·인터랙티브 요소를 더블클릭하면 AI 창 대신 나온다. 고친 결과는 슬라이드에 바로 보이고 [적용]을 눌러야 남는다 -->
+          <div class="panel-view d-none" id="obj-view">
+            <div class="obj-head d-flex align-items-center gap-2 px-3 py-2">
+              <button type="button" class="btn btn-sm btn-light" id="obj-back" title="편집을 끝내고 AI 창으로 (Esc)" aria-label="AI 창으로 돌아가기"><i class="bi bi-arrow-left"></i></button>
+              <h2 class="h6 fw-bold mb-0 text-truncate"><i class="bi" id="obj-icon"></i> <span id="obj-title"></span></h2>
+              <span class="badge rounded-pill text-bg-warning ms-auto d-none" id="obj-dirty">적용 전</span>
+            </div>
+            <div class="obj-body p-3">
+              <!-- 인터랙티브 요소: 말로 고치기 -->
+              <section class="d-none" id="obj-app" aria-label="인터랙티브 요소 고치기">
+                <label class="form-label small text-muted" for="app-request">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.</label>
+                <textarea class="form-control" id="app-request" rows="5" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                  <button type="button" class="btn btn-primary btn-sm" id="app-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
+                  <button type="button" class="btn btn-light btn-sm d-none" id="app-undo"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
+                </div>
+                <div class="small mt-2" id="app-status" role="status"></div>
+                <p class="small text-muted mt-2 mb-0">요청 내용과 코드는 Google Gemini API로 전송됩니다.</p>
+              </section>
+              <!-- 수식·그래프·도형 -->
+              <section class="d-none" id="obj-math" aria-label="수식·그래프·도형 고치기">
+                <!-- 그래프·도형: 말로 고치기(AI가 설계값을 고쳐 슬라이드에 바로 보인다) -->
+                <div class="d-none mb-3" id="math-ai">
+                  <label class="form-label fw-semibold small" for="math-ai-request"><i class="bi bi-chat-dots"></i> 말로 고치기</label>
+                  <textarea class="form-control" id="math-ai-request" rows="4"></textarea>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <button type="button" class="btn btn-primary btn-sm" id="math-ai-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
+                    <button type="button" class="btn btn-light btn-sm d-none" id="math-ai-undo"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
+                  </div>
+                  <div class="small mt-2" id="math-ai-status" role="status"></div>
+                  <p class="small text-muted mt-2 mb-0">요청 내용은 Google Gemini API로 전송됩니다.</p>
+                </div>
+                <!-- 수식 기호판: 누르면 LaTeX가 들어가고 □(채울 칸)가 골라진다. Tab으로 다음 칸 -->
+                <div class="math-palette mb-2 d-none" id="math-palette">
+                  <ul class="nav nav-pills nav-sm flex-wrap gap-1 mb-2" id="math-palette-tabs" role="tablist"></ul>
+                  <div class="d-flex flex-wrap gap-1" id="math-palette-keys"></div>
+                </div>
+                <details id="math-code" open>
+                  <summary class="small text-muted mb-1" id="math-code-summary">설계값 직접 고치기 (고급)</summary>
+                  <label class="form-label small text-muted" for="math-input" id="math-help"></label>
+                  <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
+                </details>
+                <div class="small text-danger mt-1" id="math-error" role="alert"></div>
+              </section>
+            </div>
+            <div class="d-flex gap-2 p-2 border-top">
+              <button type="button" class="btn btn-light flex-grow-1" id="obj-cancel">취소</button>
+              <button type="button" class="btn btn-primary flex-grow-1" id="obj-apply"><i class="bi bi-check-lg"></i> 적용</button>
+            </div>
           </div>
         </aside>
       </div>
@@ -707,54 +772,6 @@
   </div>
 
   <!-- Firebase Storage 목록 (관리자 전용) -->
-  <!-- 수식·그래프·도형 고치기 (슬라이드에서 더블클릭) -->
-  <div class="modal fade" id="math-modal" tabindex="-1" aria-hidden="true" aria-labelledby="math-modal-title">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title h5" id="math-modal-title">수식 고치기</h2>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
-        </div>
-        <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-lg-5">
-              <!-- 그래프·도형: 말로 고치기(AI가 설계값을 고쳐 오른쪽 미리보기에 바로 보인다. [적용]을 눌러야 슬라이드에 반영) -->
-              <div class="d-none mb-3" id="math-ai">
-                <label class="form-label fw-semibold small" for="math-ai-request"><i class="bi bi-chat-dots"></i> 말로 고치기</label>
-                <textarea class="form-control" id="math-ai-request" rows="4"></textarea>
-                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-                  <button type="button" class="btn btn-primary btn-sm" id="math-ai-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
-                  <button type="button" class="btn btn-light btn-sm d-none" id="math-ai-undo"><i class="bi bi-arrow-counterclockwise"></i> AI 고치기 전으로</button>
-                </div>
-                <div class="small mt-2" id="math-ai-status" role="status"></div>
-                <p class="small text-muted mt-2 mb-0">고친 결과는 오른쪽 미리보기에 바로 보입니다. 마음에 들면 [적용]을 누르세요. 요청 내용은 Google Gemini API로 전송됩니다.</p>
-              </div>
-              <!-- 수식 기호판: 누르면 LaTeX가 들어가고 □(채울 칸)가 골라진다. Tab으로 다음 칸 -->
-              <div class="math-palette mb-2 d-none" id="math-palette">
-                <ul class="nav nav-pills nav-sm flex-wrap gap-1 mb-2" id="math-palette-tabs" role="tablist"></ul>
-                <div class="d-flex flex-wrap gap-1" id="math-palette-keys"></div>
-              </div>
-              <details id="math-code" open>
-                <summary class="small text-muted mb-1" id="math-code-summary">설계값 직접 고치기 (고급)</summary>
-                <label class="form-label small text-muted" for="math-input" id="math-help"></label>
-                <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
-              </details>
-            </div>
-            <div class="col-lg-7">
-              <div class="small text-muted mb-1">미리보기</div>
-              <div class="border rounded p-3 bg-white d-flex align-items-center justify-content-center overflow-auto" id="math-preview" style="min-height: 320px; font-size: 44px; color: #1f2937;"></div>
-              <div class="small text-danger mt-1" id="math-error" role="alert"></div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-light" data-bs-dismiss="modal">취소</button>
-          <button type="button" class="btn btn-primary" id="math-apply">적용</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- HTML 파일 합치기 -->
   <div class="modal fade" id="merge-modal" tabindex="-1" aria-hidden="true" aria-labelledby="merge-modal-title">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -829,28 +846,6 @@
     </div>
   </div>
 
-  <!-- 인터랙티브 요소 고치기 (슬라이드에서 더블클릭 → Gemini가 코드를 고친다) -->
-  <div class="modal fade" id="app-modal" tabindex="-1" aria-hidden="true" aria-labelledby="app-modal-title">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title h5" id="app-modal-title"><i class="bi bi-puzzle"></i> 인터랙티브 요소 고치기</h2>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
-        </div>
-        <div class="modal-body">
-          <label class="form-label small text-muted" for="app-request">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고쳐 다시 넣습니다.</label>
-          <textarea class="form-control" id="app-request" rows="4" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
-          <div class="small mt-2" id="app-status" role="status"></div>
-        </div>
-        <div class="modal-footer">
-          <span class="small text-muted me-auto">요청 내용과 코드는 Google Gemini API로 전송됩니다.</span>
-          <button type="button" class="btn btn-light" data-bs-dismiss="modal">닫기</button>
-          <button type="button" class="btn btn-primary" id="app-send"><i class="bi bi-magic"></i> 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- 단축키 안내 -->
   <div class="modal fade" id="shortcut-modal" tabindex="-1" aria-hidden="true" aria-labelledby="shortcut-modal-title">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -877,7 +872,8 @@
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>10px씩 옮기기 (<kbd>Shift</kbd>와 함께: 50px)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기, 수식·그래프·도형은 고치기 창)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기, 수식·그래프·도형·인터랙티브 요소는 오른쪽 편집 창)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Esc</kbd> (편집 창)</td><td>개체 편집 끝내기 · AI 고치기 중단</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>글자 편집 끝내기 · 선택 해제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Delete</kbd></td><td>개체 삭제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>개체 복제</td></tr>
@@ -938,7 +934,7 @@
       <div class="modal-content">
         <div class="modal-body" id="confirm-message"></div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="confirm-cancel">취소</button>
           <button type="button" class="btn btn-primary" id="confirm-ok">확인</button>
         </div>
       </div>
@@ -1074,11 +1070,13 @@
           });
         },
 
-        confirm(message, okText, danger) {
+        confirm(message, okText, danger, cancelText) {
           return new Promise(resolve => {
             const el = $('confirm-modal');
             const ok = $('confirm-ok');
             $('confirm-message').textContent = message;
+            $('confirm-message').style.whiteSpace = 'pre-line';
+            $('confirm-cancel').textContent = cancelText || '취소';
             ok.textContent = okText || '확인';
             ok.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
             let result = false;
@@ -1957,9 +1955,12 @@
       };
 
       // 인터랙티브 요소를 더블클릭하면 Gemini에게 고칠 점을 보내 코드를 다시 받는 창
+      // 고친 결과는 슬라이드에 바로 보이고(직접 조작해 볼 수 있다), [적용]을 눌러야 남는다. [취소]하면 원래 코드로 돌아간다.
       const AppEditor = {
-        slideId: null,
-        appId: null,
+        el: null,
+        original: null,   // 편집을 시작할 때의 data-code 속성(없으면 null)
+        history: [],      // AI가 고치기 전 data-code(되돌리기용)
+        requests: [],     // 이번 편집에서 보낸 요청([적용]할 때 수정 기록에 남긴다)
         aborter: null,
         SCHEMA: {
           type: 'OBJECT',
@@ -1969,17 +1970,23 @@
 
         open(el) {
           if (!el.getAttribute('data-app')) el.setAttribute('data-app', 'app' + Util.uid().slice(-6));
-          AppEditor.slideId = Editor.current().id;
-          AppEditor.appId = el.getAttribute('data-app');
-          $('app-status').textContent = '';
-          $('app-status').className = 'small mt-2';
+          AppEditor.el = el;
+          AppEditor.original = el.getAttribute('data-code');
+          AppEditor.history = [];
+          AppEditor.requests = [];
+          $('app-request').value = '';
+          $('app-undo').classList.add('d-none');
+          AppEditor.status('');
           AppEditor.setBusy(false);
-          bootstrap.Modal.getOrCreateInstance($('app-modal')).show();
+          ObjectPanel.open(AppEditor, el, '인터랙티브 요소 고치기', 'bi-puzzle');
+          $('app-request').focus();
         },
 
         setBusy(on) {
           $('app-send').disabled = on;
           $('app-request').disabled = on;
+          $('app-undo').disabled = on;
+          $('obj-apply').disabled = on;
         },
 
         status(text, tone) {
@@ -1987,32 +1994,40 @@
           $('app-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
         },
 
-        // 지금 슬라이드(또는 기다리는 사이 바뀌었으면 저장된 슬라이드)에서 그 요소를 찾는다.
-        find() {
-          const deck = Editor.deck;
-          if (!deck) return null;
-          const index = deck.slides.findIndex(slide => slide.id === AppEditor.slideId);
-          if (index < 0) return null;
-          if (index === Editor.index) {
-            const el = $('slide-canvas').querySelector('.app-frame[data-app="' + CSS.escape(AppEditor.appId) + '"]');
-            if (el) return { index, el };
-          }
-          return { index, el: null };
+        // 슬라이드의 요소에 코드를 넣고 다시 실행한다(아직 기록하지 않는다).
+        setCode(attr) {
+          const el = AppEditor.el;
+          if (!el) return;
+          if (attr === null) el.removeAttribute('data-code');
+          else el.setAttribute('data-code', attr);
+          AppKit.hydrate(el.closest('.draggable-box') || el.parentElement, 'edit');
+          ObjectPanel.syncDirty();
+        },
+
+        dirty() { return !!AppEditor.aborter || (AppEditor.el && AppEditor.el.getAttribute('data-code')) !== AppEditor.original; },
+
+        // 저장용 복제본에는 편집 전 코드를 넣는다(적용 전 결과가 저장되지 않게).
+        restoreInto(node) {
+          if (AppEditor.original === null) node.removeAttribute('data-code');
+          else node.setAttribute('data-code', AppEditor.original);
         },
 
         async send() {
+          const el = AppEditor.el;
+          if (!el || AppEditor.aborter) return;
           const request = $('app-request').value.trim();
           if (!request) { AppEditor.status('어떻게 바꿀지 적어 주세요.', 'danger'); $('app-request').focus(); return; }
-          if (!Settings.apiKey()) { bootstrap.Modal.getOrCreateInstance($('app-modal')).hide(); SettingsModal.open(); return; }
-          if (!await Prompts.ready()) return;
-          const target = AppEditor.find();
-          const code = target && target.el ? AppKit.decode(target.el.getAttribute('data-code')) : '';
-          const deck = Editor.deck;
+          if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          if (!await Prompts.ready() || AppEditor.el !== el) return;
+          const before = el.getAttribute('data-code');
+          const code = AppKit.decode(before);
           const controller = new AbortController();
           AppEditor.aborter = controller;
           AppEditor.setBusy(true);
-          AppEditor.status('Gemini가 코드를 고치는 중…');
+          AppEditor.status('Gemini가 코드를 고치는 중… (Esc: 중단)', 'primary');
+          ObjectPanel.syncDirty();
           let result = null;
+          let failure = null;
           try {
             result = await Gemini.generateJson({
               model: Settings.model(),
@@ -2020,82 +2035,115 @@
               prompt: Prompts.text('appRevise.request', { request, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }),
               schema: AppEditor.SCHEMA,
               signal: controller.signal,
-              onProgress: length => AppEditor.status('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음')
+              onProgress: length => { if (AppEditor.el === el) AppEditor.status('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary'); }
             });
           } catch (err) {
-            AppEditor.aborter = null;
-            AppEditor.setBusy(false);
-            AppEditor.status(err && err.aborted ? '중단했습니다.' : '⚠ ' + ((err && err.message) || '고치지 못했습니다.'), 'danger');
+            failure = err;
+          }
+          if (AppEditor.aborter === controller) AppEditor.aborter = null;
+          if (AppEditor.el !== el) return; // 편집을 끝냈다
+          AppEditor.setBusy(false);
+          const next = !failure && result && typeof result.code === 'string' ? result.code.trim() : '';
+          if (!next) {
+            AppEditor.status(failure && failure.aborted ? '중단했습니다.'
+              : '⚠ ' + ((failure && failure.message) || 'AI 응답에 코드가 없습니다. 다시 시도해 주세요.'), 'danger');
+            ObjectPanel.syncDirty();
             return;
           }
+          AppEditor.history.push(before);
+          AppEditor.requests.push(request);
+          $('app-undo').classList.remove('d-none');
+          AppEditor.setCode(AppKit.encode(next.slice(0, 300000)));
+          $('app-request').value = '';
+          AppEditor.status('고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
+            ' 슬라이드에서 조작해 보고 마음에 들면 [적용]을 누르세요.', 'success');
+        },
+
+        undo() {
+          if (!AppEditor.history.length || AppEditor.aborter) return;
+          AppEditor.setCode(AppEditor.history.pop());
+          AppEditor.requests.pop();
+          $('app-undo').classList.toggle('d-none', !AppEditor.history.length);
+          AppEditor.status('AI 수정 반영을 취소했습니다.');
+        },
+
+        apply() {
+          const el = AppEditor.el;
+          if (!el || AppEditor.aborter) return;
+          const changed = AppEditor.dirty();
+          const requests = AppEditor.requests.slice();
+          ObjectPanel.close(false);
+          if (!changed) return;
+          Editor.commit();
+          const deck = Editor.deck;
+          // 그 장의 수정 기록에 남긴다(다음 AI 요청의 맥락)
+          if (deck && requests.length) AiPanel.remember(deck, '[인터랙티브 요소 수정] ' + requests.join(' / '), requests.join(' / '), Editor.current().id);
+          Util.toast('인터랙티브 요소를 고쳤습니다. 되돌리려면 Ctrl+Z', 'success');
+        },
+
+        // 편집을 끝낸다. restore면 편집 전 코드로 되돌린다.
+        finish(restore) {
+          const el = AppEditor.el;
+          if (AppEditor.aborter) AppEditor.aborter.abort();
           AppEditor.aborter = null;
           AppEditor.setBusy(false);
-          const next = result && typeof result.code === 'string' ? result.code.trim() : '';
-          if (!next) { AppEditor.status('⚠ AI 응답에 코드가 없습니다. 다시 시도해 주세요.', 'danger'); return; }
-          if (Editor.deck !== deck) return;
-          const now = AppEditor.find();
-          if (!now) { AppEditor.status('⚠ 그 슬라이드가 지워져 반영하지 못했습니다.', 'danger'); return; }
-          const encoded = AppKit.encode(next.slice(0, 300000));
-          if (now.el) {
-            now.el.setAttribute('data-code', encoded);
-            AppKit.hydrate(now.el.closest('.draggable-box') || now.el, 'edit');
-            Editor.commit();
-          } else {
-            // 다른 장으로 옮겨 갔으면 저장된 슬라이드 HTML을 고친다.
-            const slide = deck.slides[now.index];
-            const template = document.createElement('template');
-            template.innerHTML = slide.html;
-            const el = template.content.querySelector('.app-frame[data-app="' + CSS.escape(AppEditor.appId) + '"]');
-            if (!el) { AppEditor.status('⚠ 그 요소가 지워져 반영하지 못했습니다.', 'danger'); return; }
-            el.setAttribute('data-code', encoded);
-            slide.html = template.innerHTML;
-            Editor.refreshThumb(now.index);
-            Editor.scheduleSave();
-          }
-          AiPanel.remember(deck, '[인터랙티브 요소 수정] ' + request, request, AppEditor.slideId); // 그 장의 수정 기록에 남긴다
-          $('app-request').value = '';
-          bootstrap.Modal.getOrCreateInstance($('app-modal')).hide();
-          Util.toast('인터랙티브 요소를 고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') + '\n발표 화면에서 조작해 보세요. 되돌리려면 Ctrl+Z', 'success');
+          if (restore && el && el.getAttribute('data-code') !== AppEditor.original) AppEditor.setCode(AppEditor.original);
+          AppEditor.el = null;
+          AppEditor.history = [];
+          AppEditor.requests = [];
         },
 
         init() {
           $('app-send').addEventListener('click', AppEditor.send);
+          $('app-undo').addEventListener('click', AppEditor.undo);
           $('app-request').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); AppEditor.send(); }
           });
-          $('app-modal').addEventListener('shown.bs.modal', () => $('app-request').focus());
-          // 창을 닫으면 기다리던 요청도 멈춘다.
-          $('app-modal').addEventListener('hidden.bs.modal', () => { if (AppEditor.aborter) AppEditor.aborter.abort(); });
         }
       };
 
-      // 슬라이드의 수식·그래프·도형을 더블클릭하면 설계값을 고치는 창
+      // 슬라이드의 수식·그래프·도형을 더블클릭하면 오른쪽 편집 창에서 설계값을 고친다.
+      // 고친 결과는 슬라이드에 바로 그려지고, [적용]을 눌러야 남는다. [취소]하면 원래대로 돌아간다.
       const MathEditor = {
         target: null,
+        original: '',      // 편집을 시작할 때의 설계값(속성 그대로)
+        originalHtml: '',  // 편집을 시작할 때 그려져 있던 모습
+        previewToken: 0,
         KINDS: {
           tex: {
-            attr: 'data-tex', tag: 'span', title: '수식 고치기',
+            attr: 'data-tex', tag: 'span', title: '수식 고치기', icon: 'bi-superscript',
             help: '위 기호를 누르면 LaTeX가 들어갑니다. □는 채울 칸이고 Tab(Shift+Tab)으로 다음(앞) 칸으로 갑니다. 고른 글자가 있으면 첫 칸에 들어갑니다.'
           },
           graph: {
-            attr: 'data-graph', tag: 'div', title: '그래프 고치기',
+            attr: 'data-graph', tag: 'div', title: '그래프 고치기', icon: 'bi-graph-up',
             help: 'functions: 식 목록(x^2-2x, 2x+1, sqrt(x), sin(x)…) · x / y: 보이는 범위 · points: 점 {x, y, label, guide} · lines: {x} 또는 {y} 보조선'
           },
           geo: {
-            attr: 'data-geo', tag: 'div', title: '도형 고치기',
+            attr: 'data-geo', tag: 'div', title: '도형 고치기', icon: 'bi-triangle',
             help: 'points: 점 좌표 · polygons: 다각형 · segments: 선분 {from, to, label, marks, dashed} · circles: {center, radius} · angles: {vertex, from, to, label, right}'
           }
+        },
+
+        info() { return MathEditor.KINDS[MathKit.kind(MathEditor.target)]; },
+
+        // 비교용: 그래프·도형은 JSON 모양(띄어쓰기·줄바꿈)을 무시한다.
+        canon(text) {
+          const value = String(text || '').trim();
+          if (MathEditor.info().attr === 'data-tex') return value;
+          try { return JSON.stringify(JSON.parse(value)); } catch (err) { return value; }
         },
 
         open(el) {
           const kind = MathKit.kind(el);
           const info = MathEditor.KINDS[kind];
           MathEditor.target = el;
-          $('math-modal-title').textContent = info.title;
+          MathEditor.original = el.getAttribute(info.attr) || '';
+          MathEditor.originalHtml = el.innerHTML;
           $('math-help').textContent = info.help;
-          let value = el.getAttribute(info.attr) || '';
+          let value = MathEditor.original;
           if (kind !== 'tex') { try { value = JSON.stringify(JSON.parse(value), null, 2); } catch (err) { /* 그대로 보여 준다 */ } }
           $('math-input').value = value;
+          $('math-error').textContent = '';
           $('math-palette').classList.toggle('d-none', kind !== 'tex'); // 기호판은 수식에서만
           // 그래프·도형은 말로 고치기를 앞에 두고, 설계값(JSON)은 접어 둔다. 수식은 LaTeX 입력칸을 그대로 보인다.
           $('math-ai').classList.toggle('d-none', kind === 'tex');
@@ -2108,8 +2156,9 @@
           MathEditor.aiStatus('');
           MathEditor.history = [];
           $('math-ai-undo').classList.add('d-none');
-          bootstrap.Modal.getOrCreateInstance($('math-modal')).show();
-          MathEditor.preview();
+          MathEditor.setAiBusy(false);
+          ObjectPanel.open(MathEditor, el, info.title, info.icon);
+          $(kind === 'tex' ? 'math-input' : 'math-ai-request').focus();
         },
 
         /* --- 수식 기호판(한글 수식 편집기처럼): [보이는 글자, LaTeX, 설명] · □는 채울 칸 --- */
@@ -2219,7 +2268,7 @@
 
         // 입력값으로 새 개체를 만들어 그려 본다.
         async build() {
-          const info = MathEditor.KINDS[MathKit.kind(MathEditor.target)];
+          const info = MathEditor.info();
           const probe = document.createElement(info.tag);
           probe.className = MathEditor.target.className;
           let value = $('math-input').value.trim();
@@ -2229,12 +2278,39 @@
           return { probe, error, value, attr: info.attr };
         },
 
+        // 슬라이드에 바로 그린다. 입력 중 잘못된 값이면 슬라이드는 마지막으로 잘 그려진 모습을 두고 오류만 알린다.
         async preview() {
-          if (!MathEditor.target) return;
-          const { probe, error } = await MathEditor.build();
-          $('math-preview').replaceChildren(probe);
-          probe.style.width = probe.tagName === 'DIV' ? '100%' : '';
-          $('math-error').textContent = error;
+          const el = MathEditor.target;
+          if (!el) return;
+          const token = ++MathEditor.previewToken;
+          const { error, value, attr } = await MathEditor.build();
+          if (token !== MathEditor.previewToken || MathEditor.target !== el) return; // 더 새 입력이 있거나 편집을 끝냈다
+          $('math-error').textContent = error ? '⚠ ' + error + ' (슬라이드에는 마지막으로 그려진 모습이 남아 있습니다.)' : '';
+          if (!error && el.getAttribute(attr) !== value) {
+            el.setAttribute(attr, value);
+            await MathKit.render(el);
+          }
+          ObjectPanel.syncDirty();
+        },
+
+        dirty() { return !!MathEditor.aborter || MathEditor.canon($('math-input').value) !== MathEditor.canon(MathEditor.original); },
+
+        // 저장용 복제본에는 편집 전 모습을 넣는다(적용 전 결과가 저장되지 않게).
+        restoreInto(node) {
+          node.setAttribute(MathEditor.info().attr, MathEditor.original);
+          node.innerHTML = MathEditor.originalHtml;
+        },
+
+        // 편집을 끝낸다. restore면 편집 전 모습으로 되돌린다.
+        finish(restore) {
+          const el = MathEditor.target;
+          if (MathEditor.aborter) MathEditor.aborter.abort();
+          MathEditor.aborter = null;
+          MathEditor.setAiBusy(false);
+          MathEditor.previewToken++;
+          if (restore && el) MathEditor.restoreInto(el);
+          MathEditor.target = null;
+          MathEditor.history = [];
         },
 
         /* --- 그래프·도형 말로 고치기 --- */
@@ -2254,23 +2330,26 @@
         setAiBusy(on) {
           $('math-ai-send').disabled = on;
           $('math-ai-request').disabled = on;
-          $('math-apply').disabled = on;
+          $('math-ai-undo').disabled = on;
+          $('math-input').disabled = on;
+          $('obj-apply').disabled = on;
         },
 
-        // 요청과 지금 설계값을 보내 고친 설계값 전체를 받는다. 미리보기에만 반영하고, [적용]은 사용자가 누른다.
+        // 요청과 지금 설계값을 보내 고친 설계값 전체를 받는다. 슬라이드에 바로 그리고, [적용]은 사용자가 누른다.
         async aiSend() {
           const el = MathEditor.target;
           if (!el || MathEditor.aborter) return;
           const request = $('math-ai-request').value.trim();
           if (!request) { MathEditor.aiStatus('어떻게 고칠지 적어 주세요.', 'danger'); $('math-ai-request').focus(); return; }
-          if (!Settings.apiKey()) { bootstrap.Modal.getOrCreateInstance($('math-modal')).hide(); SettingsModal.open(); return; }
-          if (!await Prompts.ready()) return;
+          if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          if (!await Prompts.ready() || MathEditor.target !== el) return;
           const kind = MathKit.kind(el);
           const before = $('math-input').value;
           const controller = new AbortController();
           MathEditor.aborter = controller;
           MathEditor.setAiBusy(true);
-          MathEditor.aiStatus('AI가 고치는 중…', 'primary');
+          MathEditor.aiStatus('AI가 고치는 중… (Esc: 중단)', 'primary');
+          ObjectPanel.syncDirty();
           let result = null;
           let failure = null;
           try {
@@ -2280,14 +2359,15 @@
               prompt: Prompts.text('specRevise.request', { kind: kind === 'graph' ? '함수 그래프(data-graph)' : '도형(data-geo)', request, spec: before }),
               schema: MathEditor.SPEC_SCHEMA,
               signal: controller.signal,
-              onProgress: length => MathEditor.aiStatus('AI가 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary')
+              onProgress: length => { if (MathEditor.target === el) MathEditor.aiStatus('AI가 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary'); }
             });
           } catch (err) {
             failure = err;
           }
-          MathEditor.aborter = null;
+          if (MathEditor.aborter === controller) MathEditor.aborter = null;
+          if (MathEditor.target !== el) return; // 편집을 끝냈다
           MathEditor.setAiBusy(false);
-          if (MathEditor.target !== el) return; // 창을 닫았다
+          ObjectPanel.syncDirty();
           let spec = null;
           if (!failure) {
             try { spec = JSON.parse(String(result && result.spec || '')); } catch (err) { failure = new Error('AI가 준 설계값을 읽지 못했습니다. 다시 시도해 주세요.'); }
@@ -2301,24 +2381,27 @@
           $('math-input').value = JSON.stringify(spec, null, 2);
           await MathEditor.preview();
           const error = $('math-error').textContent;
-          MathEditor.aiStatus(error ? '⚠ 고친 설계값으로 그리지 못했습니다. 다시 요청하거나 [AI 고치기 전으로]를 눌러 주세요.'
-            : '고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') + ' 미리보기를 확인하고 [적용]을 누르세요.', error ? 'danger' : 'success');
+          MathEditor.aiStatus(error ? '⚠ 고친 설계값으로 그리지 못했습니다. 다시 요청하거나 [반영 취소]를 눌러 주세요.'
+            : '고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') + ' 슬라이드를 확인하고 마음에 들면 [적용]을 누르세요.', error ? 'danger' : 'success');
           if (!error) $('math-ai-request').value = '';
         },
 
         async aiUndo() {
-          if (!MathEditor.history.length) return;
+          if (!MathEditor.history.length || MathEditor.aborter) return;
           $('math-input').value = MathEditor.history.pop();
           $('math-ai-undo').classList.toggle('d-none', !MathEditor.history.length);
           await MathEditor.preview();
-          MathEditor.aiStatus('AI가 고치기 전으로 되돌렸습니다.');
+          MathEditor.aiStatus('AI 수정 반영을 취소했습니다.');
         },
 
         async apply() {
           const el = MathEditor.target;
-          if (!el || !el.isConnected) return;
+          if (!el || MathEditor.aborter) return;
+          if (!el.isConnected) { ObjectPanel.close(false); return; }
+          if (!MathEditor.dirty()) { ObjectPanel.close(true); return; } // 바꾼 것이 없으면 그냥 닫는다
           const { error, value, attr } = await MathEditor.build();
-          if (error) { $('math-error').textContent = error; return; }
+          if (MathEditor.target !== el) return;
+          if (error) { $('math-error').textContent = '⚠ ' + error; return; }
           if (attr === 'data-tex' && value.includes(MathEditor.BLANK)) {
             $('math-error').textContent = '빈 칸(□)을 채워 주세요. Tab으로 빈 칸을 찾아갈 수 있습니다.';
             const box = $('math-input');
@@ -2327,29 +2410,168 @@
             box.setSelectionRange(first, first + 1); // 첫 빈 칸부터
             return;
           }
+          MathEditor.previewToken++; // 기다리던 미리보기가 덮어쓰지 않게
           el.setAttribute(attr, value);
           await MathKit.render(el);
-          bootstrap.Modal.getOrCreateInstance($('math-modal')).hide();
+          if (MathEditor.target !== el) return;
+          ObjectPanel.close(false);
           Editor.commit();
         },
 
         init() {
           const later = Util.debounce(MathEditor.preview, 350);
           $('math-input').addEventListener('input', later);
+          $('math-input').addEventListener('input', () => ObjectPanel.syncDirty());
           $('math-input').addEventListener('keydown', event => {
             if (event.key !== 'Tab' || !MathEditor.target || MathKit.kind(MathEditor.target) !== 'tex') return;
             if (MathEditor.jumpBlank(event.shiftKey)) event.preventDefault(); // 빈 칸이 없으면 원래대로 다음 칸으로
           });
-          $('math-apply').addEventListener('click', MathEditor.apply);
           MathEditor.buildPalette();
           $('math-ai-send').addEventListener('click', MathEditor.aiSend);
           $('math-ai-undo').addEventListener('click', MathEditor.aiUndo);
           $('math-ai-request').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); MathEditor.aiSend(); }
           });
-          // 창을 닫으면 기다리던 AI 요청도 멈춘다.
-          $('math-modal').addEventListener('hide.bs.modal', () => { if (MathEditor.aborter) MathEditor.aborter.abort(); });
-          $('math-modal').addEventListener('hidden.bs.modal', () => { MathEditor.target = null; $('math-preview').replaceChildren(); });
+        }
+      };
+
+      // 오른쪽 창: AI 창 ↔ 개체 편집 창을 바꿔 끼우고, 편집 중인 개체의 [적용]/[취소]를 맡는다.
+      // 편집 중에 다른 장·다른 개체로 가거나 선택을 풀면, 적용하지 않은 고친 내용이 있을 때만 취소할지 묻는다.
+      const ObjectPanel = {
+        session: null,   // { editor: MathEditor | AppEditor, el, box }
+        asking: false,
+        WIDTH_KEYS: { ai: 'lessonStudio.aiPanelWidth', obj: 'lessonStudio.objPanelWidth' },
+        DEFAULT_OBJ_WIDTH: 420,
+
+        open(editor, el, title, icon) {
+          ObjectPanel.session = { editor, el, box: el.closest('.draggable-box') };
+          el.classList.add('ls-obj-editing');
+          $('obj-title').textContent = title;
+          $('obj-icon').className = 'bi ' + icon;
+          $('obj-app').classList.toggle('d-none', editor !== AppEditor);
+          $('obj-math').classList.toggle('d-none', editor !== MathEditor);
+          ObjectPanel.showView('obj');
+          ObjectPanel.syncDirty();
+        },
+
+        dirty() { return !!ObjectPanel.session && ObjectPanel.session.editor.dirty(); },
+
+        syncDirty() { $('obj-dirty').classList.toggle('d-none', !ObjectPanel.dirty()); },
+
+        // 편집을 끝내고 AI 창으로 돌아간다. restore: true면 원래대로(취소), false면 지금 모습 그대로(적용 뒤).
+        close(restore) {
+          const session = ObjectPanel.session;
+          if (!session) return;
+          ObjectPanel.session = null;
+          session.editor.finish(restore);
+          session.el.classList.remove('ls-obj-editing');
+          ObjectPanel.showView('ai');
+        },
+
+        ask() {
+          ObjectPanel.asking = true;
+          return Util.confirm('적용하지 않은 고친 내용이 있습니다.\n편집을 취소하면 원래대로 되돌아갑니다.', '편집 취소', true, '계속 편집')
+            .finally(() => { ObjectPanel.asking = false; });
+        },
+
+        // 다른 곳으로 가기 전에 부른다. 바로 가도 되면 true(고친 게 없으면 편집을 닫는다).
+        // 고친 게 있으면 묻고 false를 돌려준다. [편집 취소]를 고르면 원래대로 되돌린 뒤 retry를 실행한다.
+        leaveOr(retry) {
+          if (!ObjectPanel.session) return true;
+          if (ObjectPanel.asking) return false;
+          if (!ObjectPanel.dirty()) { ObjectPanel.close(true); return true; }
+          ObjectPanel.ask().then(ok => {
+            if (!ok) { ObjectPanel.focus(); return; }
+            ObjectPanel.close(true);
+            if (retry) retry();
+          });
+          return false;
+        },
+
+        // [←]·Esc: 고친 게 있으면 묻고 닫는다(선택은 그대로).
+        async requestClose() {
+          if (!ObjectPanel.session || ObjectPanel.asking) return;
+          if (ObjectPanel.dirty() && !await ObjectPanel.ask()) { ObjectPanel.focus(); return; }
+          ObjectPanel.close(true);
+        },
+
+        focus() {
+          const session = ObjectPanel.session;
+          if (!session) return;
+          const input = session.editor === AppEditor ? $('app-request')
+            : MathKit.kind(session.el) === 'tex' ? $('math-input') : $('math-ai-request');
+          if (!input.disabled) input.focus();
+        },
+
+        // 저장할 복제본(캔버스 HTML)에서 편집 중인 개체를 편집 전 모습으로 바꾼다.
+        restoreClone(root) {
+          const node = root.querySelector('.ls-obj-editing');
+          if (!node) return;
+          node.classList.remove('ls-obj-editing');
+          if (ObjectPanel.session) ObjectPanel.session.editor.restoreInto(node);
+        },
+
+        // 같은 자리에서 AI 창 ↔ 개체 편집 창을 바꾼다. 폭은 창마다 따로 기억한다.
+        showView(view) {
+          const panel = $('ai-panel');
+          panel.dataset.view = view;
+          $('ai-view').classList.toggle('d-none', view !== 'ai');
+          $('obj-view').classList.toggle('d-none', view === 'ai');
+          panel.setAttribute('aria-label', view === 'ai' ? 'AI 슬라이드 생성' : '개체 편집');
+          ObjectPanel.applyWidth();
+        },
+
+        clampWidth(width) { return Math.round(Math.max(280, Math.min(width, window.innerWidth * 0.6))); },
+
+        applyWidth() {
+          const panel = $('ai-panel');
+          const view = panel.dataset.view === 'obj' ? 'obj' : 'ai';
+          let width = NaN;
+          try { width = parseInt(localStorage.getItem(ObjectPanel.WIDTH_KEYS[view]), 10); } catch (err) { /* 무시 */ }
+          if (!(width > 0) && view === 'obj') width = ObjectPanel.DEFAULT_OBJ_WIDTH;
+          if (width > 0) panel.style.setProperty('--ai-w', ObjectPanel.clampWidth(width) + 'px');
+          else panel.style.removeProperty('--ai-w'); // 기본 폭(화면 크기별 CSS)
+        },
+
+        // 왼쪽 가장자리 손잡이를 좌우로 끌어 폭을 바꾸고, 바꾼 폭을 지금 창(AI·편집) 몫으로 기억한다.
+        initResizer() {
+          const panel = $('ai-panel');
+          const resizer = $('panel-resizer');
+          resizer.addEventListener('pointerdown', event => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            const startX = event.clientX;
+            const startWidth = panel.offsetWidth;
+            const view = panel.dataset.view === 'obj' ? 'obj' : 'ai';
+            panel.classList.add('resizing');
+            resizer.classList.add('active');
+            const move = ev => panel.style.setProperty('--ai-w', ObjectPanel.clampWidth(startWidth + startX - ev.clientX) + 'px');
+            const up = () => {
+              panel.classList.remove('resizing');
+              resizer.classList.remove('active');
+              window.removeEventListener('pointermove', move);
+              window.removeEventListener('pointerup', up);
+              window.removeEventListener('pointercancel', up);
+              try { localStorage.setItem(ObjectPanel.WIDTH_KEYS[view], String(panel.offsetWidth)); } catch (err) { /* 무시 */ }
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+            window.addEventListener('pointercancel', up);
+          });
+          // 두 번 누르면 기본 폭으로
+          resizer.addEventListener('dblclick', () => {
+            const view = panel.dataset.view === 'obj' ? 'obj' : 'ai';
+            try { localStorage.removeItem(ObjectPanel.WIDTH_KEYS[view]); } catch (err) { /* 무시 */ }
+            ObjectPanel.applyWidth();
+          });
+        },
+
+        init() {
+          ObjectPanel.initResizer();
+          ObjectPanel.applyWidth();
+          $('obj-back').addEventListener('click', ObjectPanel.requestClose);
+          $('obj-cancel').addEventListener('click', () => ObjectPanel.close(true));
+          $('obj-apply').addEventListener('click', () => { if (ObjectPanel.session) ObjectPanel.session.editor.apply(); });
         }
       };
 
@@ -2835,6 +3057,7 @@
         },
 
         async addSection() {
+          if (!ObjectPanel.leaveOr(() => Editor.addSection())) return;
           const ids = Editor.pickedIds();
           if (ids.length < 2) return;
           const name = await Util.ask('구역 추가', '구역 이름 (고른 ' + ids.length + '장을 묶습니다)', '새 구역');
@@ -2925,6 +3148,7 @@
         renderCanvas() {
           const slide = Editor.current();
           const canvas = $('slide-canvas');
+          ObjectPanel.close(false); // 캔버스를 새로 그리므로 편집 중인 개체도 사라진다
           Editor.selected = null;
           Editor.editing = null;
           FloatBar.hide();
@@ -2937,6 +3161,7 @@
         /* --- 저장과 되돌리기 --- */
         canvasHtml() {
           const clone = $('slide-canvas').cloneNode(true);
+          ObjectPanel.restoreClone(clone); // 적용 전인 개체 편집 결과는 저장하지 않는다
           clone.querySelectorAll('.ls-handle, .ls-ungroup, .ls-step, .ls-slide-style, .iframe-drag-overlay').forEach(el => el.remove());
           clone.querySelectorAll('.app-frame').forEach(el => el.replaceChildren()); // 실행 중인 칸은 저장하지 않는다(코드는 data-code에)
           clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
@@ -3002,6 +3227,7 @@
         },
 
         history(direction) {
+          if (!ObjectPanel.leaveOr(() => Editor.history(direction))) return;
           Editor.stopEditing();
           Editor.commit();
           const from = direction < 0 ? Editor.undoStack : Editor.redoStack;
@@ -3026,6 +3252,16 @@
         // keepPicks: Shift·Ctrl로 여러 장을 고르는 중이면 선택을 유지한다.
         goTo(i, keepPicks) {
           if (!Editor.deck || i < 0 || i >= Editor.deck.slides.length) return;
+          if (i !== Editor.index && ObjectPanel.session) {
+            // 개체 편집 중: 고친 게 있으면 묻는다. [계속 편집]이면 목록 선택도 지금 장으로 되돌린다.
+            const picks = new Set(Editor.picked);
+            const anchor = Editor.anchor;
+            if (!ObjectPanel.leaveOr(() => { Editor.picked = picks; Editor.anchor = anchor; Editor.goTo(i, keepPicks); })) {
+              Editor.pickOnly();
+              Editor.markActiveThumb();
+              return;
+            }
+          }
           if (i !== Editor.index) {
             Editor.deselect();
             Editor.commit();
@@ -3079,6 +3315,7 @@
         },
 
         slideAction(action) {
+          if (!ObjectPanel.leaveOr(() => Editor.slideAction(action))) return;
           Editor.deselect();
           Editor.syncCurrent();
           const slides = Editor.deck.slides;
@@ -3119,6 +3356,7 @@
           const at = slides.slice(0, before).filter(slide => !set.has(slide.id)).length;
           const next = rest.slice(0, at).concat(moving, rest.slice(at));
           if (next.every((slide, k) => slide === slides[k])) return;
+          if (!ObjectPanel.leaveOr(() => Editor.moveSlides(ids, before))) return;
           Editor.deselect();
           Editor.syncCurrent();
           // 옮긴 장은 놓인 자리 바로 앞 장의 구역을 따른다(구역 전체를 옮길 때는 그 구역을 유지).
@@ -3211,6 +3449,7 @@
         },
 
         deselect() {
+          ObjectPanel.close(true); // 선택을 풀면 개체 편집도 끝난다(사용자 동작은 앞에서 먼저 묻는다)
           Editor.stopEditing();
           const box = Editor.selected;
           if (box) {
@@ -3236,6 +3475,7 @@
         ungroup(box) {
           const parts = Editor.groupParts(box);
           if (parts.length < 2) return;
+          if (!ObjectPanel.leaveOr(() => Editor.ungroup(box))) return;
           Editor.stopEditing();
           Editor.removeHandles(box);
           const canvas = $('slide-canvas');
@@ -3430,6 +3670,13 @@
           // 글자 편집 중인 상자 안: 커서 이동·블록 지정은 브라우저에 맡긴다.
           if (Editor.editing && Editor.editing.contains(event.target) && !handle) return;
           if (Editor.editing) Editor.stopEditing();
+          // 개체 편집 중에 빈 곳·다른 개체를 누르면: 고친 게 있으면 묻고, 없으면 편집을 닫고 그대로 진행한다.
+          const session = ObjectPanel.session;
+          if (session && (!box || box !== session.box) &&
+            !ObjectPanel.leaveOr(() => { if (box && box.isConnected) Editor.select(box); else Editor.deselect(); })) {
+            event.preventDefault();
+            return;
+          }
           if (!box || !canvas.contains(box)) { Editor.deselect(); return; }
           event.preventDefault();
           if (event.target.closest('.ls-ungroup')) { Editor.ungroup(box); return; }
@@ -3543,6 +3790,7 @@
         boxAction(action) {
           const box = Editor.selected;
           if (!box) return;
+          if (!ObjectPanel.leaveOr(() => Editor.boxAction(action))) return;
           Editor.stopEditing();
           if (!box.isConnected) return;
           if (action === 'delete') {
@@ -3756,6 +4004,7 @@
 
         enter(kind) {
           if (!Editor.deck) return;
+          if (!MobileView.on && !ObjectPanel.leaveOr(() => Show.enter(kind))) return;
           if (!MobileView.on) { // 휴대폰은 편집 화면이 없으니 저장할 것도 없다
             Editor.deselect();
             Editor.syncCurrent();
@@ -5637,6 +5886,7 @@
           });
           const panel = $('ai-panel');
           panel.addEventListener('dragover', event => {
+            if (panel.dataset.view === 'obj') return; // 개체 편집 창에는 자료를 넣지 않는다
             if (!Array.from(event.dataTransfer.types || []).includes('Files')) return;
             event.preventDefault();
             panel.classList.add('drag-over');
@@ -7022,6 +7272,14 @@
           if (key === 'Escape') { event.preventDefault(); Editor.stopEditing(); }
           return;
         }
+        // 개체 편집 창: Esc는 AI가 고치는 중이면 중단, 아니면 편집을 끝내고 AI 창으로(고친 게 있으면 묻는다).
+        if (key === 'Escape' && ObjectPanel.session && !document.querySelector('.modal.show')) {
+          event.preventDefault();
+          const editor = ObjectPanel.session.editor;
+          if (editor.aborter) editor.aborter.abort();
+          else ObjectPanel.requestClose();
+          return;
+        }
         if (event.target.closest && event.target.closest('input, textarea, select, .modal, [contenteditable="true"]')) return;
         const lower = key.toLowerCase();
         if (mod && lower === 'z') { event.preventDefault(); Editor.history(event.shiftKey ? 1 : -1); return; }
@@ -7059,17 +7317,31 @@
         $('stage-host').addEventListener('pointerdown', Editor.onPointerDown);
         canvas.addEventListener('dblclick', event => {
           if (!document.body.classList.contains('edit-mode') || event.target.closest('.ls-ungroup')) return;
+          if (ObjectPanel.asking) return; // 편집 취소를 묻는 중
           const box = event.target.closest('.draggable-box');
           if (!box || !canvas.contains(box)) return;
-          // 수식·그래프·도형은 설계값을 고치는 창을 연다.
-          const mathEl = event.target.closest(MathKit.SELECTOR);
-          if (mathEl && box.contains(mathEl)) { Editor.stopEditing(); Editor.select(box); MathEditor.open(mathEl); return; }
-          // 인터랙티브 요소는 투명 막에 덮여 있으므로 좌표로 찾아, Gemini에게 고칠 점을 보내는 창을 연다.
-          const appEl = Array.from(box.querySelectorAll('.app-frame')).find(el => {
-            const r = el.getBoundingClientRect();
-            return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
-          });
-          if (appEl) { Editor.stopEditing(); Editor.select(box); AppEditor.open(appEl); return; }
+          // 수식·그래프·도형은 설계값을, 인터랙티브 요소(투명 막에 덮여 있어 좌표로 찾는다)는 코드를 오른쪽 편집 창에서 고친다.
+          let objectEl = event.target.closest(MathKit.SELECTOR);
+          if (!objectEl || !box.contains(objectEl)) {
+            objectEl = Array.from(box.querySelectorAll('.app-frame')).find(el => {
+              const r = el.getBoundingClientRect();
+              return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+            }) || null;
+          }
+          if (objectEl) {
+            if (AiPanel.busy) { Util.toast('AI가 슬라이드를 만드는 중에는 개체를 고칠 수 없습니다. 끝난 뒤 다시 시도해 주세요.', 'warning'); return; }
+            const session = ObjectPanel.session;
+            if (session && session.el === objectEl) { ObjectPanel.focus(); return; } // 이미 고치는 중
+            const start = () => {
+              if (!objectEl.isConnected) return;
+              Editor.stopEditing();
+              Editor.select(box);
+              if (objectEl.matches(MathKit.SELECTOR)) MathEditor.open(objectEl);
+              else AppEditor.open(objectEl);
+            };
+            if (ObjectPanel.leaveOr(start)) start();
+            return;
+          }
           const text = event.target.closest('.editable-text');
           if (text && box.contains(text)) { Editor.startEditing(text, event.clientX, event.clientY); return; }
           // 그림·영상은 편집 모드에서 마우스를 받지 않으므로 좌표로 찾는다.
@@ -7259,7 +7531,10 @@
           document.title = Editor.deck.title + ' - AI 모션 슬라이드';
           Editor.scheduleSave();
         });
-        $('btn-home').addEventListener('click', () => { location.hash = '#/'; });
+        $('btn-home').addEventListener('click', () => {
+          const goHome = () => { location.hash = '#/'; };
+          if (ObjectPanel.leaveOr(goHome)) goHome();
+        });
         $('btn-undo').addEventListener('click', () => Editor.history(-1));
         $('btn-redo').addEventListener('click', () => Editor.history(1));
         document.querySelectorAll('[data-show]').forEach(button => button.addEventListener('click', () => Show.enter(button.dataset.show)));
@@ -7340,6 +7615,7 @@
         FloatBar.init();
         AiPanel.init();
         MathEditor.init();
+        ObjectPanel.init();
         Planner.init();
         Merger.init();
         AppEditor.init();
