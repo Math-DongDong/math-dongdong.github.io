@@ -5747,6 +5747,11 @@
           return lines.join('\n').slice(0, 4000);
         },
 
+        // AI가 만든 HTML에서 클릭 순서(data-step)를 뗀다. 슬라이드를 넘기면 모든 요소가 한 번에 나오고, 순서는 발표자가 편집기에서 정한다.
+        dropSteps(html) {
+          return String(html || '').replace(/\sdata-step\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+        },
+
         // 슬라이드 CSS에서 .slide 전환 규칙과 그 규칙이 쓰는 @keyframes만 꺼낸다.
         transitionOf(slide) {
           const css = String(slide.css || '');
@@ -5899,7 +5904,7 @@
               document.title = deck.title + ' - AI 모션 슬라이드';
             }
             list.forEach(item => { rawHtml += String(item.html || ''); });
-            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(item.html, refs), bg: item.bg, notes: item.notes, design: item.design }));
+            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(AiPanel.dropSteps(item.html), refs), bg: item.bg, notes: item.notes, design: item.design }));
             slides.forEach((slide, k) => { slide.html = AppKit.attach(slide.html, list[k].apps); });
             status.set(label + '\n수식·그래프를 그리는 중…');
             for (const slide of slides) slide.html = await MathKit.renderHtml(slide.html);
@@ -6056,7 +6061,8 @@
             return;
           }
 
-          const restored = AiPanel.restoreMedia(item.html, images);
+          // 발표자가 정해 둔 클릭 순서가 없던 장이면 AI가 넣은 순서는 뗀다(순서는 사람이 정한다).
+          const restored = AiPanel.restoreMedia(/data-step/.test(target.html) ? item.html : AiPanel.dropSteps(item.html), images);
           const fresh = Editor.normalizeSlide({ id: target.id, html: restored, bg: item.bg || target.bg });
           fresh.html = AppKit.attach(fresh.html, item.apps, target.html); // 고치지 않은 인터랙티브 코드는 그대로
           AiPanel.showStatus(number + '번 장의 수식·그래프를 그리는 중…'); // 진행 표시(알림 아님)
