@@ -132,7 +132,8 @@
   <style id="ls-print-css" media="not all">
     @page { size: A4 portrait; margin: 8mm; } /* 인쇄 가능한 폭 194mm */
     html, body { margin: 0; background: #fff; color: #111827; font-family: 'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
-      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      overflow: hidden; } /* 쪽보다 넓은 요소가 하나라도 있으면 Chrome이 모든 쪽을 통째로 줄여 인쇄하므로, 문서 밖으로 나간 부분은 잘라 낸다 */
     .pp-page { width: 194mm; height: 280mm; display: flex; flex-direction: column; overflow: hidden; break-after: page; page-break-after: always; }
     .pp-page:last-child { break-after: auto; page-break-after: auto; }
     .pp-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 8.5pt; color: #6b7280; border-bottom: 0.3mm solid #e5e7eb; padding-bottom: 1.5mm; margin-bottom: 4mm; }
@@ -3061,7 +3062,7 @@
         saveTimer: null,
 
         newSlide(kind) {
-          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', css: '', bg: '#ffffff', notes: '', notesFormat: 'html', pristine: false };
+          return { id: Util.uid(), title: '', html: TEMPLATES[kind] || '', css: '', bg: '#ffffff', notes: '', notesFormat: 'html', pristine: false, design: '' };
         },
 
         normalizeSlide(slide) {
@@ -3075,8 +3076,14 @@
             notes: Editor.normalizeNotes(slide),
             notesFormat: 'html',
             pristine: !!slide.pristine,
-            section: slide.section ? String(slide.section) : null
+            section: slide.section ? String(slide.section) : null,
+            design: Editor.normalizeDesign(slide.design)
           };
+        },
+
+        // 디자인 키워드: 쉼표로 나눈 짧은 낱말들(너무 길면 자른다)
+        normalizeDesign(text) {
+          return String(text || '').replace(/[\r\n]+/g, ', ').replace(/\s+/g, ' ').trim().slice(0, 300);
         },
 
         // 예전 데이터·AI 응답의 일반 글 시나리오와 메모는 서식 있는 시나리오 하나로 합친다.
@@ -4635,13 +4642,15 @@
                 bg: { type: 'STRING' },
                 html: { type: 'STRING' },
                 notes: { type: 'STRING' },
+                // 이 장에 쓴 디자인 키워드(색·배치·글꼴 느낌·장식·모션). 다음 장을 만들 때 어울리되 겹치지 않게 참고한다.
+                design: { type: 'STRING' },
                 // 인터랙티브 요소의 코드(html의 <div class="app-frame" data-app="id">와 짝)
                 apps: {
                   type: 'ARRAY',
                   items: { type: 'OBJECT', properties: { id: { type: 'STRING' }, code: { type: 'STRING' } }, required: ['id', 'code'] }
                 }
               },
-              required: ['title', 'html', 'notes']
+              required: ['title', 'html', 'notes', 'design']
             }
           }
         },
@@ -5760,7 +5769,8 @@
         },
 
         // previous: 새 장들이 이어질 바로 앞 장의 원본(내용·디자인·화면 전환의 기준)
-        prompt(topic, total, start, count, madeTitles, previous, plan) {
+        // designs: 새 장이 들어갈 자리 바로 앞 장들의 디자인 키워드(AiPanel.designs)
+        prompt(topic, total, start, count, madeTitles, previous, plan, designs) {
           const deck = Editor.deck;
           const outline = AiPanel.outline(deck);
           return [
@@ -5773,8 +5783,19 @@
             deck.title !== DEFAULT_TITLE ? Prompts.text('newSlides.deckTitle', { title: deck.title }) : '',
             Prompts.text('newSlides.outline', { outline }),
             previous ? Prompts.text('newSlides.previous', { previous }) : (total > 1 && !plan ? Prompts.text('newSlides.cover') : ''),
+            designs ? Prompts.text('newSlides.designs', { list: designs }) : '',
             Prompts.text('newSlides.output', { count })
           ].filter(Boolean).join('\n');
+        },
+
+        // 새 장이 들어갈 자리(at) 바로 앞 장들의 디자인 키워드(가까운 장부터 최대 3장). 키워드가 없는 장(예전 장·직접 만든 장)은 건너뛴다.
+        designs(deck, at) {
+          const lines = [];
+          for (let i = Math.min(at, deck.slides.length) - 1; i >= 0 && lines.length < 3; i--) {
+            const design = deck.slides[i].design;
+            if (design) lines.push((i + 1) + '번 장' + (lines.length ? '' : '(바로 앞 장)') + ': ' + design);
+          }
+          return lines.join('\n');
         },
 
         // 지금 발표 자료의 목차(장 번호와 소제목)
@@ -5858,7 +5879,7 @@
               result = await Gemini.generateJson({
                 model: Settings.model(),
                 system: Prompts.slideSystem(),
-                prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference, plan) + AiPanel.filePrompt(files) + (sending ? sending.text : ''),
+                prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference, plan, AiPanel.designs(deck, insertAt)) + AiPanel.filePrompt(files) + (sending ? sending.text : ''),
                 parts: sending ? fileParts.concat(sending.parts) : fileParts,
                 schema: AI_SCHEMA,
                 signal: controller.signal,
@@ -5878,7 +5899,7 @@
               document.title = deck.title + ' - AI 모션 슬라이드';
             }
             list.forEach(item => { rawHtml += String(item.html || ''); });
-            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(item.html, refs), bg: item.bg, notes: item.notes }));
+            const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(item.html, refs), bg: item.bg, notes: item.notes, design: item.design }));
             slides.forEach((slide, k) => { slide.html = AppKit.attach(slide.html, list[k].apps); });
             status.set(label + '\n수식·그래프를 그리는 중…');
             for (const slide of slides) slide.html = await MathKit.renderHtml(slide.html);
@@ -6049,7 +6070,8 @@
           deck.slides[at] = Object.assign(fresh, {
             title: String(item.title || current.title || '').slice(0, 120),
             notes: item.notes ? Editor.normalizeNotes({ notes: item.notes, notesFormat: 'text' }) : current.notes,
-            section: current.section
+            section: current.section,
+            design: Editor.normalizeDesign(item.design) || current.design || ''
           });
           if (Editor.index === at) Editor.renderCanvas();
           Editor.commit();
@@ -6812,6 +6834,7 @@
               notes: presenter ? slide.notes : '',
               notesFormat: 'html',
               section: slide.section || null,
+              design: slide.design || '',
               view: Exporter.view(slide)
             }))
           };
@@ -7069,7 +7092,8 @@
               notes: keepNotes ? slide.notes : '',
               notesFormat: slide.notesFormat,
               memo: keepNotes ? slide.memo : '',
-              section: slide.section
+              section: slide.section,
+              design: slide.design
             })),
             sections: (Array.isArray(data.sections) ? data.sections : []).slice(0, 100).map(section => ({
               id: String(section.id || ''), name: String(section.name || '구역').slice(0, 40), collapsed: !!section.collapsed
