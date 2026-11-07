@@ -301,8 +301,12 @@
     /* 여러 장 계획표(모달): 장마다 번호 원과 이어지는 선(흐름), 요소는 종류별 색 */
     #plan-body { background: #f1f5f9; }
     .plan-list { position: relative; }
-    .plan-item { display: grid; grid-template-columns: 2.4rem 1fr; gap: 0.9rem; position: relative; margin-bottom: 0.9rem; }
-    .plan-item:not(:last-child)::before { content: ""; position: absolute; left: 1.15rem; top: 2.6rem; bottom: -0.9rem; width: 2px; background: #c7d2fe; }
+    .plan-item { display: grid; grid-template-columns: 2.4rem 1fr; gap: 0.9rem; position: relative; margin-bottom: 1.6rem; }
+    .plan-item:not(:last-child)::before { content: ""; position: absolute; left: 1.15rem; top: 2.6rem; bottom: -1.6rem; width: 2px; background: #c7d2fe; }
+    .plan-rail { display: flex; flex-direction: column; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+    .plan-insert { width: 1.4rem; height: 1.4rem; margin-bottom: -1.5rem; border-radius: 50%; border: 1px dashed #a5b4fc; background: #fff; color: var(--primary); font-size: 0.8rem; line-height: 1; padding: 0; opacity: 0.75; transition: opacity 0.15s, transform 0.15s; }
+    .plan-insert:hover:not(:disabled), .plan-insert:focus-visible { opacity: 1; transform: scale(1.12); border-style: solid; background: #eef2ff; }
+    .plan-insert:disabled { opacity: 0.3; }
     .plan-num { width: 2.4rem; height: 2.4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--primary); color: #fff; font-weight: 700; box-shadow: 0 0 0 4px #e0e7ff; position: relative; z-index: 1; }
     .plan-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 0.8rem 1rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); }
     .plan-card:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
@@ -4959,7 +4963,16 @@
             adds.append(button);
           });
           card.append(top, points, elements, adds);
-          li.append(num, card);
+          // 왼쪽 흐름 줄: 번호 원 아래에 [+] — 이 장 바로 다음에 새 장을 넣는다(마지막 장이면 맨 끝에).
+          const rail = document.createElement('div');
+          rail.className = 'plan-rail';
+          const insert = document.createElement('button');
+          insert.type = 'button';
+          insert.className = 'plan-insert';
+          insert.dataset.plan = 'insert';
+          insert.innerHTML = '<i class="bi bi-plus-lg"></i>';
+          rail.append(num, insert);
+          li.append(rail, card);
           return li;
         },
 
@@ -5093,6 +5106,11 @@
           const items = modal.querySelectorAll('.plan-item');
           items.forEach((li, i) => {
             li.querySelector('.plan-num').textContent = (i + 1) + '.';
+            const insert = li.querySelector('.plan-insert');
+            const label = i === items.length - 1 ? '맨 끝에 장 추가' : (i + 1) + '장과 ' + (i + 2) + '장 사이에 장 추가';
+            insert.title = label;
+            insert.setAttribute('aria-label', label);
+            insert.disabled = items.length >= Planner.MAX || AiPanel.busy;
             const full = li.querySelectorAll('.plan-el').length >= Planner.MAX_ELEMENTS;
             li.querySelectorAll('.plan-add-el').forEach(button => { button.disabled = full || AiPanel.busy; });
           });
@@ -5117,7 +5135,10 @@
           approve.innerHTML = '<i class="bi bi-magic"></i> ';
           approve.append('이대로 만들기 (' + count + '장)');
           const add = modal.querySelector('[data-plan="add"]');
-          if (add) add.disabled = items.length >= Planner.MAX || AiPanel.busy;
+          if (add) {
+            add.disabled = items.length >= Planner.MAX || AiPanel.busy;
+            add.classList.toggle('d-none', items.length > 0); // 장이 있으면 원 아래 [+]로 넣는다
+          }
         },
 
         onClick(event) {
@@ -5150,9 +5171,11 @@
               } else if (source) source.focus();
               else row.querySelector('.plan-el-text').focus();
             }
-          } else if (act === 'add') {
+          } else if (act === 'add' || (act === 'insert' && li)) {
+            if ($('plan-body').querySelectorAll('.plan-item').length >= Planner.MAX) return;
             const row = Planner.row({ title: '', points: '', elements: [] });
-            $('plan-body').querySelector('.plan-list').append(row);
+            if (act === 'insert') li.after(row); // 이 장 바로 다음에
+            else $('plan-body').querySelector('.plan-list').append(row);
             row.querySelector('.plan-title').focus();
           } else if (act === 'redo') { Planner.redo(); return; }
           else if (act === 'approve') { Planner.approve(); return; }
