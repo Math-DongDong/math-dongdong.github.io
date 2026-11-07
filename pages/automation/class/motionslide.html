@@ -295,6 +295,8 @@
     .math-palette { padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #f8fafc; }
     .math-palette .nav-link { font-size: 0.78rem; }
     .math-key { min-width: 2.4rem; font-size: 0.9rem; padding: 0.15rem 0.5rem; background: #fff; }
+    .math-key svg { max-height: 2.6em; max-width: 100%; vertical-align: middle; }
+    .math-key.recent { max-width: 100%; overflow: hidden; }
 
     /* 여러 장 계획표(모달): 장마다 번호 원과 이어지는 선(흐름), 요소는 종류별 색 */
     #plan-body { background: #f1f5f9; }
@@ -504,9 +506,14 @@
             </div>
             <div class="dropdown">
               <button type="button" class="btn btn-primary btn-present dropdown-toggle ms-2" data-bs-toggle="dropdown"><i class="bi bi-play-fill"></i> 발표 시작</button>
-              <ul class="dropdown-menu dropdown-menu-end">
-                <li><button type="button" class="dropdown-item d-flex align-items-center gap-3" data-show="audience"><span class="me-auto"><i class="bi bi-display"></i> 청중 화면만</span><kbd class="small">Ctrl+E</kbd></button></li>
-                <li><button type="button" class="dropdown-item" data-show="presenter"><i class="bi bi-person-video3"></i> 발표자 보기</button></li>
+              <ul class="dropdown-menu dropdown-menu-end" id="show-menu">
+                <li><h6 class="dropdown-header">처음부터</h6></li>
+                <li><button type="button" class="dropdown-item" data-show="audience" data-from="first"><i class="bi bi-display"></i> 청중 화면만</button></li>
+                <li><button type="button" class="dropdown-item" data-show="presenter" data-from="first"><i class="bi bi-person-video3"></i> 발표자 보기</button></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><h6 class="dropdown-header" id="show-from-current">현재 쪽부터</h6></li>
+                <li><button type="button" class="dropdown-item d-flex align-items-center gap-3" data-show="audience" data-from="current"><span class="me-auto"><i class="bi bi-display"></i> 청중 화면만</span><kbd class="small">Ctrl+E</kbd></button></li>
+                <li><button type="button" class="dropdown-item" data-show="presenter" data-from="current"><i class="bi bi-person-video3"></i> 발표자 보기</button></li>
               </ul>
             </div>
           </div>
@@ -628,6 +635,16 @@
                 </div>
                 <!-- 수식 기호판: 누르면 LaTeX가 들어가고 □(채울 칸)가 골라진다. Tab으로 다음 칸 -->
                 <div class="math-palette mb-2 d-none" id="math-palette">
+                  <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small" id="math-style">
+                    <span class="text-muted">글자 모양</span>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="수식 글자 모양">
+                      <input type="radio" class="btn-check" name="math-style" id="math-style-italic" value="italic" checked>
+                      <label class="btn btn-outline-secondary" for="math-style-italic" title="문자를 기울여 씁니다 (기본)"><i>x</i> 기울임</label>
+                      <input type="radio" class="btn-check" name="math-style" id="math-style-upright" value="upright">
+                      <label class="btn btn-outline-secondary" for="math-style-upright" title="수식 전체의 문자를 똑바로 세웁니다 (맨 앞에 \rm)">x 바로 세움</label>
+                    </div>
+                    <span class="text-muted">일부만 바꾸려면 글자를 고른 뒤 [함수·기타] 탭의 바로 세우기·기울이기를 누르세요.</span>
+                  </div>
                   <ul class="nav nav-pills nav-sm flex-wrap gap-1 mb-2" id="math-palette-tabs" role="tablist"></ul>
                   <div class="d-flex flex-wrap gap-1" id="math-palette-keys"></div>
                 </div>
@@ -863,7 +880,7 @@
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>되돌리기</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>다시 실행</td></tr>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> / <kbd>→</kbd> <kbd>↓</kbd></td><td>이전 / 다음 장 (개체를 고르지 않았을 때)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>청중 화면으로 발표 시작·끝</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>현재 쪽부터 청중 화면으로 발표 시작·끝</td></tr>
                 </tbody>
               </table>
             </section>
@@ -1429,11 +1446,22 @@
           return MathKit.mathjax;
         },
 
+        // 맨 앞이 \rm 이면 문자를 똑바로 세운 수식이다.
+        UPRIGHT_HEAD: /^\s*\\rm(?![a-zA-Z])\s*/,
+        isUpright(tex) { return MathKit.UPRIGHT_HEAD.test(String(tex || '')); },
+
+        // MathJax는 연립방정식(cases) 같은 표의 칸마다 글꼴을 처음으로 돌리므로, 바로 세운 수식은 칸 시작(\begin, &, \\)마다 \rm을 다시 넣는다.
+        prepTex(tex) {
+          if (!MathKit.isUpright(tex)) return tex;
+          return tex.replace(/(?<!\\)&/g, '&\\rm ').replace(/\\\\/g, '\\\\\\rm ')
+            .replace(/\\begin\{[a-zA-Z*]+\}(\{[^{}]*\})?/g, '$&\\rm ');
+        },
+
         async renderTex(el) {
           const tex = (el.getAttribute('data-tex') || '').trim();
           if (!tex) throw new Error('수식이 비어 있습니다.');
           const mathjax = await MathKit.loadMathJax();
-          const node = await mathjax.tex2svgPromise(tex, { display: true });
+          const node = await mathjax.tex2svgPromise(MathKit.prepTex(tex), { display: true });
           const svg = node.querySelector('svg');
           if (!svg) throw new Error('수식을 그리지 못했습니다.');
           const error = svg.querySelector('[data-mml-node="merror"]');
@@ -2145,6 +2173,11 @@
           $('math-input').value = value;
           $('math-error').textContent = '';
           $('math-palette').classList.toggle('d-none', kind !== 'tex'); // 기호판은 수식에서만
+          if (kind === 'tex') {
+            // 최근 목록이 비어 있으면 처음엔 다음 탭부터 보인다. 기호판은 열 때마다 새로 그린다(최근 목록 반영).
+            MathEditor.showGroup(MathEditor.group === 0 && !MathEditor.recent().length ? 1 : MathEditor.group);
+            MathEditor.syncStyle();
+          }
           // 그래프·도형은 말로 고치기를 앞에 두고, 설계값(JSON)은 접어 둔다. 수식은 LaTeX 입력칸을 그대로 보인다.
           $('math-ai').classList.toggle('d-none', kind === 'tex');
           $('math-code-summary').classList.toggle('d-none', kind === 'tex');
@@ -2161,13 +2194,18 @@
           $(kind === 'tex' ? 'math-input' : 'math-ai-request').focus();
         },
 
-        /* --- 수식 기호판(한글 수식 편집기처럼): [보이는 글자, LaTeX, 설명] · □는 채울 칸 --- */
+        /* --- 수식 기호판(한글 수식 편집기처럼): [보이는 글자, LaTeX, 버튼에 그릴 모양(LaTeX)] · □는 채울 칸 --- */
         BLANK: '□',
+        RECENT_KEY: 'lessonStudio.recentTex',
+        RECENT_MAX: 12,
+        group: 0,
         PALETTE: [
-          ['자주 쓰는 식', [
-            ['근의 공식', 'x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}'], ['피타고라스', 'a^2+b^2=c^2'], ['일차함수', 'y=ax+b'],
-            ['이차함수', 'y=a(x-p)^2+q'], ['연립방정식', '\\begin{cases} □ \\\\ □ \\end{cases}'], ['비례식', '□:□=□:□'],
-            ['두 점 거리', '\\sqrt{(x_2-x_1)^2+(y_2-y_1)^2}'], ['기울기', '\\frac{y_2-y_1}{x_2-x_1}']
+          ['최근 사용한 식', 'recent'], // [적용]한 수식이 쌓인다(이 브라우저에만 저장)
+          ['방정식', [
+            ['연립방정식', '\\begin{cases} □ \\\\ □ \\end{cases}', '\\begin{cases} x+y=3 \\\\ x-y=1 \\end{cases}'],
+            ['연립 (3개)', '\\begin{cases} □ \\\\ □ \\\\ □ \\end{cases}', '\\begin{cases} x+y+z=6 \\\\ x-y=1 \\\\ y+z=5 \\end{cases}'],
+            ['경우 나누기', '\\begin{cases} □ & (□) \\\\ □ & (□) \\end{cases}', '|x|=\\begin{cases} x & (x\\ge 0) \\\\ -x & (x<0) \\end{cases}'],
+            ['비례식', '□:□=□:□'], ['근의 공식', 'x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}', 'x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}']
           ]],
           ['분수·근호·첨자', [
             ['□/□ 분수', '\\frac{□}{□}'], ['√□ 제곱근', '\\sqrt{□}'], ['ⁿ√□ 거듭제곱근', '\\sqrt[□]{□}'], ['□ⁿ 지수', '□^{□}'],
@@ -2180,8 +2218,10 @@
           ]],
           ['기하', [
             ['∠ 각', '\\angle '], ['°', '^\\circ'], ['△ 삼각형', '\\triangle '], ['⊥ 수직', '\\perp '], ['∥ 평행', '\\parallel '],
-            ['≡ 합동', '\\equiv '], ['∽ 닮음', '\\sim '], ['AB̅ 선분', '\\overline{□}'], ['AB⃗ 반직선', '\\overrightarrow{□}'],
-            ['AB⌒ 호', '\\overset{\\frown}{□}'], ['π', '\\pi ']
+            ['≡ 합동', '\\equiv '], ['∽ 닮음', '\\sim '],
+            ['선분', '\\overline{□}', '\\overline{\\mathrm{AB}}'], ['직선', '\\overleftrightarrow{□}', '\\overleftrightarrow{\\mathrm{AB}}'],
+            ['반직선', '\\overrightarrow{□}', '\\overrightarrow{\\mathrm{AB}}'], ['호', '\\overset{\\frown}{□}', '\\overset{\\frown}{\\mathrm{AB}}'],
+            ['π', '\\pi ']
           ]],
           ['그리스 문자', [
             ['α', '\\alpha '], ['β', '\\beta '], ['γ', '\\gamma '], ['θ', '\\theta '], ['π', '\\pi '], ['σ', '\\sigma '], ['μ', '\\mu '],
@@ -2194,7 +2234,8 @@
           ]],
           ['함수·기타', [
             ['f(□)', 'f(□)'], ['∑ 합', '\\sum_{□}^{□}'], ['lim', '\\lim_{□ \\to □}'], ['log', '\\log_{□}□'], ['sin', '\\sin □'],
-            ['cos', '\\cos □'], ['tan', '\\tan □'], ['→', '\\to '], ['⋯', '\\cdots '], ['빈칸 띄우기', '\\;'], ['한글 글자', '\\text{□}']
+            ['cos', '\\cos □'], ['tan', '\\tan □'], ['→', '\\to '], ['⋯', '\\cdots '], ['빈칸 띄우기', '\\;'], ['한글 글자', '\\text{□}'],
+            ['바로 세우기', '\\mathrm{□}', '\\mathrm{AB}'], ['기울이기', '\\mathit{□}', '\\mathit{AB}']
           ]]
         ],
 
@@ -2214,7 +2255,6 @@
           tabs.addEventListener('click', event => {
             const button = event.target.closest('[data-group]');
             if (!button) return;
-            tabs.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', el === button));
             MathEditor.showGroup(Number(button.dataset.group));
           });
           // 기호판을 눌러도 입력칸의 커서(초점)를 지킨다.
@@ -2223,21 +2263,74 @@
             const key = event.target.closest('[data-tex]');
             if (key) MathEditor.insert(key.dataset.tex);
           });
-          MathEditor.showGroup(0);
+          $('math-style').addEventListener('change', event => MathEditor.setStyle(event.target.value === 'upright'));
         },
 
         showGroup(i) {
+          MathEditor.group = i;
+          $('math-palette-tabs').querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', Number(el.dataset.group) === i));
           const host = $('math-palette-keys');
           host.textContent = '';
-          MathEditor.PALETTE[i][1].forEach(([label, tex]) => {
-            const key = document.createElement('button');
-            key.type = 'button';
-            key.className = 'btn btn-sm btn-outline-secondary math-key';
-            key.dataset.tex = tex;
-            key.title = tex;
-            key.textContent = label;
-            host.append(key);
-          });
+          const keys = MathEditor.PALETTE[i][1];
+          if (keys === 'recent') {
+            const recent = MathEditor.recent();
+            if (!recent.length) {
+              host.innerHTML = '<span class="small text-muted">아직 없습니다. 수식을 [적용]하면 여기에 쌓여 다시 넣을 수 있습니다.</span>';
+              return;
+            }
+            recent.forEach(tex => host.append(MathEditor.makeKey('', tex, tex, true)));
+            return;
+          }
+          keys.forEach(([label, tex, shape]) => host.append(MathEditor.makeKey(label, tex, shape, false)));
+        },
+
+        // 기호 버튼: 그릴 모양(shape)이 있으면 MathJax로 그려 보인다(조합 문자로는 선분·반직선 표시가 깨진다).
+        makeKey(label, tex, shape, recent) {
+          const key = document.createElement('button');
+          key.type = 'button';
+          key.className = 'btn btn-sm btn-outline-secondary math-key' + (recent ? ' recent' : '');
+          key.dataset.tex = tex;
+          key.title = tex;
+          key.textContent = label || tex;
+          if (shape) {
+            MathKit.loadMathJax().then(mathjax => mathjax.tex2svgPromise(MathKit.prepTex(shape), { display: false })).then(node => {
+              const svg = node.querySelector('svg');
+              if (!svg || svg.querySelector('[data-mml-node="merror"]')) return;
+              svg.setAttribute('aria-hidden', 'true');
+              key.replaceChildren(svg);
+              if (label) key.append(' ' + label);
+            }).catch(() => { /* 글자로 둔다 */ });
+          }
+          return key;
+        },
+
+        /* --- 최근 사용한 식(이 브라우저의 localStorage) --- */
+        recent() {
+          try {
+            const list = JSON.parse(localStorage.getItem(MathEditor.RECENT_KEY) || '[]');
+            return Array.isArray(list) ? list.filter(tex => typeof tex === 'string' && tex.trim()) : [];
+          } catch (err) { return []; }
+        },
+
+        remember(tex) {
+          const value = String(tex || '').trim();
+          if (!value || value.includes(MathEditor.BLANK)) return;
+          const list = [value].concat(MathEditor.recent().filter(item => item !== value)).slice(0, MathEditor.RECENT_MAX);
+          try { localStorage.setItem(MathEditor.RECENT_KEY, JSON.stringify(list)); } catch (err) { /* 저장을 못 해도 편집은 된다 */ }
+        },
+
+        /* --- 글자 모양: 수식 맨 앞의 \rm 이 '바로 세움' 표시(칸마다 넣는 일은 MathKit.prepTex가 한다) --- */
+        syncStyle() {
+          const upright = MathKit.isUpright($('math-input').value);
+          $('math-style-upright').checked = upright;
+          $('math-style-italic').checked = !upright;
+        },
+
+        setStyle(upright) {
+          const box = $('math-input');
+          if (upright === MathKit.isUpright(box.value)) return;
+          box.value = upright ? '\\rm ' + box.value.trim() : box.value.replace(MathKit.UPRIGHT_HEAD, '');
+          box.dispatchEvent(new Event('input'));
         },
 
         // 커서 자리에 넣는다. 고른 글자가 있으면 첫 칸에 넣고, 남은 첫 칸(□)을 골라 바로 적게 한다.
@@ -2414,6 +2507,7 @@
           el.setAttribute(attr, value);
           await MathKit.render(el);
           if (MathEditor.target !== el) return;
+          if (attr === 'data-tex') MathEditor.remember(value);
           ObjectPanel.close(false);
           Editor.commit();
         },
@@ -2421,7 +2515,10 @@
         init() {
           const later = Util.debounce(MathEditor.preview, 350);
           $('math-input').addEventListener('input', later);
-          $('math-input').addEventListener('input', () => ObjectPanel.syncDirty());
+          $('math-input').addEventListener('input', () => {
+            ObjectPanel.syncDirty();
+            if (MathEditor.target && MathKit.kind(MathEditor.target) === 'tex') MathEditor.syncStyle();
+          });
           $('math-input').addEventListener('keydown', event => {
             if (event.key !== 'Tab' || !MathEditor.target || MathKit.kind(MathEditor.target) !== 'tex') return;
             if (MathEditor.jumpBlank(event.shiftKey)) event.preventDefault(); // 빈 칸이 없으면 원래대로 다음 칸으로
@@ -4002,16 +4099,17 @@
         isOn() { return document.body.classList.contains('presentation-mode'); },
         toggle() { if (Show.isOn()) Show.exit(); else Show.enter('audience'); },
 
-        enter(kind) {
+        // start: 시작할 장 번호(0이면 처음부터). 비우면 지금 보고 있는 장부터.
+        enter(kind, start) {
           if (!Editor.deck) return;
-          if (!MobileView.on && !ObjectPanel.leaveOr(() => Show.enter(kind))) return;
+          if (!MobileView.on && !ObjectPanel.leaveOr(() => Show.enter(kind, start))) return;
           if (!MobileView.on) { // 휴대폰은 편집 화면이 없으니 저장할 것도 없다
             Editor.deselect();
             Editor.syncCurrent();
             Editor.saveNow();
           }
           Show.kind = kind === 'presenter' ? 'presenter' : 'audience';
-          Show.index = Editor.index;
+          Show.index = Number.isInteger(start) ? Math.max(0, Math.min(start, Editor.deck.slides.length - 1)) : Editor.index;
           Show.step = 0;
           document.body.classList.remove('edit-mode');
           document.body.classList.add('presentation-mode', 'show-' + Show.kind);
@@ -7537,7 +7635,12 @@
         });
         $('btn-undo').addEventListener('click', () => Editor.history(-1));
         $('btn-redo').addEventListener('click', () => Editor.history(1));
-        document.querySelectorAll('[data-show]').forEach(button => button.addEventListener('click', () => Show.enter(button.dataset.show)));
+        document.querySelectorAll('[data-show]').forEach(button => button.addEventListener('click', () =>
+          Show.enter(button.dataset.show, button.dataset.from === 'first' ? 0 : undefined)));
+        // 발표 시작 메뉴를 열 때 지금 몇 쪽인지 보인다.
+        $('show-menu').previousElementSibling.addEventListener('show.bs.dropdown', () => {
+          $('show-from-current').textContent = '현재 쪽부터' + (Editor.deck ? ' (' + (Editor.index + 1) + '쪽)' : '');
+        });
         $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
         $('show-overview').addEventListener('click', event => { event.stopPropagation(); Show.openOverview(); });
         $('show-spot').addEventListener('click', event => { event.stopPropagation(); Show.toggleSpot(); });
