@@ -635,23 +635,20 @@
                 </div>
                 <!-- 수식 기호판: 누르면 LaTeX가 들어가고 □(채울 칸)가 골라진다. Tab으로 다음 칸 -->
                 <div class="math-palette mb-2 d-none" id="math-palette">
-                  <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small" id="math-style">
-                    <span class="text-muted">글자 모양</span>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="수식 글자 모양">
-                      <input type="radio" class="btn-check" name="math-style" id="math-style-italic" value="italic" checked>
-                      <label class="btn btn-outline-secondary" for="math-style-italic" title="문자를 기울여 씁니다 (기본)"><i>x</i> 기울임</label>
-                      <input type="radio" class="btn-check" name="math-style" id="math-style-upright" value="upright">
-                      <label class="btn btn-outline-secondary" for="math-style-upright" title="수식 전체의 문자를 똑바로 세웁니다 (맨 앞에 \rm)">x 바로 세움</label>
-                    </div>
-                    <span class="text-muted">일부만 바꾸려면 글자를 고른 뒤 [함수·기타] 탭의 바로 세우기·기울이기를 누르세요.</span>
-                  </div>
                   <ul class="nav nav-pills nav-sm flex-wrap gap-1 mb-2" id="math-palette-tabs" role="tablist"></ul>
                   <div class="d-flex flex-wrap gap-1" id="math-palette-keys"></div>
                 </div>
                 <details id="math-code" open>
                   <summary class="small text-muted mb-1" id="math-code-summary">설계값 직접 고치기 (고급)</summary>
                   <label class="form-label small text-muted" for="math-input" id="math-help"></label>
-                  <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
+                  <div class="position-relative">
+                    <textarea class="form-control font-monospace small" id="math-input" rows="10" spellcheck="false"></textarea>
+                    <!-- 수식에서 글자를 고르면 그 자리 위에 뜬다: 고른 부분만 기울임 / 바로 세움 -->
+                    <div class="btn-group btn-group-sm shadow-sm position-absolute d-none" id="math-sel-tools" role="group" aria-label="고른 글자 모양">
+                      <button type="button" class="btn btn-light border" data-font="mathit" title="고른 부분을 기울여 씁니다 (\mathit)"><i>x</i> 기울임</button>
+                      <button type="button" class="btn btn-light border" data-font="mathrm" title="고른 부분을 똑바로 세웁니다 (\mathrm)">x 바로 세움</button>
+                    </div>
+                  </div>
                 </details>
                 <div class="small text-danger mt-1" id="math-error" role="alert"></div>
               </section>
@@ -2176,8 +2173,8 @@
           if (kind === 'tex') {
             // 최근 목록이 비어 있으면 처음엔 다음 탭부터 보인다. 기호판은 열 때마다 새로 그린다(최근 목록 반영).
             MathEditor.showGroup(MathEditor.group === 0 && !MathEditor.recent().length ? 1 : MathEditor.group);
-            MathEditor.syncStyle();
           }
+          MathEditor.hideSelTools();
           // 그래프·도형은 말로 고치기를 앞에 두고, 설계값(JSON)은 접어 둔다. 수식은 LaTeX 입력칸을 그대로 보인다.
           $('math-ai').classList.toggle('d-none', kind === 'tex');
           $('math-code-summary').classList.toggle('d-none', kind === 'tex');
@@ -2234,8 +2231,7 @@
           ]],
           ['함수·기타', [
             ['f(□)', 'f(□)'], ['∑ 합', '\\sum_{□}^{□}'], ['lim', '\\lim_{□ \\to □}'], ['log', '\\log_{□}□'], ['sin', '\\sin □'],
-            ['cos', '\\cos □'], ['tan', '\\tan □'], ['→', '\\to '], ['⋯', '\\cdots '], ['빈칸 띄우기', '\\;'], ['한글 글자', '\\text{□}'],
-            ['바로 세우기', '\\mathrm{□}', '\\mathrm{AB}'], ['기울이기', '\\mathit{□}', '\\mathit{AB}']
+            ['cos', '\\cos □'], ['tan', '\\tan □'], ['→', '\\to '], ['⋯', '\\cdots '], ['빈칸 띄우기', '\\;'], ['한글 글자', '\\text{□}']
           ]]
         ],
 
@@ -2263,7 +2259,6 @@
             const key = event.target.closest('[data-tex]');
             if (key) MathEditor.insert(key.dataset.tex);
           });
-          $('math-style').addEventListener('change', event => MathEditor.setStyle(event.target.value === 'upright'));
         },
 
         showGroup(i) {
@@ -2319,18 +2314,92 @@
           try { localStorage.setItem(MathEditor.RECENT_KEY, JSON.stringify(list)); } catch (err) { /* 저장을 못 해도 편집은 된다 */ }
         },
 
-        /* --- 글자 모양: 수식 맨 앞의 \rm 이 '바로 세움' 표시(칸마다 넣는 일은 MathKit.prepTex가 한다) --- */
-        syncStyle() {
-          const upright = MathKit.isUpright($('math-input').value);
-          $('math-style-upright').checked = upright;
-          $('math-style-italic').checked = !upright;
+        /* --- 고른 글자 모양: 수식 입력란에서 글자를 고르면 그 위에 [기울임]/[바로 세움]이 뜬다 --- */
+        FONTS: ['mathit', 'mathrm'],
+
+        // 고른 범위가 \mathit{…}·\mathrm{…} 하나로 감싸여 있으면(감싼 명령까지 골랐거나 안쪽만 골랐거나) 그 정보를
+        fontWrap(value, start, end) {
+          const closes = (text, open) => { // text[open]이 '{'일 때 짝 '}'가 끝에 있는지
+            let depth = 0;
+            for (let i = open; i < text.length; i++) {
+              if (text[i] === '\\') { i++; continue; }
+              if (text[i] === '{') depth++;
+              else if (text[i] === '}' && --depth === 0) return i === text.length - 1;
+            }
+            return false;
+          };
+          for (const font of MathEditor.FONTS) {
+            const head = '\\' + font + '{';
+            const picked = value.slice(start, end);
+            if (picked.startsWith(head) && closes(picked, head.length - 1)) {
+              return { font, start, end, inner: picked.slice(head.length, -1) };
+            }
+            const outer = value.slice(start - head.length, end + 1);
+            if (start >= head.length && outer.startsWith(head) && closes(outer, head.length - 1)) {
+              return { font, start: start - head.length, end: end + 1, inner: picked };
+            }
+          }
+          return null;
         },
 
-        setStyle(upright) {
+        // 기울임: 기본 모양이므로 감싼 것을 풀고, 감싼 것이 없으면 \mathit로 감싼다. 바로 세움: \mathrm으로 감싼다.
+        setFont(font) {
           const box = $('math-input');
-          if (upright === MathKit.isUpright(box.value)) return;
-          box.value = upright ? '\\rm ' + box.value.trim() : box.value.replace(MathKit.UPRIGHT_HEAD, '');
+          let start = box.selectionStart;
+          let end = box.selectionEnd;
+          if (start === end) return;
+          const wrap = MathEditor.fontWrap(box.value, start, end);
+          let inner = box.value.slice(start, end);
+          if (wrap) ({ start, end, inner } = wrap);
+          const text = wrap && font === 'mathit' ? inner : '\\' + font + '{' + inner + '}';
+          box.setRangeText(text, start, end, 'select');
+          box.focus();
           box.dispatchEvent(new Event('input'));
+        },
+
+        hideSelTools() { $('math-sel-tools').classList.add('d-none'); },
+
+        // 고른 글자의 첫 자리 바로 위(공간이 없으면 아래)에 버튼을 둔다.
+        placeSelTools() {
+          const box = $('math-input');
+          const tools = $('math-sel-tools');
+          const el = MathEditor.target;
+          if (!el || MathKit.kind(el) !== 'tex' || box.disabled || box.selectionStart === box.selectionEnd || document.activeElement !== box) {
+            MathEditor.hideSelTools();
+            return;
+          }
+          const wrap = MathEditor.fontWrap(box.value, box.selectionStart, box.selectionEnd);
+          tools.querySelectorAll('[data-font]').forEach(button => button.classList.toggle('active', !!wrap && wrap.font === button.dataset.font));
+          tools.classList.remove('d-none');
+          const point = MathEditor.caretPoint(box, box.selectionStart);
+          const lineHeight = parseFloat(getComputedStyle(box).lineHeight) || 20;
+          let top = point.top - tools.offsetHeight - 4;
+          if (top < 0) top = point.top + lineHeight + 4;
+          const left = Math.max(0, Math.min(point.left, box.clientWidth - tools.offsetWidth));
+          tools.style.top = Math.min(top, box.offsetHeight - tools.offsetHeight) + 'px';
+          tools.style.left = left + 'px';
+        },
+
+        // 입력란 안에서 글자 자리의 좌표(입력란 왼쪽 위 기준). 같은 모양의 보이지 않는 복제본으로 잰다.
+        caretPoint(box, index) {
+          const style = getComputedStyle(box);
+          const mirror = document.createElement('div');
+          ['boxSizing', 'width', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize',
+            'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+            'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle'].forEach(name => { mirror.style[name] = style[name]; });
+          Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', top: '0', left: '-9999px', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', overflow: 'hidden' });
+          mirror.textContent = box.value.slice(0, index);
+          const mark = document.createElement('span');
+          mark.textContent = box.value.slice(index) || '.';
+          mirror.append(mark);
+          document.body.append(mirror);
+          // offset은 복제본 테두리 안쪽 기준이므로 테두리 두께를 더한다.
+          const point = {
+            top: mark.offsetTop - box.scrollTop + (parseFloat(style.borderTopWidth) || 0),
+            left: mark.offsetLeft - box.scrollLeft + (parseFloat(style.borderLeftWidth) || 0)
+          };
+          mirror.remove();
+          return point;
         },
 
         // 커서 자리에 넣는다. 고른 글자가 있으면 첫 칸에 넣고, 남은 첫 칸(□)을 골라 바로 적게 한다.
@@ -2401,6 +2470,7 @@
           MathEditor.aborter = null;
           MathEditor.setAiBusy(false);
           MathEditor.previewToken++;
+          MathEditor.hideSelTools();
           if (restore && el) MathEditor.restoreInto(el);
           MathEditor.target = null;
           MathEditor.history = [];
@@ -2515,9 +2585,14 @@
         init() {
           const later = Util.debounce(MathEditor.preview, 350);
           $('math-input').addEventListener('input', later);
-          $('math-input').addEventListener('input', () => {
-            ObjectPanel.syncDirty();
-            if (MathEditor.target && MathKit.kind(MathEditor.target) === 'tex') MathEditor.syncStyle();
+          $('math-input').addEventListener('input', () => ObjectPanel.syncDirty());
+          // 글자를 고르면 고른 부분의 글자 모양 버튼을 띄운다.
+          ['select', 'mouseup', 'keyup', 'input', 'scroll'].forEach(type => $('math-input').addEventListener(type, MathEditor.placeSelTools));
+          $('math-input').addEventListener('blur', MathEditor.hideSelTools);
+          $('math-sel-tools').addEventListener('mousedown', event => event.preventDefault()); // 고른 상태를 지킨다
+          $('math-sel-tools').addEventListener('click', event => {
+            const button = event.target.closest('[data-font]');
+            if (button) MathEditor.setFont(button.dataset.font);
           });
           $('math-input').addEventListener('keydown', event => {
             if (event.key !== 'Tab' || !MathEditor.target || MathKit.kind(MathEditor.target) !== 'tex') return;
