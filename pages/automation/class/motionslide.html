@@ -6351,8 +6351,41 @@
           target.dispatchEvent(event);
           if (m.type === 'pointerup' || m.type === 'pointercancel') captured = null;
         }
+        // PDF용 첫 화면 사본: 스크립트를 뺀 정적 HTML로 떠서 보낸다(캔버스는 그림으로, 입력값은 속성으로, 움직임은 끝난 모습으로).
+        function snapshot() {
+          var copy = document.documentElement.cloneNode(true);
+          var live = document.querySelectorAll('canvas'), dead = copy.querySelectorAll('canvas');
+          for (var i = 0; i < live.length; i++) {
+            try {
+              var rect = live[i].getBoundingClientRect(), img = document.createElement('img');
+              img.src = live[i].toDataURL('image/png');
+              img.className = live[i].className;
+              img.setAttribute('style', (live[i].getAttribute('style') || '') + ';width:' + rect.width + 'px;height:' + rect.height + 'px;');
+              dead[i].parentNode.replaceChild(img, dead[i]);
+            } catch (err) { /* 그대로 둔다 */ }
+          }
+          var liveFields = document.querySelectorAll(FIELDS), deadFields = copy.querySelectorAll(FIELDS);
+          for (var k = 0; k < liveFields.length && k < deadFields.length; k++) {
+            var a = liveFields[k], b = deadFields[k];
+            if (a.tagName === 'TEXTAREA') b.textContent = a.value;
+            else if (a.tagName === 'SELECT') { for (var o = 0; o < a.options.length; o++) if (b.options[o]) b.options[o].toggleAttribute('selected', a.options[o].selected); }
+            else if (a.type === 'checkbox' || a.type === 'radio') b.toggleAttribute('checked', a.checked);
+            else b.setAttribute('value', a.value);
+          }
+          Array.prototype.forEach.call(copy.querySelectorAll('script'), function (el) { el.parentNode.removeChild(el); });
+          var freeze = document.createElement('style');
+          freeze.textContent = '*,*::before,*::after{animation-delay:-60s!important;animation-play-state:paused!important;transition:none!important;caret-color:transparent!important}';
+          (copy.querySelector('head') || copy).appendChild(freeze);
+          return '<!DOCTYPE html>' + copy.outerHTML;
+        }
         window.addEventListener('message', function (e) {
           var data = e.data;
+          if (data && data.lsApp === 'snapshot' && e.source === parent) {
+            var html = '';
+            try { html = snapshot(); } catch (err) { /* 빈 사본 */ }
+            send({ lsApp: 'snapshot', token: data.token, html: html });
+            return;
+          }
           if (!data || data.lsApp !== 'replay' || !data.list) return;
           for (var i = 0; i < data.list.length; i++) { try { replay(data.list[i]); } catch (err) { /* 한 입력이 실패해도 계속 */ } }
         });
@@ -6905,7 +6938,8 @@
           Editor.syncCurrent();
           let frame = null;
           try {
-            frame = PdfExporter.build(withNotes);
+            const snaps = await PdfExporter.captureApps(Editor.deck.slides);
+            frame = PdfExporter.build(withNotes, snaps);
             await PdfExporter.settle(frame.contentDocument);
             if (withNotes) PdfExporter.fitNotes(frame.contentDocument);
             const win = frame.contentWindow;
@@ -6920,7 +6954,66 @@
           }
         },
 
-        build(withNotes) {
+        // 인터랙티브 요소의 첫 화면을 떠 온다. 격리된 칸은 바깥에서 찍을 수 없으므로, 슬라이드를 안 보이게 실행해
+        // 칸 안의 도우미(appBridge)가 정적 HTML 사본을 보내게 한다. 결과: Map(슬라이드 번호 → [칸 순서대로 HTML])
+        async captureApps(slides) {
+          const result = new Map();
+          const targets = slides.map((slide, i) => ({ slide, i })).filter(item => /app-frame/.test(item.slide.html) && /data-code/.test(item.slide.html));
+          if (!targets.length) return result;
+          Util.toast('인터랙티브 요소의 첫 화면을 PDF에 담는 중입니다. 잠시만 기다려 주세요.');
+          // 화면 밖에 두면 브라우저가 칸 실행을 멈추므로, 화면 안 맨 뒤에 투명하게 겹쳐 둔다.
+          const stage = document.createElement('div');
+          stage.setAttribute('aria-hidden', 'true');
+          stage.style.cssText = 'position:fixed;left:0;top:0;width:' + CANVAS_W + 'px;height:' + CANVAS_H + 'px;opacity:0;pointer-events:none;z-index:-1;' +
+            'transform:scale(0.05);transform-origin:0 0;overflow:hidden;';
+          document.body.append(stage);
+          const token = Util.uid();
+          const pending = new Map();
+          const onMessage = event => {
+            const data = event.data;
+            if (!data || data.lsApp !== 'snapshot' || data.token !== token) return;
+            const resolve = pending.get(event.source);
+            if (resolve) resolve(String(data.html || ''));
+          };
+          window.addEventListener('message', onMessage);
+          try {
+            const jobs = [];
+            targets.forEach(({ slide, i }) => {
+              const canvas = document.createElement('div');
+              canvas.className = 'slide-canvas';
+              canvas.style.cssText = 'position:absolute;left:0;top:0;';
+              stage.append(canvas);
+              SlideView.fill(canvas, slide, 'show');
+              // 영상(유튜브 자동 재생 등)은 소리가 날 수 있으니 뜨기 전에 뺀다.
+              canvas.querySelectorAll('video, iframe').forEach(el => { if (!el.parentElement.classList.contains('app-frame')) el.remove(); });
+              const frames =Array.from(canvas.querySelectorAll('.app-frame')).map(host => host.querySelector(':scope > iframe'));
+              const shots = new Array(frames.length).fill('');
+              result.set(i, shots);
+              frames.forEach((frame, k) => {
+                if (!frame) return;
+                jobs.push(new Promise(resolve => {
+                  const done = html => { pending.delete(frame.contentWindow); shots[k] = html; resolve(); };
+                  setTimeout(() => done(''), 6000); // 오류·멈춤이면 자리표시로 둔다
+                  frame.addEventListener('load', () => {
+                    // 등장 움직임과 첫 그리기가 끝날 때까지 잠깐 기다린 뒤 사본을 부탁한다.
+                    setTimeout(() => {
+                      pending.set(frame.contentWindow, done);
+                      try { frame.contentWindow.postMessage({ lsApp: 'snapshot', token }, '*'); } catch (err) { done(''); }
+                    }, 1500);
+                  }, { once: true });
+                }));
+              });
+            });
+            await Promise.all(jobs);
+          } finally {
+            window.removeEventListener('message', onMessage);
+            stage.remove();
+          }
+          return result;
+        },
+
+        build(withNotes, snaps) {
+          PdfExporter.snaps = snaps || new Map();
           const deck = Editor.deck;
           const frame = document.createElement('iframe');
           frame.setAttribute('aria-hidden', 'true');
@@ -6961,7 +7054,7 @@
           return frame;
         },
 
-        shot(doc, slide) {
+        shot(doc, slide, index) {
           const shot = doc.createElement('div');
           shot.className = 'pp-shot v-static';
           const scaler = doc.createElement('div');
@@ -6978,6 +7071,16 @@
             holder.setAttribute('style', media.getAttribute('style') || '');
             holder.textContent = '▶ 동영상';
             media.replaceWith(holder);
+          });
+          // 인터랙티브 요소: 떠 온 첫 화면 사본을 스크립트 없이 보인다(사본이 없으면 자리표시 그대로).
+          const snaps = (PdfExporter.snaps && PdfExporter.snaps.get(index)) || [];
+          canvas.querySelectorAll('.app-frame').forEach((host, k) => {
+            if (!snaps[k]) return;
+            const view = doc.createElement('iframe');
+            view.setAttribute('sandbox', ''); // 스크립트 실행 없음
+            view.setAttribute('aria-hidden', 'true');
+            view.srcdoc = snaps[k];
+            host.replaceChildren(view);
           });
           return shot;
         },
@@ -6998,7 +7101,7 @@
           const section = doc.createElement('span');
           section.textContent = sections.get(slides[i].section) || '';
           cap.append(num, title, section);
-          item.append(PdfExporter.shot(doc, slides[i]), cap);
+          item.append(PdfExporter.shot(doc, slides[i], i), cap);
           return item;
         },
 
@@ -7043,7 +7146,7 @@
           else content.textContent = '적힌 시나리오가 없습니다.';
           notes.append(label, content);
 
-          body.append(PdfExporter.shot(doc, slide), notes);
+          body.append(PdfExporter.shot(doc, slide, i), notes);
           card.append(head, body);
           return card;
         },
@@ -7057,6 +7160,13 @@
             setTimeout(resolve, 4000);
           })));
           if (doc.fonts && doc.fonts.ready) await Promise.race([doc.fonts.ready, Util.sleep(3000)]);
+          // 인터랙티브 요소 사본이 다 그려질 때까지(최대 4초)
+          await Promise.all(Array.from(doc.querySelectorAll('.app-frame > iframe')).map(view => new Promise(resolve => {
+            const ready = () => { try { return view.contentDocument && view.contentDocument.readyState === 'complete'; } catch (err) { return false; } };
+            if (ready()) { resolve(); return; }
+            view.addEventListener('load', resolve, { once: true });
+            setTimeout(resolve, 4000);
+          })));
         },
 
         // 시나리오가 길면 상자 안에 들어갈 때까지 글자를 줄인다.
