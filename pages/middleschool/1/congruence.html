@@ -223,9 +223,6 @@
               </div>
             </div>
             <div class="d-flex justify-content-center gap-2 mb-3" id="connLetterBtns"></div>
-            <div class="d-flex justify-content-center gap-2" id="connActionBtns">
-              <button class="btn btn-success px-4 fw-bold" id="btn-conn-confirm" disabled>확인</button>
-            </div>
             <div class="mt-3" id="connFeedback"></div>
           </div>
           <div id="connBonusSection" class="d-none text-start p-3 bg-light rounded-4 mt-2">
@@ -344,7 +341,7 @@
           <div class="col-lg-4 col-md-12">
             <div class="dash-stat-box h-100">
               <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="fw-bold mb-0 text-warning-emphasis"><i class="bi bi-shield-check me-1"></i> 함정 회피·대응점 연결·보너스 정답률
+                <h6 class="fw-bold mb-0 text-warning-emphasis"><i class="bi bi-shield-check me-1"></i> 대응점 연결·보너스 정답률
                 </h6>
               </div>
               <div id="dashBonusStats">
@@ -373,14 +370,13 @@
                 <th>SSS</th>
                 <th>SAS</th>
                 <th>ASA</th>
-                <th>함정 회피</th>
                 <th>대응점 연결</th>
                 <th>플레이</th>
               </tr>
             </thead>
             <tbody id="adminTableBody">
               <tr>
-                <td colspan="12" class="py-4 text-muted">방을 선택해주세요.</td>
+                <td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td>
               </tr>
             </tbody>
           </table>
@@ -565,7 +561,7 @@
 
     // ======================= 게임 상태·진행 =======================
     let G = null, CN = null;
-    const newSt = () => ({ sssOk: 0, sssTot: 0, sasOk: 0, sasTot: 0, asaOk: 0, asaTot: 0, trapOk: 0, trapTot: 0, eSideOk: 0, eSideTot: 0, eAngOk: 0, eAngTot: 0, vOk: 0, vTot: 0 });
+    const newSt = () => ({ sssOk: 0, sssTot: 0, sasOk: 0, sasTot: 0, asaOk: 0, asaTot: 0, eSideOk: 0, eSideTot: 0, eAngOk: 0, eAngTot: 0, vOk: 0, vTot: 0 });
     const msg = (t, cl = 'text-dark') => { $('msg').className = 'text-center fw-bold small mb-2 ' + cl; $('msg').textContent = t; };
     const show = (id, on) => $(id).classList.toggle('d-none', !on);
     function updateUI() {
@@ -574,7 +570,7 @@
     }
     function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
     function startRound() {
-      G.cards = genBoard(G.round, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board'; G.trapTallied = false;
+      G.cards = genBoard(G.round, G.seed + G.round); G.sel = []; G.rOk = 0; G.rAtt = 0; G.phase = 'board';
       show('board-wrap', 1); msg(G.round === 1 ? '합동인 삼각형 카드 2장을 골라 합동 조건을 맞혀 보세요.' : ''); updateUI(); renderBoard();
     }
     const TAG = { SSS: '변 3개', SAS: '변 2개+각 1개', ASA: '변 1개+각 2개', AAA: '각 3개' };
@@ -664,7 +660,6 @@
       const m = match(a, b);
       const correctOrder = [b.L[m[0]], b.L[m[1]], b.L[m[2]]];
       CN = { a, b, m, correctOrder, input: [], bonus: null, locked: false, skipped: skipConn };
-      show('btn-conn-confirm', 1);
       if (skipConn) {                 // 연결 단계를 건너뛰고 보너스 퀴즈만 출제
         gain(100, true); a.gone = b.gone = true; updateUI();
         $('connFeedback').innerHTML = '';
@@ -710,7 +705,6 @@
         const isUsed = CN.input.includes(letter);
         return `<button class="btn ${isUsed ? 'btn-primary' : 'btn-outline-primary'} btn-lg fw-bold px-4 letter-choice-btn" data-letter="${letter}">${letter}</button>`;
       }).join('');
-      $('btn-conn-confirm').disabled = CN.input.length !== 3;
     }
 
     $('connLetterBtns').addEventListener('click', e => {
@@ -721,6 +715,7 @@
         CN.input = CN.input.filter(x => x !== letter);
       } else if (CN.input.length < 3) {
         CN.input.push(letter);
+        if (CN.input.length === 3) { CN.locked = true; renderConnSlots(); setTimeout(checkConnAnswer, 1000); return; }
       }
       renderConnSlots();
     });
@@ -735,7 +730,6 @@
       }
     });
 
-    $('btn-conn-confirm').addEventListener('click', () => { if (CN.input.length === 3) checkConnAnswer(); });
 
     function checkConnAnswer() {
       const isMatch = CN.input.every((val, idx) => val === CN.correctOrder[idx]);
@@ -752,7 +746,6 @@
         }
       } else {
         wrong(); CN.a.gone = CN.b.gone = true; CN.locked = true; updateUI();
-        show('btn-conn-confirm', 0);
         $('connFeedback').innerHTML = `
       <div class="alert alert-danger fw-bold py-2 mb-3">
         ❌ 대응하는 꼭짓점 순서가 틀렸어요! 올바른 순서는 <b>△${CN.a.L.join('')} ≡ △${CN.correctOrder.join('')}</b> 입니다.
@@ -883,13 +876,9 @@
     }
 
     // ---- 라운드 종료 ----
-    function tallyTraps(cleared) {    // 함정 회피: 클리어한 라운드에서 끝까지 고르지 않은 함정은 성공, 고른 함정은 실패
-      if (G.trapTallied) return; G.trapTallied = true;
-      G.cards.filter(c => c.role === 'decoy').forEach(c => { if (c.hit) G.st.trapTot++; else if (cleared) { G.st.trapTot++; G.st.trapOk++; } });
-    }
     function endRound() {
       if (G.over) return;
-      G.sel = []; tallyTraps(true);
+      G.sel = [];
       updateUI();
       msg(G.round < 3 ? `🎉 Round ${G.round} 클리어! 다음 라운드로 이동합니다!`
         : G.round === 3 ? '🎉 Round 3 클리어! ♾️ 무한도전 모드가 시작됩니다!'
@@ -908,12 +897,12 @@
 
     // ======================= 기록 저장 =======================
     async function endGame() {
-      if (!G || G.over) return; G.over = true; tallyTraps(false);
+      if (!G || G.over) return; G.over = true;
       bootstrap.Modal.getInstance($('compareModal'))?.hide();
       bootstrap.Modal.getInstance($('connModal'))?.hide();
       const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
       showSection('gameover-section'); $('final-score').textContent = G.score; $('final-accuracy').textContent = acc + '%';
-      $('final-detail').textContent = `도달 라운드: Round ${G.round} · 대응 연결 한 번에 ${S.vOk}/${S.vTot} · 함정 회피 ${S.trapOk}/${S.trapTot}`;
+      $('final-detail').textContent = `도달 라운드: Round ${G.round} · 대응 연결 한 번에 ${S.vOk}/${S.vTot}`;
       if (!currentRoomCode) {
         $('save-status').textContent = "";
         return;
@@ -934,8 +923,6 @@
           sasTot: safeNumber(S.sasTot),
           asaOk: safeNumber(S.asaOk),
           asaTot: safeNumber(S.asaTot),
-          trapOk: safeNumber(S.trapOk),
-          trapTot: safeNumber(S.trapTot),
           vOk: safeNumber(S.vOk),
           vTot: safeNumber(S.vTot),
           eSideOk: safeNumber(S.eSideOk),
@@ -1002,7 +989,6 @@
         { key: 'sss', name: 'SSS 합동', badge: 'bg-primary', ok: rs.reduce((s, r) => s + n(r, 'sssOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sssTot'), 0) },
         { key: 'sas', name: 'SAS 합동', badge: 'bg-warning text-dark', ok: rs.reduce((s, r) => s + n(r, 'sasOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'sasTot'), 0) },
         { key: 'asa', name: 'ASA 합동', badge: 'bg-success', ok: rs.reduce((s, r) => s + n(r, 'asaOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'asaTot'), 0) },
-        { key: 'trap', label: '함정', name: '함정 회피', badge: 'bg-danger', ok: rs.reduce((s, r) => s + n(r, 'trapOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'trapTot'), 0) },
         { key: 'v', label: '대응', name: '대응점 연결', badge: 'bg-info text-dark', ok: rs.reduce((s, r) => s + n(r, 'vOk'), 0), tot: rs.reduce((s, r) => s + n(r, 'vTot'), 0) }
       ];
 
@@ -1031,14 +1017,13 @@
       <td>${p(n(r, 'sssOk'), n(r, 'sssTot'))}</td>
       <td>${p(n(r, 'sasOk'), n(r, 'sasTot'))}</td>
       <td>${p(n(r, 'asaOk'), n(r, 'asaTot'))}</td>
-      <td>${p(n(r, 'trapOk'), n(r, 'trapTot'))}</td>
       <td>${p(n(r, 'vOk'), n(r, 'vTot'))}</td>
       <td>${p(n(r, 'eSideOk'), n(r, 'eSideTot'))}</td>
       <td>${p(n(r, 'eAngOk'), n(r, 'eAngTot'))}</td>
     </tr>`;
       }).join('');
 
-      const tableBody = trs.length ? trs : '<tr><td colspan="11" class="py-3 text-muted">기록이 없습니다.</td></tr>';
+      const tableBody = trs.length ? trs : '<tr><td colspan="10" class="py-3 text-muted">기록이 없습니다.</td></tr>';
 
       $('detailBody').innerHTML = `
     <h6 class="fw-bold mb-3"><i class="bi bi-pie-chart-fill text-primary me-1"></i> 합동조건별 누적 성적</h6>
@@ -1055,7 +1040,6 @@
             <th>SSS</th>
             <th>SAS</th>
             <th>ASA</th>
-            <th>함정 회피</th>
             <th>대응점 연결</th>
             <th>보너스 대응변</th>
             <th>보너스 대응각</th>
@@ -1068,12 +1052,12 @@
       bootstrap.Modal.getOrCreateInstance($('detailModal')).show();
     }
     $('adminTableBody').addEventListener('click', e => { const row = e.target.closest('.row-student'); if (row) openDetail(row.dataset.nick); });
-    const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'asaOk', 'asaTot', 'trapOk', 'trapTot', 'vOk', 'vTot'];
+    const KEYS = ['sssOk', 'sssTot', 'sasOk', 'sasTot', 'asaOk', 'asaTot', 'vOk', 'vTot'];
     const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null, pc = v => v === null ? '-' : v + '%';
     function render() {
       renderGuestApproval($('pendingGuestsContainer'), roomStudents, { studentsRef: currentAdminRoom ? room.students(currentAdminRoom) : null, guestsRef: currentAdminRoom ? room.guests(currentAdminRoom) : null });
       if (!currentAdminRoom) {
-        $('adminTableBody').innerHTML = '<tr><td colspan="12" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
+        $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">방을 선택해주세요.</td></tr>';
         $('dashAvgScore').textContent = '-';
         $('dashAvgAcc').textContent = '-';
         $('dashConditionStats').innerHTML = '<div class="text-muted text-center py-4 small">방을 선택하면 통계가 표시됩니다.</div>';
@@ -1081,7 +1065,7 @@
         return;
       }
       const sidByNick = buildSidMap(roomStudents), stats = {};
-      let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAsa = 0, okAsa = 0, totTrap = 0, okTrap = 0, totV = 0, okV = 0;
+      let totSss = 0, okSss = 0, totSas = 0, okSas = 0, totAsa = 0, okAsa = 0, totV = 0, okV = 0;
       let totSide = 0, okSide = 0, totAng = 0, okAng = 0, totalPlays = roomRecords.length;
 
       roomRecords.forEach(r => {
@@ -1092,7 +1076,6 @@
         okSss += safeNumber(r.sssOk); totSss += safeNumber(r.sssTot);
         okSas += safeNumber(r.sasOk); totSas += safeNumber(r.sasTot);
         okAsa += safeNumber(r.asaOk); totAsa += safeNumber(r.asaTot);
-        okTrap += safeNumber(r.trapOk); totTrap += safeNumber(r.trapTot);
         okV += safeNumber(r.vOk); totV += safeNumber(r.vTot);
         okSide += safeNumber(r.eSideOk); totSide += safeNumber(r.eSideTot);
         okAng += safeNumber(r.eAngOk); totAng += safeNumber(r.eAngTot);
@@ -1126,11 +1109,10 @@
       </div>`;
       }
 
-      if (!totTrap && !totV && !totSide && !totAng) {
+      if (!totV && !totSide && !totAng) {
         $('dashBonusStats').innerHTML = '<div class="text-muted text-center py-4 small">아직 플레이 기록이 없습니다.</div>';
       } else {
         const bonusRows = [
-          { badge: 'bg-danger', tag: '함정', label: '함정 회피', ok: okTrap, tot: totTrap, bar: 'bg-danger', text: 'text-danger' },
           { badge: 'bg-info text-dark', tag: '대응', label: '대응점 연결', ok: okV, tot: totV, bar: 'bg-info', text: 'text-info-emphasis' },
           { badge: 'bg-primary', tag: '보너스', label: '대응변의 길이', ok: okSide, tot: totSide, bar: 'bg-primary', text: 'text-primary' },
           { badge: 'bg-success', tag: '보너스', label: '대응각의 크기', ok: okAng, tot: totAng, bar: 'bg-success', text: 'text-success' }
@@ -1150,7 +1132,7 @@
 
       const names = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
       if (!names.length) {
-        $('adminTableBody').innerHTML = '<tr><td colspan="12" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+        $('adminTableBody').innerHTML = '<tr><td colspan="11" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
         $('dashAvgScore').textContent = '-';
         $('dashAvgAcc').textContent = '-';
         return;
@@ -1169,12 +1151,12 @@
       excelData = [];
       $('adminTableBody').innerHTML = names.map((nick, idx) => {
         const s = stats[nick], k = s.k, acc = pct(s.solved, s.attempts) ?? 0, sid = sidByNick[nick] || '';
-        const v = { sss: pct(k.sssOk, k.sssTot), sas: pct(k.sasOk, k.sasTot), asa: pct(k.asaOk, k.asaTot), trap: pct(k.trapOk, k.trapTot), conn: pct(k.vOk, k.vTot) };
+        const v = { sss: pct(k.sssOk, k.sssTot), sas: pct(k.sasOk, k.sasTot), asa: pct(k.asaOk, k.asaTot), conn: pct(k.vOk, k.vTot) };
         const tier = getTier(s.maxRound);
-        excelData.push({ "학번": sid, "순위": idx + 1, "닉네임": nick, "종합 성취수준": tier.label, "최고 도달 라운드": s.maxRound, "최고 점수": s.best, "정답률(%)": acc, "SSS(%)": v.sss ?? '', "SAS(%)": v.sas ?? '', "ASA(%)": v.asa ?? '', "함정 회피(%)": v.trap ?? '', "대응점 연결(%)": v.conn ?? '', "플레이 횟수": s.plays });
+        excelData.push({ "학번": sid, "순위": idx + 1, "닉네임": nick, "종합 성취수준": tier.label, "최고 도달 라운드": s.maxRound, "최고 점수": s.best, "정답률(%)": acc, "SSS(%)": v.sss ?? '', "SAS(%)": v.sas ?? '', "ASA(%)": v.asa ?? '', "대응점 연결(%)": v.conn ?? '', "플레이 횟수": s.plays });
         const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1;
         return `<tr class="row-student" data-nick="${escapeHtml(nick)}" style="cursor:pointer"><td class="fw-bold">${medal}</td><td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td><td class="fw-bold">${escapeHtml(nick)}</td><td><span class="badge ${tier.badge} fs-6">${tier.label}</span></td><td class="fw-bold text-primary">${s.best}점</td><td>${acc}%</td>`
-          + [v.sss, v.sas, v.asa, v.trap, v.conn].map(x => `<td>${pc(x)}</td>`).join('') + `<td><span class="badge bg-secondary">${s.plays}회</span></td></tr>`;
+          + [v.sss, v.sas, v.asa, v.conn].map(x => `<td>${pc(x)}</td>`).join('') + `<td><span class="badge bg-secondary">${s.plays}회</span></td></tr>`;
       }).join('');
     }
     function buildLogData() {
@@ -1186,7 +1168,7 @@
           const n = String(r.nickname); seq[n] = (seq[n] || 0) + 1; const at = safeNumber(r.totalAttempts);
           return {
             "학번": sidByNick[n] || '', "닉네임": n, "회차": seq[n], "일시": ft(r.playedAt), "점수": safeNumber(r.score), "도달 라운드": safeNumber(r.round || r.level), "맞힌 문제": safeNumber(r.totalSolved), "시도 수": at, "정답률(%)": at > 0 ? Math.round(safeNumber(r.totalSolved) / at * 100) : 0,
-            "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "ASA 맞/시도": `${safeNumber(r.asaOk)}/${safeNumber(r.asaTot)}`, "함정 회피 성공/시도": `${safeNumber(r.trapOk)}/${safeNumber(r.trapTot)}`, "대응점 연결 맞/시도": `${safeNumber(r.vOk)}/${safeNumber(r.vTot)}`,
+            "SSS 맞/시도": `${safeNumber(r.sssOk)}/${safeNumber(r.sssTot)}`, "SAS 맞/시도": `${safeNumber(r.sasOk)}/${safeNumber(r.sasTot)}`, "ASA 맞/시도": `${safeNumber(r.asaOk)}/${safeNumber(r.asaTot)}`, "대응점 연결 맞/시도": `${safeNumber(r.vOk)}/${safeNumber(r.vTot)}`,
             "보너스 대응변 맞/시도": `${safeNumber(r.eSideOk)}/${safeNumber(r.eSideTot)}`, "보너스 대응각 맞/시도": `${safeNumber(r.eAngOk)}/${safeNumber(r.eAngTot)}`
           };
         });
