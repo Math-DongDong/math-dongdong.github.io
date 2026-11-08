@@ -4883,8 +4883,15 @@
           split(item.math).forEach(text => elements.push({ kind: 'math', text }));
           split(item.shape).forEach(text => elements.push({ kind: 'shape', text }));
           // 그림·영상은 담아 둔 실제 파일과 이어지는 것만 둔다. 그 밖의 꾸밈은 슬라이드를 만들 때 AI가 알아서 한다.
-          split(item.image).forEach(text => { const media = Planner.match(text, ['image']); if (media) elements.push({ kind: 'image', text, media }); });
-          split(item.video).forEach(text => { const media = Planner.match(text, ['video', 'youtube']); if (media) elements.push({ kind: 'video', text, media }); });
+          // 한 줄에 파일 이름을 여러 개(쉼표 등으로) 적어도 모두 잇는다. 같은 장에 같은 개체는 한 번만.
+          const linked = new Set();
+          const link = (text, kinds, kind) => Planner.matchAll(text, kinds).forEach(media => {
+            if (linked.has(media)) return;
+            linked.add(media);
+            elements.push({ kind, text: media.name.replace(/\.[a-z0-9]+$/i, ''), media });
+          });
+          split(item.image).forEach(text => link(text, ['image'], 'image'));
+          split(item.video).forEach(text => link(text, ['video', 'youtube'], 'video'));
           split(item.interactive).forEach(text => elements.push({ kind: 'app', text }));
           return {
             title: String(item.title || '').trim().slice(0, 80),
@@ -4893,10 +4900,15 @@
           };
         },
 
-        match(text, kinds) {
+        // 글에 이름이 적힌 담아 둔 개체를 모두 찾는다(확장자를 빼고 적어도 찾는다).
+        matchAll(text, kinds) {
           const lower = String(text).toLowerCase();
-          return Planner.staged.find(media => kinds.includes(media.kind) &&
-            (lower.includes(media.name.toLowerCase()) || lower.includes(media.name.toLowerCase().replace(/\.[a-z0-9]+$/, '')))) || null;
+          return Planner.staged.filter(media => kinds.includes(media.kind) &&
+            (lower.includes(media.name.toLowerCase()) || lower.includes(media.name.toLowerCase().replace(/\.[a-z0-9]+$/, ''))));
+        },
+
+        match(text, kinds) {
+          return Planner.matchAll(text, kinds)[0] || null;
         },
 
         modal() { return bootstrap.Modal.getOrCreateInstance($('plan-modal')); },
@@ -6021,8 +6033,10 @@
             const slideMedia = plan ? Planner.mediaFor(plan.slides[start]) : null;
             const slideRequest = slideMedia && slideMedia.length ? AiPanel.mediaRequest(slideMedia, refs) : null;
             if (slideMedia) planMedia.push(...slideMedia);
-            const mediaLeft = !plan && media.some(item => rawHtml.indexOf(item.token) < 0);
-            const sending = slideRequest || (mediaLeft ? mediaRequest : null);
+            // 앞 장에 이미 넣은 개체는 빼고, 아직 안 넣은 것만 다시 보낸다(넣은 것까지 보내면 AI가 헷갈려 겹치거나 빠뜨린다).
+            const remaining = plan ? [] : media.filter(item => !item.token || rawHtml.indexOf(item.token) < 0);
+            const sending = slideRequest || (!remaining.length ? null
+              : remaining.length === media.length && start === 0 ? mediaRequest : AiPanel.mediaRequest(remaining, refs));
             let result;
             try {
               result = await Gemini.generateJson({
