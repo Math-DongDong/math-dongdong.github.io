@@ -1500,10 +1500,12 @@
             'font-family:"Pretendard Variable",Pretendard,"Malgun Gothic",system-ui,sans-serif;}' +
             '.app-error{position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;padding:10px 14px;border-radius:10px;background:#fef2f2;' +
             'color:#b91c1c;border:2px solid #fca5a5;font:600 18px/1.4 system-ui,sans-serif;}</style>' +
-            // 코드에 오류가 나면 빈 화면 대신 이유를 보인다.
-            '<script>window.addEventListener("error",function(e){var d=document.createElement("div");d.className="app-error";' +
-            'd.textContent="⚠ 인터랙티브 요소 오류: "+(e.message||"알 수 없는 오류")+" — 편집 화면에서 이 요소를 더블클릭해 고쳐 달라고 요청해 보세요.";' +
-            '(document.body||document.documentElement).appendChild(d);});<\/script>' +
+            // 코드에 오류가 나면 빈 화면 대신 이유를 보이고, 바깥(만든 뒤 점검 AppKit.test)에도 알린다.
+            '<script>(function(){function show(m){var d=document.createElement("div");d.className="app-error";' +
+            'd.textContent="⚠ 인터랙티브 요소 오류: "+m+" — 편집 화면에서 이 요소를 더블클릭해 고쳐 달라고 요청해 보세요.";' +
+            '(document.body||document.documentElement).appendChild(d);try{parent.postMessage({lsApp:"error",message:m},"*");}catch(x){}}' +
+            'window.addEventListener("error",function(e){show(e.message||"알 수 없는 오류");});' +
+            'window.addEventListener("unhandledrejection",function(e){show(String(e.reason&&e.reason.message||e.reason||"알 수 없는 오류"));});})();<\/script>' +
             // 발표자 보기 ↔ 청중 창 연동 도우미(같은 난수, 입력 전달·재현)
             '<script>(' + appBridge.toString() + ')(' + AppKit.seed(code) + ');<\/script>' +
             '</head><body>' + code + '</body></html>';
@@ -1560,7 +1562,28 @@
           return { html: template.innerHTML, text };
         },
 
+        // AI가 흔히 틀리는 코드 꼴을 바로잡는다(실패해 코드 글이 화면에 그대로 보이는 일을 줄인다).
+        // · 마크다운 코드 울타리(```)를 뗀다.
+        // · 모션그래픽: <script>로 감쌌으면 벗기고, SVG를 바로 적었으면 그 SVG를 돌려주는 코드로 바꾼다.
+        // · 인터랙티브: HTML 태그 없이 JavaScript만 적었으면 <script>로 감싼다(감싸지 않으면 코드가 글자로 보인다).
+        tidy(code, motion) {
+          let text = String(code || '').trim();
+          const fence = text.match(/^```[\w-]*[^\n]*\n([\s\S]*?)\n?```\s*$/);
+          if (fence) text = fence[1].trim();
+          if (motion) {
+            const script = text.match(/^<script[^>]*>([\s\S]*)<\/script>$/i);
+            if (script) text = script[1].trim();
+            if (/^<svg[\s>]/i.test(text)) text = 'return ' + JSON.stringify(text) + ';';
+            return text;
+          }
+          const hasTags = /<(script|style|div|canvas|svg|button|input|section|main|span|p|h[1-6]|label|table|ul|ol|!doctype|html|body)\b/i.test(text);
+          if (!hasTags && /\b(const|let|var|function|document|addEventListener)\b|=>/.test(text)) text = '<script>\n' + text + '\n<\/script>';
+          return text;
+        },
+
         // AI 응답의 apps 배열(id·code)을 같은 data-app 자리에 넣는다. 코드가 안 왔으면 예전 코드를 그대로 둔다.
+        // 아이디가 어긋나 짝을 못 찾은 코드는 코드가 빈 자리에 순서대로 잇는다.
+        // 모션그래픽 자리에 코드 대신 SVG를 바로 넣었으면 그 SVG를 돌려주는 코드로 바꿔 살린다.
         attach(html, apps, previousHtml) {
           if (!AppKit.hasCoded(html)) return html;
           const codes = {};
@@ -1568,17 +1591,69 @@
             const old = document.createElement('template');
             old.innerHTML = previousHtml;
             old.content.querySelectorAll(AppKit.CODED).forEach(el => {
-              if (!el.getAttribute('data-app')) return; codes[el.getAttribute('data-app')] = AppKit.decode(el.getAttribute('data-code')); });
+              if (el.getAttribute('data-app')) codes[el.getAttribute('data-app')] = AppKit.decode(el.getAttribute('data-code'));
+            });
           }
-          (Array.isArray(apps) ? apps : []).forEach(app => { if (app && app.id && app.code) codes[String(app.id)] = String(app.code).slice(0, 300000); });
+          const fresh = []; // 이번 응답에서 온 코드
+          (Array.isArray(apps) ? apps : []).forEach(app => {
+            if (!app || !app.code) return;
+            const item = { id: String(app.id || ''), code: String(app.code).slice(0, 300000) };
+            if (item.id) codes[item.id] = item.code;
+            fresh.push(item);
+          });
           const template = document.createElement('template');
           template.innerHTML = html;
+          const used = new Set();
+          const empty = [];
           template.content.querySelectorAll(AppKit.CODED).forEach(el => {
+            const motion = MathKit.isMotion(el);
+            const inline = motion ? el.querySelector('svg') : null;
+            const inlineSvg = inline ? inline.outerHTML : '';
             el.replaceChildren();
-            const code = codes[el.getAttribute('data-app') || ''];
-            if (code) el.setAttribute('data-code', AppKit.encode(code));
+            const id = el.getAttribute('data-app') || '';
+            let code = id ? codes[id] : '';
+            if (code) used.add(id);
+            else if (inlineSvg) code = 'return ' + JSON.stringify(inlineSvg) + ';';
+            if (code) el.setAttribute('data-code', AppKit.encode(AppKit.tidy(code, motion)));
+            else empty.push(el);
+          });
+          const spare = fresh.filter(item => !item.id || !used.has(item.id));
+          empty.forEach(el => {
+            const item = spare.shift();
+            if (!item) return;
+            el.setAttribute('data-app', item.id || (MathKit.isMotion(el) ? 'mg' : 'app') + Util.uid().slice(-6));
+            el.setAttribute('data-code', AppKit.encode(AppKit.tidy(item.code, MathKit.isMotion(el))));
           });
           return template.innerHTML;
+        },
+
+        // 만든 뒤 점검: 안 보이는 칸에서 잠깐(불러온 뒤 1.5초) 실행해 오류를 모은다. 오류 글 목록을 돌려준다.
+        test(code) {
+          return new Promise(resolve => {
+            const errors = [];
+            const frame = document.createElement('iframe');
+            frame.setAttribute('sandbox', 'allow-scripts allow-forms');
+            frame.setAttribute('aria-hidden', 'true');
+            // 화면 밖에 두면 브라우저가 칸 실행을 멈추므로, 화면 안 맨 뒤에 투명하고 아주 작게 둔다.
+            frame.style.cssText = 'position:fixed;left:0;top:0;width:960px;height:600px;border:0;opacity:0;pointer-events:none;z-index:-1;' +
+              'transform:scale(0.02);transform-origin:0 0;';
+            let timer = 0;
+            const onMessage = event => {
+              if (event.source !== frame.contentWindow || !event.data || event.data.lsApp !== 'error') return;
+              if (errors.length < 5) errors.push(String(event.data.message || '알 수 없는 오류').slice(0, 300));
+            };
+            const finish = () => {
+              clearTimeout(timer);
+              window.removeEventListener('message', onMessage);
+              frame.remove();
+              resolve(errors);
+            };
+            window.addEventListener('message', onMessage);
+            timer = setTimeout(finish, 6000);
+            frame.addEventListener('load', () => { clearTimeout(timer); timer = setTimeout(finish, 1500); }, { once: true });
+            frame.srcdoc = AppKit.doc(code);
+            document.body.append(frame);
+          });
         }
       };
 
@@ -1616,7 +1691,10 @@
             timer = setTimeout(() => done('모션그래픽 코드가 ' + (MotionKit.TIMEOUT / 1000) + '초 안에 끝나지 않았습니다.'), MotionKit.TIMEOUT);
             const body = String(code).replace(/<\/script/gi, '<\\/script');
             frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="' + MotionKit.CSP + '">' +
-              '</head><body><script>var T=' + JSON.stringify(token) + ';try{var r=(function(){\n' + body + '\n})();' +
+              // 문법 오류는 아래 try로 잡히지 않으므로(스크립트를 읽다 멈춤) 먼저 오류 알림을 걸어 둔다.
+              '</head><body><script>var T=' + JSON.stringify(token) + ';window.addEventListener("error",function(e){' +
+              'parent.postMessage({lsShape:T,error:"모션그래픽 코드 문법 오류: "+(e.message||"알 수 없는 오류")},"*");});<\/script>' +
+              '<script>try{var r=(function(){\n' + body + '\n})();' +
               'if(r&&typeof r==="object"&&r.outerHTML)r=r.outerHTML;parent.postMessage({lsShape:T,svg:String(r||"")},"*");}' +
               'catch(e){parent.postMessage({lsShape:T,error:"모션그래픽 코드 오류: "+(e&&e.message||e)},"*");}<\/script></body></html>';
             document.body.append(frame);
@@ -1626,7 +1704,7 @@
         // 실행 결과를 정리해 <svg> 요소로 돌려준다(위험한 태그·속성은 슬라이드 정리 규칙으로 뺀다).
         // 움직임은 붙이지 않는다: 부위별 모션은 AI가 슬라이드 <style>에 직접 쓴다.
         async draw(code) {
-          const raw = await MotionKit.run(code);
+          const raw = await MotionKit.run(AppKit.tidy(code, true));
           const template = document.createElement('template');
           template.innerHTML = Sanitizer.clean(raw.slice(0, 400000));
           const svg = template.content.querySelector('svg');
@@ -1778,7 +1856,7 @@
           AppEditor.history.push(before);
           AppEditor.requests.push(request);
           $('app-undo').classList.remove('d-none');
-          AppEditor.setCode(AppKit.encode(next.slice(0, 300000)));
+          AppEditor.setCode(AppKit.encode(AppKit.tidy(next, AppEditor.motion).slice(0, 300000)));
           $('app-request').value = '';
           AppEditor.status('고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
             (AppEditor.motion ? ' 슬라이드에서 확인하고' : ' 슬라이드에서 조작해 보고') + ' 마음에 들면 [적용]을 누르세요.', 'success');
@@ -5018,6 +5096,69 @@
           return lines.join('\n').slice(0, 4000);
         },
 
+        // 만든 뒤 점검과 자동 수리: 모션그래픽은 실행해 SVG가 나오는지, 인터랙티브 요소는 잠깐 돌려 오류가 나는지 본다.
+        // 실패하면 오류 글을 붙여 Gemini에게 그 코드만 고쳐 달라고 한다(요소마다 최대 2번). 결과: { html, fixed, failed }
+        // previousHtml: 고치기 전 장(있으면 코드가 그대로인 요소는 점검하지 않는다)
+        async repairCoded(html, css, signal, onStatus, previousHtml) {
+          const report = { html, fixed: 0, failed: 0 };
+          if (!AppKit.hasCoded(html)) return report;
+          const before = new Set();
+          if (AppKit.hasCoded(previousHtml)) {
+            const old = document.createElement('template');
+            old.innerHTML = previousHtml;
+            old.content.querySelectorAll(AppKit.CODED).forEach(el => { if (el.getAttribute('data-code')) before.add(el.getAttribute('data-code')); });
+          }
+          const template = document.createElement('template');
+          template.innerHTML = html;
+          const items = Array.from(template.content.querySelectorAll(AppKit.CODED))
+            .filter(el => el.getAttribute('data-code') && !before.has(el.getAttribute('data-code')));
+          if (!items.length) return report;
+          const check = async (motion, code) => {
+            if (motion) {
+              try { await MotionKit.draw(code); return ''; } catch (err) { return err.message; }
+            }
+            return (await AppKit.test(code)).join(' / ');
+          };
+          await Promise.all(items.map(async el => {
+            const motion = MathKit.isMotion(el);
+            const name = motion ? '모션그래픽' : '인터랙티브 요소';
+            let code = AppKit.decode(el.getAttribute('data-code'));
+            let error = await check(motion, code);
+            let changed = false;
+            for (let tries = 0; error && tries < 2 && !signal.aborted; tries++) {
+              onStatus(name + '에 오류가 있어 자동으로 고치는 중… (' + (tries + 1) + '/2)');
+              let result = null;
+              try {
+                const key = motion ? 'motionRevise' : 'appRevise';
+                result = await Gemini.generateJson({
+                  model: Settings.model(),
+                  system: Prompts.text(key + '.system'),
+                  prompt: Prompts.text(key + '.request', { request: Prompts.text('codeRepair', { error }), css: css || '(없음)', code }),
+                  schema: AppEditor.SCHEMA,
+                  signal
+                });
+              } catch (err) {
+                break; // 중단·네트워크 오류: 지금 코드를 그대로 둔다
+              }
+              const next = result && typeof result.code === 'string' ? AppKit.tidy(result.code, motion) : '';
+              if (!next) continue;
+              code = next;
+              changed = true;
+              error = await check(motion, code);
+            }
+            if (error) report.failed++;
+            else if (changed) report.fixed++;
+            el.setAttribute('data-code', AppKit.encode(code));
+          }));
+          report.html = template.innerHTML;
+          return report;
+        },
+
+        // 자동 수리 결과 알림(고치지 못한 것만 알린다)
+        repairNote(failed) {
+          return failed ? '\n⚠ 모션그래픽·인터랙티브 요소 ' + failed + '개는 자동으로 고치지 못했습니다. 그 요소를 더블클릭해 고쳐 달라고 요청해 주세요.' : '';
+        },
+
         // AI가 만든 HTML에서 클릭 순서(data-step)를 뗀다. 슬라이드를 넘기면 모든 요소가 한 번에 나오고, 순서는 발표자가 편집기에서 정한다.
         dropSteps(html) {
           return String(html || '').replace(/\sdata-step\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
@@ -5128,6 +5269,7 @@
           const madeIds = [];
           let added = 0;
           let failure = null;
+          let repairFailed = 0; // 자동으로 고치지 못한 모션그래픽·인터랙티브 요소 수
 
           let fileParts = [];
           try { fileParts = await AiPanel.prepareFiles(files, status); } catch (err) { failure = err; }
@@ -5179,6 +5321,15 @@
             list.forEach(item => { rawHtml += String(item.html || ''); });
             const slides = list.map(item => Editor.normalizeSlide({ title: item.title, html: AiPanel.restoreMedia(AiPanel.dropSteps(item.html), refs), bg: item.bg, notes: item.notes, design: item.design }));
             slides.forEach((slide, k) => { slide.html = AppKit.attach(slide.html, list[k].apps); });
+            // 만든 코드를 실행해 보고, 오류가 나면 자동으로 고친다.
+            for (const slide of slides) {
+              if (!AppKit.hasCoded(slide.html)) continue;
+              status.set(label + '\n모션그래픽·인터랙티브 요소를 점검하는 중…');
+              const report = await AiPanel.repairCoded(slide.html, slide.css, controller.signal, text => status.set(label + '\n' + text));
+              slide.html = report.html;
+              repairFailed += report.failed;
+            }
+            if (Editor.deck !== deck) break;
             status.set(label + '\n수식·모션그래픽을 그리는 중…');
             for (const slide of slides) slide.html = await MathKit.renderHtml(slide.html);
             if (Editor.deck !== deck) break;
@@ -5218,9 +5369,10 @@
             if (!$('ai-prompt').value) $('ai-prompt').value = topic;
             if (failure.needsKey) SettingsModal.open();
           } else if (failure) {
-            status.set(added + '장을 추가했습니다.\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 만들지 못했습니다: ' + failure.message), !failure.aborted);
+            status.set(added + '장을 추가했습니다.\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 만들지 못했습니다: ' + failure.message) +
+              AiPanel.repairNote(repairFailed), !failure.aborted);
           } else {
-            status.set(added + '장을 추가했습니다. 글자를 더블클릭해 고치고, 끌어서 옮겨 보세요.');
+            status.set(added + '장을 추가했습니다. 글자를 더블클릭해 고치고, 끌어서 옮겨 보세요.' + AiPanel.repairNote(repairFailed), repairFailed > 0);
           }
         },
 
@@ -5340,6 +5492,19 @@
           const fresh = Editor.normalizeSlide({ id: target.id, html: restored, bg: item.bg || target.bg });
           fresh.html = AppKit.attach(fresh.html, item.apps, target.html); // 고치지 않은 인터랙티브·모션그래픽 코드는 그대로
           fresh.html = MathKit.keepLegacy(fresh.html, target.html); // 예전 방식 그래프·도형은 원래 그림 그대로
+          // 새로 받거나 바뀐 코드를 실행해 보고, 오류가 나면 자동으로 고친다(그동안은 다른 AI 요청을 막는다).
+          let repairFailed = 0;
+          if (AppKit.hasCoded(fresh.html)) {
+            const fixer = new AbortController();
+            AiPanel.setBusy(true);
+            AiPanel.aborter = fixer;
+            status.set(number + '번 장의 모션그래픽·인터랙티브 요소를 점검하는 중…');
+            const report = await AiPanel.repairCoded(fresh.html, fresh.css, fixer.signal, text => status.set(number + '번 장: ' + text), target.html);
+            fresh.html = report.html;
+            repairFailed = report.failed;
+            AiPanel.setBusy(false);
+            AiPanel.aborter = null;
+          }
           AiPanel.showStatus(number + '번 장의 수식·모션그래픽을 그리는 중…'); // 진행 표시(알림 아님)
           fresh.html = await MathKit.renderHtml(fresh.html);
           AiPanel.hideStatus();
@@ -5359,7 +5524,7 @@
           AiPanel.finishMedia(media, String(item.html || ''));
           AiPanel.remember(deck, '[이 장 수정] ' + request + AiPanel.fileNote(files), request, target.id);
           Editor.refreshThumb(at);
-          status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.');
+          status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.' + AiPanel.repairNote(repairFailed), repairFailed > 0);
         },
 
         init() {
