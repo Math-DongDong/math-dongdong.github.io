@@ -56,11 +56,11 @@
     @keyframes ls-pop { 0% { opacity: 0; scale: 0.5; } 100% { opacity: 1; scale: 1; } }
     @keyframes ls-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -18px; } }
 
-    /* 수학 개체: 수식(math-tex)·그래프(math-graph)·도형(math-geo). 그림은 프로그램이 SVG로 그려 넣는다. */
+    /* 수학 개체: 수식(math-tex)·그래프(math-graph)·도형(math-shape, 예전 math-geo). 그림은 프로그램이 SVG로 그려 넣는다. */
     .math-tex svg { overflow: visible; }
-    .math-graph svg, .math-geo svg { display: block; width: 100%; height: auto; overflow: visible; }
-    .math-graph .math-draw, .math-geo .math-draw { stroke-dasharray: 1; animation: ls-math-draw 1.4s cubic-bezier(0.4, 0, 0.2, 1) 0.8s both; }
-    .math-graph .math-show, .math-geo .math-show { animation: ls-fade 0.5s ease 1.8s both; }
+    .math-graph svg, .math-geo svg, .math-shape svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .math-graph .math-draw, .math-geo .math-draw, .math-shape .math-draw { stroke-dasharray: 1; animation: ls-math-draw 1.4s cubic-bezier(0.4, 0, 0.2, 1) 0.8s both; }
+    .math-graph .math-show, .math-geo .math-show, .math-shape .math-show { animation: ls-fade 0.5s ease 1.8s both; }
     @keyframes ls-math-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 
     /* 단계별 공개: 아직 차례가 아닌 상자(발표 중) */
@@ -597,6 +597,7 @@
                   <li><button type="button" class="dropdown-item" data-insert="video-file"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
                   <li><button type="button" class="dropdown-item" data-insert="video-youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
                   <li><hr class="dropdown-divider"></li>
+                  <li><button type="button" class="dropdown-item" data-insert="shape" title="삼각형·원·각·작도 그림을 AI가 좌표를 계산하는 코드로 정확히 그립니다"><i class="bi bi-triangle"></i> 도형 (AI가 코드로 계산해 그림)</button></li>
                   <li><button type="button" class="dropdown-item" data-insert="app" title="슬라이더·끌기·버튼으로 조작하는 학습 도구를 AI가 코드로 만듭니다"><i class="bi bi-puzzle"></i> 인터랙티브 요소 (AI가 코드 작성)</button></li>
                 </ul>
               </div>
@@ -616,9 +617,9 @@
               <span class="badge rounded-pill text-bg-warning ms-auto d-none" id="obj-dirty">적용 전</span>
             </div>
             <div class="obj-body p-3">
-              <!-- 인터랙티브 요소: 말로 고치기 -->
-              <section class="d-none" id="obj-app" aria-label="인터랙티브 요소 고치기">
-                <label class="form-label small text-muted" for="app-request">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.</label>
+              <!-- 인터랙티브 요소·도형: 말로 고치기 (안내 글은 AppEditor.open에서 종류에 맞게 바꾼다) -->
+              <section class="d-none" id="obj-app" aria-label="코드로 만든 개체 고치기">
+                <label class="form-label small text-muted" for="app-request" id="app-help">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.</label>
                 <textarea class="form-control" id="app-request" rows="5" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
                 <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
                   <button type="button" class="btn btn-primary btn-sm" id="app-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
@@ -1375,7 +1376,7 @@
          AI는 무엇을 그릴지만 적는다(data-tex / data-graph / data-geo). 계산과 그리기는 이 코드가 맡는다.
          그린 SVG를 슬라이드 HTML에 함께 저장하므로, 내보낸 파일·PDF는 이 코드 없이도 그대로 보인다. */
       const MathKit = {
-        SELECTOR: '.math-tex, .math-graph, .math-geo',
+        SELECTOR: '.math-tex, .math-graph, .math-geo, .math-shape',
         NS: 'http://www.w3.org/2000/svg',
         PALETTE: ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c'],
         FONT: "'Pretendard Variable', Pretendard, 'Malgun Gothic', sans-serif",
@@ -1383,7 +1384,7 @@
 
         // HTML 안의 수학 개체를 모두 그려 넣는다(AI 응답을 정리한 뒤에 부른다).
         async renderHtml(html) {
-          if (!/math-(tex|graph|geo)/.test(html)) return html;
+          if (!/math-(tex|graph|geo|shape)/.test(html)) return html;
           const template = document.createElement('template');
           template.innerHTML = html;
           for (const el of template.content.querySelectorAll(MathKit.SELECTOR)) await MathKit.render(el);
@@ -1392,7 +1393,7 @@
 
         // AI에게 보낼 때는 그린 SVG를 비우고 설계값만 남긴다(글자 수 절약).
         strip(html) {
-          if (!/math-(tex|graph|geo)/.test(html)) return html;
+          if (!/math-(tex|graph|geo|shape)/.test(html)) return html;
           const template = document.createElement('template');
           template.innerHTML = html;
           template.content.querySelectorAll(MathKit.SELECTOR).forEach(el => el.replaceChildren());
@@ -1401,6 +1402,7 @@
 
         kind(el) {
           if (el.classList.contains('math-tex')) return 'tex';
+          if (el.classList.contains('math-shape')) return 'shape';
           return el.classList.contains('math-graph') ? 'graph' : 'geo';
         },
 
@@ -1409,6 +1411,7 @@
           const kind = MathKit.kind(el);
           try {
             if (kind === 'tex') await MathKit.renderTex(el);
+            else if (kind === 'shape') el.replaceChildren(await ShapeKit.draw(AppKit.decode(el.getAttribute('data-code'))));
             else el.replaceChildren(kind === 'graph' ? MathKit.graph(MathKit.spec(el.getAttribute('data-graph'))) : MathKit.geo(MathKit.spec(el.getAttribute('data-geo'))));
             return '';
           } catch (err) {
@@ -1951,38 +1954,110 @@
         },
 
         // AI에게 보낼 때: HTML에서는 코드를 빼고, 코드는 아래에 따로 붙인다.
+        // 코드를 가진 개체: 인터랙티브 요소(.app-frame)와 도형(.math-shape). 둘 다 data-app으로 apps 배열의 코드와 짝짓는다.
+        CODED: '.app-frame, .math-shape',
+        hasCoded(html) { return /app-frame|math-shape/.test(html || ''); },
+
         forAi(html) {
-          if (html.indexOf('app-frame') < 0) return { html, text: '' };
+          if (!AppKit.hasCoded(html)) return { html, text: '' };
           const template = document.createElement('template');
           template.innerHTML = html;
           let text = '';
-          template.content.querySelectorAll('.app-frame').forEach(el => {
+          template.content.querySelectorAll(AppKit.CODED).forEach(el => {
             const code = AppKit.decode(el.getAttribute('data-code'));
             el.removeAttribute('data-code');
             el.replaceChildren();
-            if (code) text += '\n\n[인터랙티브 코드 ' + (el.getAttribute('data-app') || '') + ']\n' + code;
+            if (code) text += '\n\n[' + (el.classList.contains('math-shape') ? '도형' : '인터랙티브') + ' 코드 ' + (el.getAttribute('data-app') || '') + ']\n' + code;
           });
           return { html: template.innerHTML, text };
         },
 
         // AI 응답의 apps 배열(id·code)을 같은 data-app 자리에 넣는다. 코드가 안 왔으면 예전 코드를 그대로 둔다.
         attach(html, apps, previousHtml) {
-          if (html.indexOf('app-frame') < 0) return html;
+          if (!AppKit.hasCoded(html)) return html;
           const codes = {};
-          if (previousHtml && previousHtml.indexOf('app-frame') >= 0) {
+          if (AppKit.hasCoded(previousHtml)) {
             const old = document.createElement('template');
             old.innerHTML = previousHtml;
-            old.content.querySelectorAll('.app-frame[data-app]').forEach(el => { codes[el.getAttribute('data-app')] = AppKit.decode(el.getAttribute('data-code')); });
+            old.content.querySelectorAll('.app-frame[data-app], .math-shape[data-app]').forEach(el => { codes[el.getAttribute('data-app')] = AppKit.decode(el.getAttribute('data-code')); });
           }
           (Array.isArray(apps) ? apps : []).forEach(app => { if (app && app.id && app.code) codes[String(app.id)] = String(app.code).slice(0, 300000); });
           const template = document.createElement('template');
           template.innerHTML = html;
-          template.content.querySelectorAll('.app-frame').forEach(el => {
+          template.content.querySelectorAll(AppKit.CODED).forEach(el => {
             el.replaceChildren();
             const code = codes[el.getAttribute('data-app') || ''];
             if (code) el.setAttribute('data-code', AppKit.encode(code));
           });
           return template.innerHTML;
+        }
+      };
+
+      /* ===== 3-4. 도형: AI가 쓴 계산 코드로 SVG를 만든다 =====
+         코드(.math-shape의 data-code)는 점 좌표·길이·각을 계산해 SVG 글을 return하는 JavaScript 함수 본문이다.
+         격리된 칸(sandbox iframe)에서 한 번만 실행해 나온 SVG를 정리해 슬라이드에 그대로 넣는다.
+         그래서 썸네일·PDF·발표·내보낸 파일에서는 코드 없이 보이고, 고칠 때만 다시 실행한다. */
+      const ShapeKit = {
+        CSP: "default-src 'none'; script-src 'unsafe-inline'",
+        TIMEOUT: 5000,
+
+        // 코드를 실행해 SVG 글을 받는다.
+        run(code) {
+          return new Promise((resolve, reject) => {
+            if (!String(code || '').trim()) { reject(new Error('도형 코드가 없습니다.')); return; }
+            const token = 'shape-' + Util.uid();
+            const frame = document.createElement('iframe');
+            frame.setAttribute('sandbox', 'allow-scripts');
+            frame.setAttribute('aria-hidden', 'true');
+            frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:10px;height:10px;border:0;';
+            let timer = 0;
+            const done = (error, svg) => {
+              clearTimeout(timer);
+              window.removeEventListener('message', onMessage);
+              frame.remove();
+              if (error) reject(new Error(error)); else resolve(svg);
+            };
+            const onMessage = event => {
+              const data = event.data;
+              if (event.source !== frame.contentWindow || !data || data.lsShape !== token) return;
+              done(data.error || (data.svg ? '' : '코드가 SVG를 돌려주지 않았습니다.'), String(data.svg || ''));
+            };
+            window.addEventListener('message', onMessage);
+            timer = setTimeout(() => done('도형 코드가 ' + (ShapeKit.TIMEOUT / 1000) + '초 안에 끝나지 않았습니다.'), ShapeKit.TIMEOUT);
+            const body = String(code).replace(/<\/script/gi, '<\\/script');
+            frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="' + ShapeKit.CSP + '">' +
+              '</head><body><script>var T=' + JSON.stringify(token) + ';try{var r=(function(){\n' + body + '\n})();' +
+              'if(r&&typeof r==="object"&&r.outerHTML)r=r.outerHTML;parent.postMessage({lsShape:T,svg:String(r||"")},"*");}' +
+              'catch(e){parent.postMessage({lsShape:T,error:"도형 코드 오류: "+(e&&e.message||e)},"*");}<\/script></body></html>';
+            document.body.append(frame);
+          });
+        },
+
+        // 실행 결과를 정리해 <svg> 요소로 돌려준다(위험한 태그·속성은 슬라이드 정리 규칙으로 뺀다).
+        async draw(code) {
+          const raw = await ShapeKit.run(code);
+          const template = document.createElement('template');
+          template.innerHTML = Sanitizer.clean(raw.slice(0, 400000));
+          const svg = template.content.querySelector('svg');
+          if (!svg) throw new Error('코드가 돌려준 글에 <svg>가 없습니다.');
+          // 크기는 칸 너비를 따르게: viewBox를 두고 고정 너비·높이는 뗀다.
+          if (!svg.getAttribute('viewBox')) {
+            const w = parseFloat(svg.getAttribute('width')) || 800;
+            const h = parseFloat(svg.getAttribute('height')) || 600;
+            svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+          }
+          svg.removeAttribute('width');
+          svg.removeAttribute('height');
+          svg.setAttribute('role', 'img');
+          // 선은 그려지듯, 글자는 뒤이어 나타나게(그래프와 같은 모션). 점선(stroke-dasharray)은 그대로 둔다.
+          svg.querySelectorAll('line, polyline, polygon, path, circle, ellipse, rect').forEach(el => {
+            const stroke = el.getAttribute('stroke') || (el.getAttribute('style') || '').match(/stroke\s*:\s*([^;]+)/i)?.[1] || '';
+            if (!stroke || /^\s*none\s*$/i.test(stroke) || el.hasAttribute('stroke-dasharray') || /dasharray/i.test(el.getAttribute('style') || '')) return;
+            el.setAttribute('pathLength', '1');
+            el.classList.add('math-draw');
+          });
+          svg.querySelectorAll('text').forEach(el => el.classList.add('math-show'));
+          return svg;
         }
       };
 
@@ -2000,17 +2075,36 @@
           required: ['code']
         },
 
+        // 도형(.math-shape)도 같은 창에서 고친다. 다른 점: 프롬프트, 그리는 방법(코드를 실행해 나온 SVG를 넣는다)
+        shape: false,
+        originalHtml: '', // 도형: 편집 전 그려져 있던 SVG
+        drawToken: 0,
+        TEXT: {
+          app: { name: '인터랙티브 요소', title: '인터랙티브 요소 고치기', icon: 'bi-puzzle',
+            help: '어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.',
+            placeholder: '예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘' },
+          shape: { name: '도형', title: '도형 고치기', icon: 'bi-triangle',
+            help: '어떻게 바꿀지 적으면 Gemini가 이 도형을 그리는 코드를 고칩니다. 좌표·길이·각은 코드가 계산하고, 결과는 슬라이드에 바로 그려집니다.',
+            placeholder: '예) 각 B를 90°로 바꾸고 직각 표시를 넣어 줘. 변 AC의 길이 5cm를 적고, 선은 조금 더 굵게' }
+        },
+        text() { return AppEditor.TEXT[AppEditor.shape ? 'shape' : 'app']; },
+
         open(el) {
-          if (!el.getAttribute('data-app')) el.setAttribute('data-app', 'app' + Util.uid().slice(-6));
+          AppEditor.shape = el.classList.contains('math-shape');
+          if (!el.getAttribute('data-app')) el.setAttribute('data-app', (AppEditor.shape ? 'shp' : 'app') + Util.uid().slice(-6));
           AppEditor.el = el;
           AppEditor.original = el.getAttribute('data-code');
+          AppEditor.originalHtml = el.innerHTML;
           AppEditor.history = [];
           AppEditor.requests = [];
+          const text = AppEditor.text();
+          $('app-help').textContent = text.help;
+          $('app-request').placeholder = text.placeholder;
           $('app-request').value = '';
           $('app-undo').classList.add('d-none');
           AppEditor.status('');
           AppEditor.setBusy(false);
-          ObjectPanel.open(AppEditor, el, '인터랙티브 요소 고치기', 'bi-puzzle');
+          ObjectPanel.open(AppEditor, el, text.title, text.icon);
           $('app-request').focus();
         },
 
@@ -2032,7 +2126,18 @@
           if (!el) return;
           if (attr === null) el.removeAttribute('data-code');
           else el.setAttribute('data-code', attr);
-          AppKit.hydrate(el.closest('.draggable-box') || el.parentElement, 'edit');
+          if (AppEditor.shape) {
+            // 도형: 코드를 실행해 나온 SVG로 다시 그린다(늦게 끝난 앞 요청의 결과는 버린다).
+            const token = ++AppEditor.drawToken;
+            if (attr === AppEditor.original) { el.innerHTML = AppEditor.originalHtml; ObjectPanel.syncDirty(); return; }
+            ShapeKit.draw(AppKit.decode(attr)).then(svg => {
+              if (token === AppEditor.drawToken && AppEditor.el === el) el.replaceChildren(svg);
+            }).catch(err => {
+              if (token === AppEditor.drawToken && AppEditor.el === el) AppEditor.status('⚠ 도형을 그리지 못했습니다: ' + err.message + ' — 다시 고쳐 달라고 요청하거나 [반영 취소]를 누르세요.', 'danger');
+            });
+          } else {
+            AppKit.hydrate(el.closest('.draggable-box') || el.parentElement, 'edit');
+          }
           ObjectPanel.syncDirty();
         },
 
@@ -2042,6 +2147,7 @@
         restoreInto(node) {
           if (AppEditor.original === null) node.removeAttribute('data-code');
           else node.setAttribute('data-code', AppEditor.original);
+          if (AppEditor.shape) node.innerHTML = AppEditor.originalHtml;
         },
 
         async send() {
@@ -2060,11 +2166,12 @@
           ObjectPanel.syncDirty();
           let result = null;
           let failure = null;
+          const key = AppEditor.shape ? 'shapeRevise' : 'appRevise';
           try {
             result = await Gemini.generateJson({
               model: Settings.model(),
-              system: Prompts.text('appRevise.system'),
-              prompt: Prompts.text('appRevise.request', { request, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }),
+              system: Prompts.text(key + '.system'),
+              prompt: Prompts.text(key + '.request', { request, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }),
               schema: AppEditor.SCHEMA,
               signal: controller.signal,
               onProgress: length => { if (AppEditor.el === el) AppEditor.status('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary'); }
@@ -2088,7 +2195,7 @@
           AppEditor.setCode(AppKit.encode(next.slice(0, 300000)));
           $('app-request').value = '';
           AppEditor.status('고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
-            ' 슬라이드에서 조작해 보고 마음에 들면 [적용]을 누르세요.', 'success');
+            (AppEditor.shape ? ' 슬라이드에서 확인하고' : ' 슬라이드에서 조작해 보고') + ' 마음에 들면 [적용]을 누르세요.', 'success');
         },
 
         undo() {
@@ -2109,8 +2216,9 @@
           Editor.commit();
           const deck = Editor.deck;
           // 그 장의 수정 기록에 남긴다(다음 AI 요청의 맥락)
-          if (deck && requests.length) AiPanel.remember(deck, '[인터랙티브 요소 수정] ' + requests.join(' / '), requests.join(' / '), Editor.current().id);
-          Util.toast('인터랙티브 요소를 고쳤습니다. 되돌리려면 Ctrl+Z', 'success');
+          const name = AppEditor.text().name;
+          if (deck && requests.length) AiPanel.remember(deck, '[' + name + ' 수정] ' + requests.join(' / '), requests.join(' / '), Editor.current().id);
+          Util.toast(name + (AppEditor.shape ? '을' : '를') + ' 고쳤습니다. 되돌리려면 Ctrl+Z', 'success');
         },
 
         // 편집을 끝낸다. restore면 편집 전 코드로 되돌린다.
@@ -2119,7 +2227,15 @@
           if (AppEditor.aborter) AppEditor.aborter.abort();
           AppEditor.aborter = null;
           AppEditor.setBusy(false);
-          if (restore && el && el.getAttribute('data-code') !== AppEditor.original) AppEditor.setCode(AppEditor.original);
+          AppEditor.drawToken++; // 그리는 중이던 도형 결과는 버린다
+          if (restore && el && el.getAttribute('data-code') !== AppEditor.original) {
+            if (AppEditor.shape) {
+              if (AppEditor.original === null) el.removeAttribute('data-code'); else el.setAttribute('data-code', AppEditor.original);
+              el.innerHTML = AppEditor.originalHtml;
+            } else {
+              AppEditor.setCode(AppEditor.original);
+            }
+          }
           AppEditor.el = null;
           AppEditor.history = [];
           AppEditor.requests = [];
@@ -3645,8 +3761,8 @@
           for (;;) {
             const kids = Array.from(node.children).filter(el => !el.matches('.ls-handle, .ls-ungroup, .ls-step, style, .iframe-drag-overlay'));
             const ownText = Array.from(node.childNodes).some(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
-            if (ownText || node.matches('.editable-text, .editable-image, .editable-video, .math-tex, .math-graph, .math-geo, .app-frame')) return [];
-            if (kids.length === 1 && !kids[0].matches('.editable-text, .editable-image, .editable-video, .math-tex, .math-graph, .math-geo, .app-frame, img, video, iframe, svg')) { node = kids[0]; continue; }
+            if (ownText || node.matches('.editable-text, .editable-image, .editable-video, .math-tex, .math-graph, .math-geo, .math-shape, .app-frame')) return [];
+            if (kids.length === 1 && !kids[0].matches('.editable-text, .editable-image, .editable-video, .math-tex, .math-graph, .math-geo, .math-shape, .app-frame, img, video, iframe, svg')) { node = kids[0]; continue; }
             return kids.length >= 2 ? kids : [];
           }
         },
@@ -3965,6 +4081,7 @@
           else if (kind === 'video-file') $('file-video').click();
           else if (kind === 'video-youtube') AiPanel.stageYoutube();
           else if (kind === 'app') AiPanel.stageApp();
+          else if (kind === 'shape') AiPanel.stageShape();
         },
 
         boxAction(action) {
@@ -4643,18 +4760,22 @@
               type: 'OBJECT',
               properties: {
                 title: { type: 'STRING' },
+                // 디자인 의도(1~2문장). html보다 먼저 쓰게 해 AI가 콘셉트를 정한 뒤 화면을 만들게 한다(저장하지 않는다).
+                concept: { type: 'STRING' },
+                // 이 장에 쓴 디자인 키워드(색·배치·글꼴 느낌·장식·모션). 다음 장을 만들 때 어울리되 겹치지 않게 참고한다.
+                design: { type: 'STRING' },
                 bg: { type: 'STRING' },
                 html: { type: 'STRING' },
                 notes: { type: 'STRING' },
-                // 이 장에 쓴 디자인 키워드(색·배치·글꼴 느낌·장식·모션). 다음 장을 만들 때 어울리되 겹치지 않게 참고한다.
-                design: { type: 'STRING' },
                 // 인터랙티브 요소의 코드(html의 <div class="app-frame" data-app="id">와 짝)
                 apps: {
                   type: 'ARRAY',
                   items: { type: 'OBJECT', properties: { id: { type: 'STRING' }, code: { type: 'STRING' } }, required: ['id', 'code'] }
                 }
               },
-              required: ['title', 'html', 'notes', 'design']
+              required: ['title', 'concept', 'design', 'bg', 'html', 'notes'],
+              // Gemini는 이 순서대로 쓴다: 콘셉트 → 디자인 키워드 → 화면 순
+              propertyOrdering: ['title', 'concept', 'design', 'bg', 'html', 'notes', 'apps']
             }
           }
         },
@@ -4664,14 +4785,14 @@
       /* ===== 11-2. 여러 장 계획 =====
          [여러 장]을 켜고 생성하면 바로 만들지 않고 장별 계획(소제목·핵심 내용·넣을 요소)을 먼저 받아 계획표 창에 보여 준다.
          계획표는 그 자리에서 고칠 수 있고(순서·추가·삭제 포함), 승인하면 그 계획대로 한 장씩 만든다.
-         넣을 요소는 종류별(수식·그래프 / 그림 / 영상 / 인터랙티브 — 도형은 인터랙티브로)로 장마다 정하고,
+         넣을 요소는 종류별(수식·그래프 / 도형 / 그림 / 영상 / 인터랙티브)로 장마다 정하고,
          그림·영상은 AI 창에 담아 둔 것을 배정하거나 계획표에서 바로 고른다. 만들 때는 그 장의 요소만 그 장 요청에 보낸다. */
       const Planner = {
         active: null, // { topic, plan }
         staged: [],   // 계획표를 열 때 AI 창에 담겨 있던 개체(배정할 수 있는 것)
         MAX: 20,
         MAX_ELEMENTS: 6,
-        LINES: ['math', 'app'], // 한 칸에 줄마다 하나씩 적는 종류
+        LINES: ['math', 'shape', 'app'], // 한 칸에 줄마다 하나씩 적는 종류
 
         // 줄 수만큼 칸 높이를 늘린다.
         // 글 길이에 맞춰 칸 높이를 늘린다(스크롤 대신). 창이 숨어 있으면 잴 수 없어 창이 열릴 때 다시 맞춘다.
@@ -4695,9 +4816,10 @@
         },
         KINDS: {
           math: { label: '수식·그래프', icon: 'bi-calculator', placeholder: '예) 근의 공식 수식, y=x²−2x 그래프(꼭짓점 표시)' },
+          shape: { label: '도형', icon: 'bi-triangle', placeholder: '어떤 도형인지 (예: ∠B=90°인 직각삼각형 ABC와 직각 표시, 원 O와 접선)' },
           image: { label: '그림', icon: 'bi-image', placeholder: '어떤 그림인지 (예: 놀이공원 입장권 사진)' },
           video: { label: '영상', icon: 'bi-camera-video', placeholder: '어떤 영상인지 (예: 포물선 운동 실험 영상)' },
-          app: { label: '인터랙티브', icon: 'bi-puzzle', placeholder: '어떤 조작 도구·도형인지 (예: a 슬라이더로 y=ax² 그래프 변화 보기, 직각삼각형과 직각 표시)' }
+          app: { label: '인터랙티브', icon: 'bi-puzzle', placeholder: '어떤 조작 도구인지 (예: a 슬라이더로 y=ax² 그래프 변화 보기, 연표에서 시대를 눌러 사건 보기)' }
         },
         SCHEMA: {
           type: 'OBJECT',
@@ -4711,12 +4833,13 @@
                   title: { type: 'STRING' },
                   points: { type: 'STRING' },
                   math: { type: 'STRING' },
+                  shape: { type: 'STRING' },
                   image: { type: 'STRING' },
                   video: { type: 'STRING' },
                   interactive: { type: 'STRING' }
                 },
-                // 선택 항목으로 두면 AI가 칸을 통째로 빼 버리기 쉬워, 수식·인터랙티브 칸은 꼭 답하게 한다(넣을 것이 없으면 빈 글자).
-                required: ['title', 'points', 'math', 'interactive']
+                // 선택 항목으로 두면 AI가 칸을 통째로 빼 버리기 쉬워, 수식·도형·인터랙티브 칸은 꼭 답하게 한다(넣을 것이 없으면 빈 글자).
+                required: ['title', 'points', 'math', 'shape', 'interactive']
               }
             }
           },
@@ -4733,6 +4856,7 @@
             if (el.kind === 'image') note = el.media ? ' (사용자가 넣을 그림: ' + el.media.name + ')' : ' (실제 그림 없음 — 도형·이모지·인라인 SVG로 표현)';
             if (el.kind === 'video') note = el.media ? ' (사용자가 넣을 영상: ' + el.media.name + ')' : ' (실제 영상 없음 — 넣지 말고 그림·도형으로 대신)';
             if (el.kind === 'app') note = ' (이 장에 인터랙티브 요소로 만든다)';
+            if (el.kind === 'shape') note = ' (이 장에 도형 요소로 그린다)';
             lines.push('   [' + Planner.KINDS[el.kind].label + '] ' + (el.text || '') + note);
           });
           return lines.join('\n');
@@ -4747,6 +4871,7 @@
             // 같은 개체를 여러 장에 배정해도 장마다 표식이 따로 붙게 복사해 보낸다(source: 원래 개체).
             if ((el.kind === 'image' || el.kind === 'video') && el.media) list.push(Object.assign({}, el.media, { source: el.media, slideTitle: item.title }));
             if (el.kind === 'app') list.push({ kind: 'app', name: '인터랙티브 요소', id: 'app' + Util.uid().slice(-6), note: el.text, slideTitle: item.title });
+            if (el.kind === 'shape') list.push({ kind: 'shape', name: '도형', id: 'shp' + Util.uid().slice(-6), note: el.text, slideTitle: item.title });
           });
           return list;
         },
@@ -4756,6 +4881,7 @@
           const elements = [];
           const split = text => String(text || '').split(/\n|;|·(?=\s)/).map(part => part.trim()).filter(Boolean);
           split(item.math).forEach(text => elements.push({ kind: 'math', text }));
+          split(item.shape).forEach(text => elements.push({ kind: 'shape', text }));
           // 그림·영상은 담아 둔 실제 파일과 이어지는 것만 둔다. 그 밖의 꾸밈은 슬라이드를 만들 때 AI가 알아서 한다.
           split(item.image).forEach(text => { const media = Planner.match(text, ['image']); if (media) elements.push({ kind: 'image', text, media }); });
           split(item.video).forEach(text => { const media = Planner.match(text, ['video', 'youtube']); if (media) elements.push({ kind: 'video', text, media }); });
@@ -5462,7 +5588,7 @@
             host.append(chip);
           });
           // 슬라이드에 넣을 개체(파란 칩)
-          const mediaIcons = { image: 'bi-image', video: 'bi-file-earmark-play', youtube: 'bi-youtube', app: 'bi-puzzle' };
+          const mediaIcons = { image: 'bi-image', video: 'bi-file-earmark-play', youtube: 'bi-youtube', app: 'bi-puzzle', shape: 'bi-triangle' };
           AiPanel.media.forEach(item => {
             const chip = document.createElement('span');
             chip.className = 'badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-1 fw-normal';
@@ -5541,6 +5667,14 @@
             '예) "a 값을 슬라이더로 바꾸며 y=ax² 그래프가 어떻게 변하는지 보기", "주사위를 여러 번 던져 상대도수 막대그래프 그리기"');
         },
 
+        // 도형: 그릴 도형은 입력칸에 적게 하고, AI가 좌표를 계산하는 코드를 써서 SVG로 그린다.
+        stageShape() {
+          if (AiPanel.media.some(item => item.kind === 'shape')) { Util.toast('도형은 한 번에 하나씩 넣을 수 있습니다.', 'warning'); return; }
+          AiPanel.addMedia({ kind: 'shape', name: '도형', id: 'shp' + Util.uid().slice(-6) },
+            '어떤 도형을 그릴지 입력칸에 적고 [' + $('ai-send-label').textContent + ']을 누르세요.\n' +
+            '예) "∠B=90°인 직각삼각형 ABC, AB=3, BC=4, 직각 표시와 변의 길이", "원 O와 접선 l, 접점 T"');
+        },
+
         // quiet: 여러 개를 담을 때는 알림을 모아서 한 번만 보인다. 담았으면 true.
         addMedia(item, hint, quiet) {
           if (AiPanel.media.length >= 6) { if (!quiet) Util.toast('넣을 개체는 한 번에 6개까지 담을 수 있습니다.', 'warning'); return false; }
@@ -5564,6 +5698,11 @@
               item.token = 'data-app="' + item.id + '"';
               return '- 인터랙티브 요소' + (item.note ? '("' + item.note + '")' : '') + ': <div class="app-frame" data-app="' + item.id + '" style="width:100%; height:600px;"></div> ' +
                 '(코드는 html에 쓰지 말고 이 장의 apps 배열에 {"id":"' + item.id + '","code":"..."}로 따로 출력한다. 높이는 내용에 맞게 정한다)';
+            }
+            if (item.kind === 'shape') {
+              item.token = 'data-app="' + item.id + '"';
+              return '- 도형' + (item.note ? '("' + item.note + '")' : '') + ': <div class="math-shape" data-app="' + item.id + '"></div> ' +
+                '(SVG를 return하는 계산 코드를 html에 쓰지 말고 이 장의 apps 배열에 {"id":"' + item.id + '","code":"..."}로 따로 출력한다. 크기는 .draggable-box의 width로 정한다)';
             }
             if (item.kind === 'youtube') {
               item.token = item.embed;
@@ -5724,7 +5863,7 @@
           Array.from(root.children).filter(el => el.classList.contains('draggable-box')).forEach(box => { // 조각(fragment)에는 :scope가 듣지 않는다
             const copy = box.cloneNode(true);
             copy.querySelectorAll('.math-tex').forEach(el => el.replaceWith('$' + (el.getAttribute('data-tex') || '') + '$'));
-            copy.querySelectorAll('.math-graph, .math-geo, .app-frame, style').forEach(el => el.remove());
+            copy.querySelectorAll('.math-graph, .math-geo, .math-shape, .app-frame, style').forEach(el => el.remove());
             // 글 요소마다 ' / '로 나눠 제목과 본문이 붙지 않게 한다.
             const pieces = Array.from(copy.querySelectorAll('.editable-text')).filter(el => !el.parentElement.closest('.editable-text'))
               .map(el => el.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -5739,7 +5878,7 @@
             try { fns = (JSON.parse(el.getAttribute('data-graph') || '{}').functions || []).map(f => (typeof f === 'string' ? f : f.expr)).join(', '); } catch (err) { /* 무시 */ }
             parts.push('그래프' + (fns ? '(' + fns + ')' : ''));
           });
-          if (root.querySelector('.math-geo')) parts.push('도형 ' + root.querySelectorAll('.math-geo').length + '개');
+          if (root.querySelector('.math-geo, .math-shape')) parts.push('도형 ' + root.querySelectorAll('.math-geo, .math-shape').length + '개');
           if (root.querySelector('img')) parts.push('그림 ' + root.querySelectorAll('img').length + '개');
           if (root.querySelector('video, iframe')) parts.push('영상 ' + root.querySelectorAll('video, iframe').length + '개');
           if (root.querySelector('.app-frame')) parts.push('인터랙티브 요소 ' + root.querySelectorAll('.app-frame').length + '개');
@@ -6864,8 +7003,8 @@
           const holder = document.createElement('div');
           holder.className = 'slide-canvas';
           SlideView.fill(holder, slide, 'show');
-          // 인터랙티브 요소는 격리된 iframe(srcdoc)째로 내보낸다. 원본 코드(data-code)는 slide.html에만 둔다.
-          holder.querySelectorAll('.app-frame').forEach(el => el.removeAttribute('data-code'));
+          // 인터랙티브 요소는 격리된 iframe(srcdoc)째로, 도형은 그려 둔 SVG로 내보낸다. 원본 코드(data-code)는 slide.html에만 둔다.
+          holder.querySelectorAll('.app-frame, .math-shape').forEach(el => el.removeAttribute('data-code'));
           const style = holder.querySelector('.ls-slide-style');
           const css = style ? style.textContent : '';
           if (style) style.remove();
@@ -7684,9 +7823,9 @@
               return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
             }) || null;
           }
-          // 도형(math-geo)은 편집기를 없앴다. 예전에 만든 도형은 그대로 보이고, 고치려면 인터랙티브 요소로 다시 그린다.
+          // 예전 방식 도형(math-geo, 설계값 JSON)은 편집기가 없다. 보이기는 그대로 하고, 고치려면 새 도형으로 다시 그린다.
           if (objectEl && objectEl.matches('.math-geo')) {
-            Util.toast('도형은 편집 창에서 고칠 수 없습니다. AI 창의 [현재 슬라이드 수정]에서 인터랙티브 요소로 다시 그려 달라고 요청해 주세요.');
+            Util.toast('예전 방식으로 만든 도형은 편집 창에서 고칠 수 없습니다. AI 창의 [현재 슬라이드 수정]에서 도형을 다시 그려 달라고 요청해 주세요.');
             return;
           }
           if (objectEl) {
@@ -7697,8 +7836,8 @@
               if (!objectEl.isConnected) return;
               Editor.stopEditing();
               Editor.select(box);
-              if (objectEl.matches(MathKit.SELECTOR)) MathEditor.open(objectEl);
-              else AppEditor.open(objectEl);
+              if (objectEl.matches('.math-shape, .app-frame')) AppEditor.open(objectEl); // 코드로 만든 개체
+              else MathEditor.open(objectEl);
             };
             if (ObjectPanel.leaveOr(start)) start();
             return;
