@@ -552,8 +552,10 @@
                 </div>
                 <div class="col-md-5">
                     <div class="dash-stat-box h-100 d-flex flex-column">
-                        <div class="text-muted small fw-bold mb-3"><i class="bi bi-bar-chart-fill text-primary"></i> 레벨별
+                        <div class="text-muted small fw-bold mb-1"><i class="bi bi-bar-chart-fill text-primary"></i> 레벨별
                             평균 명중률</div>
+                        <div class="text-muted mb-2" style="font-size: 0.75rem;">※ 각 레벨 정답률은 그 레벨까지 도달한 학생만의
+                            결과입니다. 도달 인원을 함께 보세요.</div>
                         <div id="dashLevelAcc" class="flex-grow-1"></div>
                     </div>
                 </div>
@@ -562,6 +564,15 @@
                         <div class="text-muted small fw-bold mb-3"><i class="bi bi-stopwatch text-danger"></i> 평균 풀이 속도
                             분포</div>
                         <div id="dashSpeedDist" class="flex-grow-1"></div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="dash-stat-box">
+                        <div class="text-muted small fw-bold mb-1"><i class="bi bi-funnel-fill text-danger"></i> 레벨 도달률
+                            (학생들이 막힌 지점)</div>
+                        <div class="text-muted mb-2" style="font-size: 0.75rem;">※ 바로 앞 단계 대비 감소폭이 큰 곳이 학급이 가장 많이
+                            막힌 개념입니다.</div>
+                        <div id="dashFunnel"></div>
                     </div>
                 </div>
             </div>
@@ -1279,6 +1290,7 @@
                 document.getElementById('dashAvgAcc').innerText = '-';
                 document.getElementById('dashLevelAcc').innerHTML = '';
                 document.getElementById('dashSpeedDist').innerHTML = '';
+                document.getElementById('dashFunnel').innerHTML = '';
                 return;
             }
 
@@ -1322,6 +1334,7 @@
                 document.getElementById('dashAvgAcc').innerText = '-';
                 document.getElementById('dashLevelAcc').innerHTML = '';
                 document.getElementById('dashSpeedDist').innerHTML = '';
+                document.getElementById('dashFunnel').innerHTML = '';
                 return;
             }
 
@@ -1407,6 +1420,10 @@
             document.getElementById('dashAvgScore').innerText = `${Math.round(totalScore / tLen)}점`;
             document.getElementById('dashAvgAcc').innerText = `${Math.round(totalAcc / tLen)}%`;
 
+            // 레벨 i 도달 인원 = 최고 도달 Stage가 i 이상인 학생 수 (생존자 편향 해석용)
+            const countReached = (minStage) => keys.filter(k => stats[k].mStg >= minStage).length;
+            const SMALL_SAMPLE = 5;
+
             const levelNames = ["", "Lv.1 양수 정비례", "Lv.2 음수 정비례", "Lv.3 양수 반비례", "Lv.4 음수 반비례"];
             let levelHtml = '<div class="d-flex flex-column justify-content-evenly h-100 py-1">';
             for (let i = 1; i <= 4; i++) {
@@ -1414,6 +1431,9 @@
                 let p = tot > 0 ? Math.round((levelHits[i] / tot) * 100) : 0;
                 let text = tot > 0 ? `${p}%` : '';
                 let color = ["", "bg-primary", "bg-success", "bg-warning", "bg-info"][i];
+                const reached = countReached(i);
+                const smallWarn = reached > 0 && reached < SMALL_SAMPLE
+                    ? ' <span class="text-danger" title="도달 인원이 적어 정답률 해석에 주의하세요.">⚠</span>' : '';
                 levelHtml += `
                     <div class="d-flex align-items-center">
                         <div style="width: 120px;" class="small fw-bold text-muted">${levelNames[i]}</div>
@@ -1422,11 +1442,42 @@
                                 ${p > 0 ? `<div class="progress-bar ${color}" role="progressbar" style="width: ${p}%; justify-content: flex-start; padding-left: 10px; border-top-right-radius: 6px; border-bottom-right-radius: 6px;" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">${p > 10 ? text : ''}</div>` : ''}
                             </div>
                         </div>
+                        <div style="width: 78px;" class="small text-muted text-end text-nowrap">${tot > 0 && p <= 10 ? `<b>${text}</b> · ` : ''}${reached}/${tLen}명${smallWarn}</div>
                     </div>
                 `;
             }
             levelHtml += '</div>';
             document.getElementById('dashLevelAcc').innerHTML = levelHtml;
+
+            // 레벨 도달률 깔때기: 어느 단계에서 학생들이 멈췄는지
+            const funnelSteps = [
+                { name: "Lv.1 양수 정비례", n: countReached(1), c: "bg-primary" },
+                { name: "Lv.2 음수 정비례", n: countReached(2), c: "bg-success" },
+                { name: "Lv.3 양수 반비례", n: countReached(3), c: "bg-warning" },
+                { name: "Lv.4 음수 반비례", n: countReached(4), c: "bg-info" },
+                { name: "Stage 5 혼합", n: countReached(5), c: "bg-secondary" },
+                { name: "모든 개념 마스터", n: keys.filter(k => stats[k].comp).length, c: "bg-dark" }
+            ];
+            let funnelHtml = '<div class="d-flex flex-column gap-2">';
+            funnelSteps.forEach((step, idx) => {
+                const pct = tLen > 0 ? Math.round((step.n / tLen) * 100) : 0;
+                const prevN = idx > 0 ? funnelSteps[idx - 1].n : step.n;
+                const drop = idx > 0 ? prevN - step.n : 0;
+                const dropText = drop > 0 ? `<span class="text-danger ms-1">▼${drop}명</span>` : '';
+                funnelHtml += `
+                    <div class="d-flex align-items-center">
+                        <div style="width: 120px;" class="small fw-bold text-muted">${step.name}</div>
+                        <div class="flex-grow-1 mx-2">
+                            <div class="progress" style="height: 20px; background-color: #f1f5f9;">
+                                ${pct > 0 ? `<div class="progress-bar ${step.c}" role="progressbar" style="width: ${pct}%;" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">${pct > 10 ? pct + '%' : ''}</div>` : ''}
+                            </div>
+                        </div>
+                        <div style="width: 110px;" class="small text-muted text-end text-nowrap">${step.n}/${tLen}명${dropText}</div>
+                    </div>
+                `;
+            });
+            funnelHtml += '</div>';
+            document.getElementById('dashFunnel').innerHTML = funnelHtml;
 
             const speeds = [
                 { k: "<10", n: "0~10초", c: "bg-success" },
