@@ -920,6 +920,7 @@
         <div class="modal-body" id="confirm-message"></div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="confirm-cancel">취소</button>
+          <button type="button" class="btn btn-primary d-none" id="confirm-extra"></button>
           <button type="button" class="btn btn-primary" id="confirm-ok">확인</button>
         </div>
       </div>
@@ -1055,21 +1056,28 @@
           });
         },
 
-        confirm(message, okText, danger, cancelText) {
+        // extraText를 주면 세 번째 단추가 생기고, 그 단추를 누르면 'extra'를 돌려준다(확인 true / 취소 false).
+        confirm(message, okText, danger, cancelText, extraText) {
           return new Promise(resolve => {
             const el = $('confirm-modal');
             const ok = $('confirm-ok');
+            const extra = $('confirm-extra');
             $('confirm-message').textContent = message;
             $('confirm-message').style.whiteSpace = 'pre-line';
             $('confirm-cancel').textContent = cancelText || '취소';
             ok.textContent = okText || '확인';
             ok.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+            extra.textContent = extraText || '';
+            extra.classList.toggle('d-none', !extraText);
             let result = false;
             const modal = bootstrap.Modal.getOrCreateInstance(el);
             const onOk = () => { result = true; modal.hide(); };
+            const onExtra = () => { result = 'extra'; modal.hide(); };
             ok.addEventListener('click', onOk, { once: true });
+            extra.addEventListener('click', onExtra, { once: true });
             el.addEventListener('hidden.bs.modal', () => {
               ok.removeEventListener('click', onOk);
+              extra.removeEventListener('click', onExtra);
               resolve(result);
             }, { once: true });
             modal.show();
@@ -1860,30 +1868,43 @@
           ObjectPanel.showView('ai');
         },
 
-        ask() {
+        // 고친 내용을 어떻게 할지 묻고 처리한다: [편집 적용] 적용하고 닫기 / [편집 취소] 되돌리고 닫기 / [계속 편집] 그대로.
+        // 편집 창이 닫혔으면 true를 돌려준다.
+        async ask() {
           ObjectPanel.asking = true;
-          return Util.confirm('적용하지 않은 고친 내용이 있습니다.\n편집을 취소하면 원래대로 되돌아갑니다.', '편집 취소', true, '계속 편집')
-            .finally(() => { ObjectPanel.asking = false; });
+          let choice;
+          try {
+            choice = await Util.confirm('적용하지 않은 고친 내용이 있습니다.\n[편집 적용]을 누르면 고친 내용을 남기고, [편집 취소]를 누르면 원래대로 되돌아갑니다.',
+              '편집 취소', true, '계속 편집', '편집 적용');
+          } finally {
+            ObjectPanel.asking = false;
+          }
+          const session = ObjectPanel.session;
+          if (!session) return true;
+          if (choice === 'extra') {
+            if (AppEditor.aborter) Util.toast('AI가 고치는 중이라 아직 적용할 수 없습니다. 끝난 뒤 다시 시도해 주세요.', 'warning');
+            else session.editor.apply();
+          } else if (choice === true) {
+            ObjectPanel.close(true);
+          }
+          if (ObjectPanel.session) { ObjectPanel.focus(); return false; }
+          return true;
         },
 
         // 다른 곳으로 가기 전에 부른다. 바로 가도 되면 true(고친 게 없으면 편집을 닫는다).
-        // 고친 게 있으면 묻고 false를 돌려준다. [편집 취소]를 고르면 원래대로 되돌린 뒤 retry를 실행한다.
+        // 고친 게 있으면 묻고 false를 돌려준다. 적용하거나 취소해 편집 창이 닫히면 retry를 실행한다.
         leaveOr(retry) {
           if (!ObjectPanel.session) return true;
           if (ObjectPanel.asking) return false;
           if (!ObjectPanel.dirty()) { ObjectPanel.close(true); return true; }
-          ObjectPanel.ask().then(ok => {
-            if (!ok) { ObjectPanel.focus(); return; }
-            ObjectPanel.close(true);
-            if (retry) retry();
-          });
+          ObjectPanel.ask().then(closed => { if (closed && retry) retry(); });
           return false;
         },
 
         // [←]·Esc: 고친 게 있으면 묻고 닫는다(선택은 그대로).
         async requestClose() {
           if (!ObjectPanel.session || ObjectPanel.asking) return;
-          if (ObjectPanel.dirty() && !await ObjectPanel.ask()) { ObjectPanel.focus(); return; }
+          if (ObjectPanel.dirty()) { await ObjectPanel.ask(); return; }
           ObjectPanel.close(true);
         },
 
