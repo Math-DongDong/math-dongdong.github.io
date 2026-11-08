@@ -3,6 +3,7 @@
  * 대시보드용 "방 입장 QR" 플로팅 패널
  *
  *  - 방을 새로 만들거나 방 목록에서 방을 고르면 QR이 자동으로 뜹니다. (버튼 없음)
+ *  - 모바일(폭 768px 미만)에서는 자동으로 뜨지 않고 [방 입장 QR] 버튼을 눌러야 뜹니다.
  *  - 제목 줄을 잡고 끌면 화면 어디로든 옮길 수 있습니다.
  *  - 오른쪽 아래 모서리를 끌면 QR 크기가 바뀝니다.
  *  - 위치와 크기는 브라우저에 저장되어 다음에도 그대로 복원됩니다.
@@ -332,12 +333,12 @@ function setupResize(panel) {
 // =====================================================================
 // 닫았을 때 남는 작은 복귀 버튼
 // =====================================================================
-function showChip() {
+function showChip(label = 'QR 다시 보기') {
     if (document.getElementById(CHIP_ID)) return;
     ensureStyle();
     document.body.insertAdjacentHTML('beforeend', `
         <button type="button" id="${CHIP_ID}">
-            <i class="bi bi-qr-code"></i> QR 다시 보기
+            <i class="bi bi-qr-code"></i> ${label}
         </button>`);
     document.getElementById(CHIP_ID).addEventListener('click', () => {
         userClosed = false;
@@ -439,7 +440,16 @@ function syncWithRoomSelect() {
     }
 
     userClosed = false;                // 방이 바뀌면 다시 보여 줍니다
+    if (isMobileView()) {              // 모바일: 공간이 좁으므로 버튼만 두고, 누르면 QR 표시
+        closeQrPanel(false);
+        showChip('방 입장 QR');
+        return;
+    }
     openQrPanel();
+}
+
+function isMobileView() {
+    return window.matchMedia('(max-width: 767.98px)').matches;
 }
 
 setInterval(syncWithRoomSelect, 700);
