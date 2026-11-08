@@ -5748,6 +5748,15 @@
         var send = function (message) { try { parent.postMessage(message, '*'); } catch (err) { /* 무시 */ } };
         // 칸 안을 누른 뒤에도 Esc로 발표를 끝낼 수 있게 바깥에 알린다.
         window.addEventListener('keydown', function (e) { if (e.isTrusted && e.key === 'Escape') send({ lsApp: 'escape' }); }, true);
+        // 칸 안을 누른 뒤에도 방향키·PageUp/PageDown(발표용 리모컨)·Home/End로 장을 넘길 수 있게 바깥에 알린다.
+        // 칸의 코드가 그 키를 직접 쓰면(preventDefault) 넘기지 않고, 입력칸·슬라이더·버튼 등에 초점이 있을 때도 넘기지 않는다.
+        var NAV_KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'];
+        window.addEventListener('keydown', function (e) {
+          if (!e.isTrusted || e.defaultPrevented || NAV_KEYS.indexOf(e.key) < 0 || e.ctrlKey || e.metaKey || e.altKey) return;
+          var el = e.target;
+          if (el && el.closest && el.closest('input, select, textarea, button, a, [contenteditable=""], [contenteditable="true"], [tabindex]')) return;
+          send({ lsApp: 'nav', key: e.key });
+        });
         ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown', 'keyup'].forEach(function (type) {
           window.addEventListener(type, function (e) {
             if (!e.isTrusted) return;
@@ -5972,11 +5981,17 @@
 
         win.addEventListener('message', function (event) {
           if (event.data && event.data.lsApp === 'evt') { onAppInput(event); return; }
-          if (event.data && event.data.lsApp === 'escape') {
-            // 이 창의 인터랙티브 칸에서 온 것만: 바깥 문서에 Esc를 대신 눌러 발표를 끝낸다.
+          if (event.data && (event.data.lsApp === 'escape' || event.data.lsApp === 'nav')) {
+            // 이 창의 인터랙티브 칸에서 온 것만: 바깥 문서에 그 키를 대신 눌러 발표를 끝내거나(Esc) 장을 넘긴다(방향키 등).
+            // 장 넘기기는 발표 화면의 칸에서만(편집 화면에서 칸을 시험해 볼 때 방향키가 상자를 움직이지 않게).
             var mine = false;
-            each(win.document.querySelectorAll('.app-frame > iframe'), function (item) { if (item.contentWindow === event.source) mine = true; });
-            if (mine) win.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+            var key = event.data.lsApp === 'escape' ? 'Escape' : String(event.data.key || '');
+            each(win.document.querySelectorAll('.app-frame > iframe'), function (item) {
+              if (item.contentWindow === event.source && (key === 'Escape' || !item.closest('#slide-canvas'))) mine = true;
+            });
+            if (mine && /^(Escape|ArrowRight|ArrowLeft|ArrowDown|ArrowUp|PageDown|PageUp|Home|End)$/.test(key)) {
+              win.document.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true }));
+            }
             return;
           }
           if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(event.origin)) return;
