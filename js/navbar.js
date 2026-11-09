@@ -55,6 +55,52 @@
                 }
             ]
         },
+        // 아하! 수학 학습 페이지 전용: 로고는 아하! 수학 목차로, 학년별 주제 드롭다운
+        // (페이지의 header.topbar 안에 들어가 진행률 줄과 함께 고정되므로 네비바 자체는 sticky 를 쓰지 않음)
+        "ahamath": {
+            "brand": "아하! 수학",
+            "brandPath": "pages/middleschool/ahamath.html",
+            "sticky": false,
+            "menu": [
+                {
+                    "title": "중1",
+                    "items": [
+                        { "header": "소인수분해" },
+                        { "name": "소수와 합성수", "path": "pages/middleschool/ahamath/1/prime.html" },
+                        { "name": "소인수분해", "path": "pages/middleschool/ahamath/1/factorization.html" },
+                        { "name": "최대공약수와 최소공배수", "path": "pages/middleschool/ahamath/1/gcdlcm.html" },
+                        { "header": "정수와 유리수" },
+                        { "name": "정수와 유리수", "path": "pages/middleschool/ahamath/1/rational.html" },
+                        { "name": "절댓값과 수의 대소 관계", "path": "pages/middleschool/ahamath/1/compare.html" },
+                        { "name": "정수와 유리수의 덧셈과 뺄셈", "path": "pages/middleschool/ahamath/1/addsub.html" },
+                        { "name": "정수와 유리수의 곱셈과 나눗셈", "path": "pages/middleschool/ahamath/1/muldiv.html" },
+                        { "header": "문자와 식" },
+                        { "name": "문자의 사용과 식의 값", "path": "pages/middleschool/ahamath/1/letter.html" },
+                        { "name": "일차식과 수의 곱셈, 나눗셈", "path": "pages/middleschool/ahamath/1/linearmuldiv.html" },
+                        { "name": "일차식의 덧셈과 뺄셈", "path": "pages/middleschool/ahamath/1/linearaddsub.html" },
+                        { "name": "등식과 방정식", "path": "pages/middleschool/ahamath/1/equation.html" },
+                        { "name": "일차방정식의 풀이", "path": "pages/middleschool/ahamath/1/linearequation.html" },
+                        { "header": "좌표평면과 그래프" },
+                        { "name": "순서쌍과 좌표", "path": "pages/middleschool/ahamath/1/coordinate.html" },
+                        { "name": "그래프", "path": "pages/middleschool/ahamath/1/graph.html" },
+                        { "name": "정비례와 반비례", "path": "pages/middleschool/ahamath/1/proportion.html" },
+                        { "header": "기본 도형과 작도" },
+                        { "name": "점, 선, 면과 거리", "path": "pages/middleschool/ahamath/1/basicfigure.html" },
+                        { "name": "각과 맞꼭지각", "path": "pages/middleschool/ahamath/1/angle.html" },
+                        { "name": "평행선의 성질", "path": "pages/middleschool/ahamath/1/parallel.html" },
+                        { "name": "위치 관계", "path": "pages/middleschool/ahamath/1/position.html" },
+                        { "name": "작도와 삼각형의 작도", "path": "pages/middleschool/ahamath/1/construct.html" },
+                        { "name": "삼각형의 합동 조건", "path": "pages/middleschool/ahamath/1/congruent.html" },
+                        { "header": "자료의 정리와 해석" },
+                        { "name": "대푯값", "path": "pages/middleschool/ahamath/1/representativevalue.html" },
+                        { "name": "도수분포표와 히스토그램", "path": "pages/middleschool/ahamath/1/frequency.html" },
+                        { "name": "상대도수와 그 그래프", "path": "pages/middleschool/ahamath/1/relative.html" }
+                    ]
+                },
+                { "title": "중2", "items": [{ "disabled": "준비 중이에요" }] },
+                { "title": "중3", "items": [{ "disabled": "준비 중이에요" }] }
+            ]
+        },
         "aimath": {
             "brand": "HOME",
             "menu": [
@@ -173,6 +219,14 @@
         if (group.items && Array.isArray(group.items) && group.items.length > 0) {
             let itemsHtml = '';
             group.items.forEach(item => {
+                if (item.header) {
+                    itemsHtml += `<li><h6 class="dropdown-header">${item.header}</h6></li>`;
+                    return;
+                }
+                if (item.disabled) {
+                    itemsHtml += `<li><span class="dropdown-item disabled">${item.disabled}</span></li>`;
+                    return;
+                }
                 const isHttp = item.path && item.path.startsWith('http');
                 const href = isHttp ? item.path : `${rootPath}${item.path}`;
                 const target = (item.external || isHttp) ? ' target="_blank" rel="noopener noreferrer"' : '';
@@ -184,7 +238,7 @@
                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown${navType}${index}" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                     ${group.title}
                 </a>
-                <ul class="dropdown-menu" aria-labelledby="navbarDropdown${navType}${index}">
+                <ul class="dropdown-menu dropdown-scroll" aria-labelledby="navbarDropdown${navType}${index}">
                     ${itemsHtml}
                 </ul>
             </li>
@@ -203,11 +257,12 @@
         }
     });
 
+    const stickyClass = navData.sticky === false ? '' : ' sticky-top';
     const navbarHtml = `
     <!-- 상단 네비게이션 바 -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top py-2 shadow-sm">
+    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom${stickyClass} py-2 shadow-sm">
         <div class="container-fluid px-3">
-            <a class="navbar-brand d-flex align-items-center fw-bold" href="${rootPath}index.html">
+            <a class="navbar-brand d-flex align-items-center fw-bold" href="${rootPath}${navData.brandPath || 'index.html'}">
                 <img src="${rootPath}assets/images/mainPage/동동이.jpg" alt="동동이 로고" width="30" height="30" class="d-inline-block align-middle me-2 rounded-circle border">
                 ${navData.brand}
             </a>
@@ -290,6 +345,14 @@
             authScript.dataset.auth = 'teacher-auth';
             authScript.src = `${rootPath}js/teacher-auth.js`;
             document.body.appendChild(authScript);
+        }
+
+        // fullscreen: false 인 타입(아하! 수학)은 페이지 자체 전체화면 버튼을 쓰므로 네비바 버튼 제거
+        if (navData.fullscreen === false) {
+            ['btnFullscreenMobile', 'btnFullscreenDesktop'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.remove();
+            });
         }
 
         // 전체화면 토글 버튼 초기화 (모바일 아이콘 + 데스크탑 텍스트 버튼)
