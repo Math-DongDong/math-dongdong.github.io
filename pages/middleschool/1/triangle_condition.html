@@ -56,13 +56,6 @@
     .text-side-b { color: var(--side-b); }
     .text-side-c { color: var(--side-c); }
 
-    input[type=range].range-a::-webkit-slider-thumb { background: var(--side-a); }
-    input[type=range].range-b::-webkit-slider-thumb { background: var(--side-b); }
-    input[type=range].range-c::-webkit-slider-thumb { background: var(--side-c); }
-    input[type=range].range-a::-moz-range-thumb { background: var(--side-a); }
-    input[type=range].range-b::-moz-range-thumb { background: var(--side-b); }
-    input[type=range].range-c::-moz-range-thumb { background: var(--side-c); }
-
     .length-badge {
       min-width: 3rem;
       font-size: 1.1rem;
@@ -115,30 +108,24 @@
             <div class="content-card mb-4">
               <h2 class="h5 fw-bold mb-3"><i class="bi bi-rulers"></i> 세 변의 길이</h2>
 
-              <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <label for="sideA" class="form-label fw-semibold text-side-a mb-0">변 a</label>
-                  <span id="sideAValue" class="badge bg-danger length-badge">5</span>
-                </div>
-                <input type="range" class="form-range range-a" id="sideA" min="1" max="15" step="1" value="5">
-              </div>
-              <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <label for="sideB" class="form-label fw-semibold text-side-b mb-0">변 b</label>
-                  <span id="sideBValue" class="badge bg-success length-badge">6</span>
-                </div>
-                <input type="range" class="form-range range-b" id="sideB" min="1" max="15" step="1" value="6">
-              </div>
-              <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <label for="sideC" class="form-label fw-semibold text-side-c mb-0">변 c (밑변)</label>
-                  <span id="sideCValue" class="badge bg-primary length-badge">8</span>
-                </div>
-                <input type="range" class="form-range range-c" id="sideC" min="1" max="15" step="1" value="8">
-              </div>
+              <ul class="list-group mb-3">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  <span class="fw-semibold text-side-a">변 a</span>
+                  <span id="sideAValue" class="badge bg-danger length-badge"></span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  <span class="fw-semibold text-side-b">변 b</span>
+                  <span id="sideBValue" class="badge bg-success length-badge"></span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  <span class="fw-semibold text-side-c">변 c (밑변 · 가장 긴 변)</span>
+                  <span id="sideCValue" class="badge bg-primary length-badge"></span>
+                </li>
+              </ul>
 
-              <div class="d-flex gap-2 flex-wrap">
-                <button id="randomButton" class="btn btn-outline-secondary btn-sm"><i class="bi bi-shuffle"></i> 무작위</button>
+              <div class="d-flex justify-content-between align-items-center">
+                <button id="randomButton" class="btn btn-outline-secondary"><i class="bi bi-shuffle"></i> 무작위</button>
+                <span class="text-secondary small"><span id="roundCounter">1</span> / 5번째</span>
               </div>
             </div>
 
@@ -167,11 +154,10 @@
   <script>
     const SIDE_COLORS = { a: '#ef4444', b: '#10b981', c: '#2563eb' };
 
-    const sideInputs = {
-      a: document.getElementById('sideA'),
-      b: document.getElementById('sideB'),
-      c: document.getElementById('sideC')
-    };
+    const ROUND_SIZE = 5;
+    let currentSides = { a: 5, b: 6, c: 8 };
+    let statusQueue = [];
+    let roundIndex = 0;
     const sideValueLabels = {
       a: document.getElementById('sideAValue'),
       b: document.getElementById('sideBValue'),
@@ -191,9 +177,7 @@
 
     function getSides() {
       return {
-        a: Number(sideInputs.a.value),
-        b: Number(sideInputs.b.value),
-        c: Number(sideInputs.c.value)
+        ...currentSides
       };
     }
 
@@ -412,9 +396,10 @@
     }
 
     function updateAll() {
-      Object.keys(sideInputs).forEach(key => {
-        sideValueLabels[key].textContent = sideInputs[key].value;
+      Object.keys(sideValueLabels).forEach(key => {
+        sideValueLabels[key].textContent = currentSides[key];
       });
+      document.getElementById('roundCounter').textContent = roundIndex;
       resetScene();
     }
 
@@ -422,18 +407,50 @@
       return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
+    function shuffle(list) {
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = randomInt(0, i);
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      return list;
+    }
+
+    // 5번 중 등호·성립·불가 각 1번 + 나머지 2번은 무작위
+    function buildStatusQueue() {
+      const allStatuses = ['possible', 'degenerate', 'impossible'];
+      const randomStatus = () => allStatuses[randomInt(0, 2)];
+      return shuffle([...allStatuses, randomStatus(), randomStatus()]);
+    }
+
+    // 목표 결과가 나오도록 길이를 뽑고, 가장 긴 길이를 밑변 c에 배치
+    function generateSides(targetStatus) {
+      let sides;
+      do {
+        const [shortA, shortB, longest] = [randomInt(1, 15), randomInt(1, 15), randomInt(1, 15)].sort((x, y) => x - y);
+        sides = { a: shortA, b: shortB, c: longest };
+      } while (
+        classifyTriangle(sides.a, sides.b, sides.c) !== targetStatus ||
+        (sides.a === currentSides.a && sides.b === currentSides.b && sides.c === currentSides.c)
+      );
+      return sides;
+    }
+
     function randomizeSides() {
-      Object.values(sideInputs).forEach(input => { input.value = randomInt(1, 15); });
+      if (roundIndex >= ROUND_SIZE || statusQueue.length === 0) {
+        statusQueue = buildStatusQueue();
+        roundIndex = 0;
+      }
+      roundIndex += 1;
+      currentSides = generateSides(statusQueue.shift());
       updateAll();
     }
 
     /* ---------- 이벤트 ---------- */
-    Object.values(sideInputs).forEach(input => input.addEventListener('input', updateAll));
     document.getElementById('fallButton').addEventListener('click', startFalling);
     document.getElementById('resetButton').addEventListener('click', resetScene);
     document.getElementById('randomButton').addEventListener('click', randomizeSides);
 
-    updateAll();
+    randomizeSides();
   </script>
 </body>
 
