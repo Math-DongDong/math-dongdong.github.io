@@ -61,6 +61,7 @@
             "brand": "아하! 수학",
             "brandPath": "pages/middleschool/ahamath.html",
             "sticky": false,
+            "teacherAuth": false,   // 관리자(교사) 접속 버튼 없음
             "menu": [
                 {
                     "title": "중1",
@@ -339,7 +340,7 @@
         });
 
         // Load teacher auth module dynamically if not already added
-        if (!document.querySelector('script[data-auth="teacher-auth"]')) {
+        if (navData.teacherAuth !== false && !document.querySelector('script[data-auth="teacher-auth"]')) {
             const authScript = document.createElement('script');
             authScript.type = 'module';
             authScript.dataset.auth = 'teacher-auth';

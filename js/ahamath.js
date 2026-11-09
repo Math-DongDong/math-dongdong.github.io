@@ -148,24 +148,20 @@
     }
 
     function updateTopbar() {
-        const backBtn = document.getElementById('backBtn');   /* 읽기 화면에서는 숨김 (네비바 로고가 목록으로 가는 길) */
-        const label = document.getElementById('stepLabel');
+        const backRow = document.getElementById('backRow');   /* '개념으로' 줄 : 읽기 화면에서는 숨김 (네비바 로고가 목록으로 가는 길) */
         const bar = document.getElementById('progressBar');
 
         if (activeView === 'view-read' || activeView === 'view-cread') {
-            backBtn.hidden = true;
+            backRow.hidden = true;
             updateScrollUI();
             return;
         }
-        backBtn.hidden = false;
+        backRow.hidden = false;
 
         if (activeView === 'view-mission' && session) {
-            const step = session.flow === 'basic' ? 3 : 4;
-            label.textContent = step + '단계: ' + FLOW[session.flow].label;
             bar.style.width = Math.round((session.index + 1) / session.ids.length * 100) + '%';
             return;
         }
-        label.textContent = '학습 마무리';
         bar.style.width = '100%';
     }
 
@@ -174,16 +170,6 @@
         const scrollable = document.documentElement.scrollHeight - window.innerHeight;
         const percent = scrollable <= 0 ? 0 : Math.min(100, Math.round(window.scrollY / scrollable * 100));
         document.getElementById('progressBar').style.width = percent + '%';
-
-        const marks = Array.prototype.slice.call(
-            document.getElementById(activeView).querySelectorAll('[data-step][data-stepname]')
-        );
-        let current = marks[0];
-        marks.forEach(function (el) {
-            if (el.getBoundingClientRect().top <= 160) { current = el; }
-        });
-        if (!current) { return; }
-        document.getElementById('stepLabel').textContent = current.dataset.step + '단계: ' + current.dataset.stepname;
     }
 
     function reviewIdsOf(flow) {
