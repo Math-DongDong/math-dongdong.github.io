@@ -52,15 +52,6 @@
       background: #fff;
     }
 
-    .text-side-a { color: var(--side-a); }
-    .text-side-b { color: var(--side-b); }
-    .text-side-c { color: var(--side-c); }
-
-    .length-badge {
-      min-width: 3rem;
-      font-size: 1.1rem;
-    }
-
     #triangleCanvas {
       width: 100%;
       height: auto;
@@ -92,59 +83,19 @@
 
     <!-- 탐구하기 -->
     <section id="explorePane">
-        <div class="row g-4">
-          <div class="col-lg-7">
-            <div class="content-card h-100">
-              <canvas id="triangleCanvas" width="800" height="500"></canvas>
+            <div class="content-card mx-auto" style="max-width: 900px;">
+              <div class="position-relative">
+                <canvas id="triangleCanvas" width="800" height="500"></canvas>
+                <button id="randomButton" class="btn btn-light border btn-sm position-absolute top-0 end-0 m-2 shadow-sm">
+                  <i class="bi bi-shuffle"></i> 무작위 <span class="text-secondary">(<span id="roundCounter">1</span>/5)</span>
+                </button>
+              </div>
               <div class="d-flex justify-content-center gap-2 mt-3">
                 <button id="fallButton" class="btn btn-primary btn-lg px-4"><i class="bi bi-play-fill"></i> 삼각형 만들기</button>
                 <button id="resetButton" class="btn btn-outline-secondary btn-lg"><i class="bi bi-arrow-counterclockwise"></i> 다시 세우기</button>
               </div>
               <div id="resultBanner" class="result-banner text-center p-3 mt-3"></div>
             </div>
-          </div>
-
-          <div class="col-lg-5">
-            <div class="content-card mb-4">
-              <h2 class="h5 fw-bold mb-3"><i class="bi bi-rulers"></i> 세 변의 길이</h2>
-
-              <ul class="list-group mb-3">
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span class="fw-semibold text-side-a">변 a</span>
-                  <span id="sideAValue" class="badge bg-danger length-badge"></span>
-                </li>
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span class="fw-semibold text-side-b">변 b</span>
-                  <span id="sideBValue" class="badge bg-success length-badge"></span>
-                </li>
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span class="fw-semibold text-side-c">변 c (밑변 · 가장 긴 변)</span>
-                  <span id="sideCValue" class="badge bg-primary length-badge"></span>
-                </li>
-              </ul>
-
-              <div class="d-flex justify-content-between align-items-center">
-                <button id="randomButton" class="btn btn-outline-secondary"><i class="bi bi-shuffle"></i> 무작위</button>
-                <span class="text-secondary small"><span id="roundCounter">1</span> / 5번째</span>
-              </div>
-            </div>
-
-            <div class="content-card">
-            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#conclusionBox">
-              <i class="bi bi-lightbulb"></i> 규칙 정리 보기
-            </button>
-            <div id="conclusionBox" class="collapse mt-3">
-              <div class="alert alert-primary mb-0">
-                <p class="fw-bold mb-2">삼각형의 세 변의 길이 사이의 관계</p>
-                <p class="mb-2">삼각형의 한 변의 길이는 나머지 두 변의 길이의 합보다 작다.</p>
-                <p class="mb-2">즉, 세 변의 길이 a, b, c에 대하여 <b>a + b &gt; c, b + c &gt; a, c + a &gt; b</b> 이어야 한다.</p>
-                <p class="mb-0">👉 실제로 판단할 때는 <b>(가장 긴 변의 길이) &lt; (나머지 두 변의 길이의 합)</b> 하나만 확인하면 충분하다.
-                  (합이 <u>같으면</u> 세 막대가 일직선으로 겹쳐져 삼각형이 되지 않는다.)</p>
-              </div>
-            </div>
-            </div>
-          </div>
-        </div>
     </section>
   </main>
 
@@ -158,11 +109,6 @@
     let currentSides = { a: 5, b: 6, c: 8 };
     let statusQueue = [];
     let roundIndex = 0;
-    const sideValueLabels = {
-      a: document.getElementById('sideAValue'),
-      b: document.getElementById('sideBValue'),
-      c: document.getElementById('sideCValue')
-    };
     const canvas = document.getElementById('triangleCanvas');
     const context = canvas.getContext('2d');
 
@@ -285,7 +231,7 @@
     }
 
     /* ---------- 캔버스 그리기 ---------- */
-    function drawStick(from, to, color, label) {
+    function drawStick(from, to, color) {
       context.strokeStyle = color;
       context.lineWidth = 8;
       context.lineCap = 'round';
@@ -293,15 +239,51 @@
       context.moveTo(from.x, from.y);
       context.lineTo(to.x, to.y);
       context.stroke();
+    }
+
+    // 막대 바깥쪽(도형 중심 반대편)에 흰 배경 라벨 표시
+    function drawStickLabel(from, to, color, label, center, preferredNormalY) {
+      const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+      let normalX = -(to.y - from.y) / length;
+      let normalY = (to.x - from.x) / length;
+      const midX = (from.x + to.x) / 2;
+      const midY = (from.y + to.y) / 2;
+      const awayFromCenter = (midX - center.x) * normalX + (midY - center.y) * normalY;
+      const flip = Math.abs(awayFromCenter) < 1 ? normalY * preferredNormalY < 0 : awayFromCenter < 0;
+      if (flip) { normalX = -normalX; normalY = -normalY; }
+
+      const labelX = midX + normalX * 30;
+      const labelY = midY + normalY * 30;
+      context.font = 'bold 22px Pretendard Variable, sans-serif';
+      const boxWidth = context.measureText(label).width + 16;
+      const boxHeight = 30;
+      context.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      context.strokeStyle = color;
+      context.lineWidth = 1.5;
+      context.beginPath();
+      if (context.roundRect) context.roundRect(labelX - boxWidth / 2, labelY - boxHeight / 2, boxWidth, boxHeight, 8);
+      else context.rect(labelX - boxWidth / 2, labelY - boxHeight / 2, boxWidth, boxHeight);
+      context.fill();
+      context.stroke();
 
       context.fillStyle = color;
-      context.font = 'bold 22px Pretendard Variable, sans-serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-      const normalX = -(to.y - from.y) / length;
-      const normalY = (to.x - from.x) / length;
-      context.fillText(label, (from.x + to.x) / 2 + normalX * 22, (from.y + to.y) / 2 + normalY * 22);
+      context.fillText(label, labelX, labelY);
+    }
+
+    // 캔버스 왼쪽 위 세 변의 길이 정보
+    function drawLengthInfo(a, b, c) {
+      const items = [[`a = ${a}`, SIDE_COLORS.a], [`b = ${b}`, SIDE_COLORS.b], [`c = ${c}`, SIDE_COLORS.c]];
+      context.font = 'bold 26px Pretendard Variable, sans-serif';
+      context.textAlign = 'left';
+      context.textBaseline = 'middle';
+      let cursorX = 20;
+      items.forEach(([text, color]) => {
+        context.fillStyle = color;
+        context.fillText(text, cursorX, 32);
+        cursorX += context.measureText(text).width + 28;
+      });
     }
 
     function drawPoint(point, name, labelOffsetX, labelOffsetY) {
@@ -331,10 +313,12 @@
       const { a, b, c, status, stickA, stickB } = scene;
       const width = canvas.width;
       const height = canvas.height;
-      const padding = 50;
+      const padding = 55;
+      const infoHeight = 50; // 위쪽 길이 정보·무작위 버튼 영역
       const { xC } = getTargetAngles(a, b, c);
 
       context.clearRect(0, 0, width, height);
+      drawLengthInfo(a, b, c);
 
       // 화면 범위 (막대가 움직이는 전체 영역)
       const minWorldX = Math.min(0, c - a, status === 'impossible' ? 0 : xC);
@@ -343,10 +327,10 @@
       const minWorldY = status === 'impossible' ? -maxWorldY : 0;
       const scale = Math.min(
         (width - padding * 2) / (maxWorldX - minWorldX),
-        (height - padding * 2) / (maxWorldY - minWorldY)
+        (height - infoHeight - padding * 2) / (maxWorldY - minWorldY)
       );
       const offsetX = (width - (maxWorldX - minWorldX) * scale) / 2 - minWorldX * scale;
-      const offsetY = (height - (maxWorldY - minWorldY) * scale) / 2 + maxWorldY * scale;
+      const offsetY = infoHeight + (height - infoHeight - (maxWorldY - minWorldY) * scale) / 2 + maxWorldY * scale;
       const toCanvas = (x, y) => ({ x: offsetX + x * scale, y: offsetY - y * scale });
 
       const pointA = toCanvas(0, 0);
@@ -367,9 +351,18 @@
         context.fill();
       }
 
-      drawStick(pointA, pointB, SIDE_COLORS.c, `c = ${c}`);
-      drawStick(tipA, pointA, SIDE_COLORS.b, `b = ${b}`);
-      drawStick(pointB, tipB, SIDE_COLORS.a, `a = ${a}`);
+      drawStick(pointA, pointB, SIDE_COLORS.c);
+      drawStick(tipA, pointA, SIDE_COLORS.b);
+      drawStick(pointB, tipB, SIDE_COLORS.a);
+
+      // 라벨은 막대를 모두 그린 뒤 맨 위에 표시
+      const center = {
+        x: (pointA.x + pointB.x + tipA.x + tipB.x) / 4,
+        y: (pointA.y + pointB.y + tipA.y + tipB.y) / 4
+      };
+      drawStickLabel(pointA, pointB, SIDE_COLORS.c, `c = ${c}`, center, 1);
+      drawStickLabel(pointA, tipA, SIDE_COLORS.b, `b = ${b}`, center, -1);
+      drawStickLabel(tipB, pointB, SIDE_COLORS.a, `a = ${a}`, center, -1);
       drawPoint(pointA, 'A', -20, 20);
       drawPoint(pointB, 'B', 20, 20);
       if (isFormed) drawPoint(tipA, 'C', 0, -24);
@@ -396,9 +389,6 @@
     }
 
     function updateAll() {
-      Object.keys(sideValueLabels).forEach(key => {
-        sideValueLabels[key].textContent = currentSides[key];
-      });
       document.getElementById('roundCounter').textContent = roundIndex;
       resetScene();
     }
