@@ -118,6 +118,10 @@
           <div class="col-lg-7">
             <div class="content-card h-100">
               <canvas id="triangleCanvas" width="800" height="500"></canvas>
+              <div class="d-flex justify-content-center gap-2 mt-3">
+                <button id="fallButton" class="btn btn-primary btn-lg px-4"><i class="bi bi-play-fill"></i> 삼각형 만들기</button>
+                <button id="resetButton" class="btn btn-outline-secondary btn-lg"><i class="bi bi-arrow-counterclockwise"></i> 다시 세우기</button>
+              </div>
               <div id="resultBanner" class="result-banner text-center p-3 mt-3"></div>
             </div>
           </div>
@@ -242,6 +246,109 @@
       };
     }
 
+    /* ---------- 애니메이션 상태 ---------- */
+    const HALF_PI = Math.PI / 2;
+    const GRAVITY = 40;            // 화면 단위 중력 가속도
+    const SWING_DAMPING = 0.35;    // 흔들림 감쇠 계수
+    const FALL_DURATION = 1.1;     // 삼각형이 될 때 내려오는 시간(초)
+    let scene = null;
+    let animationFrameId = null;
+    let lastFrameTime = 0;
+
+    // 각도 φ: 밑변에서 안쪽(상대 꼭짓점 방향)으로 잰 각, 시작은 수직(π/2)
+    function createStick(length, targetAngle) {
+      return { length, angle: HALF_PI, velocity: 0, targetAngle, sweptMin: HALF_PI, sweptMax: HALF_PI };
+    }
+
+    function getTargetAngles(a, b, c) {
+      const clamp = value => Math.min(1, Math.max(-1, value));
+      const xC = (b * b + c * c - a * a) / (2 * c);
+      return { xC, angleA: Math.acos(clamp(xC / b)), angleB: Math.acos(clamp((c - xC) / a)) };
+    }
+
+    function resetScene() {
+      cancelAnimationFrame(animationFrameId);
+      const { a, b, c } = getSides();
+      const targets = getTargetAngles(a, b, c);
+      scene = {
+        a, b, c,
+        status: classifyTriangle(a, b, c),
+        phase: 'standing',
+        elapsed: 0,
+        stickA: createStick(b, targets.angleA), // 꼭짓점 A에 붙은 변 b
+        stickB: createStick(a, targets.angleB)  // 꼭짓점 B에 붙은 변 a
+      };
+      showBanner('ready');
+      updateButtons();
+      drawScene();
+    }
+
+    function startFalling() {
+      if (scene.phase !== 'standing') resetScene();
+      scene.phase = 'falling';
+      if (scene.status === 'impossible') {
+        [scene.stickA, scene.stickB].forEach(stick => {
+          stick.angle = HALF_PI - 0.01;
+          stick.velocity = -0.4;
+        });
+      }
+      showBanner('falling');
+      updateButtons();
+      lastFrameTime = performance.now();
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    function trackSweep(stick) {
+      stick.sweptMin = Math.min(stick.sweptMin, stick.angle);
+      stick.sweptMax = Math.max(stick.sweptMax, stick.angle);
+    }
+
+    function stepPendulum(stick, deltaTime) {
+      // 한쪽 끝이 고정된 막대: φ'' = -(3g / 2L)·cos φ - 감쇠·φ'
+      const angularAcceleration = -(3 * GRAVITY / (2 * stick.length)) * Math.cos(stick.angle)
+        - SWING_DAMPING * stick.velocity;
+      stick.velocity += angularAcceleration * deltaTime;
+      stick.angle += stick.velocity * deltaTime;
+      trackSweep(stick);
+    }
+
+    function animate(now) {
+      const deltaTime = Math.min((now - lastFrameTime) / 1000, 1 / 30);
+      lastFrameTime = now;
+      scene.elapsed += deltaTime;
+      const sticks = [scene.stickA, scene.stickB];
+      let keepRunning = true;
+
+      if (scene.status === 'impossible') {
+        // 작은 시간 간격으로 나누어 안정적으로 계산
+        for (let i = 0; i < 4; i++) sticks.forEach(stick => stepPendulum(stick, deltaTime / 4));
+        if (scene.phase === 'falling' && sticks.every(stick => stick.angle < 0)) {
+          scene.phase = 'swinging';
+          showBanner('impossible');
+          updateButtons();
+        }
+        const settled = sticks.every(stick =>
+          Math.abs(stick.velocity) < 0.003 && Math.abs(stick.angle + HALF_PI) < 0.002);
+        if (settled) keepRunning = false;
+      } else {
+        const progress = Math.min(scene.elapsed / FALL_DURATION, 1);
+        const eased = progress * progress; // 중력처럼 점점 빨라짐
+        sticks.forEach(stick => {
+          stick.angle = HALF_PI + (stick.targetAngle - HALF_PI) * eased;
+          trackSweep(stick);
+        });
+        if (progress >= 1) {
+          scene.phase = 'done';
+          showBanner(scene.status);
+          updateButtons();
+          keepRunning = false;
+        }
+      }
+
+      drawScene();
+      if (keepRunning) animationFrameId = requestAnimationFrame(animate);
+    }
+
     /* ---------- 캔버스 그리기 ---------- */
     function drawStick(from, to, color, label) {
       context.strokeStyle = color;
@@ -256,129 +363,122 @@
       context.font = 'bold 22px Pretendard Variable, sans-serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      const midX = (from.x + to.x) / 2;
-      const midY = (from.y + to.y) / 2;
       const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
       const normalX = -(to.y - from.y) / length;
       const normalY = (to.x - from.x) / length;
-      context.fillText(label, midX + normalX * 22, midY + normalY * 22);
+      context.fillText(label, (from.x + to.x) / 2 + normalX * 22, (from.y + to.y) / 2 + normalY * 22);
     }
 
-    function drawPoint(point, name) {
+    function drawPoint(point, name, labelOffsetX, labelOffsetY) {
       context.fillStyle = '#1f2937';
       context.beginPath();
       context.arc(point.x, point.y, 6, 0, Math.PI * 2);
       context.fill();
       context.font = 'bold 20px Pretendard Variable, sans-serif';
-      context.fillText(name, point.x, point.y + 26);
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(name, point.x + labelOffsetX, point.y + labelOffsetY);
     }
 
-    function drawArc(center, radius, color) {
+    function drawGuideCircle(center, radius, color, isFullCircle) {
       context.save();
       context.strokeStyle = color;
-      context.globalAlpha = 0.45;
+      context.globalAlpha = 0.3;
       context.lineWidth = 2;
       context.setLineDash([8, 6]);
       context.beginPath();
-      context.arc(center.x, center.y, radius, Math.PI, 2 * Math.PI);
+      context.arc(center.x, center.y, radius, isFullCircle ? 0 : Math.PI, 2 * Math.PI);
       context.stroke();
       context.restore();
     }
 
-    function drawTriangleScene() {
-      const { a, b, c } = getSides();
-      const status = classifyTriangle(a, b, c);
+    function drawTracedArc(center, radius, color, startAngle, endAngle) {
+      if (endAngle - startAngle < 0.001) return;
+      context.save();
+      context.strokeStyle = color;
+      context.globalAlpha = 0.85;
+      context.lineWidth = 3;
+      context.beginPath();
+      context.arc(center.x, center.y, radius, startAngle, endAngle);
+      context.stroke();
+      context.restore();
+    }
+
+    function drawScene() {
+      const { a, b, c, status, stickA, stickB } = scene;
       const width = canvas.width;
       const height = canvas.height;
       const padding = 50;
+      const { xC } = getTargetAngles(a, b, c);
 
       context.clearRect(0, 0, width, height);
 
-      // 밑변 AB = c, A 중심 반지름 b, B 중심 반지름 a
-      const minWorldX = Math.min(0, -b, c - a);
-      const maxWorldX = Math.max(c, b, c + a);
+      // 화면 범위 (막대가 움직이는 전체 영역)
+      const minWorldX = Math.min(0, c - a, status === 'impossible' ? 0 : xC);
+      const maxWorldX = Math.max(c, b, status === 'impossible' ? c : xC);
       const maxWorldY = Math.max(a, b);
+      const minWorldY = status === 'impossible' ? -maxWorldY : 0;
       const scale = Math.min(
         (width - padding * 2) / (maxWorldX - minWorldX),
-        (height - padding * 2 - 30) / maxWorldY
+        (height - padding * 2) / (maxWorldY - minWorldY)
       );
       const offsetX = (width - (maxWorldX - minWorldX) * scale) / 2 - minWorldX * scale;
-      const baseY = height - padding - 10;
-      const toCanvas = (x, y) => ({ x: offsetX + x * scale, y: baseY - y * scale });
+      const offsetY = (height - (maxWorldY - minWorldY) * scale) / 2 + maxWorldY * scale;
+      const toCanvas = (x, y) => ({ x: offsetX + x * scale, y: offsetY - y * scale });
 
       const pointA = toCanvas(0, 0);
       const pointB = toCanvas(c, 0);
+      const tipA = toCanvas(b * Math.cos(stickA.angle), b * Math.sin(stickA.angle));
+      const tipB = toCanvas(c - a * Math.cos(stickB.angle), a * Math.sin(stickB.angle));
+      const showsFullCircle = status === 'impossible';
 
-      drawArc(pointA, b * scale, SIDE_COLORS.b);
-      drawArc(pointB, a * scale, SIDE_COLORS.a);
+      // 컴퍼스 안내선 + 막대 끝이 지나간 호
+      drawGuideCircle(pointA, b * scale, SIDE_COLORS.b, showsFullCircle);
+      drawGuideCircle(pointB, a * scale, SIDE_COLORS.a, showsFullCircle);
+      drawTracedArc(pointA, b * scale, SIDE_COLORS.b, -stickA.sweptMax, -stickA.sweptMin);
+      drawTracedArc(pointB, a * scale, SIDE_COLORS.a, Math.PI + stickB.sweptMin, Math.PI + stickB.sweptMax);
 
-      if (status === 'possible') {
-        const xC = (b * b + c * c - a * a) / (2 * c);
-        const yC = Math.sqrt(Math.max(b * b - xC * xC, 0));
-        const pointC = toCanvas(xC, yC);
-
-        context.fillStyle = 'rgba(37, 99, 235, 0.08)';
+      const isFormed = scene.phase === 'done' && status === 'possible';
+      if (isFormed) {
+        context.fillStyle = 'rgba(37, 99, 235, 0.1)';
         context.beginPath();
         context.moveTo(pointA.x, pointA.y);
         context.lineTo(pointB.x, pointB.y);
-        context.lineTo(pointC.x, pointC.y);
+        context.lineTo(tipA.x, tipA.y);
         context.closePath();
         context.fill();
-
-        drawStick(pointA, pointB, SIDE_COLORS.c, `c = ${c}`);
-        drawStick(pointB, pointC, SIDE_COLORS.a, `a = ${a}`);
-        drawStick(pointC, pointA, SIDE_COLORS.b, `b = ${b}`);
-        drawPoint(pointA, 'A');
-        drawPoint(pointB, 'B');
-        context.fillStyle = '#1f2937';
-        context.beginPath();
-        context.arc(pointC.x, pointC.y, 6, 0, Math.PI * 2);
-        context.fill();
-        context.fillText('C', pointC.x, pointC.y - 22);
-      } else {
-        // 두 막대를 밑변 쪽으로 눕혀서 틈 또는 겹침을 보여줌
-        const angleOffset = status === 'degenerate' ? 0 : 0.25;
-        const endFromA = toCanvas(b * Math.cos(angleOffset), b * Math.sin(angleOffset));
-        const endFromB = toCanvas(c - a * Math.cos(angleOffset), a * Math.sin(angleOffset));
-
-        drawStick(pointA, pointB, SIDE_COLORS.c, `c = ${c}`);
-        drawStick(pointA, endFromA, SIDE_COLORS.b, `b = ${b}`);
-        drawStick(pointB, endFromB, SIDE_COLORS.a, `a = ${a}`);
-        drawPoint(pointA, 'A');
-        drawPoint(pointB, 'B');
-
-        if (status === 'impossible' && c > a && c > b && a + b < c) {
-          const gapStart = toCanvas(b, 0);
-          const gapEnd = toCanvas(c - a, 0);
-          context.save();
-          context.strokeStyle = '#f59e0b';
-          context.lineWidth = 3;
-          context.setLineDash([4, 4]);
-          context.beginPath();
-          context.moveTo(gapStart.x, gapStart.y - 40);
-          context.lineTo(gapEnd.x, gapEnd.y - 40);
-          context.stroke();
-          context.restore();
-          context.fillStyle = '#b45309';
-          context.font = 'bold 18px Pretendard Variable, sans-serif';
-          context.fillText(`틈 ${c - a - b}`, (gapStart.x + gapEnd.x) / 2, gapStart.y - 60);
-        }
       }
+
+      drawStick(pointA, pointB, SIDE_COLORS.c, `c = ${c}`);
+      drawStick(tipA, pointA, SIDE_COLORS.b, `b = ${b}`);
+      drawStick(pointB, tipB, SIDE_COLORS.a, `a = ${a}`);
+      drawPoint(pointA, 'A', -20, 20);
+      drawPoint(pointB, 'B', 20, 20);
+      if (isFormed) drawPoint(tipA, 'C', 0, -24);
+      if (scene.phase === 'done' && status === 'degenerate') drawPoint(tipA, '', 0, 0);
     }
 
     /* ---------- 결과 및 부등식 표시 ---------- */
-    function renderResult() {
-      const { a, b, c } = getSides();
-      const status = classifyTriangle(a, b, c);
-      const banner = document.getElementById('resultBanner');
+    function showBanner(kind) {
       const bannerStyles = {
-        possible: ['bg-success-subtle text-success-emphasis', '✅ 삼각형이 만들어져요!'],
+        ready: ['bg-light text-secondary', '▶ ‘삼각형 만들기’를 눌러 두 막대를 내려 보세요.'],
+        falling: ['bg-light text-secondary', '두 막대가 호를 그리며 내려오는 중...'],
+        possible: ['bg-success-subtle text-success-emphasis', '✅ 두 막대의 끝이 만나 삼각형이 만들어졌어요!'],
         degenerate: ['bg-warning-subtle text-warning-emphasis', '⚠️ 두 막대가 밑변 위에 딱 포개져요. 삼각형이 아니에요!'],
         impossible: ['bg-danger-subtle text-danger-emphasis', '❌ 두 막대의 끝이 만나지 않아요. 삼각형이 될 수 없어요!']
       };
-      banner.className = `result-banner text-center p-3 mt-3 ${bannerStyles[status][0]}`;
-      banner.textContent = bannerStyles[status][1];
+      const banner = document.getElementById('resultBanner');
+      banner.className = `result-banner text-center p-3 mt-3 ${bannerStyles[kind][0]}`;
+      banner.textContent = bannerStyles[kind][1];
+    }
 
+    function updateButtons() {
+      document.getElementById('fallButton').disabled = scene.phase !== 'standing';
+      document.getElementById('resetButton').disabled = scene.phase === 'standing';
+    }
+
+    function renderInequalities() {
+      const { a, b, c } = getSides();
       const longest = Math.max(a, b, c);
       const inequalities = [
         { left: ['a', 'b'], right: 'c' },
@@ -409,8 +509,8 @@
       Object.keys(sideInputs).forEach(key => {
         sideValueLabels[key].textContent = sideInputs[key].value;
       });
-      drawTriangleScene();
-      renderResult();
+      renderInequalities();
+      resetScene();
     }
 
     /* ---------- 기록 ---------- */
@@ -449,7 +549,9 @@
 
     /* ---------- 이벤트 ---------- */
     Object.values(sideInputs).forEach(input => input.addEventListener('input', updateAll));
-    showHintToggle.addEventListener('change', renderResult);
+    showHintToggle.addEventListener('change', renderInequalities);
+    document.getElementById('fallButton').addEventListener('click', startFalling);
+    document.getElementById('resetButton').addEventListener('click', resetScene);
     document.getElementById('randomButton').addEventListener('click', randomizeSides);
     document.getElementById('recordButton').addEventListener('click', addRecord);
     document.getElementById('clearRecordButton').addEventListener('click', clearRecords);
