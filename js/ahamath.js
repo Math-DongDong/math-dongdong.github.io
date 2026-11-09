@@ -148,7 +148,7 @@
     }
 
     function updateTopbar() {
-        const backRow = document.getElementById('backRow');   /* '개념으로' 줄 : 읽기 화면에서는 숨김 (네비바 로고가 목록으로 가는 길) */
+        const backRow = document.getElementById('backRow');   /* '개념 다시 보기' 줄 : 결과 화면에서만 (미션 화면은 mission-top 의 버튼) */
         const bar = document.getElementById('progressBar');
 
         if (activeView === 'view-read' || activeView === 'view-cread') {
@@ -156,7 +156,7 @@
             updateScrollUI();
             return;
         }
-        backRow.hidden = false;
+        backRow.hidden = activeView !== 'view-done';
 
         if (activeView === 'view-mission' && session) {
             bar.style.width = Math.round((session.index + 1) / session.ids.length * 100) + '%';
@@ -806,6 +806,12 @@
             if (gateJump) { gateJump.hidden = !(isVisible && FLOW.challenge.ids.length); }
         }
 
+        /* '아직은....'을 누르면 같은 줄의 두 버튼(.gate-choice)을 숨기고, 미션으로 넘어갈 때 다시 보이게 해요 */
+        function toggleGateChoice(waitButtonId, isVisible) {
+            const choice = document.getElementById(waitButtonId).closest('.gate-choice');
+            if (choice) { choice.classList.toggle('d-none', !isVisible); }
+        }
+
         document.getElementById('gateAha').addEventListener('click', function () {
             record.gate = 'aha';
             saveRecord();
@@ -818,10 +824,15 @@
             record.gate = 'notYet';
             saveRecord();
             document.getElementById('gateWaitNote').hidden = false;
+            toggleGateChoice('gateWait', false);   // '아하! 이해했어요' · '아직은....' 버튼 숨김
             setGateJumpVisible(false);   // 아직 어려운 학생에게는 도전 코스를 감춰요
         });
 
-        document.getElementById('gateOpenAnyway').addEventListener('click', function () { startMission('basic', 'full', null); });
+        document.getElementById('gateOpenAnyway').addEventListener('click', function () {
+            toggleGateChoice('gateWait', true);
+            document.getElementById('gateWaitNote').hidden = true;
+            startMission('basic', 'full', null);
+        });
 
         if (gateJump) {
             gateJump.addEventListener('click', function () { showView('view-cread'); });
@@ -840,11 +851,16 @@
                 record.challengeGate = 'notYet';
                 saveRecord();
                 document.getElementById('cgateWaitNote').hidden = false;
+                toggleGateChoice('cgateWait', false);
             });
-            document.getElementById('cgateOpenAnyway').addEventListener('click', function () { startMission('challenge', 'full', null); });
+            document.getElementById('cgateOpenAnyway').addEventListener('click', function () {
+                toggleGateChoice('cgateWait', true);
+                document.getElementById('cgateWaitNote').hidden = true;
+                startMission('challenge', 'full', null);
+            });
         }
 
-        document.getElementById('backBtn').addEventListener('click', function () {
+        function goBack() {
             if (activeView === 'view-read' || activeView === 'view-cread') {
                 window.location.href = LIST_HREF;
             } else if (activeView === 'view-mission' && session) {
@@ -852,7 +868,10 @@
             } else {
                 showView('view-read');
             }
-        });
+        }
+        document.getElementById('backBtn').addEventListener('click', goBack);
+        const missionBackBtn = document.getElementById('missionBackBtn');
+        if (missionBackBtn) { missionBackBtn.addEventListener('click', goBack); }
 
         document.getElementById('resetBtn').addEventListener('click', function () {
             if (!window.confirm('이 주제의 학습 기록을 모두 지울까요?')) { return; }
