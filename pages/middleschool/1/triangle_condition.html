@@ -94,11 +94,6 @@
       border-radius: 12px;
     }
 
-    .quiz-length {
-      font-size: 2rem;
-      font-weight: 800;
-    }
-
     .record-table td,
     .record-table th {
       text-align: center;
@@ -117,31 +112,13 @@
       <p class="text-secondary mb-0">세 막대의 길이를 바꾸어 보며, 언제 삼각형이 만들어지는지 규칙을 찾아보세요.</p>
     </header>
 
-    <ul class="nav nav-pills justify-content-center mb-4" role="tablist">
-      <li class="nav-item" role="presentation">
-        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#explorePane" type="button" role="tab">
-          <i class="bi bi-search"></i> 탐구하기
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#quizPane" type="button" role="tab">
-          <i class="bi bi-patch-question"></i> 확인 퀴즈
-        </button>
-      </li>
-    </ul>
-
-    <div class="tab-content">
-      <!-- 탐구하기 -->
-      <section class="tab-pane fade show active" id="explorePane" role="tabpanel">
+    <!-- 탐구하기 -->
+    <section id="explorePane">
         <div class="row g-4">
           <div class="col-lg-7">
             <div class="content-card h-100">
               <canvas id="triangleCanvas" width="800" height="500"></canvas>
               <div id="resultBanner" class="result-banner text-center p-3 mt-3"></div>
-              <div class="form-check form-switch mt-3">
-                <input class="form-check-input" type="checkbox" id="showArcsToggle" checked>
-                <label class="form-check-label" for="showArcsToggle">컴퍼스 호(원) 보기</label>
-              </div>
             </div>
           </div>
 
@@ -223,30 +200,7 @@
             </div>
           </div>
         </section>
-      </section>
-
-      <!-- 확인 퀴즈 -->
-      <section class="tab-pane fade" id="quizPane" role="tabpanel">
-        <div class="content-card mx-auto text-center" style="max-width: 640px;">
-          <p class="text-secondary mb-2">다음 세 길이의 막대로 삼각형을 만들 수 있을까요?</p>
-          <div class="d-flex justify-content-center gap-3 my-3">
-            <span id="quizLengthA" class="quiz-length text-side-a"></span>
-            <span class="quiz-length text-secondary">,</span>
-            <span id="quizLengthB" class="quiz-length text-side-b"></span>
-            <span class="quiz-length text-secondary">,</span>
-            <span id="quizLengthC" class="quiz-length text-side-c"></span>
-          </div>
-          <div class="d-flex justify-content-center gap-3 mb-3">
-            <button class="btn btn-success btn-lg px-4 quiz-answer" data-answer="yes"><i class="bi bi-check-lg"></i> 만들 수 있다</button>
-            <button class="btn btn-danger btn-lg px-4 quiz-answer" data-answer="no"><i class="bi bi-x-lg"></i> 만들 수 없다</button>
-          </div>
-          <div id="quizFeedback" class="alert d-none"></div>
-          <button id="nextQuizButton" class="btn btn-outline-primary d-none">다음 문제 <i class="bi bi-arrow-right"></i></button>
-          <hr>
-          <p class="mb-0 fw-semibold">점수: <span id="quizScore">0</span> / <span id="quizTotal">0</span></p>
-        </div>
-      </section>
-    </div>
+    </section>
   </main>
 
   <!-- Bootstrap JS -->
@@ -267,7 +221,6 @@
     };
     const canvas = document.getElementById('triangleCanvas');
     const context = canvas.getContext('2d');
-    const showArcsToggle = document.getElementById('showArcsToggle');
     const showHintToggle = document.getElementById('showHintToggle');
     const recordBody = document.getElementById('recordBody');
     let recordCount = 0;
@@ -356,10 +309,8 @@
       const pointA = toCanvas(0, 0);
       const pointB = toCanvas(c, 0);
 
-      if (showArcsToggle.checked) {
-        drawArc(pointA, b * scale, SIDE_COLORS.b);
-        drawArc(pointB, a * scale, SIDE_COLORS.a);
-      }
+      drawArc(pointA, b * scale, SIDE_COLORS.b);
+      drawArc(pointB, a * scale, SIDE_COLORS.a);
 
       if (status === 'possible') {
         const xC = (b * b + c * c - a * a) / (2 * c);
@@ -496,65 +447,14 @@
       updateAll();
     }
 
-    /* ---------- 퀴즈 ---------- */
-    let currentQuiz = null;
-    let quizScore = 0;
-    let quizTotal = 0;
-
-    function generateQuiz() {
-      // 성립 / 일직선 / 불가 를 고르게 출제
-      const targetStatus = ['possible', 'degenerate', 'impossible'][randomInt(0, 2)];
-      let lengths;
-      do {
-        lengths = [randomInt(1, 15), randomInt(1, 15), randomInt(1, 15)];
-      } while (classifyTriangle(...lengths) !== targetStatus);
-      currentQuiz = { lengths, answer: targetStatus === 'possible' ? 'yes' : 'no', status: targetStatus };
-
-      ['A', 'B', 'C'].forEach((name, index) => {
-        document.getElementById(`quizLength${name}`).textContent = `${lengths[index]} cm`;
-      });
-      document.getElementById('quizFeedback').className = 'alert d-none';
-      document.getElementById('nextQuizButton').classList.add('d-none');
-      document.querySelectorAll('.quiz-answer').forEach(button => { button.disabled = false; });
-    }
-
-    function checkQuizAnswer(userAnswer) {
-      const [a, b, c] = currentQuiz.lengths;
-      const longest = Math.max(a, b, c);
-      const sumOfOthers = a + b + c - longest;
-      const isCorrect = userAnswer === currentQuiz.answer;
-      const relation = sumOfOthers > longest ? '&gt;' : sumOfOthers === longest ? '=' : '&lt;';
-
-      quizTotal += 1;
-      if (isCorrect) quizScore += 1;
-      document.getElementById('quizScore').textContent = quizScore;
-      document.getElementById('quizTotal').textContent = quizTotal;
-
-      const feedback = document.getElementById('quizFeedback');
-      feedback.className = `alert ${isCorrect ? 'alert-success' : 'alert-danger'}`;
-      feedback.innerHTML = `${isCorrect ? '🎉 정답!' : '😢 아쉬워요.'}<br>
-        가장 긴 변 <b>${longest}</b>, 나머지 두 변의 합 <b>${sumOfOthers}</b> →
-        ${sumOfOthers} ${relation} ${longest} 이므로 삼각형을
-        <b>${currentQuiz.answer === 'yes' ? '만들 수 있어요' : '만들 수 없어요'}</b>.`;
-
-      document.querySelectorAll('.quiz-answer').forEach(button => { button.disabled = true; });
-      document.getElementById('nextQuizButton').classList.remove('d-none');
-    }
-
     /* ---------- 이벤트 ---------- */
     Object.values(sideInputs).forEach(input => input.addEventListener('input', updateAll));
-    showArcsToggle.addEventListener('change', drawTriangleScene);
     showHintToggle.addEventListener('change', renderResult);
     document.getElementById('randomButton').addEventListener('click', randomizeSides);
     document.getElementById('recordButton').addEventListener('click', addRecord);
     document.getElementById('clearRecordButton').addEventListener('click', clearRecords);
-    document.querySelectorAll('.quiz-answer').forEach(button => {
-      button.addEventListener('click', () => checkQuizAnswer(button.dataset.answer));
-    });
-    document.getElementById('nextQuizButton').addEventListener('click', generateQuiz);
 
     updateAll();
-    generateQuiz();
   </script>
 </body>
 
