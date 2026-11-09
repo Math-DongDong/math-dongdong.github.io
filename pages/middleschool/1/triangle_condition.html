@@ -78,27 +78,12 @@
       display: block;
     }
 
-    .inequality-row {
-      font-size: 1.05rem;
-      border-radius: 10px;
-      transition: background-color .2s;
-    }
-
-    .inequality-row.is-longest {
-      outline: 2px dashed #f59e0b;
-    }
-
     .result-banner {
       font-size: 1.3rem;
       font-weight: 700;
       border-radius: 12px;
     }
 
-    .record-table td,
-    .record-table th {
-      text-align: center;
-      vertical-align: middle;
-    }
   </style>
 </head>
 
@@ -154,42 +139,10 @@
 
               <div class="d-flex gap-2 flex-wrap">
                 <button id="randomButton" class="btn btn-outline-secondary btn-sm"><i class="bi bi-shuffle"></i> 무작위</button>
-                <button id="recordButton" class="btn btn-primary btn-sm"><i class="bi bi-journal-plus"></i> 기록하기</button>
               </div>
             </div>
 
             <div class="content-card">
-              <h2 class="h5 fw-bold mb-3"><i class="bi bi-calculator"></i> 두 변의 합 vs 나머지 한 변</h2>
-              <div id="inequalityList" class="d-grid gap-2"></div>
-              <div class="form-check form-switch mt-3">
-                <input class="form-check-input" type="checkbox" id="showHintToggle">
-                <label class="form-check-label" for="showHintToggle">가장 긴 변 표시하기 (힌트)</label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 실험 기록 -->
-        <section class="content-card mt-4">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h5 fw-bold mb-0"><i class="bi bi-table"></i> 실험 기록</h2>
-            <button id="clearRecordButton" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 초기화</button>
-          </div>
-          <div class="table-responsive">
-            <table class="table table-sm record-table">
-              <thead class="table-light">
-                <tr>
-                  <th>#</th><th class="text-side-a">a</th><th class="text-side-b">b</th><th class="text-side-c">c</th>
-                  <th>가장 긴 변</th><th>나머지 두 변의 합</th><th>삼각형?</th>
-                </tr>
-              </thead>
-              <tbody id="recordBody">
-                <tr id="emptyRecordRow"><td colspan="7" class="text-secondary py-3">‘기록하기’를 눌러 실험 결과를 모아 보세요.</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="mt-3">
             <button class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#conclusionBox">
               <i class="bi bi-lightbulb"></i> 규칙 정리 보기
             </button>
@@ -202,8 +155,9 @@
                   (합이 <u>같으면</u> 세 막대가 일직선으로 겹쳐져 삼각형이 되지 않는다.)</p>
               </div>
             </div>
+            </div>
           </div>
-        </section>
+        </div>
     </section>
   </main>
 
@@ -225,9 +179,6 @@
     };
     const canvas = document.getElementById('triangleCanvas');
     const context = canvas.getContext('2d');
-    const showHintToggle = document.getElementById('showHintToggle');
-    const recordBody = document.getElementById('recordBody');
-    let recordCount = 0;
 
     /* ---------- 판정 ---------- */
     function classifyTriangle(a, b, c) {
@@ -380,18 +331,6 @@
       context.fillText(name, point.x + labelOffsetX, point.y + labelOffsetY);
     }
 
-    function drawGuideCircle(center, radius, color, isFullCircle) {
-      context.save();
-      context.strokeStyle = color;
-      context.globalAlpha = 0.3;
-      context.lineWidth = 2;
-      context.setLineDash([8, 6]);
-      context.beginPath();
-      context.arc(center.x, center.y, radius, isFullCircle ? 0 : Math.PI, 2 * Math.PI);
-      context.stroke();
-      context.restore();
-    }
-
     function drawTracedArc(center, radius, color, startAngle, endAngle) {
       if (endAngle - startAngle < 0.001) return;
       context.save();
@@ -430,11 +369,6 @@
       const pointB = toCanvas(c, 0);
       const tipA = toCanvas(b * Math.cos(stickA.angle), b * Math.sin(stickA.angle));
       const tipB = toCanvas(c - a * Math.cos(stickB.angle), a * Math.sin(stickB.angle));
-      const showsFullCircle = status === 'impossible';
-
-      // 컴퍼스 안내선 + 막대 끝이 지나간 호
-      drawGuideCircle(pointA, b * scale, SIDE_COLORS.b, showsFullCircle);
-      drawGuideCircle(pointB, a * scale, SIDE_COLORS.a, showsFullCircle);
       drawTracedArc(pointA, b * scale, SIDE_COLORS.b, -stickA.sweptMax, -stickA.sweptMin);
       drawTracedArc(pointB, a * scale, SIDE_COLORS.a, Math.PI + stickB.sweptMin, Math.PI + stickB.sweptMax);
 
@@ -458,7 +392,7 @@
       if (scene.phase === 'done' && status === 'degenerate') drawPoint(tipA, '', 0, 0);
     }
 
-    /* ---------- 결과 및 부등식 표시 ---------- */
+    /* ---------- 결과 표시 ---------- */
     function showBanner(kind) {
       const bannerStyles = {
         ready: ['bg-light text-secondary', '▶ ‘삼각형 만들기’를 눌러 두 막대를 내려 보세요.'],
@@ -477,65 +411,11 @@
       document.getElementById('resetButton').disabled = scene.phase === 'standing';
     }
 
-    function renderInequalities() {
-      const { a, b, c } = getSides();
-      const longest = Math.max(a, b, c);
-      const inequalities = [
-        { left: ['a', 'b'], right: 'c' },
-        { left: ['b', 'c'], right: 'a' },
-        { left: ['c', 'a'], right: 'b' }
-      ];
-      const sides = { a, b, c };
-      const listElement = document.getElementById('inequalityList');
-      listElement.innerHTML = inequalities.map(({ left, right }) => {
-        const sum = sides[left[0]] + sides[left[1]];
-        const target = sides[right];
-        const holds = sum > target;
-        const sign = sum > target ? '&gt;' : sum === target ? '=' : '&lt;';
-        const isLongest = showHintToggle.checked && target === longest;
-        return `
-          <div class="inequality-row d-flex justify-content-between align-items-center px-3 py-2
-            ${holds ? 'bg-success-subtle' : 'bg-danger-subtle'} ${isLongest ? 'is-longest' : ''}">
-            <span>
-              <b class="text-side-${left[0]}">${left[0]}</b> + <b class="text-side-${left[1]}">${left[1]}</b>
-              = ${sum} ${sign} <b class="text-side-${right}">${right}</b> = ${target}
-            </span>
-            <i class="bi ${holds ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} fs-5"></i>
-          </div>`;
-      }).join('');
-    }
-
     function updateAll() {
       Object.keys(sideInputs).forEach(key => {
         sideValueLabels[key].textContent = sideInputs[key].value;
       });
-      renderInequalities();
       resetScene();
-    }
-
-    /* ---------- 기록 ---------- */
-    function addRecord() {
-      const { a, b, c } = getSides();
-      const status = classifyTriangle(a, b, c);
-      const longest = Math.max(a, b, c);
-      const sumOfOthers = a + b + c - longest;
-      const resultLabel = {
-        possible: '<span class="badge bg-success">O</span>',
-        degenerate: '<span class="badge bg-warning text-dark">X (일직선)</span>',
-        impossible: '<span class="badge bg-danger">X</span>'
-      }[status];
-
-      document.getElementById('emptyRecordRow')?.remove();
-      recordCount += 1;
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${recordCount}</td><td>${a}</td><td>${b}</td><td>${c}</td>
-        <td>${longest}</td><td>${sumOfOthers}</td><td>${resultLabel}</td>`;
-      recordBody.prepend(row);
-    }
-
-    function clearRecords() {
-      recordCount = 0;
-      recordBody.innerHTML = '<tr id="emptyRecordRow"><td colspan="7" class="text-secondary py-3">‘기록하기’를 눌러 실험 결과를 모아 보세요.</td></tr>';
     }
 
     function randomInt(min, max) {
@@ -549,12 +429,9 @@
 
     /* ---------- 이벤트 ---------- */
     Object.values(sideInputs).forEach(input => input.addEventListener('input', updateAll));
-    showHintToggle.addEventListener('change', renderInequalities);
     document.getElementById('fallButton').addEventListener('click', startFalling);
     document.getElementById('resetButton').addEventListener('click', resetScene);
     document.getElementById('randomButton').addEventListener('click', randomizeSides);
-    document.getElementById('recordButton').addEventListener('click', addRecord);
-    document.getElementById('clearRecordButton').addEventListener('click', clearRecords);
 
     updateAll();
   </script>
