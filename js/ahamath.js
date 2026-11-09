@@ -25,7 +25,6 @@
 (function (global) {
     'use strict';
 
-    const TOTAL_STEPS = 4;
     const CHART_H = 150;
     const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const RANK = { missed: 0, solved: 1, firstTry: 2 };
@@ -148,10 +147,37 @@
         refreshInView(document.getElementById(id));
     }
 
+    /* 상단 바 오른쪽 전체화면 버튼 : 태블릿 · 데스크탑은 아이콘 + 글자, 모바일은 아이콘만 (글자는 d-md-inline) */
+    function initFullscreenButton() {
+        const button = document.getElementById('fullscreenBtn');
+        if (!button) { return; }
+        const root = document.documentElement;
+        const requestFull = root.requestFullscreen || root.webkitRequestFullscreen;
+        const exitFull = document.exitFullscreen || document.webkitExitFullscreen;
+        if (!requestFull || !exitFull) { button.hidden = true; return; }   /* 아이폰 Safari 등 지원하지 않는 브라우저 */
+
+        function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement; }
+
+        function updateFullscreenButton() {
+            const isFull = !!fullscreenElement();
+            const text = isFull ? '전체화면 종료' : '전체화면 모드';
+            document.getElementById('fullscreenIcon').className = isFull ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+            document.getElementById('fullscreenText').textContent = text;
+            button.title = text;
+            button.setAttribute('aria-label', text);
+        }
+
+        button.addEventListener('click', function () {
+            const result = fullscreenElement() ? exitFull.call(document) : requestFull.call(root);
+            if (result && result.catch) { result.catch(function () { }); }
+        });
+        document.addEventListener('fullscreenchange', updateFullscreenButton);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+    }
+
     function updateTopbar() {
         const backText = document.getElementById('backText');
         const label = document.getElementById('stepLabel');
-        const total = document.getElementById('stepTotal');
         const bar = document.getElementById('progressBar');
 
         if (activeView === 'view-read' || activeView === 'view-cread') {
@@ -164,12 +190,10 @@
         if (activeView === 'view-mission' && session) {
             const step = session.flow === 'basic' ? 3 : 4;
             label.textContent = step + '단계: ' + FLOW[session.flow].label;
-            total.textContent = step + ' / ' + TOTAL_STEPS + '단계';
             bar.style.width = Math.round((session.index + 1) / session.ids.length * 100) + '%';
             return;
         }
         label.textContent = '학습 마무리';
-        total.textContent = '총 ' + TOTAL_STEPS + '단계';
         bar.style.width = '100%';
     }
 
@@ -188,7 +212,6 @@
         });
         if (!current) { return; }
         document.getElementById('stepLabel').textContent = current.dataset.step + '단계: ' + current.dataset.stepname;
-        document.getElementById('stepTotal').textContent = current.dataset.step + ' / ' + TOTAL_STEPS + '단계';
     }
 
     function reviewIdsOf(flow) {
@@ -872,6 +895,8 @@
                 showView('view-read');
             }
         });
+
+        initFullscreenButton();
 
         document.getElementById('resetBtn').addEventListener('click', function () {
             if (!window.confirm('이 주제의 학습 기록을 모두 지울까요?')) { return; }
