@@ -62,12 +62,6 @@
       display: block;
     }
 
-    .result-banner {
-      font-size: 1.3rem;
-      font-weight: 700;
-      border-radius: 12px;
-    }
-
   </style>
 </head>
 
@@ -86,15 +80,18 @@
             <div class="content-card mx-auto" style="max-width: 900px;">
               <div class="position-relative">
                 <canvas id="triangleCanvas" width="800" height="500"></canvas>
-                <button id="randomButton" class="btn btn-light border btn-sm position-absolute top-0 end-0 m-2 shadow-sm">
-                  <i class="bi bi-shuffle"></i> 무작위 <span class="text-secondary">(<span id="roundCounter">1</span>/5)</span>
-                </button>
+                <div class="position-absolute top-0 end-0 m-2 d-flex gap-2">
+                  <button id="randomButton" class="btn btn-light border btn-sm shadow-sm" title="무작위" aria-label="무작위">
+                    <i class="bi bi-shuffle"></i><span class="d-none d-sm-inline"> 무작위</span>
+                  </button>
+                  <button id="fallButton" class="btn btn-light border btn-sm shadow-sm" title="삼각형 만들기" aria-label="삼각형 만들기">
+                    <i class="bi bi-play-fill"></i><span class="d-none d-sm-inline"> 삼각형 만들기</span>
+                  </button>
+                  <button id="resetButton" class="btn btn-light border btn-sm shadow-sm" title="다시 세우기" aria-label="다시 세우기">
+                    <i class="bi bi-arrow-counterclockwise"></i><span class="d-none d-sm-inline"> 다시 세우기</span>
+                  </button>
+                </div>
               </div>
-              <div class="d-flex justify-content-center gap-2 mt-3">
-                <button id="fallButton" class="btn btn-primary btn-lg px-4"><i class="bi bi-play-fill"></i> 삼각형 만들기</button>
-                <button id="resetButton" class="btn btn-outline-secondary btn-lg"><i class="bi bi-arrow-counterclockwise"></i> 다시 세우기</button>
-              </div>
-              <div id="resultBanner" class="result-banner text-center p-3 mt-3"></div>
             </div>
     </section>
   </main>
@@ -159,7 +156,6 @@
         stickA: createStick(b, targets.angleA), // 꼭짓점 A에 붙은 변 b
         stickB: createStick(a, targets.angleB)  // 꼭짓점 B에 붙은 변 a
       };
-      showBanner('ready');
       updateButtons();
       drawScene();
     }
@@ -173,7 +169,6 @@
           stick.velocity = -0.4;
         });
       }
-      showBanner('falling');
       updateButtons();
       lastFrameTime = performance.now();
       animationFrameId = requestAnimationFrame(animate);
@@ -205,7 +200,6 @@
         for (let i = 0; i < 4; i++) sticks.forEach(stick => stepPendulum(stick, deltaTime / 4));
         if (scene.phase === 'falling' && sticks.every(stick => stick.angle < 0)) {
           scene.phase = 'swinging';
-          showBanner('impossible');
           updateButtons();
         }
         const settled = sticks.every(stick =>
@@ -220,7 +214,6 @@
         });
         if (progress >= 1) {
           scene.phase = 'done';
-          showBanner(scene.status);
           updateButtons();
           keepRunning = false;
         }
@@ -272,20 +265,6 @@
       context.fillText(label, labelX, labelY);
     }
 
-    // 캔버스 왼쪽 위 세 변의 길이 정보
-    function drawLengthInfo(a, b, c) {
-      const items = [[`a = ${a}`, SIDE_COLORS.a], [`b = ${b}`, SIDE_COLORS.b], [`c = ${c}`, SIDE_COLORS.c]];
-      context.font = 'bold 26px Pretendard Variable, sans-serif';
-      context.textAlign = 'left';
-      context.textBaseline = 'middle';
-      let cursorX = 20;
-      items.forEach(([text, color]) => {
-        context.fillStyle = color;
-        context.fillText(text, cursorX, 32);
-        cursorX += context.measureText(text).width + 28;
-      });
-    }
-
     function drawPoint(point, name, labelOffsetX, labelOffsetY) {
       context.fillStyle = '#1f2937';
       context.beginPath();
@@ -314,11 +293,10 @@
       const width = canvas.width;
       const height = canvas.height;
       const padding = 55;
-      const infoHeight = 50; // 위쪽 길이 정보·무작위 버튼 영역
+      const infoHeight = 35; // 위쪽 무작위 버튼 영역
       const { xC } = getTargetAngles(a, b, c);
 
       context.clearRect(0, 0, width, height);
-      drawLengthInfo(a, b, c);
 
       // 화면 범위 (막대가 움직이는 전체 영역)
       const minWorldX = Math.min(0, c - a, status === 'impossible' ? 0 : xC);
@@ -369,27 +347,13 @@
       if (scene.phase === 'done' && status === 'degenerate') drawPoint(tipA, '', 0, 0);
     }
 
-    /* ---------- 결과 표시 ---------- */
-    function showBanner(kind) {
-      const bannerStyles = {
-        ready: ['bg-light text-secondary', '▶ ‘삼각형 만들기’를 눌러 두 막대를 내려 보세요.'],
-        falling: ['bg-light text-secondary', '두 막대가 호를 그리며 내려오는 중...'],
-        possible: ['bg-success-subtle text-success-emphasis', '✅ 두 막대의 끝이 만나 삼각형이 만들어졌어요!'],
-        degenerate: ['bg-warning-subtle text-warning-emphasis', '⚠️ 두 막대가 밑변 위에 딱 포개져요. 삼각형이 아니에요!'],
-        impossible: ['bg-danger-subtle text-danger-emphasis', '❌ 두 막대의 끝이 만나지 않아요. 삼각형이 될 수 없어요!']
-      };
-      const banner = document.getElementById('resultBanner');
-      banner.className = `result-banner text-center p-3 mt-3 ${bannerStyles[kind][0]}`;
-      banner.textContent = bannerStyles[kind][1];
-    }
-
+    /* ---------- 버튼 상태 ---------- */
     function updateButtons() {
       document.getElementById('fallButton').disabled = scene.phase !== 'standing';
       document.getElementById('resetButton').disabled = scene.phase === 'standing';
     }
 
     function updateAll() {
-      document.getElementById('roundCounter').textContent = roundIndex;
       resetScene();
     }
 
@@ -405,21 +369,28 @@
       return list;
     }
 
-    // 5번 중 등호·성립·불가 각 1번 + 나머지 2번은 무작위
+    // (a + b) - c 값으로 출제 유형 구분
+    const CASE_CONDITIONS = {
+      possible: difference => difference >= 2,        // 넉넉하게 성립
+      possibleClose: difference => difference === 1,  // 간당간당하게 성립
+      degenerate: difference => difference === 0,     // 밑변 위에서 만남
+      impossibleClose: difference => difference === -1, // 간당간당하게 불가
+      impossible: difference => difference <= -2 && difference >= -3 // 불가 (티 나게 짧은 경우는 제외)
+    };
+
+    // 5번 중 성립 1 + 간당 성립 1 + 불가 1 + 간당 불가 1 + 등호 1을 순서만 섞어서 출제
     function buildStatusQueue() {
-      const allStatuses = ['possible', 'degenerate', 'impossible'];
-      const randomStatus = () => allStatuses[randomInt(0, 2)];
-      return shuffle([...allStatuses, randomStatus(), randomStatus()]);
+      return shuffle(['possible', 'possibleClose', 'impossible', 'impossibleClose', 'degenerate']);
     }
 
-    // 목표 결과가 나오도록 길이를 뽑고, 가장 긴 길이를 밑변 c에 배치
-    function generateSides(targetStatus) {
+    // 목표 유형이 나오도록 길이를 뽑고, 가장 긴 길이를 밑변 c에 배치
+    function generateSides(caseType) {
       let sides;
       do {
         const [shortA, shortB, longest] = [randomInt(1, 15), randomInt(1, 15), randomInt(1, 15)].sort((x, y) => x - y);
         sides = { a: shortA, b: shortB, c: longest };
       } while (
-        classifyTriangle(sides.a, sides.b, sides.c) !== targetStatus ||
+        !CASE_CONDITIONS[caseType](sides.a + sides.b - sides.c) ||
         (sides.a === currentSides.a && sides.b === currentSides.b && sides.c === currentSides.c)
       );
       return sides;
