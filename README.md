@@ -14,69 +14,60 @@
 
 ## 📌 주요 서비스 및 콘텐츠
 
-### 1. 💡 아하! 수학 (Aha! Math)
-중학교 수학의 기초 개념부터 도전 미션까지 단계별로 차근차근 해결하며 학습 기록을 로컬에 저장·확인할 수 있는 게이미피케이션 학습 플랫폼입니다.
-- **소인수분해**: 소수와 합성수, 소인수분해, 최대공약수와 최소공배수
-- **정수와 유리수**: 정수와 유리수, 절댓값과 수의 대소 관계, 정수와 유리수의 덧셈과 뺄셈
-- **좌표평면과 그래프**: 순서쌍과 좌표, 그래프와 그 해석, 정비례와 반비례
-- **자료의 정리와 해석**: 대푯값, 도수분포표와 히스토그램, 상대도수와 그 그래프
+### 1. 💡 아하! 수학 (Aha! Math) — [바로가기](https://math-dongdong.github.io/pages/middleschool/ahamath.html)
+중학교 수학의 기초 개념부터 도전 미션까지 단계별로 차근차근 해결하며 학습 기록을 로컬에 저장·확인할 수 있는 게이미피케이션 학습 플랫폼입니다. 중1 수학의 수와 연산, 문자와 식, 좌표평면과 그래프, 기본 도형, 작도와 합동, 자료의 정리와 해석까지 24개 주제를 제공합니다.
 
 ### 2. 🎮 중학 수학 탐구 & 활동
-- **덧셈, 뺄셈**: 수직선 모델과 부호 규칙을 이용한 정수와 유리수의 덧셈·뺄셈 연습
-- **곱셈, 나눗셈**: 부호 결정 원리와 역수를 활용한 정수와 유리수의 곱셈·나눗셈 연습
-- **생각을 읽는 마법구슬**: 십진법 자릿수의 성질과 배수 원리를 이용한 마인드리딩 게임
-- **좌표평면 오목**: 좌표평면 위의 순서쌍 $(x, y)$을 직접 지정하며 대결하는 실시간 오목 대전
-- **좀비 헌터**: 정비례($y = ax$) 및 반비례($y = a/x$) 함수의 식을 조절하여 좀비를 처치하는 게임
-- **회전체 탐구**: 평면도형을 회전축을 중심으로 회전시켜 만들어지는 입체도형과 단면을 3D로 관찰
-- **가위바위보**: 실시간으로 가위바위보를 진행하며 상대도수의 변화와 통계적 규칙성을 체감하는 시뮬레이션
+- **[덧셈, 뺄셈](https://math-dongdong.github.io/pages/middleschool/1/plus_minus.html)**: 수직선 모델과 부호 규칙을 이용한 정수와 유리수의 덧셈·뺄셈 연습
+- **[곱셈, 나눗셈](https://math-dongdong.github.io/pages/middleschool/1/multiply_divide.html)**: 부호 결정 원리와 역수를 활용한 정수와 유리수의 곱셈·나눗셈 연습
+- **[생각을 읽는 마법구슬](https://math-dongdong.github.io/pages/middleschool/1/read_mind.html)**: 십진법 자릿수의 성질과 배수 원리를 이용한 마인드리딩 게임
+- **[좌표평면 오목](https://math-dongdong.github.io/pages/middleschool/1/gridgomoku.html)**: 좌표평면 위의 순서쌍 $(x, y)$을 직접 지정하며 대결하는 실시간 오목 대전
+- **[좀비 헌터](https://math-dongdong.github.io/pages/middleschool/1/zombiehunter.html)**: 정비례($y = ax$) 및 반비례($y = a/x$) 함수의 식을 조절하여 좀비를 처치하는 게임
+- **[도형의 작도](https://math-dongdong.github.io/pages/middleschool/1/construction.html)**: 눈금 없는 자와 컴퍼스로 기본 작도와 삼각형의 작도를 연습
+- **[삼각형의 합동](https://math-dongdong.github.io/pages/middleschool/1/congruence.html)**: 합동 조건(SSS, SAS, ASA)을 카드게임으로 익히는 활동
+- **[원과 부채꼴의 넓이](https://math-dongdong.github.io/pages/middleschool/1/circle_sector_area.html)**: 원을 잘게 나누어 재배열하며 넓이 공식을 탐구
+- **[회전체 탐구](https://math-dongdong.github.io/pages/middleschool/1/rotation.html)**: 평면도형을 회전축을 중심으로 회전시켜 만들어지는 입체도형과 단면을 3D로 관찰
+- **[가위바위보](https://math-dongdong.github.io/pages/middleschool/1/relativefrequency.html)**: 실시간으로 가위바위보를 진행하며 상대도수의 변화와 통계적 규칙성을 체감하는 시뮬레이션
+- **[삼각형의 닮음 (중2)](https://math-dongdong.github.io/pages/middleschool/2/similarity.html)**: 닮음 조건을 카드게임으로 익히는 활동
 
 ### 3. 🥧 체험수학 & 파이데이 (Math Day)
-- **보로노이 다이어그램**: 실시간 분할 및 거리 기반 영역 탐구 시뮬레이터
-- **파이데이(Math Day)**: 
-  - 3.14초를 잡아라! (스톱워치 챌린지)
-  - 원주율 100자리 암기왕
-  - 10초 슬라이더 퍼즐
-  - 원과 원주율 탐구 캔버스
+- **[보로노이 다이어그램](https://math-dongdong.github.io/pages/middleschool/etc/voronoi.html)**: 실시간 분할 및 거리 기반 영역 탐구 시뮬레이터
+- **[파이데이(Math Day)](https://math-dongdong.github.io/pages/middleschool/etc/mathday/mathday.html)**: π×10초 멈춰라!(스톱워치), π 외우자!(원주율 암기), π×10 맞추기!(슬라이더), 완벽한 원 그리기
 
 ### 4. 🎲 수학 보드게임
 수학적 전략과 확률적 사고를 기를 수 있는 클래식 & 전략 보드게임:
-- **스트림스 (Streams)**: 오름차순 수 배치 전략 게임
-- **Pig Game**: 주사위 확률과 리스크 관리 게임
-- **블로토 대령 게임 (Colonel Blotto Game)**: 게임이론 기반 병력 분배 전략
-- **숫자야구**: 논리적 추론 및 경우의 수 탐구
-- **성냥개비 퍼즐**: 공간 지각 및 연산 기호 변형 퍼즐
-- **주사위 모음**: 수업에 유용한 다양한 형태의 인터랙티브 주사위
+- **[스트림스 (Streams)](https://math-dongdong.github.io/pages/middleschool/game/streams.html)**: 오름차순 수 배치 전략 게임
+- **[Pig Game](https://math-dongdong.github.io/pages/middleschool/game/pig_game.html)**: 주사위 확률과 리스크 관리 게임
+- **[블로토 대령 게임 (Colonel Blotto Game)](https://math-dongdong.github.io/pages/middleschool/game/blottogame.html)**: 게임이론 기반 병력 분배 전략
+- **[숫자야구](https://math-dongdong.github.io/pages/middleschool/game/number_baseball.html)**: 논리적 추론 및 경우의 수 탐구
+- **[성냥개비 퍼즐](https://math-dongdong.github.io/pages/middleschool/game/matchstick.html)**: 공간 지각 및 연산 기호 변형 퍼즐
+- **[주사위 모음](https://math-dongdong.github.io/pages/middleschool/game/dice.html)**: 수업에 유용한 다양한 형태의 인터랙티브 주사위
 
-### 5. 🤖 인공지능 수학 (AI Math)
+### 5. 🤖 인공지능 수학 (AI Math) — [바로가기](https://math-dongdong.github.io/pages/aimath/image/resolution.html)
 인공지능과 데이터 과학의 기반이 되는 수학적 원리를 인터랙티브 캔버스로 탐구합니다.
-- **이미지 데이터의 표현 & 변환**:
-  - 해상도와 픽셀 매트릭스
-  - 흑백(이진화) 및 컬러 RGB 매트릭스 탐구, 컬러 매칭 게임
-  - 그레이스케일 필터 변환 및 밝기/대비 조절
-  - 행렬 합성과 디졸브(Dissolve) 효과
-  - 손글씨 숫자 인식과 해밍 거리(Hamming Distance) 개념
-- **텍스트 데이터의 표현 & 언어 처리**:
-  - Bag of Words 텍스트 데이터 표현과 키워드 추출
-  - 문서 간 유사도 분석 및 정보 추출
-  - 단어 사전 기반 텍스트 감성 분석(Sentiment Analysis)
+- **이미지 데이터의 표현**: [이미지 해상도](https://math-dongdong.github.io/pages/aimath/image/resolution.html), [흑백 이미지](https://math-dongdong.github.io/pages/aimath/image/blackandwhite.html), [컬러 이미지](https://math-dongdong.github.io/pages/aimath/image/color.html) (컬러 매칭 게임 포함)
+- **이미지 데이터의 변환·분류**: [그레이 필터](https://math-dongdong.github.io/pages/aimath/image/grayscale.html), [밝기 조절](https://math-dongdong.github.io/pages/aimath/image/brightness_adjust.html), [이미지의 합성](https://math-dongdong.github.io/pages/aimath/image/matrix_composite.html) (디졸브 효과), [손글씨 인식](https://math-dongdong.github.io/pages/aimath/image/hammingdistance.html) (해밍 거리)
+- **텍스트 데이터**: [텍스트 데이터의 표현과 주제어](https://math-dongdong.github.io/pages/aimath/text/textexpression.html) (Bag of Words), [유용한 정보 찾기](https://math-dongdong.github.io/pages/aimath/text/textconversion.html), [텍스트 감성 분석](https://math-dongdong.github.io/pages/aimath/text/sentimentanalysis.html)
 
-### 6. ⚙️ 수업도구 & 업무자동화 (Automation)
+### 6. ⚙️ 수업도구 & 업무자동화 (Automation) — [바로가기](https://math-dongdong.github.io/pages/automation/work/travel_expense_report.html)
 - **수업도구**:
-  - **수직선 만들기**: 눈금 범위, 간격, 스타일을 자유롭게 커스텀하여 이미지로 다운로드
-  - **AI 모션 슬라이드**: PPT처럼 글자·위치를 직접 고치고, 오른쪽 AI 창에 주제를 적으면 Gemini가 모션이 들어간 슬라이드를 한 장 또는 여러 장 만들어 줌. 발표 모드, 발표자 보기/청중 화면 HTML 내보내기·불러오기
+  - **[수직선 만들기](https://math-dongdong.github.io/pages/automation/class/numberline.html)**: 눈금 범위, 간격, 스타일을 자유롭게 커스텀하여 이미지로 다운로드
+  - **[AI 모션 슬라이드](https://math-dongdong.github.io/pages/automation/class/motionslide.html)**: PPT처럼 글자·위치를 직접 고치고, 오른쪽 AI 창에 주제를 적으면 Gemini가 모션이 들어간 슬라이드를 만들어 줌. 발표 모드, 발표자 보기/청중 화면 HTML 내보내기·불러오기
 - **교사용 업무자동화**:
-  - **여비정산 신청서**: 출장 및 여비 지급 신청서 자동 생성
-  - **PDF 편집 도구**: 페이지 추출, 병합, 분할
-  - **GIF 편집 도구**: 프레임 분할, 속도 및 크기 조절
-  - **엑셀 이미지 일괄 추출기**: XLSX 파일 내 삽입된 이미지를 손실 없이 일괄 다운로드
+  - **[여비정산 신청서](https://math-dongdong.github.io/pages/automation/work/travel_expense_report.html)**: 출장 및 여비 지급 신청서 자동 생성
+  - **[PDF 편집 도구](https://math-dongdong.github.io/pages/automation/work/pdfedit.html)**: 페이지 추출, 병합, 분할
+  - **[GIF 편집 도구](https://math-dongdong.github.io/pages/automation/work/gifedit.html)**: 프레임 분할, 속도 및 크기 조절
+  - **[엑셀 이미지 추출기](https://math-dongdong.github.io/pages/automation/work/xlimagedownloader.html)**: XLSX 파일 내 삽입된 이미지를 손실 없이 일괄 다운로드
 - **학생 관리**:
-  - **학생관리 앱 (AppSheet 연동)**: 출결 및 학생 특기사항 관리
-  - **자리배치 앱**: 드래그 앤 드롭 및 무작위 지정 자리배치
-  - **소감문 관리 앱**: 활동 소감문 취합 및 텍스트 정리
+  - **[학생관리 앱 (AppSheet 연동)](https://math-dongdong.github.io/pages/automation/student/appsheet.html)**: 출결 및 학생 특기사항 관리
+  - **[자리배치 앱](https://math-dongdong.github.io/pages/automation/student/seatingarrangement.html)**: 드래그 앤 드롭 및 무작위 지정 자리배치
+  - **[소감문 관리 앱](https://math-dongdong.github.io/pages/automation/student/reviewmanagement.html)**: 활동 소감문 취합 및 텍스트 정리
+  - **[우리반 관계지도 앱](https://math-dongdong.github.io/pages/automation/student/relationmap.html)**: 학생 간 관계를 조사해 관계지도로 시각화
 
-### 7. 🏭 산업 수학 & 챗봇 (Streamlit)
-- **산업수학 인터랙티브 앱**: [https://industrialmath.streamlit.app/](https://industrialmath.streamlit.app/)
-- **동동봇 AI 챗봇**: [https://dongdongbot.streamlit.app/](https://dongdongbot.streamlit.app/)
+### 7. 🏭 산업 수학 & 🐣 동동봇 (Streamlit)
+이 두 서비스는 정적 웹(GitHub Pages)이 아닌 **파이썬 웹 프레임워크 Streamlit**으로 제작되었습니다.
+- **[산업 수학](https://industrialmath.streamlit.app/)**: 산업수학 교과서의 내용이 **파이썬 코드로 문제를 해결**하도록 구성되어 있어, 교과서의 코드를 그대로 실행하고 결과를 확인할 수 있도록 파이썬 기반의 Streamlit 앱으로 제작했습니다.
+- **[동동봇 AI 챗봇](https://dongdongbot.streamlit.app/)**: AI 모델의 **API 키가 브라우저에 노출되지 않도록 파이썬 서버에서 안전하게 보호**하기 위해 Streamlit 앱으로 제작했습니다.
 
 ---
 
@@ -111,13 +102,13 @@ math-dongdong.github.io/
     │   └── text/               # 텍스트 데이터 표현/정보추출/감성분석
     ├── automation/             # 업무자동화 및 도구
     │   ├── class/              # 수업도구 (수직선 만들기, AI 모션 슬라이드 등)
-    │   ├── student/            # 학생관리 (자리배치, 소감문 관리 등)
+    │   ├── student/            # 학생관리 (자리배치, 소감문 관리, 관계지도 등)
     │   └── work/               # 업무자동화 (여비정산, PDF, GIF, 엑셀 이미지 등)
     └── middleschool/           # 중학 수학 콘텐츠
-        ├── index.html          # 아하! 수학 메인 대시보드
+        ├── ahamath.html        # 아하! 수학 메인 대시보드
         ├── 1/                  # 중1 수학 활동 및 게임
-        ├── 2/                  # 중2 수학 (지수법칙 등)
-        ├── ahamath/1/          # 아하! 수학 단원별 학습 모듈 (12개 주제)
+        ├── 2/                  # 중2 수학 (삼각형의 닮음, 지수법칙)
+        ├── ahamath/1/          # 아하! 수학 단원별 학습 모듈 (24개 주제)
         ├── etc/                # 보로노이 시뮬레이터 및 파이데이(mathday)
         └── game/               # 수학 보드게임 모음
 ```

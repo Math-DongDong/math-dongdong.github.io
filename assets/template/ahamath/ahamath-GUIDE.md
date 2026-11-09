@@ -2,7 +2,7 @@
 
 새 학습 주제를 만들 때 이 문서 하나만 보면 됩니다.
 
-- 템플릿 : `assets/template/ahamath/_template.html`
+- 템플릿 : `assets/template/ahamath/ahamath-template.html`
 - 완성 예시 : `pages/middleschool/ahamath/1/` 안의 학습 페이지들
 - 공통 스타일 : `css/ahamath.css`
 - 공통 동작 : `js/ahamath.js`
@@ -16,13 +16,15 @@ css/
 └── ahamath.css                        ← 학습 페이지 공통 스타일 (모든 학습 페이지가 함께 씀)
 
 js/
-└── ahamath.js                         ← 학습 페이지 공통 동작 (화면 전환·기록·채점·시각 자료)
+├── ahamath.js                         ← 학습 페이지 공통 동작 (화면 전환·기록·채점·시각 자료)
+├── ahamath-algebra.js                 ← 문자와 식 단원 전용 시각 자료 · 문자 분수 표기
+└── ahamath-geometry.js                ← 기본 도형과 작도 단원 전용 그림(geo · dense) · 기호 표기
 
 assets/
 └── template/
      └── ahamath/
-          ├── _template.html            ← 복사해서 쓰는 템플릿 (원본은 수정하지 말기)
-          └── GUIDE.md                  ← 이 문서
+          ├── ahamath-template.html     ← 복사해서 쓰는 템플릿 (원본은 수정하지 말기)
+          └── ahamath-GUIDE.md          ← 이 문서
 
 pages/
 └── middleschool/
@@ -47,27 +49,28 @@ pages/
 공통 파일을 부르는 경로가 `../../../` (세 단계)이면 파일을 찾지 못하니 꼭 확인하세요.
 
 ```html
-<link rel="stylesheet" href="../../../../css/navbar.css" />
 <link rel="stylesheet" href="../../../../css/ahamath.css" />
-<script src="../../../../js/navbar.js" data-type="middleschool"></script>
 <script src="../../../../js/ahamath.js"></script>
 ```
+
+학습 페이지에는 사이트 공통 네비게이션바(`navbar.css` · `navbar.js`)를 **넣지 않습니다.**
+메인(`ahamath.html`)에서 목차를 눌러 들어온 학생이 다른 메뉴로 새지 않도록, 목록으로 돌아가는 길은
+상단 진행률 바의 '아하! 수학' 버튼 하나만 둡니다. 네비게이션바는 메인 페이지 `ahamath.html` 에만 있습니다.
 
 파일 이름은 **영문 소문자**로 짓습니다. 한글 파일명은 서버·모바일에서 깨질 수 있습니다.
 
 ### 현재 등록된 주제
 
+메인 `ahamath.html` 의 TOPICS 순서와 같습니다. 문항 수는 실제 페이지의 `questions` 와 메인의
+`basicTotal` / `challengeTotal` 이 서로 같아야 합니다. 문항을 넣고 뺄 때마다 **이 표와 메인을 함께** 고치세요.
+
 | id | 파일 | 주제 | 기초 / 도전 문항 |
 |---|---|---|---|
-| `coordinate` | `1/coordinate.html` | 순서쌍과 좌표 | 4 / 3 |
-| `graph` | `1/graph.html` | 그래프 | 4 / 3 |
-| `proportion` | `1/proportion.html` | 정비례와 반비례 | 4 / 3 |
-| `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
-| `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
-| `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |
 | `prime` | `1/prime.html` | 소수와 합성수 | 5 / 3 |
-| `factorization` | `1/factorization.html` | 소인수분해 | 5 / 3 |
-| `gcdlcm` | `1/gcdlcm.html` | 최대공약수와 최소공배수 | 5 / 3 |
+| `factorization` | `1/factorization.html` | 소인수분해 | 4 / 3 |
+| `gcdlcm` | `1/gcdlcm.html` | 최대공약수와 최소공배수 | 4 / 3 |
+| `rational` | `1/rational.html` | 정수와 유리수 | 4 / 3 |
+| `compare` | `1/compare.html` | 절댓값과 수의 대소 관계 | 5 / 3 |
 | `addsub` | `1/addsub.html` | 정수와 유리수의 덧셈과 뺄셈 | 5 / 3 |
 | `muldiv` | `1/muldiv.html` | 정수와 유리수의 곱셈과 나눗셈 | 5 / 3 |
 | `letter` | `1/letter.html` | 문자의 사용과 식의 값 | 5 / 3 |
@@ -75,12 +78,18 @@ pages/
 | `linearaddsub` | `1/linearaddsub.html` | 일차식의 덧셈과 뺄셈 | 5 / 3 |
 | `equation` | `1/equation.html` | 등식과 방정식 | 5 / 3 |
 | `linearequation` | `1/linearequation.html` | 일차방정식의 풀이 | 5 / 3 |
-| `basicfigure` | `1/basicfigure.html` | 점, 선, 면과 거리 | 5 / 3 |
-| `angle` | `1/angle.html` | 각과 맞꼭지각 | 5 / 3 |
-| `parallel` | `1/parallel.html` | 평행선의 성질 | 5 / 3 |
+| `coordinate` | `1/coordinate.html` | 순서쌍과 좌표 | 4 / 3 |
+| `graph` | `1/graph.html` | 그래프 | 3 / 2 |
+| `proportion` | `1/proportion.html` | 정비례와 반비례 | 4 / 3 |
+| `basicfigure` | `1/basicfigure.html` | 점, 선, 면과 거리 | 4 / 2 |
+| `angle` | `1/angle.html` | 각과 맞꼭지각 | 5 / 2 |
+| `parallel` | `1/parallel.html` | 평행선의 성질 | 4 / 2 |
 | `position` | `1/position.html` | 위치 관계 | 5 / 3 |
 | `construct` | `1/construct.html` | 작도와 삼각형의 작도 | 5 / 3 |
 | `congruent` | `1/congruent.html` | 삼각형의 합동 조건 | 5 / 3 |
+| `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
+| `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
+| `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |
 
 > 문자와 식 단원 5개 페이지는 `js/ahamath-algebra.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
 > 이 파일에 단원 전용 시각 자료 6종(`border` · `terms` · `tiles` · `area` · `balance` · `chain`)과
@@ -100,7 +109,7 @@ pages/
 
 ### ① 템플릿 복사
 
-`assets/template/ahamath/_template.html` 을 복사해 `pages/middleschool/ahamath/1/` 안에 새 이름으로 저장합니다. 예: `linear-equation.html`
+`assets/template/ahamath/ahamath-template.html` 을 복사해 `pages/middleschool/ahamath/1/` 안에 새 이름으로 저장합니다. 예: `linear-equation.html`
 
 ### ② 내용 채우기
 
@@ -496,6 +505,51 @@ data: '<span class="mini-stem">① 보기<br>② 보기<br>③ 보기</span>'
 개념 카드를 아무리 읽어도 풀 수 없는 문제가 됩니다. 반대로 심화 카드를 지웠다면
 그 카드를 근거로 하던 도전 문항도 함께 지웁니다.
 
+| 기초에 남길 것 | 심화로 보낼 것 |
+|---|---|
+| 직선 · 반직선 · 선분, 중점, 수직이등분선 | 두 점 사이의 거리, 점과 직선 사이의 거리 |
+| 평행선에서 동위각 · 엇각의 크기가 같음 | 각을 보고 평행한지 판단하기, 보조선 긋기 |
+| 그림에 `x` 로 적힌 각 → `∠x = 70°` | 그림에 `x°` 로 적힌 각 → `x = 30` 과의 구분 |
+
+### 어려워서 손을 놓게 만드는 것은 심화에도 넣지 않기
+
+심화라도 **학습 무기력을 부를 만큼 어려운 것**은 아예 뺍니다.
+지금까지 뺀 것 : 길이의 비로 점 찍기, 직선 · 반직선 · 선분의 개수 세기, 맞꼭지각 쌍의 개수 세기,
+삼각형의 세 각의 합, 평행선에서 같은 쪽 두 각.
+
+기초 예제의 방정식은 **한쪽만 식**인 수준까지 둡니다.
+
+| 기초 | 피하기 (양쪽 모두 식) |
+|---|---|
+| (3x + 10)° 와 100° 가 엇각 → 3x + 10 = 100 | (3x + 10)° 와 (2x + 40)° 가 엇각 → 3x + 10 = 2x + 40 |
+
+### 이런 문장은 쓰지 않기
+
+- **항상 성립하지 않는 일반화** : "점은 0차원, 선은 1차원…" 처럼 대체로 그런 것을 표로 못 박지 않습니다
+- **활동지가 있어야 이해되는 상황** : "미시령 옛길에 터널을 뚫는다면" 처럼 지도·그림이 따로 필요한 이야기는
+  "두 점을 잇는 선 가운데 가장 짧은 선은?" 처럼 그림 한 장으로 끝나는 문장으로 바꿉니다
+- **머릿속으로 따라가기 힘든 움직임** : "두 교차점의 한가운데를 중심으로 반 바퀴 돌려 볼까요?",
+  "빙글 반 바퀴 돌려" 대신 **무엇을 어디로 옮기는지**만 씁니다 ("∠c 를 ∠e 자리로 옮기면 꼭 겹쳐질까요?")
+
+### 도형 단원 표기
+
+| 경우 | 이렇게 |
+|---|---|
+| 그림에 각 이름 `x` 만 적음 | `∠x = 70°` (x 는 각의 이름) |
+| 그림에 `x°`, `(3x+10)°` 처럼 ° 가 붙음 | `x = 30` (x 는 수). "x 의 값" 을 묻습니다 |
+| 모서리를 여러 개 적을 때 | `모서리 AB, 모서리 AD, 모서리 BC` 처럼 **하나하나에** '모서리'를 붙입니다 (`모서리 AB, AD, BC` ✗) |
+| 평행한 두 직선 | 두 직선의 같은 자리에 `>` 꺽쇠를 그려 평행을 드러냅니다 |
+
+`geo` 에는 꺽쇠 명령이 없으므로 짧은 굵은 선분 두 개로 그립니다. (직선이 y = 55, y = 150 일 때)
+
+```
+seg.bold 62,48 70,55; seg.bold 62,62 70,55; seg.bold 62,143 70,150; seg.bold 62,157 70,150
+```
+
+그림을 볼 수 있으면 **글로 묻지 말고 그림으로** 묻습니다.
+"크기가 같고 마주 보는 두 각은 항상 맞꼭지각일까?" 보다 실제로 어긋난 두 각을 그려 놓고 "이 두 각은 맞꼭지각일까요?" 가 낫습니다.
+선택지 자체를 그림으로 만들 수도 있습니다. `text` 에 `data-instant="1"` 인 `geo` 그림 HTML 을 넣으면 됩니다. (`basicfigure.html` 미션 4)
+
 ### 자료를 재활용하되 충돌은 피하기
 
 개념 → 예제 → 심화까지 **같은 맥락**을 이어 쓰면 학생이 덜 헷갈립니다.
@@ -676,6 +730,10 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 - 카드를 지우고 `block-c…` 번호를 다시 매기지 않음 → 게이트 링크와 어긋납니다
 - 개념은 심화 카드에만 있는데 기초 미션에서 물음 → 개념을 읽어도 풀 수 없는 문제가 됩니다
 - 근거가 되던 심화 카드를 지우고 도전 문항은 그대로 둠 → 위와 같은 문제가 됩니다
+- 문항을 넣고 빼고 메인 TOPICS 와 1번 표의 문항 수를 안 고침 → 메인 카드의 `/ 5` 와 실제 문항 수가 어긋납니다
+- 학습 페이지에 `navbar.css` · `navbar.js` 를 넣음 → 사이트 메뉴가 떠서 학생이 학습 중에 다른 곳으로 새어 나갑니다
+- 심화 카드를 옮기거나 지우고 심화 게이트의 `href="#block-a…"` 를 안 고침 → "심화 개념 다시 보기"가 엉뚱한 곳으로
+- 그림의 각 이름표와 풀이의 표기가 다름(그림은 `x°`, 풀이는 `∠x = 30°`) → 6번의 '도형 단원 표기'를 따르세요
 - 본문에 스크롤·다시 보기 같은 **화면 조작 설명**을 남김
 - 분수를 `1/2` 로만 적음 → 글자가 붙어 보입니다 (5번 분수 표기)
 - `data-labels` 개수를 `data-counts` 와 같게 씀 → 계급의 양 끝 값이라 **하나 더** 많아야 합니다
@@ -717,7 +775,10 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 - [ ] 도입이 긴 상황 설명 없이 **표나 그림으로** 시작하는가
 - [ ] 본문에 화면 조작을 설명하는 문장이 없는가
 - [ ] 기초 미션에서 묻는 개념이 모두 **기초 카드 안에** 있는가
-- [ ] 카드를 지운 뒤 id 와 게이트 링크가 맞는가
+- [ ] 카드를 지운 뒤 id 와 게이트 링크(기초 · 심화 둘 다)가 맞는가
+- [ ] 메인 TOPICS 의 `basicTotal` / `challengeTotal` 이 실제 문항 수와 같은가
+- [ ] 학습 페이지에 사이트 네비게이션바가 뜨지 않는가
+- [ ] 도형 그림의 `x` / `x°` 와 풀이의 `∠x = 70°` / `x = 30` 이 짝이 맞는가
 - [ ] 분수가 분수 모양으로 보이고, 풀이에 약분 과정이 드러나는가
 - [ ] 휴대폰 세로 화면에서 글자와 그래프가 잘리지 않는가
 
@@ -728,7 +789,7 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
 아래를 복사해 붙여넣고 대괄호만 채우면 됩니다. 활동지와 교과서를 함께 첨부하세요.
 
 ```
-첨부한 _template.html 과 GUIDE.md 를 그대로 따라서
+첨부한 ahamath-template.html 과 ahamath-GUIDE.md 를 그대로 따라서
 [주제 이름] 학습 페이지를 만들어 주세요.
 스타일과 동작은 css/ahamath.css, js/ahamath.js 에 이미 있으니
 페이지에는 본문과 문항만 넣으면 됩니다.
@@ -740,14 +801,15 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
   교과서는 보조 자료로만 참고하세요.
 
 지켜 주세요.
-1. _template.html 의 ★ 표시 자리만 채우고 나머지 코드는 건드리지 말 것
+1. ahamath-template.html 의 ★ 표시 자리만 채우고 나머지 코드는 건드리지 말 것
+   (사이트 네비게이션바 navbar.css · navbar.js 는 넣지 말 것)
    (공통 파일 css/ahamath.css, js/ahamath.js 는 절대 고치지 말 것.
     이 주제에서만 필요한 스타일은 페이지의 <style> 에 적을 것)
 2. 개념 카드는 한 카드에 한 생각만, 4~8장
-3. 시각 자료는 GUIDE.md 5번의 10종 안에서만 고를 것
+3. 시각 자료는 ahamath-GUIDE.md 5번의 10종 안에서만 고를 것
    (필요한 것이 없으면 새로 만들지 말고 먼저 물어볼 것.
     새로 만들기로 했다면 AhaMath.registerVis 로 그 페이지에만 등록할 것)
-4. 도입 자료는 GUIDE.md 6번을 지켜, 새 개념 없이는 결론이 달라지는
+4. 도입 자료는 ahamath-GUIDE.md 6번을 지켜, 새 개념 없이는 결론이 달라지는
    자료로 만들 것. 계산은 딱 떨어지게, 합계는 검산되게
    도입은 긴 상황 설명 대신 작은 표나 그림으로 시작하고,
    상황은 개념을 정리한 뒤 한 줄만 붙일 것
@@ -760,7 +822,7 @@ function countFirstTry(best, prefix) { … best[id] === 'firstTry' … }
    두 보기의 생김새를 맞추고, 정답 위치는 첫째·둘째를 번갈아 놓을 것
    긴 상황을 읽어야 하는 생활 문제는 기초 미션에 넣지 말 것
 8. 문항의 title 과 조건 상자(data)는 가운데 점 대신 <br> 로 줄을 나눌 것
-   분수가 들어가면 GUIDE.md 5번 '분수 표기'를 쓰고, 문항에서는 fracText('1/2') 로 감쌀 것
+   분수가 들어가면 ahamath-GUIDE.md 5번 '분수 표기'를 쓰고, 문항에서는 fracText('1/2') 로 감쌀 것
 9. 어조는 다정한 존댓말 구어체, 한자식 용어는 쉬운 말로 풀어 쓸 것
    화면 조작(스크롤·다시 보기)을 설명하는 문장은 넣지 말 것
    용어가 애매하면 기호를 그대로 쓸 것 (`부호는 방향` → `+ 와 - 는 방향`)
