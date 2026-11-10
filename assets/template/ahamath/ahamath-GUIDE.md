@@ -88,7 +88,7 @@ pages/
 | `proportion` | `1/proportion.html` | 정비례와 반비례 | 4 / 3 |
 | `basicfigure` | `1/basicfigure.html` | 점, 선, 면과 거리 | 4 / 3 |
 | `angle` | `1/angle.html` | 각과 맞꼭지각 | 5 / 2 |
-| `parallel` | `1/parallel.html` | 평행선의 성질 | 4 / 2 |
+| `parallel` | `1/parallel.html` | 평행선의 성질 | 4 / 3 |
 | `position` | `1/position.html` | 위치 관계 | 5 / 3 |
 | `construct` | `1/construct.html` | 작도와 삼각형의 작도 | 4 / 1 |
 | `congruent` | `1/congruent.html` | 삼각형의 합동 조건 | 5 / 3 |
