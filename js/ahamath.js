@@ -351,11 +351,7 @@
                 function () { startMission('basic', 'full', null); }
             ));
         }
-        actions.appendChild(makeButton(
-            '<i class="bi bi-book"></i> 개념 다시 보기',
-            'btn btn-light fw-bold w-100 py-2 mb-2',
-            function () { showView(FLOW[flow].readView); }
-        ));
+        /* '개념 다시 보기'는 화면 왼쪽 위 링크(#backBtn)가 맡아요 */
         const link = document.createElement('a');
         link.className = 'btn btn-light fw-bold w-100 py-2';
         link.href = LIST_HREF;
@@ -863,7 +859,7 @@
         function goBack() {
             if (activeView === 'view-read' || activeView === 'view-cread') {
                 window.location.href = LIST_HREF;
-            } else if (activeView === 'view-mission' && session) {
+            } else if (session) {   /* 미션 · 결과 화면 : 방금 푼 미션의 개념 화면으로 (도전이면 심화 개념) */
                 showView(FLOW[session.flow].readView);
             } else {
                 showView('view-read');

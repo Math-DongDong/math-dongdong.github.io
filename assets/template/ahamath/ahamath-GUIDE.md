@@ -86,7 +86,7 @@ pages/
 | `coordinate` | `1/coordinate.html` | 순서쌍과 좌표 | 4 / 3 |
 | `graph` | `1/graph.html` | 그래프 | 3 / 2 |
 | `proportion` | `1/proportion.html` | 정비례와 반비례 | 4 / 3 |
-| `basicfigure` | `1/basicfigure.html` | 점, 선, 면과 거리 | 4 / 2 |
+| `basicfigure` | `1/basicfigure.html` | 점, 선, 면과 거리 | 4 / 3 |
 | `angle` | `1/angle.html` | 각과 맞꼭지각 | 5 / 2 |
 | `parallel` | `1/parallel.html` | 평행선의 성질 | 4 / 2 |
 | `position` | `1/position.html` | 위치 관계 | 5 / 3 |
