@@ -67,7 +67,9 @@
     /* 단계별 공개: 아직 차례가 아닌 상자(발표 중) */
     .slide-canvas .draggable-box.step-hidden { visibility: hidden; }
     /* 하이라이트(H): 마우스 둘레만 밝게, 나머지는 어둡게. 클릭은 그대로 통과한다. */
-    .slide-canvas > .ls-spot { position: absolute; inset: 0; z-index: 3000; pointer-events: none; }
+    /* 하이라이트 막: 슬라이드 바깥 틀(1920×1080) 맨 위. 슬라이드는 isolation으로 자기 안의 z-index를 가둬 막 위로 못 올라오게 한다 */
+    .ls-spot { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; z-index: 2147483000; pointer-events: none; }
+    .slide-canvas { isolation: isolate; }
 
     /* 인터랙티브 요소: AI가 쓴 코드를 격리된 iframe에서 실행한다 */
     .app-frame { position: relative; min-height: 300px; }
@@ -5860,16 +5862,19 @@
       }
 
       // 하이라이트: pos({x, y}, 0~1 비율) 둘레 radius(px)만 밝고 나머지는 어둡게. pos가 없으면 지운다.
+      // 하이라이트 막은 슬라이드(canvas) 안이 아니라 바로 바깥 틀(scaler)의 맨 위에 둔다.
+      // 슬라이드 안 CSS(z-index·혼합 효과)나 인터랙티브 칸이 막보다 위로 비쳐 나오지 않게 하려는 것이다.
       function spotlight(canvas, pos, radius) {
-        if (!canvas) return;
+        if (!canvas || !canvas.parentNode) return;
+        var host = canvas.parentNode;
         var spot = null;
-        Array.prototype.forEach.call(canvas.children, function (el) { if (el.classList.contains('ls-spot')) spot = el; });
+        Array.prototype.forEach.call(host.children, function (el) { if (el.classList.contains('ls-spot')) spot = el; });
         if (!pos) { if (spot) spot.parentNode.removeChild(spot); return; }
         if (!spot) {
           spot = canvas.ownerDocument.createElement('div');
           spot.className = 'ls-spot';
-          canvas.appendChild(spot);
         }
+        if (spot !== host.lastElementChild) host.appendChild(spot); // 화면 전환 복제본이 붙어도 늘 맨 위
         var x = Math.round(pos.x * 1920), y = Math.round(pos.y * 1080), r = radius || 190;
         spot.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, rgba(0,0,0,0) 0, rgba(0,0,0,0) ' + r + 'px, rgba(0,0,0,0.6) ' + (r + 70) + 'px)';
       }
@@ -6141,6 +6146,20 @@
         function replayTo(frame, list) {
           try { frame.contentWindow.postMessage({ lsApp: 'replay', list: list }, '*'); } catch (err) { /* 창이 닫혔다 */ }
         }
+        // 인터랙티브 칸 위의 마우스 움직임은 칸 안으로만 들어가 바깥(하이라이트)이 모른다.
+        // 칸이 알려 준 칸 안 좌표를 화면 좌표로 바꿔, 칸 자리에서 mousemove를 대신 일으킨다(바깥 틀의 하이라이트 처리기가 받는다).
+        // 편집 화면의 칸은 하이라이트가 없으므로 넘기지 않는다.
+        function relayPointer(event) {
+          var frame = null;
+          each(win.document.querySelectorAll('.app-frame > iframe'), function (item) { if (item.contentWindow === event.source) frame = item; });
+          if (!frame || frame.closest('#slide-canvas')) return;
+          var rect = frame.getBoundingClientRect();
+          var scale = frame.offsetWidth ? rect.width / frame.offsetWidth : 1; // 발표 화면 배율
+          var x = rect.left + (Number(event.data.x) || 0) * scale;
+          var y = rect.top + (Number(event.data.y) || 0) * scale;
+          frame.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
+        }
+
         function onAppInput(event) {
           var master = pairs.master && pairs.master();
           if (!master) return;
@@ -6156,7 +6175,11 @@
         }
 
         win.addEventListener('message', function (event) {
-          if (event.data && event.data.lsApp === 'evt') { onAppInput(event); return; }
+          if (event.data && event.data.lsApp === 'evt') {
+            if (event.data.type === 'mousemove') relayPointer(event);
+            onAppInput(event);
+            return;
+          }
           if (event.data && (event.data.lsApp === 'escape' || event.data.lsApp === 'nav')) {
             // 이 창의 인터랙티브 칸에서 온 것만: 바깥 문서에 그 키를 대신 눌러 발표를 끝내거나(Esc) 장을 넘긴다(방향키 등).
             // 장 넘기기는 발표 화면의 칸에서만(편집 화면에서 칸을 시험해 볼 때 방향키가 상자를 움직이지 않게).
