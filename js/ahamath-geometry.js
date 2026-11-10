@@ -39,6 +39,8 @@
      data-base   처음부터 보이는 그림
      data-steps  한 단계씩 나타나는 그림. 단계는 | 로, 한 단계 안의 그림은 ; 로 나눕니다
      data-gap    단계 사이 시간(ms, 기본 900)
+     data-step-caps  단계마다 바뀌는 그림 아래 문구. | 로 나누고, 앞에 hl: c2: c3: c4: 를 붙이면 그 색으로 써요
+                   예) data-step-caps="hl:모서리 AB | c3:초록 : 만나는 모서리 | c2:주황 : 꼬인 위치"
      data-instant="1"  움직이지 않고 처음부터 다 보이기 (문항 안의 그림에 씁니다)
 
      그리기 명령 (점 자리에는 A 같은 이름이나 120,40 같은 좌표를 씁니다)
@@ -476,7 +478,8 @@
 
             el.classList.add('geo');
             el.style.maxWidth = Math.round(W * 1.25) + 'px';
-            el.innerHTML = svg + (el.dataset.caption ? '<p class="g-cap">' + fracText(el.dataset.caption) + '</p>' : '');
+            const hasCap = el.dataset.caption || el.dataset.stepCaps;
+            el.innerHTML = svg + (hasCap ? '<p class="g-cap">' + fracText(el.dataset.caption || '') + '</p>' : '');
             el._moves = moves;
             if (el.dataset.instant === '1') { geoShowAll(el); }
         } catch (err) {
@@ -525,6 +528,17 @@
         window.requestAnimationFrame(frame);
     }
 
+    /* 단계별 문구 : i 번째 단계의 문구와 색으로 바꿔요 */
+    function setStepCap(el, i) {
+        const cap = el.querySelector('.g-cap');
+        const caps = splitBy(el.dataset.stepCaps || '', '|');
+        if (!cap || !caps.length) { return; }
+        const item = caps[Math.min(i, caps.length - 1)];
+        const m = item.match(/^(hl|c2|c3|c4|gray):\s*/);
+        cap.className = 'g-cap on' + (m ? ' g-' + m[1] : '');
+        cap.innerHTML = fracText(m ? item.slice(m[0].length) : item);
+    }
+
     function geoShowAll(el) {
         el.classList.add('g-instant');
         el.querySelectorAll('.gs').forEach(function (g) { geoStep(el, g); });
@@ -532,6 +546,7 @@
             const move = (el._moves || [])[+m.dataset.mv];
             if (move) { m.setAttribute('transform', moveAt(move, 1)); }
         });
+        if (el.dataset.stepCaps) { setStepCap(el, 999); return; }
         const cap = el.querySelector('.g-cap');
         if (cap) { cap.classList.add('on'); }
     }
@@ -541,8 +556,12 @@
         const steps = el.querySelectorAll('.gs:not(.g-base)');
         const gap = +(el.dataset.gap || 900);
         steps.forEach(function (g, i) {
-            setTimeout(function () { geoStep(el, g); }, A.wait(300 + gap * i));
+            setTimeout(function () {
+                geoStep(el, g);
+                if (el.dataset.stepCaps) { setStepCap(el, i); }
+            }, A.wait(300 + gap * i));
         });
+        if (el.dataset.stepCaps) { return; }
         const cap = el.querySelector('.g-cap');
         if (cap) { setTimeout(function () { cap.classList.add('on'); }, A.wait(300 + gap * steps.length + 300)); }
     }

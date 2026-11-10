@@ -303,7 +303,6 @@
         document.getElementById('doneLead').textContent =
             doneLeadText(flow, thisTime, sessionIds.length);
         document.getElementById('doneThisTime').textContent = thisTime + ' / ' + sessionIds.length;
-        document.getElementById('doneBest').textContent = firstTryCount(ids) + ' / ' + ids.length;
 
         const master = document.getElementById('doneMaster');
         if (isMastered(flow)) {

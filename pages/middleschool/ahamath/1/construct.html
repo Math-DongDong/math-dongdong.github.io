@@ -144,18 +144,12 @@
 
             <section class="card-box" id="block-c3">
                 <h2 class="card-title">세 변의 길이 사이의 관계</h2>
-                <p class="lead-text">길이가 3, 4, 8 인 막대로 삼각형을 만들어 봐요. 긴 막대 양 끝에서 짧은 두 막대를 세워 돌려 보면 끝이 만날까요?</p>
-                <div class="vis">
-                    <div data-vis="geo" data-view="360 130"
-                        data-pts="B=70,105; C=270,105"
-                        data-base="seg B C; pt B b; pt C b; text.sm 170,124 8"
-                        data-steps="arc.c2 B 75 0 90; arc.c2 C 100 90 180; text.sm 112,52 3; text.sm 226,34 4 | text.c2 160,20 만나지 않아요"></div>
-                    <div class="mt-3" data-vis="geo" data-view="360 150"
-                        data-pts="B=117.5,125; C=242.5,125; A=cc B 75 C 100 up"
-                        data-base="seg B C; pt B b; pt C b; text.sm 180,144 5"
-                        data-steps="arc.c3 B 75 20 100; arc.c3 C 100 110 170 | pt.c3 A t; seg.c3 A B; seg.c3 A C; text.sm 128,90 3; text.sm 216,88 4"
-                        data-caption="3 + 4 = 7 은 8 보다 작아서 안 되고, 5 보다 커서 돼요"></div>
-                    <button class="replay"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
+                <p class="lead-text">가장 긴 막대를 밑변으로 두고, 양 끝에 짧은 두 막대를 세운 뒤 안쪽으로 쓰러뜨려 봐요. 두 막대의 끝이 만날까요?</p>
+                <div class="vis" id="stickTriangle">
+                    <canvas id="stickCanvas" width="800" height="500" class="w-100 d-block border rounded-3"
+                        style="aspect-ratio:16/10;background:#f9fafb" role="img" aria-label="세 막대로 삼각형 만들기"></canvas>
+                    <p class="text-center fw-bold mt-2 mb-0" id="stickStatus"></p>
+                    <button class="replay" id="stickReplay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
                 </div>
                 <div class="formula">(가장 긴 변의 길이) &lt; (나머지 두 변의 길이의 합)</div>
                 <div class="fact-box">
@@ -369,18 +363,13 @@
                 <!-- 결과 요약 : 안내 문구 + 이번 결과 + 쌓인 기록을 한 영역에 -->
                 <div class="result-box">
                     <div class="badge-master" id="doneMaster"></div>
+                    <!-- 다시 볼 문제 : 위 안내 문구 바로 아래 (기록이 있을 때만) -->
+                    <div class="done-review" id="doneReviewBox" hidden>
+                        <ul class="review-list" id="doneReviewList"></ul>
+                    </div>
                     <div class="result-line">
                         <span>이번에 한 번에 맞힌 문항</span><span class="num" id="doneThisTime">0 / 0</span>
                     </div>
-                    <div class="result-line">
-                        <span>기록에 쌓인 문항<br><span class="muted-text">한 번에 맞힌 것만 세요</span></span><span class="num"
-                            id="doneBest">0 / 0</span>
-                    </div>
-                </div>
-
-                <div class="mt-3" id="doneReviewBox" hidden>
-                    <div class="box-title" style="color:var(--wait)"><i class="bi bi-bookmark"></i> 다시 볼 문제</div>
-                    <ul class="review-list" id="doneReviewList"></ul>
                 </div>
 
                 <div class="mt-3" id="doneActions"></div>
@@ -405,6 +394,256 @@
     <script src="../../../../js/ahamath-geometry.js"></script>
 
     <script>
+        /* 세 변의 길이 사이의 관계 : 막대 두 개를 쓰러뜨려 끝이 만나는지 보여 줘요
+           (pages/middleschool/1/triangle_condition.html 과 같은 방식, 화면에 보이면 3·4·8 → 3·4·7 → 3·4·5 순서로 자동 재생) */
+        (function initStickTriangle() {
+            const box = document.getElementById('stickTriangle');
+            if (!box) { return; }
+            const canvas = document.getElementById('stickCanvas');
+            const context = canvas.getContext('2d');
+            const statusText = document.getElementById('stickStatus');
+            const SIDE_COLORS = { a: '#ef4444', b: '#10b981', c: '#2563eb' };
+            const HALF_PI = Math.PI / 2;
+            const GRAVITY = 40;
+            const SWING_DAMPING = 0.35;
+            const FALL_DURATION = 1.6;
+            const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            let scene = null;
+            let frameId = null;
+            let lastTime = 0;
+            let sequenceTimer = null;
+
+            function classify(a, b, c) {
+                const longest = Math.max(a, b, c);
+                const others = a + b + c - longest;
+                if (longest < others) { return 'possible'; }
+                if (longest === others) { return 'degenerate'; }
+                return 'impossible';
+            }
+
+            function targetAngles(a, b, c) {
+                const clamp = function (v) { return Math.min(1, Math.max(-1, v)); };
+                const xC = (b * b + c * c - a * a) / (2 * c);
+                return { xC: xC, angleA: Math.acos(clamp(xC / b)), angleB: Math.acos(clamp((c - xC) / a)) };
+            }
+
+            function createStick(length, target) {
+                return { length: length, angle: HALF_PI, velocity: 0, target: target, sweptMin: HALF_PI, sweptMax: HALF_PI };
+            }
+
+            function statusMessage(a, b, c, status) {
+                const sum = a + b;
+                if (status === 'possible') {
+                    return a + ' + ' + b + ' = ' + sum + ' 이 ' + c + ' 보다 커요 → 끝이 만나 <span style="color:#2563eb">삼각형이 돼요</span>';
+                }
+                if (status === 'degenerate') {
+                    return a + ' + ' + b + ' = ' + sum + ' 이 ' + c + ' 와 같아요 → 납작하게 펴져 <span style="color:#dc2626">삼각형이 안 돼요</span>';
+                }
+                return a + ' + ' + b + ' = ' + sum + ' 이 ' + c + ' 보다 작아요 → 끝이 만나지 않아 <span style="color:#dc2626">삼각형이 안 돼요</span>';
+            }
+
+            function setScene(a, b, c) {
+                cancelAnimationFrame(frameId);
+                const targets = targetAngles(a, b, c);
+                scene = {
+                    a: a, b: b, c: c, status: classify(a, b, c), phase: 'standing', elapsed: 0,
+                    stickA: createStick(b, targets.angleA),   // 왼쪽 끝에 세운 막대
+                    stickB: createStick(a, targets.angleB)    // 오른쪽 끝에 세운 막대
+                };
+                statusText.innerHTML = '';
+                draw();
+            }
+
+            function finishInstantly() {
+                [scene.stickA, scene.stickB].forEach(function (stick) {
+                    stick.angle = scene.status === 'impossible' ? -HALF_PI : stick.target;
+                    track(stick);
+                });
+                scene.phase = 'done';
+                statusText.innerHTML = statusMessage(scene.a, scene.b, scene.c, scene.status);
+                draw();
+            }
+
+            function fall(a, b, c) {
+                setScene(a, b, c);
+                if (REDUCE_MOTION) { finishInstantly(); return; }
+                scene.phase = 'falling';
+                if (scene.status === 'impossible') {
+                    [scene.stickA, scene.stickB].forEach(function (stick) { stick.angle = HALF_PI - 0.01; stick.velocity = -0.4; });
+                }
+                lastTime = performance.now();
+                frameId = requestAnimationFrame(animate);
+            }
+
+            function track(stick) {
+                stick.sweptMin = Math.min(stick.sweptMin, stick.angle);
+                stick.sweptMax = Math.max(stick.sweptMax, stick.angle);
+            }
+
+            // 한쪽 끝이 고정된 막대 : φ'' = -(3g / 2L)·cos φ - 감쇠·φ'
+            function swing(stick, dt) {
+                const acc = -(3 * GRAVITY / (2 * stick.length)) * Math.cos(stick.angle) - SWING_DAMPING * stick.velocity;
+                stick.velocity += acc * dt;
+                stick.angle += stick.velocity * dt;
+                track(stick);
+            }
+
+            function animate(now) {
+                const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+                lastTime = now;
+                scene.elapsed += dt;
+                const sticks = [scene.stickA, scene.stickB];
+                let keepRunning = true;
+                if (scene.status === 'impossible') {
+                    for (let i = 0; i < 4; i++) { sticks.forEach(function (stick) { swing(stick, dt / 4); }); }
+                    if (scene.phase === 'falling' && sticks.every(function (stick) { return stick.angle < 0; })) {
+                        scene.phase = 'swinging';
+                        statusText.innerHTML = statusMessage(scene.a, scene.b, scene.c, scene.status);
+                    }
+                    if (sticks.every(function (stick) { return Math.abs(stick.velocity) < 0.003 && Math.abs(stick.angle + HALF_PI) < 0.002; })) {
+                        keepRunning = false;
+                    }
+                } else {
+                    const progress = Math.min(scene.elapsed / FALL_DURATION, 1);
+                    const eased = progress * progress;   // 중력처럼 점점 빨라짐
+                    sticks.forEach(function (stick) { stick.angle = HALF_PI + (stick.target - HALF_PI) * eased; track(stick); });
+                    if (progress >= 1) {
+                        scene.phase = 'done';
+                        statusText.innerHTML = statusMessage(scene.a, scene.b, scene.c, scene.status);
+                        keepRunning = false;
+                    }
+                }
+                draw();
+                if (keepRunning) { frameId = requestAnimationFrame(animate); }
+            }
+
+            function drawStick(from, to, color) {
+                context.strokeStyle = color;
+                context.lineWidth = 8;
+                context.lineCap = 'round';
+                context.beginPath();
+                context.moveTo(from.x, from.y);
+                context.lineTo(to.x, to.y);
+                context.stroke();
+            }
+
+            // 막대 바깥쪽(도형 중심 반대편)에 흰 바탕 길이 표시
+            function drawLabel(from, to, color, label, center, preferredNormalY) {
+                const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+                let nx = -(to.y - from.y) / length;
+                let ny = (to.x - from.x) / length;
+                const mx = (from.x + to.x) / 2;
+                const my = (from.y + to.y) / 2;
+                const away = (mx - center.x) * nx + (my - center.y) * ny;
+                const flip = Math.abs(away) < 1 ? ny * preferredNormalY < 0 : away < 0;
+                if (flip) { nx = -nx; ny = -ny; }
+                const lx = mx + nx * 30;
+                const ly = my + ny * 30;
+                context.font = 'bold 24px Pretendard Variable, sans-serif';
+                const w = context.measureText(label).width + 18;
+                context.fillStyle = 'rgba(255, 255, 255, 0.92)';
+                context.strokeStyle = color;
+                context.lineWidth = 1.5;
+                context.beginPath();
+                if (context.roundRect) { context.roundRect(lx - w / 2, ly - 16, w, 32, 8); } else { context.rect(lx - w / 2, ly - 16, w, 32); }
+                context.fill();
+                context.stroke();
+                context.fillStyle = color;
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+                context.fillText(label, lx, ly);
+            }
+
+            function drawPoint(point) {
+                context.fillStyle = '#1f2937';
+                context.beginPath();
+                context.arc(point.x, point.y, 6, 0, Math.PI * 2);
+                context.fill();
+            }
+
+            // 막대 끝이 지나간 자취(점선 호)
+            function drawArc(center, radius, color, start, end) {
+                if (end - start < 0.001) { return; }
+                context.save();
+                context.strokeStyle = color;
+                context.globalAlpha = 0.85;
+                context.lineWidth = 3;
+                context.setLineDash([8, 6]);
+                context.beginPath();
+                context.arc(center.x, center.y, radius, start, end);
+                context.stroke();
+                context.restore();
+            }
+
+            function draw() {
+                const a = scene.a, b = scene.b, c = scene.c, status = scene.status;
+                const stickA = scene.stickA, stickB = scene.stickB;
+                const width = canvas.width, height = canvas.height, padding = 60;
+                const xC = targetAngles(a, b, c).xC;
+                context.clearRect(0, 0, width, height);
+                const minX = Math.min(0, c - a, status === 'impossible' ? 0 : xC);
+                const maxX = Math.max(c, b, status === 'impossible' ? c : xC);
+                const maxY = Math.max(a, b);
+                const minY = status === 'impossible' ? -maxY : 0;
+                const scale = Math.min((width - padding * 2) / (maxX - minX), (height - padding * 2) / (maxY - minY));
+                const offsetX = (width - (maxX - minX) * scale) / 2 - minX * scale;
+                const offsetY = (height - (maxY - minY) * scale) / 2 + maxY * scale;
+                const toCanvas = function (x, y) { return { x: offsetX + x * scale, y: offsetY - y * scale }; };
+                const pointA = toCanvas(0, 0);
+                const pointB = toCanvas(c, 0);
+                const tipA = toCanvas(b * Math.cos(stickA.angle), b * Math.sin(stickA.angle));
+                const tipB = toCanvas(c - a * Math.cos(stickB.angle), a * Math.sin(stickB.angle));
+                drawArc(pointA, b * scale, SIDE_COLORS.b, -stickA.sweptMax, -stickA.sweptMin);
+                drawArc(pointB, a * scale, SIDE_COLORS.a, Math.PI + stickB.sweptMin, Math.PI + stickB.sweptMax);
+                if (scene.phase === 'done' && status === 'possible') {
+                    context.fillStyle = 'rgba(37, 99, 235, 0.1)';
+                    context.beginPath();
+                    context.moveTo(pointA.x, pointA.y);
+                    context.lineTo(pointB.x, pointB.y);
+                    context.lineTo(tipA.x, tipA.y);
+                    context.closePath();
+                    context.fill();
+                }
+                drawStick(pointA, pointB, SIDE_COLORS.c);
+                drawStick(tipA, pointA, SIDE_COLORS.b);
+                drawStick(pointB, tipB, SIDE_COLORS.a);
+                const center = { x: (pointA.x + pointB.x + tipA.x + tipB.x) / 4, y: (pointA.y + pointB.y + tipA.y + tipB.y) / 4 };
+                drawLabel(pointA, pointB, SIDE_COLORS.c, String(c), center, 1);
+                drawLabel(pointA, tipA, SIDE_COLORS.b, String(b), center, -1);
+                drawLabel(tipB, pointB, SIDE_COLORS.a, String(a), center, -1);
+                drawPoint(pointA);
+                drawPoint(pointB);
+                if (scene.phase === 'done' && status !== 'impossible') { drawPoint(tipA); }
+            }
+
+            /* 자동 재생 : 3·4·8 (안 됨) → 3·4·7 (납작) → 3·4·5 (됨) */
+            const SEQUENCE = [[3, 4, 8], [3, 4, 7], [3, 4, 5]];
+            const SEQUENCE_GAP = 5200;
+            function playSequence() {
+                clearTimeout(sequenceTimer);
+                if (REDUCE_MOTION) { fall(3, 4, 5); return; }
+                let index = 0;
+                function next() {
+                    const sides = SEQUENCE[index];
+                    fall(sides[0], sides[1], sides[2]);
+                    index += 1;
+                    if (index < SEQUENCE.length) { sequenceTimer = setTimeout(next, SEQUENCE_GAP); }
+                }
+                next();
+            }
+
+            document.getElementById('stickReplay').addEventListener('click', playSequence);
+
+            setScene(3, 4, 8);
+            if (!('IntersectionObserver' in window)) { playSequence(); return; }
+            const observer = new IntersectionObserver(function (entries) {
+                if (!entries[0].isIntersecting) { return; }
+                observer.disconnect();
+                playSequence();
+            }, { threshold: 0, rootMargin: '0px 0px -50% 0px' });
+            observer.observe(box);
+        })();
+
         /* 문항 안의 그림 : 처음부터 다 보이는(instant) geo 그림을 HTML 로 넣어요 */
         function figure(view, pts, base) {
             return '<div data-vis="geo" data-instant="1" data-view="' + view + '" data-pts="' + pts +
