@@ -272,10 +272,12 @@
     .obj-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
     /* 개체 고치기 입력칸: AI 창처럼 남은 높이를 채운다 */
     .obj-compose:not(.d-none) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .obj-compose #app-request { flex: 1; min-height: 160px; resize: none; font-size: 0.95rem; border: 2px solid #ddd6fe; }
-    .obj-compose #app-request:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18); }
-    .obj-compose #app-send { background: #7c3aed; border-color: #7c3aed; }
-    .obj-compose #app-send:hover:not(:disabled) { background: #6d28d9; border-color: #6d28d9; }
+    .obj-compose > textarea { flex: 1; min-height: 160px; resize: none; font-size: 0.95rem; border: 2px solid #ddd6fe; }
+    .obj-compose > textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18); }
+    .obj-compose #app-send, .obj-compose #notes-ai-send { background: #7c3aed; border-color: #7c3aed; }
+    .obj-compose #app-send:hover:not(:disabled), .obj-compose #notes-ai-send:hover:not(:disabled) { background: #6d28d9; border-color: #6d28d9; }
+    /* 시나리오 고치기 창이 열려 있을 때 시나리오 칸을 표시 */
+    #notes-editor.ls-obj-editing { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18); }
     #slide-canvas .ls-obj-editing { outline: 4px dashed #7c3aed; outline-offset: 6px; }
     /* 고치는 중인 인터랙티브 요소는 편집 화면에서도 직접 조작해 볼 수 있다 */
     #slide-canvas .app-frame.ls-obj-editing iframe { pointer-events: auto; }
@@ -617,11 +619,11 @@
             <div class="obj-head d-flex align-items-center gap-2 px-3 py-2">
               <button type="button" class="btn btn-sm btn-light" id="obj-back" title="편집을 끝내고 AI 창으로 (Esc)" aria-label="AI 창으로 돌아가기"><i class="bi bi-arrow-left"></i></button>
               <h2 class="h6 fw-bold mb-0 text-truncate"><i class="bi" id="obj-icon"></i> <span id="obj-title"></span></h2>
-              <span class="badge rounded-pill text-bg-warning ms-auto d-none" id="obj-dirty">적용 전</span>
+              <span class="badge rounded-pill text-bg-warning ms-auto d-none" id="obj-dirty">AI가 고치는 중</span>
             </div>
             <div class="obj-body p-2">
               <!-- 인터랙티브 요소·모션그래픽: 말로 고치기 (AI 창과 같은 꼴. 안내 글은 AppEditor.open에서 종류에 맞게 바꾼다)
-                   적용·취소 단추는 없다: [←]·Esc로 나갈 때 고친 내용이 있으면 [편집 적용]/[편집 취소]를 묻는다. -->
+                   고친 결과는 바로 반영된다(되돌리기는 [반영 취소]·Ctrl+Z). 적용·취소 단추와 묻는 창은 없다. -->
               <section class="d-none obj-compose" id="obj-app" aria-label="코드로 만든 개체 고치기">
                 <p class="small mb-2 text-muted" id="app-help">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.</p>
                 <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="app-files"></div>
@@ -632,7 +634,21 @@
                   <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="app-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
                 </div>
                 <div class="small mt-2" id="app-status" role="status"></div>
-                <p class="small text-muted mt-2 mb-0">요청 내용·참고 자료·코드는 Google Gemini API로 전송됩니다. 다 고쳤으면 왼쪽 위 [←]를 눌러 적용하세요.</p>
+                <p class="small text-muted mt-2 mb-0">요청 내용·참고 자료·코드는 Google Gemini API로 전송됩니다. 고친 결과는 바로 반영되고, 마음에 들지 않으면 [반영 취소]나 Ctrl+Z로 되돌립니다.</p>
+              </section>
+              <!-- 발표 시나리오: 말로 고치기 (아래 시나리오 칸을 누르면 열린다. 고친 결과는 시나리오 칸에 바로 들어간다) -->
+              <section class="d-none obj-compose" id="obj-notes" aria-label="발표 시나리오 고치기">
+                <p class="small mb-2 text-muted" id="notes-ai-help">아래 시나리오 칸에서 직접 고쳐도 되고, 여기에 어떻게 바꿀지 적으면 Gemini가 이 장의 화면 내용에 맞춰 다시 씁니다. 고친 결과는 시나리오 칸에 바로 들어갑니다.</p>
+                <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="notes-ai-files"></div>
+                <textarea class="form-control mb-2" id="notes-ai-request" aria-labelledby="notes-ai-help"
+                  placeholder="예) 학생에게 질문을 던지며 시작하고, 생활 속 예시 하나를 넣어 1분 분량으로 써 줘"></textarea>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-light btn-sm" id="notes-ai-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
+                  <button type="button" class="btn btn-light btn-sm d-none text-nowrap" id="notes-ai-undo" title="방금 AI가 고친 것을 되돌립니다"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
+                  <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="notes-ai-send"><i class="bi bi-magic"></i> AI로 다시 쓰기 <span class="opacity-75">Ctrl+Enter</span></button>
+                </div>
+                <div class="small mt-2" id="notes-ai-status" role="status"></div>
+                <p class="small text-muted mt-2 mb-0">요청 내용·참고 자료·이 장의 내용은 Google Gemini API로 전송됩니다. 다 썼으면 왼쪽 위 [←]로 AI 창으로 돌아갑니다.</p>
               </section>
             </div>
           </div>
@@ -941,6 +957,7 @@
   <input type="file" class="d-none" id="file-media">
   <input type="file" class="d-none" id="ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
   <input type="file" class="d-none" id="app-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
+  <input type="file" class="d-none" id="notes-ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
@@ -1734,7 +1751,6 @@
         el: null,
         original: null,   // 편집을 시작할 때의 data-code 속성(없으면 null)
         history: [],      // AI가 고치기 전 data-code(되돌리기용)
-        requests: [],     // 이번 편집에서 보낸 요청([편집 적용]할 때 수정 기록에 남긴다)
         files: [],        // 이번 편집에서 붙인 참고 자료(AI 창의 참고 자료와 따로)
         aborter: null,
         SCHEMA: {
@@ -1764,7 +1780,6 @@
           AppEditor.original = el.getAttribute('data-code');
           AppEditor.originalHtml = el.innerHTML;
           AppEditor.history = [];
-          AppEditor.requests = [];
           AppEditor.files = [];
           AppEditor.drawFiles();
           const text = AppEditor.text();
@@ -1799,35 +1814,37 @@
           $('app-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
         },
 
-        // 슬라이드의 요소에 코드를 넣고 다시 실행한다(아직 기록하지 않는다).
-        setCode(attr) {
+        // 슬라이드의 요소에 코드를 넣고 다시 그린 뒤 바로 반영한다(되돌리기 기록에 남아 Ctrl+Z로 되돌릴 수 있다).
+        // 모션그래픽은 그림을 다 만든 뒤 코드와 그림을 함께 바꾼다. 늦게 끝난 앞 요청의 결과는 버린다. 반영했으면 true.
+        async setCode(attr) {
           const el = AppEditor.el;
-          if (!el) return;
+          if (!el) return false;
+          const token = ++AppEditor.drawToken;
+          let content = null;
+          let error = '';
+          if (AppEditor.motion) {
+            if (attr === AppEditor.original) content = AppEditor.originalHtml;
+            else {
+              try { content = await MotionKit.draw(AppKit.decode(attr)); } catch (err) { error = err.message; }
+            }
+            if (token !== AppEditor.drawToken || !el.isConnected) return false;
+          }
           if (attr === null) el.removeAttribute('data-code');
           else el.setAttribute('data-code', attr);
           if (AppEditor.motion) {
-            // 모션그래픽: 코드를 실행해 나온 SVG로 다시 그린다(늦게 끝난 앞 요청의 결과는 버린다).
-            const token = ++AppEditor.drawToken;
-            if (attr === AppEditor.original) { el.innerHTML = AppEditor.originalHtml; ObjectPanel.syncDirty(); return; }
-            MotionKit.draw(AppKit.decode(attr)).then(svg => {
-              if (token === AppEditor.drawToken && AppEditor.el === el) el.replaceChildren(svg);
-            }).catch(err => {
-              if (token === AppEditor.drawToken && AppEditor.el === el) AppEditor.status('⚠ 모션그래픽을 그리지 못했습니다: ' + err.message + ' — 다시 고쳐 달라고 요청하거나 [반영 취소]를 누르세요.', 'danger');
-            });
+            if (typeof content === 'string') el.innerHTML = content;
+            else el.replaceChildren(content || MathKit.note('모션그래픽을 그리지 못했습니다: ' + error));
           } else {
             AppKit.hydrate(el.closest('.draggable-box') || el.parentElement, 'edit');
           }
-          ObjectPanel.syncDirty();
+          Editor.commit();
+          if (error) AppEditor.status('⚠ 모션그래픽을 그리지 못했습니다: ' + error + ' — 다시 고쳐 달라고 요청하거나 [반영 취소]를 누르세요.', 'danger');
+          return true;
         },
 
-        dirty() { return !!AppEditor.aborter || (AppEditor.el && AppEditor.el.getAttribute('data-code')) !== AppEditor.original; },
-
-        // 저장용 복제본에는 편집 전 코드를 넣는다(적용 전 결과가 저장되지 않게).
-        restoreInto(node) {
-          if (AppEditor.original === null) node.removeAttribute('data-code');
-          else node.setAttribute('data-code', AppEditor.original);
-          if (AppEditor.motion) node.innerHTML = AppEditor.originalHtml;
-        },
+        // 고친 결과는 바로 반영되므로, 따로 적용할 것은 AI가 고치는 중일 때뿐이다.
+        dirty() { return !!AppEditor.aborter; },
+        restoreInto() { /* 바로 반영하므로 저장할 때 되돌릴 것이 없다 */ },
 
         async send() {
           const el = AppEditor.el;
@@ -1877,56 +1894,40 @@
             ObjectPanel.syncDirty();
             return;
           }
+          AppEditor.setBusy(true);
+          const applied = await AppEditor.setCode(AppKit.encode(AppKit.tidy(next, AppEditor.motion).slice(0, 300000)));
+          if (AppEditor.el !== el) return;
+          AppEditor.setBusy(false);
+          if (!applied) return;
           AppEditor.history.push(before);
-          AppEditor.requests.push(request);
           $('app-undo').classList.remove('d-none');
-          AppEditor.setCode(AppKit.encode(AppKit.tidy(next, AppEditor.motion).slice(0, 300000)));
           $('app-request').value = '';
-          AppEditor.status('고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
-            (AppEditor.motion ? ' 슬라이드에서 확인하고' : ' 슬라이드에서 조작해 보고') + ' 마음에 들면 왼쪽 위 [←]를 눌러 [편집 적용]을 고르세요.', 'success');
-        },
-
-        undo() {
-          if (!AppEditor.history.length || AppEditor.aborter) return;
-          AppEditor.setCode(AppEditor.history.pop());
-          AppEditor.requests.pop();
-          $('app-undo').classList.toggle('d-none', !AppEditor.history.length);
-          AppEditor.status('AI 수정 반영을 취소했습니다.');
-        },
-
-        apply() {
-          const el = AppEditor.el;
-          if (!el || AppEditor.aborter) return;
-          const changed = AppEditor.dirty();
-          const requests = AppEditor.requests.slice();
-          ObjectPanel.close(false);
-          if (!changed) return;
-          Editor.commit();
-          const deck = Editor.deck;
           // 그 장의 수정 기록에 남긴다(다음 AI 요청의 맥락)
           const text = AppEditor.text();
-          if (deck && requests.length) AiPanel.remember(deck, '[' + text.name + ' 수정] ' + requests.join(' / '), requests.join(' / '), Editor.current().id);
-          Util.toast(text.name + text.particle + ' 고쳤습니다. 되돌리려면 Ctrl+Z', 'success');
+          if (Editor.deck) AiPanel.remember(Editor.deck, '[' + text.name + ' 수정] ' + request, request, Editor.current().id);
+          if (!$('app-status').classList.contains('text-danger')) {
+            AppEditor.status('고쳐서 바로 반영했습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
+              ' 마음에 들지 않으면 [반영 취소]나 Ctrl+Z로 되돌릴 수 있습니다.', 'success');
+          }
         },
 
-        // 편집을 끝낸다. restore면 편집 전 코드로 되돌린다.
-        finish(restore) {
-          const el = AppEditor.el;
+        async undo() {
+          if (!AppEditor.history.length || AppEditor.aborter) return;
+          AppEditor.status('');
+          await AppEditor.setCode(AppEditor.history.pop());
+          $('app-undo').classList.toggle('d-none', !AppEditor.history.length);
+          if (!$('app-status').classList.contains('text-danger')) AppEditor.status('AI 수정 반영을 취소했습니다.');
+        },
+
+        apply() { ObjectPanel.close(false); },
+
+        // 편집 창을 닫는다. AI가 고치는 중이면 중단한다(이미 반영한 것은 그대로).
+        finish() {
           if (AppEditor.aborter) AppEditor.aborter.abort();
           AppEditor.aborter = null;
           AppEditor.setBusy(false);
-          AppEditor.drawToken++; // 그리는 중이던 모션그래픽 결과는 버린다
-          if (restore && el && el.getAttribute('data-code') !== AppEditor.original) {
-            if (AppEditor.motion) {
-              if (AppEditor.original === null) el.removeAttribute('data-code'); else el.setAttribute('data-code', AppEditor.original);
-              el.innerHTML = AppEditor.originalHtml;
-            } else {
-              AppEditor.setCode(AppEditor.original);
-            }
-          }
           AppEditor.el = null;
           AppEditor.history = [];
-          AppEditor.requests = [];
         },
 
         init() {
@@ -1940,6 +1941,170 @@
           $('app-request').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); AppEditor.send(); }
           });
+        }
+      };
+
+      // 발표 시나리오 고치기: 아래 시나리오 칸을 누르면 오른쪽에 열린다. 칸에서 직접 고쳐도 되고, 말로 요청하면 AI가 다시 쓴다.
+      // 고친 결과는 시나리오 칸에 바로 들어가고 되돌리기 기록에 남는다([반영 취소]·Ctrl+Z). 따로 [편집 적용]할 것이 없다.
+      // 장을 옮겨도 창은 열린 채 새 장의 시나리오를 고친다.
+      const NotesEditor = {
+        aborter: null,
+        files: [],     // 이번에 붙인 참고 자료
+        history: [],   // { id, notes } AI가 고치기 전 시나리오(반영 취소용)
+        SCHEMA: {
+          type: 'OBJECT',
+          properties: { notes: { type: 'STRING' }, summary: { type: 'STRING' } },
+          required: ['notes']
+        },
+
+        open() {
+          if (!Editor.deck) return;
+          const session = ObjectPanel.session;
+          if (session && session.editor === NotesEditor) return;
+          const start = () => {
+            NotesEditor.history = [];
+            NotesEditor.files = [];
+            NotesEditor.drawFiles();
+            $('notes-ai-undo').classList.add('d-none');
+            NotesEditor.status('');
+            NotesEditor.setBusy(false);
+            ObjectPanel.open(NotesEditor, $('notes-editor'), '발표 시나리오 고치기', 'bi-chat-square-text');
+          };
+          if (ObjectPanel.leaveOr(start)) start();
+        },
+
+        slideChanged() {
+          NotesEditor.history = [];
+          $('notes-ai-undo').classList.add('d-none');
+          if (!NotesEditor.aborter) NotesEditor.status('');
+        },
+
+        setBusy(on) {
+          ['notes-ai-send', 'notes-ai-request', 'notes-ai-undo', 'notes-ai-attach'].forEach(id => { $(id).disabled = on; });
+        },
+
+        status(text, tone) {
+          $('notes-ai-status').textContent = text;
+          $('notes-ai-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
+        },
+
+        drawFiles() {
+          const host = $('notes-ai-files');
+          host.textContent = '';
+          NotesEditor.files.forEach(item => host.append(AiPanel.fileChip(item, () => {
+            NotesEditor.files = NotesEditor.files.filter(other => other !== item);
+            NotesEditor.drawFiles();
+          })));
+        },
+
+        // ObjectPanel이 부르는 약속: 고친 결과는 바로 들어가므로 '적용 전'은 AI가 쓰는 중일 때뿐이다.
+        dirty() { return !!NotesEditor.aborter; },
+        restoreInto() { /* 시나리오 칸은 캔버스 밖이라 할 일 없음 */ },
+        apply() { ObjectPanel.close(false); },
+        finish() {
+          if (NotesEditor.aborter) NotesEditor.aborter.abort();
+          NotesEditor.aborter = null;
+          NotesEditor.setBusy(false);
+        },
+
+        // 장 하나의 시나리오를 바꾸고 기록에 남긴다(지금 보는 장이면 칸에도 보인다). 그 장이 없으면 false.
+        setNotes(id, html) {
+          const deck = Editor.deck;
+          const at = deck ? deck.slides.findIndex(slide => slide.id === id) : -1;
+          if (at < 0) return false;
+          deck.slides[at].notes = html;
+          if (at === Editor.index) $('notes-editor').innerHTML = html;
+          Editor.commit();
+          return true;
+        },
+
+        async send() {
+          if (NotesEditor.aborter || !Editor.deck) return;
+          const request = $('notes-ai-request').value.trim();
+          if (!request) { NotesEditor.status('어떻게 바꿀지 적어 주세요.', 'danger'); $('notes-ai-request').focus(); return; }
+          if (!Settings.apiKey()) { SettingsModal.open(); return; }
+          if (!await Prompts.ready() || !Editor.deck) return;
+          Editor.saveNotes();
+          const deck = Editor.deck;
+          const index = Editor.index;
+          const slide = deck.slides[index];
+          const before = slide.notes || '';
+          const files = NotesEditor.files.slice();
+          const controller = new AbortController();
+          NotesEditor.aborter = controller;
+          NotesEditor.setBusy(true);
+          ObjectPanel.syncDirty();
+          const label = (index + 1) + '번 장 시나리오를 다시 쓰는 중…';
+          let result = null;
+          let failure = null;
+          try {
+            const parts = await AiPanel.prepareFiles(files, { set: text => NotesEditor.status(text, 'primary') });
+            NotesEditor.status(label + ' (Esc: 중단)', 'primary');
+            const next = deck.slides[index + 1];
+            result = await Gemini.generateJson({
+              model: Settings.model(),
+              system: Prompts.text('notesRevise.system'),
+              prompt: Prompts.text('notesRevise.request', {
+                request,
+                number: index + 1,
+                total: deck.slides.length,
+                deckTitle: deck.title,
+                slide: AiPanel.reference(slide) || '(화면 내용 없음)',
+                notes: Util.htmlToText(before) || '(아직 없음)',
+                previous: index > 0 ? (PdfExporter.label(deck.slides, index - 1) || '(소제목 없음)') : '(이 장이 첫 장)',
+                next: next ? (PdfExporter.label(deck.slides, index + 1) || '(소제목 없음)') : '(이 장이 마지막 장)'
+              }) + AiPanel.filePrompt(files),
+              parts,
+              schema: NotesEditor.SCHEMA,
+              signal: controller.signal,
+              onProgress: length => NotesEditor.status(label + ' ' + length.toLocaleString('ko-KR') + '자 받음', 'primary')
+            });
+          } catch (err) {
+            failure = err;
+          }
+          if (NotesEditor.aborter === controller) NotesEditor.aborter = null;
+          NotesEditor.setBusy(false);
+          ObjectPanel.syncDirty();
+          const text = !failure && result && typeof result.notes === 'string' ? result.notes.trim() : '';
+          if (!text || Editor.deck !== deck) {
+            NotesEditor.status(failure && failure.aborted ? '중단했습니다.'
+              : '⚠ ' + ((failure && failure.message) || 'AI 응답에 시나리오가 없습니다. 다시 시도해 주세요.'), failure && failure.aborted ? '' : 'danger');
+            if (failure && failure.needsKey) SettingsModal.open();
+            return;
+          }
+          if (!NotesEditor.setNotes(slide.id, Editor.normalizeNotes({ notes: text, notesFormat: 'text' }))) {
+            NotesEditor.status('⚠ 기다리는 동안 그 장이 삭제되어 반영하지 못했습니다.', 'danger');
+            return;
+          }
+          NotesEditor.history.push({ id: slide.id, notes: before });
+          $('notes-ai-undo').classList.remove('d-none');
+          $('notes-ai-request').value = '';
+          AiPanel.remember(deck, '[발표 시나리오 수정] ' + request, request, slide.id);
+          NotesEditor.status((index + 1) + '번 장 시나리오를 다시 썼습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
+            ' 마음에 들지 않으면 [반영 취소]나 Ctrl+Z로 되돌릴 수 있습니다.', 'success');
+        },
+
+        undo() {
+          const last = NotesEditor.history.pop();
+          if (!last || NotesEditor.aborter) return;
+          NotesEditor.setNotes(last.id, last.notes);
+          $('notes-ai-undo').classList.toggle('d-none', !NotesEditor.history.length);
+          NotesEditor.status('AI 수정 반영을 취소했습니다.');
+        },
+
+        init() {
+          $('notes-ai-send').addEventListener('click', NotesEditor.send);
+          $('notes-ai-undo').addEventListener('click', NotesEditor.undo);
+          $('notes-ai-request').addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); NotesEditor.send(); }
+          });
+          $('notes-ai-attach').addEventListener('click', () => $('notes-ai-file').click());
+          $('notes-ai-file').addEventListener('change', event => {
+            AiPanel.addFiles(event.target.files, NotesEditor.files, NotesEditor.drawFiles);
+            event.target.value = '';
+          });
+          // 시나리오 칸을 누르면(초점이 들어가면) 오른쪽에 고치기 창을 연다. 칸에서 바로 고치는 것은 그대로 된다.
+          $('notes-editor').addEventListener('focus', NotesEditor.open);
         }
       };
 
@@ -1957,6 +2122,7 @@
           $('obj-title').textContent = title;
           $('obj-icon').className = 'bi ' + icon;
           $('obj-app').classList.toggle('d-none', editor !== AppEditor);
+          $('obj-notes').classList.toggle('d-none', editor !== NotesEditor);
           ObjectPanel.showView('obj');
           ObjectPanel.syncDirty();
         },
@@ -1975,50 +2141,26 @@
           ObjectPanel.showView('ai');
         },
 
-        // 고친 내용을 어떻게 할지 묻고 처리한다: [편집 적용] 적용하고 닫기 / [편집 취소] 되돌리고 닫기 / [계속 편집] 그대로.
-        // 편집 창이 닫혔으면 true를 돌려준다.
-        async ask() {
-          ObjectPanel.asking = true;
-          let choice;
-          try {
-            choice = await Util.confirm('적용하지 않은 고친 내용이 있습니다.\n[편집 적용]을 누르면 고친 내용을 남기고, [편집 취소]를 누르면 원래대로 되돌아갑니다.',
-              '편집 취소', true, '계속 편집', '편집 적용');
-          } finally {
-            ObjectPanel.asking = false;
-          }
-          const session = ObjectPanel.session;
-          if (!session) return true;
-          if (choice === 'extra') {
-            if (AppEditor.aborter) Util.toast('AI가 고치는 중이라 아직 적용할 수 없습니다. 끝난 뒤 다시 시도해 주세요.', 'warning');
-            else session.editor.apply();
-          } else if (choice === true) {
-            ObjectPanel.close(true);
-          }
-          if (ObjectPanel.session) { ObjectPanel.focus(); return false; }
+        // 고친 결과는 바로 반영되므로 닫을 때 묻지 않는다. AI가 고치는 중이었으면 중단하고 알린다.
+        closeNow() {
+          if (!ObjectPanel.session) return;
+          if (ObjectPanel.dirty()) Util.toast('AI가 고치던 요청을 중단했습니다. 이미 반영한 내용은 그대로입니다.', 'warning');
+          ObjectPanel.close(false);
+        },
+
+        // 다른 곳으로 가기 전에 부른다. 편집 창을 닫고 true를 돌려준다(retry는 예전 호출 방식과 맞추려고 받기만 한다).
+        leaveOr(retry) {
+          ObjectPanel.closeNow();
           return true;
         },
 
-        // 다른 곳으로 가기 전에 부른다. 바로 가도 되면 true(고친 게 없으면 편집을 닫는다).
-        // 고친 게 있으면 묻고 false를 돌려준다. 적용하거나 취소해 편집 창이 닫히면 retry를 실행한다.
-        leaveOr(retry) {
-          if (!ObjectPanel.session) return true;
-          if (ObjectPanel.asking) return false;
-          if (!ObjectPanel.dirty()) { ObjectPanel.close(true); return true; }
-          ObjectPanel.ask().then(closed => { if (closed && retry) retry(); });
-          return false;
-        },
-
-        // [←]·Esc: 고친 게 있으면 묻고 닫는다(선택은 그대로).
-        async requestClose() {
-          if (!ObjectPanel.session || ObjectPanel.asking) return;
-          if (ObjectPanel.dirty()) { await ObjectPanel.ask(); return; }
-          ObjectPanel.close(true);
-        },
+        // [←]·Esc: 편집 창을 닫고 AI 창으로(선택은 그대로).
+        requestClose() { ObjectPanel.closeNow(); },
 
         focus() {
           const session = ObjectPanel.session;
           if (!session) return;
-          const input = $('app-request');
+          const input = session.editor === NotesEditor ? $('notes-ai-request') : $('app-request');
           if (!input.disabled) input.focus();
         },
 
@@ -2671,7 +2813,9 @@
         renderCanvas() {
           const slide = Editor.current();
           const canvas = $('slide-canvas');
-          ObjectPanel.close(false); // 캔버스를 새로 그리므로 편집 중인 개체도 사라진다
+          // 캔버스를 새로 그리므로 편집 중인 개체도 사라진다. 시나리오 고치기 창은 캔버스 밖이라 열어 둔 채 새 장으로 넘어간다.
+          if (ObjectPanel.session && ObjectPanel.session.editor === NotesEditor) NotesEditor.slideChanged();
+          else ObjectPanel.close(false);
           Editor.selected = null;
           Editor.editing = null;
           FloatBar.hide();
@@ -7464,6 +7608,7 @@
         Planner.init();
         Merger.init();
         AppEditor.init();
+        NotesEditor.init();
         window.addEventListener('slideCloudChanged', CloudUI.sync);
         CloudUI.sync();
 
