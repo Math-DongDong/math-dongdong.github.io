@@ -222,6 +222,68 @@
             border: 1px solid #ffeeba;
             border-radius: 6px;
         }
+
+        /* 영역 가리기 편집기 */
+        .mask-stage {
+            position: relative;
+            flex-shrink: 0;
+            touch-action: none;
+            user-select: none;
+        }
+
+        .mask-stage canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 0 !important;
+        }
+
+        .mask-overlay {
+            position: absolute;
+            inset: 0;
+            cursor: crosshair;
+        }
+
+        .mask-rect,
+        .mask-drawing {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .mask-rect.mask-white {
+            background: #ffffff;
+            border: 1px dashed #0d6efd;
+        }
+
+        .mask-rect.mask-blur {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px dashed #6f42c1;
+        }
+
+        .mask-drawing {
+            border: 2px dashed #0d6efd;
+            background: rgba(13, 110, 253, 0.12);
+        }
+
+        .mask-rect-tools {
+            position: absolute;
+            top: -1px;
+            right: -1px;
+            transform: translateY(-100%);
+            display: flex;
+            gap: 2px;
+            z-index: 2;
+        }
+
+        .mask-rect.tools-inside .mask-rect-tools {
+            transform: none;
+        }
+
+        .mask-rect-tools .btn {
+            padding: 0 6px;
+            font-size: 0.7rem;
+            line-height: 1.5;
+        }
     </style>
 </head>
 
@@ -254,9 +316,9 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="repeat-split-tab" data-bs-toggle="tab" data-bs-target="#repeat-split"
+                <button class="nav-link" id="mask-tab" data-bs-toggle="tab" data-bs-target="#mask"
                     type="button" role="tab">
-                    <i class="bi bi-collection"></i> 반복 분할
+                    <i class="bi bi-eraser"></i> 가리기
                 </button>
             </li>
         </ul>
@@ -346,6 +408,23 @@
                             <input type="text" class="form-control" id="splitRange" placeholder="예: 1, 3-5, 7" disabled>
                             <div class="form-text" id="splitPageCount"></div>
                         </div>
+                        <div class="col-12">
+                            <div class="d-flex flex-wrap align-items-center gap-3 py-2 px-3 bg-light rounded">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="repeatSplitToggle" style="cursor: pointer;">
+                                    <label class="form-check-label fw-semibold user-select-none" for="repeatSplitToggle" style="cursor: pointer;">반복 분할 <span class="text-muted fw-normal small">(N쪽마다 나눠 ZIP으로 저장)</span></label>
+                                </div>
+                                <div id="chunkSizeGroup" class="d-none">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="input-group input-group-sm" style="width: 150px;">
+                                            <input type="number" class="form-control" id="chunkSize" min="1" value="3">
+                                            <span class="input-group-text">쪽마다</span>
+                                        </div>
+                                        <span class="small text-muted" id="chunkPreviewText"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="d-flex gap-2 mb-3">
@@ -387,29 +466,77 @@
                 </div>
             </div>
 
-            <!-- ===== 3. PDF 반복 분할 탭 ===== -->
-            <div class="tab-pane fade" id="repeat-split" role="tabpanel" aria-labelledby="repeat-split-tab">
+            <!-- ===== 3. PDF 영역 가리기 탭 ===== -->
+            <div class="tab-pane fade" id="mask" role="tabpanel" aria-labelledby="mask-tab">
                 <div class="card-custom">
+                    <div class="mb-3">
+                        <label for="maskFile" class="form-label fw-semibold">가릴 PDF 파일 선택</label>
+                        <input class="form-control" type="file" id="maskFile" accept="application/pdf">
+                        <div class="form-text" id="maskPageCount"></div>
+                    </div>
+
                     <div class="row g-3 mb-3">
-                        <div class="col-md-7">
-                            <label for="repeatSplitFile" class="form-label fw-semibold">분할할 PDF 파일 선택</label>
-                            <input class="form-control" type="file" id="repeatSplitFile" accept="application/pdf">
-                            <div class="form-text" id="repeatPageCount"></div>
-                        </div>
-                        <div class="col-md-5">
-                            <label for="chunkSize" class="form-label fw-semibold">분할 단위 (쪽)</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="chunkSize" min="1" value="3">
-                                <span class="input-group-text">쪽마다</span>
+                        <div class="col-md-4">
+                            <div class="form-label fw-semibold mb-1">가리기 방식</div>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="maskMode" id="maskModeWhite" value="white" checked>
+                                <label class="btn btn-outline-secondary btn-sm" for="maskModeWhite"><i class="bi bi-square"></i> 흰색</label>
+                                <input type="radio" class="btn-check" name="maskMode" id="maskModeBlur" value="blur">
+                                <label class="btn btn-outline-secondary btn-sm" for="maskModeBlur"><i class="bi bi-droplet-half"></i> 흐림</label>
                             </div>
-                            <div class="form-text" id="chunkPreviewText"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-label fw-semibold mb-1">새 영역 적용 범위</div>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="maskScope" id="maskScopePage" value="page" checked>
+                                <label class="btn btn-outline-secondary btn-sm" for="maskScopePage"><i class="bi bi-file-earmark"></i> 현재 쪽만</label>
+                                <input type="radio" class="btn-check" name="maskScope" id="maskScopeAll" value="all">
+                                <label class="btn btn-outline-secondary btn-sm" for="maskScopeAll"><i class="bi bi-files"></i> 모든 쪽</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="maskBlurStrength" class="form-label fw-semibold mb-1">흐림 강도 <span id="maskBlurValue" class="text-muted fw-normal small">8</span></label>
+                            <input type="range" class="form-range" id="maskBlurStrength" min="2" max="30" value="8">
                         </div>
                     </div>
-                    <div class="alert alert-info py-2 small mb-3">
-                        <i class="bi bi-info-circle"></i> 분할된 파일들이 하나의 <strong>ZIP 파일</strong>로 다운로드됩니다.
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="maskFlatten">
+                        <label class="form-check-label fw-semibold" for="maskFlatten">원본 내용 완전 제거 <span class="text-muted fw-normal small">(페이지를 이미지로 변환)</span></label>
+                        <div class="form-text">체크하지 않으면 가린 영역 아래의 텍스트가 복사·검색으로 노출될 수 있습니다. 민감한 정보라면 체크하세요.</div>
                     </div>
-                    <button class="btn btn-primary" id="btnRepeatSplit"><i class="bi bi-file-zip"></i> 분할 후 ZIP
-                        다운로드</button>
+
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button class="btn btn-outline-primary btn-sm" id="btnMaskApplyAll" disabled><i class="bi bi-files"></i> 이 쪽 영역을 모든 쪽에 적용</button>
+                        <button class="btn btn-outline-secondary btn-sm" id="btnMaskClearPage" disabled><i class="bi bi-eraser"></i> 이 쪽 영역 지우기</button>
+                        <button class="btn btn-outline-danger btn-sm" id="btnMaskClearAll" disabled><i class="bi bi-trash"></i> 모두 지우기</button>
+                        <button class="btn btn-success btn-sm ms-md-auto" id="btnMaskDownload" disabled><i class="bi bi-download"></i> 가린 파일 다운로드</button>
+                    </div>
+
+                    <div class="preview-section">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <div class="preview-label mb-0"><i class="bi bi-bounding-box"></i> 영역 지정</div>
+                            <div class="small text-muted" id="maskSummary"></div>
+                        </div>
+                        <div id="maskPlaceholder" class="preview-placeholder">
+                            <i class="bi bi-file-earmark-plus"></i>
+                            <span>PDF 파일을 선택하면 영역을 지정할 수 있습니다.</span>
+                        </div>
+                        <div id="maskEditor" class="d-none canvas-viewer">
+                            <div class="cv-nav">
+                                <button class="btn btn-sm btn-outline-secondary" id="maskPrev"><i class="bi bi-chevron-left"></i></button>
+                                <span class="cv-info" id="maskPageInfo">1 / 1</span>
+                                <button class="btn btn-sm btn-outline-secondary" id="maskNext"><i class="bi bi-chevron-right"></i></button>
+                            </div>
+                            <div class="cv-body" id="maskStageWrap">
+                                <div class="mask-stage" id="maskStage">
+                                    <canvas id="maskCanvas"></canvas>
+                                    <div class="mask-overlay" id="maskOverlay"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-2 mb-0 text-center"><i class="bi bi-hand-index"></i> 페이지 위에서 드래그하여 가릴 영역을 지정하세요. 영역 위 버튼으로 적용 범위(이 쪽/전체)를 바꾸거나 삭제할 수 있습니다.</p>
+                    </div>
                 </div>
             </div>
 
@@ -422,7 +549,7 @@
     <script src="../../../js/navbar.js"></script>
 
     <script>
-        const { PDFDocument } = PDFLib;
+        const { PDFDocument, rgb } = PDFLib;
 
         // =====================================================
         // 공통 유틸
@@ -837,12 +964,36 @@
         // =====================================================
         let splitPdfDoc = null;
         let splitPdfBytes = null;
+        let splitFileName = '';
+        let splitPageIndices = [];
+
+        function isRepeatSplitOn() {
+            return document.getElementById('repeatSplitToggle').checked;
+        }
+
+        function getChunkSize() {
+            const size = parseInt(document.getElementById('chunkSize').value, 10);
+            return isNaN(size) || size < 1 ? null : size;
+        }
+
+        function updateSplitModeUI() {
+            const repeatOn = isRepeatSplitOn();
+            document.getElementById('chunkSizeGroup').classList.toggle('d-none', !repeatOn);
+            document.getElementById('btnSplitDownload').innerHTML = repeatOn
+                ? '<i class="bi bi-file-zip"></i> 분할 후 ZIP 다운로드'
+                : '<i class="bi bi-download"></i> 추출 파일 다운로드';
+            const size = getChunkSize();
+            document.getElementById('chunkPreviewText').textContent =
+                (splitPageIndices.length > 0 && size) ? `→ 총 ${Math.ceil(splitPageIndices.length / size)}개의 파일로 분할됩니다` : '';
+        }
 
         async function buildSplitPreview() {
             if (!splitPdfDoc) return;
             const rangeStr = document.getElementById('splitRange').value;
             const maxPages = splitPdfDoc.getPageCount();
             const pagesToExtract = parsePageRange(rangeStr, maxPages).map(p => p - 1);
+            splitPageIndices = pagesToExtract;
+            updateSplitModeUI();
 
             if (pagesToExtract.length === 0) return;
             try {
@@ -878,6 +1029,8 @@
         document.getElementById('splitFile').addEventListener('change', async function (e) {
             splitPdfDoc = null;
             splitPdfBytes = null;
+            splitPageIndices = [];
+            updateSplitModeUI();
             const splitToggle = document.getElementById('splitPreviewAllToggle');
             if (splitToggle) splitToggle.checked = false;
             document.getElementById('splitRange').disabled = true;
@@ -887,6 +1040,7 @@
 
             if (e.target.files.length === 0) return;
             try {
+                splitFileName = e.target.files[0].name;
                 const ab = await e.target.files[0].arrayBuffer();
                 splitPdfDoc = await PDFDocument.load(ab, { ignoreEncryption: true });
                 const total = splitPdfDoc.getPageCount();
@@ -903,85 +1057,463 @@
 
         document.getElementById('splitRange').addEventListener('input', debouncedSplitPreview);
 
-        document.getElementById('btnSplitDownload').addEventListener('click', () => {
-            if (splitPdfBytes) {
-                saveAs(new Blob([splitPdfBytes], { type: 'application/pdf' }), 'split_document.pdf');
+        document.getElementById('repeatSplitToggle').addEventListener('change', updateSplitModeUI);
+        document.getElementById('chunkSize').addEventListener('input', updateSplitModeUI);
+
+        document.getElementById('btnSplitDownload').addEventListener('click', async () => {
+            if (!splitPdfDoc || splitPageIndices.length === 0) return;
+            if (!isRepeatSplitOn()) {
+                if (splitPdfBytes) saveAs(new Blob([splitPdfBytes], { type: 'application/pdf' }), 'split_document.pdf');
+                return;
             }
-        });
 
+            // 반복 분할: 추출 범위를 N쪽 단위로 나눠 ZIP 저장
+            const chunkSize = getChunkSize();
+            if (!chunkSize) return alert('올바른 분할 쪽수를 입력해주세요.');
 
-        // =====================================================
-        // 3. PDF 반복 분할 (ZIP)
-        // =====================================================
-        let repeatPdfDoc = null;
-        let repeatFileName = '';
-
-        document.getElementById('repeatSplitFile').addEventListener('change', async function (e) {
-            repeatPdfDoc = null;
-            document.getElementById('repeatPageCount').textContent = '';
-            document.getElementById('chunkPreviewText').textContent = '';
-            if (e.target.files.length === 0) return;
-            try {
-                repeatFileName = e.target.files[0].name;
-                const ab = await e.target.files[0].arrayBuffer();
-                repeatPdfDoc = await PDFDocument.load(ab, { ignoreEncryption: true });
-                const total = repeatPdfDoc.getPageCount();
-                document.getElementById('repeatPageCount').textContent = `총 ${total} 쪽`;
-                updateChunkPreview();
-            } catch (err) {
-                console.error(err);
-                alert('PDF 파일을 불러오는 중 오류가 발생했습니다.');
-            }
-        });
-
-        function updateChunkPreview() {
-            if (!repeatPdfDoc) return;
-            const size = parseInt(document.getElementById('chunkSize').value, 10);
-            if (isNaN(size) || size < 1) return;
-            const total = repeatPdfDoc.getPageCount();
-            const fileCount = Math.ceil(total / size);
-            document.getElementById('chunkPreviewText').textContent = `→ 총 ${fileCount}개의 파일로 분할됩니다`;
-        }
-
-        document.getElementById('chunkSize').addEventListener('input', updateChunkPreview);
-
-        document.getElementById('btnRepeatSplit').addEventListener('click', async () => {
-            if (!repeatPdfDoc) return alert('분할할 PDF 파일을 선택해주세요.');
-            const chunkSize = parseInt(document.getElementById('chunkSize').value, 10);
-            if (isNaN(chunkSize) || chunkSize < 1) return alert('올바른 분할 쪽수를 입력해주세요.');
-
-            const btn = document.getElementById('btnRepeatSplit');
-            const originalHTML = btn.innerHTML;
+            const btn = document.getElementById('btnSplitDownload');
             btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 처리 중...';
             btn.disabled = true;
-
             try {
-                const maxPages = repeatPdfDoc.getPageCount();
                 const zip = new JSZip();
-                const baseName = repeatFileName.replace(/\.pdf$/i, '');
-
-                for (let i = 0; i < maxPages; i += chunkSize) {
-                    const end = Math.min(i + chunkSize, maxPages);
-                    const pagesToCopy = [];
-                    for (let j = i; j < end; j++) pagesToCopy.push(j);
-
+                const baseName = splitFileName.replace(/\.pdf$/i, '');
+                for (let i = 0; i < splitPageIndices.length; i += chunkSize) {
+                    const chunk = splitPageIndices.slice(i, i + chunkSize);
                     const newPdf = await PDFDocument.create();
-                    const copied = await newPdf.copyPages(repeatPdfDoc, pagesToCopy);
+                    const copied = await newPdf.copyPages(splitPdfDoc, chunk);
                     copied.forEach(page => newPdf.addPage(page));
                     const bytes = await newPdf.save({ updateFieldAppearances: false });
-
-                    const fileName = `${baseName}_${i + 1}-${end}.pdf`;
-                    zip.file(fileName, bytes);
+                    const first = chunk[0] + 1;
+                    const last = chunk[chunk.length - 1] + 1;
+                    zip.file(first === last ? `${baseName}_${first}.pdf` : `${baseName}_${first}-${last}.pdf`, bytes);
                 }
-
                 const zipBlob = await zip.generateAsync({ type: 'blob' });
                 saveAs(zipBlob, `split_${baseName}.zip`);
             } catch (err) {
                 console.error(err);
                 alert('PDF 반복 분할 중 오류가 발생했습니다.');
             } finally {
-                btn.innerHTML = originalHTML;
                 btn.disabled = false;
+                updateSplitModeUI();
+            }
+        });
+
+
+        // =====================================================
+        // 3. PDF 영역 가리기
+        // 영역 좌표는 화면에 보이는(회전 적용) 페이지 기준 0~1 비율로 저장
+        // pageIndex === null 이면 모든 쪽에 적용
+        // =====================================================
+        const MASK_EXPORT_SCALE = 2;
+        const maskState = {
+            fileName: '',
+            pdfBytes: null,
+            pdfJsDoc: null,
+            pageCount: 0,
+            currentPage: 0,
+            rects: [],
+            nextId: 1
+        };
+        const maskCanvas = document.getElementById('maskCanvas');
+        const maskOverlay = document.getElementById('maskOverlay');
+        let maskRenderTask = null;
+
+        function getMaskSettings() {
+            return {
+                mode: document.querySelector('input[name="maskMode"]:checked').value,
+                scope: document.querySelector('input[name="maskScope"]:checked').value,
+                strength: parseInt(document.getElementById('maskBlurStrength').value, 10)
+            };
+        }
+
+        // 흐림 반경을 페이지 너비에 비례시켜 미리보기와 결과물을 일치시킴
+        function blurRadiusFor(pageWidthPx, strength) {
+            return Math.max(1, strength * pageWidthPx / 600);
+        }
+
+        function getRectsForPage(pageIndex) {
+            return maskState.rects.filter(r => r.pageIndex === null || r.pageIndex === pageIndex);
+        }
+
+        function clamp01(v) {
+            return Math.min(1, Math.max(0, v));
+        }
+
+        async function renderMaskPage() {
+            if (!maskState.pdfJsDoc) return;
+            const page = await maskState.pdfJsDoc.getPage(maskState.currentPage + 1);
+            const containerWidth = document.getElementById('maskStageWrap').clientWidth - 16;
+            if (containerWidth <= 0) return;
+
+            const baseViewport = page.getViewport({ scale: 1 });
+            const cssScale = Math.min(containerWidth / baseViewport.width, 1.6);
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const viewport = page.getViewport({ scale: cssScale * dpr });
+
+            if (maskRenderTask) maskRenderTask.cancel();
+            maskCanvas.width = viewport.width;
+            maskCanvas.height = viewport.height;
+            const stage = document.getElementById('maskStage');
+            stage.style.width = (viewport.width / dpr) + 'px';
+            stage.style.height = (viewport.height / dpr) + 'px';
+
+            maskRenderTask = page.render({ canvasContext: maskCanvas.getContext('2d'), viewport });
+            try {
+                await maskRenderTask.promise;
+            } catch (err) {
+                if (err && err.name === 'RenderingCancelledException') return;
+                throw err;
+            }
+            maskRenderTask = null;
+
+            document.getElementById('maskPageInfo').textContent = `${maskState.currentPage + 1} / ${maskState.pageCount} 쪽`;
+            document.getElementById('maskPrev').disabled = maskState.currentPage <= 0;
+            document.getElementById('maskNext').disabled = maskState.currentPage >= maskState.pageCount - 1;
+            renderMaskRects();
+        }
+
+        function renderMaskRects() {
+            maskOverlay.querySelectorAll('.mask-rect').forEach(el => el.remove());
+            const stageWidth = maskOverlay.clientWidth;
+            const strength = getMaskSettings().strength;
+
+            getRectsForPage(maskState.currentPage).forEach(r => {
+                const el = document.createElement('div');
+                el.className = `mask-rect mask-${r.mode}` + (r.ny < 0.06 ? ' tools-inside' : '');
+                el.dataset.id = r.id;
+                el.style.left = (r.nx * 100) + '%';
+                el.style.top = (r.ny * 100) + '%';
+                el.style.width = (r.nw * 100) + '%';
+                el.style.height = (r.nh * 100) + '%';
+                if (r.mode === 'blur') {
+                    const filter = `blur(${blurRadiusFor(stageWidth, strength)}px)`;
+                    el.style.backdropFilter = filter;
+                    el.style.webkitBackdropFilter = filter;
+                }
+                const isGlobal = r.pageIndex === null;
+                el.innerHTML = `
+                    <div class="mask-rect-tools">
+                        <button type="button" class="btn btn-sm ${isGlobal ? 'btn-primary' : 'btn-light border'}" data-mask-action="scope"
+                            title="클릭하여 적용 범위 변경">${isGlobal ? '모든 쪽' : '이 쪽'}</button>
+                        <button type="button" class="btn btn-sm btn-danger" data-mask-action="delete" title="삭제"><i class="bi bi-x-lg"></i></button>
+                    </div>`;
+                maskOverlay.appendChild(el);
+            });
+            updateMaskSummary();
+        }
+
+        function updateMaskSummary() {
+            const pageOnly = maskState.rects.filter(r => r.pageIndex === maskState.currentPage).length;
+            const global = maskState.rects.filter(r => r.pageIndex === null).length;
+            const hasFile = !!maskState.pdfJsDoc;
+            document.getElementById('maskSummary').textContent = hasFile
+                ? `이 쪽 전용 ${pageOnly}개 · 모든 쪽 ${global}개 · 총 ${maskState.rects.length}개`
+                : '';
+            document.getElementById('btnMaskApplyAll').disabled = !hasFile || pageOnly === 0;
+            document.getElementById('btnMaskClearPage').disabled = !hasFile || pageOnly === 0;
+            document.getElementById('btnMaskClearAll').disabled = !hasFile || maskState.rects.length === 0;
+            document.getElementById('btnMaskDownload').disabled = !hasFile || maskState.rects.length === 0;
+        }
+
+        // --- 드래그로 영역 그리기 ---
+        let maskDrawStart = null;
+        let maskDrawEl = null;
+
+        function getOverlayPoint(e) {
+            const box = maskOverlay.getBoundingClientRect();
+            return { x: clamp01((e.clientX - box.left) / box.width), y: clamp01((e.clientY - box.top) / box.height) };
+        }
+
+        function getDrawRect(start, end) {
+            return {
+                nx: Math.min(start.x, end.x),
+                ny: Math.min(start.y, end.y),
+                nw: Math.abs(end.x - start.x),
+                nh: Math.abs(end.y - start.y)
+            };
+        }
+
+        maskOverlay.addEventListener('pointerdown', (e) => {
+            if (!maskState.pdfJsDoc || e.button !== 0 || e.target.closest('.mask-rect-tools')) return;
+            e.preventDefault();
+            maskDrawStart = getOverlayPoint(e);
+            maskDrawEl = document.createElement('div');
+            maskDrawEl.className = 'mask-drawing';
+            maskOverlay.appendChild(maskDrawEl);
+            maskOverlay.setPointerCapture(e.pointerId);
+        });
+
+        maskOverlay.addEventListener('pointermove', (e) => {
+            if (!maskDrawStart) return;
+            const r = getDrawRect(maskDrawStart, getOverlayPoint(e));
+            maskDrawEl.style.left = (r.nx * 100) + '%';
+            maskDrawEl.style.top = (r.ny * 100) + '%';
+            maskDrawEl.style.width = (r.nw * 100) + '%';
+            maskDrawEl.style.height = (r.nh * 100) + '%';
+        });
+
+        function finishMaskDraw(e) {
+            if (!maskDrawStart) return;
+            const r = getDrawRect(maskDrawStart, getOverlayPoint(e));
+            maskDrawStart = null;
+            if (maskDrawEl) maskDrawEl.remove();
+            maskDrawEl = null;
+            if (r.nw < 0.005 || r.nh < 0.005) return;
+
+            const settings = getMaskSettings();
+            maskState.rects.push({
+                id: maskState.nextId++,
+                pageIndex: settings.scope === 'all' ? null : maskState.currentPage,
+                mode: settings.mode,
+                ...r
+            });
+            renderMaskRects();
+        }
+
+        maskOverlay.addEventListener('pointerup', finishMaskDraw);
+        maskOverlay.addEventListener('pointercancel', finishMaskDraw);
+
+        // 영역 버튼 (범위 전환 / 삭제)
+        maskOverlay.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-mask-action]');
+            if (!btn) return;
+            const id = parseInt(btn.closest('.mask-rect').dataset.id, 10);
+            const rect = maskState.rects.find(r => r.id === id);
+            if (!rect) return;
+            if (btn.dataset.maskAction === 'delete') {
+                maskState.rects = maskState.rects.filter(r => r.id !== id);
+            } else {
+                rect.pageIndex = rect.pageIndex === null ? maskState.currentPage : null;
+            }
+            renderMaskRects();
+        });
+
+        document.getElementById('maskPrev').addEventListener('click', () => {
+            if (maskState.currentPage > 0) { maskState.currentPage--; renderMaskPage(); }
+        });
+        document.getElementById('maskNext').addEventListener('click', () => {
+            if (maskState.currentPage < maskState.pageCount - 1) { maskState.currentPage++; renderMaskPage(); }
+        });
+
+        document.getElementById('btnMaskApplyAll').addEventListener('click', () => {
+            maskState.rects.forEach(r => { if (r.pageIndex === maskState.currentPage) r.pageIndex = null; });
+            renderMaskRects();
+        });
+        document.getElementById('btnMaskClearPage').addEventListener('click', () => {
+            maskState.rects = maskState.rects.filter(r => r.pageIndex !== maskState.currentPage);
+            renderMaskRects();
+        });
+        document.getElementById('btnMaskClearAll').addEventListener('click', () => {
+            if (!confirm('지정한 모든 영역을 지울까요?')) return;
+            maskState.rects = [];
+            renderMaskRects();
+        });
+
+        document.getElementById('maskBlurStrength').addEventListener('input', (e) => {
+            document.getElementById('maskBlurValue').textContent = e.target.value;
+            renderMaskRects();
+        });
+
+        document.getElementById('mask-tab').addEventListener('shown.bs.tab', () => renderMaskPage());
+        window.addEventListener('resize', debounce(() => {
+            if (document.getElementById('mask').classList.contains('active')) renderMaskPage();
+        }, 250));
+
+        document.getElementById('maskFile').addEventListener('change', async (e) => {
+            if (maskState.pdfJsDoc) maskState.pdfJsDoc.destroy();
+            Object.assign(maskState, { fileName: '', pdfBytes: null, pdfJsDoc: null, pageCount: 0, currentPage: 0, rects: [] });
+            document.getElementById('maskPageCount').textContent = '';
+            document.getElementById('maskEditor').classList.add('d-none');
+            document.getElementById('maskPlaceholder').classList.remove('d-none');
+            updateMaskSummary();
+
+            if (e.target.files.length === 0) return;
+            try {
+                const file = e.target.files[0];
+                maskState.fileName = file.name;
+                maskState.pdfBytes = new Uint8Array(await file.arrayBuffer());
+                const lib = await loadPdfJs();
+                maskState.pdfJsDoc = await lib.getDocument({ data: maskState.pdfBytes.slice() }).promise;
+                maskState.pageCount = maskState.pdfJsDoc.numPages;
+                document.getElementById('maskPageCount').textContent = `총 ${maskState.pageCount} 쪽`;
+                document.getElementById('maskPlaceholder').classList.add('d-none');
+                document.getElementById('maskEditor').classList.remove('d-none');
+                await renderMaskPage();
+            } catch (err) {
+                console.error(err);
+                alert('PDF 파일을 불러오는 중 오류가 발생했습니다.');
+            }
+        });
+
+        // --- 내보내기 유틸 ---
+        async function renderPageToCanvas(pdfJsPage, scale, rotation) {
+            const viewport = rotation === undefined
+                ? pdfJsPage.getViewport({ scale })
+                : pdfJsPage.getViewport({ scale, rotation });
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            await pdfJsPage.render({ canvasContext: ctx, viewport }).promise;
+            return canvas;
+        }
+
+        // 원본 캔버스의 특정 영역을 흐리게 만든 새 캔버스 반환
+        function blurRegion(source, sx, sy, sw, sh, radius) {
+            const out = document.createElement('canvas');
+            out.width = Math.max(1, Math.round(sw));
+            out.height = Math.max(1, Math.round(sh));
+            const octx = out.getContext('2d');
+
+            if (typeof octx.filter === 'string') {
+                // 가장자리가 투명하게 번지지 않도록 주변 여백까지 포함해 블러 처리
+                const pad = Math.ceil(radius * 2);
+                const tmp = document.createElement('canvas');
+                tmp.width = out.width + pad * 2;
+                tmp.height = out.height + pad * 2;
+                const tctx = tmp.getContext('2d');
+                tctx.fillStyle = '#ffffff';
+                tctx.fillRect(0, 0, tmp.width, tmp.height);
+                tctx.drawImage(source, sx - pad, sy - pad, tmp.width, tmp.height, 0, 0, tmp.width, tmp.height);
+                octx.filter = `blur(${radius}px)`;
+                octx.drawImage(tmp, -pad, -pad);
+                octx.filter = 'none';
+            } else {
+                // canvas filter 미지원 브라우저: 축소 후 확대 방식
+                const factor = Math.max(2, radius / 1.5);
+                const small = document.createElement('canvas');
+                small.width = Math.max(1, Math.round(out.width / factor));
+                small.height = Math.max(1, Math.round(out.height / factor));
+                const sctx = small.getContext('2d');
+                sctx.imageSmoothingEnabled = true;
+                sctx.imageSmoothingQuality = 'high';
+                sctx.drawImage(source, sx, sy, sw, sh, 0, 0, small.width, small.height);
+                octx.imageSmoothingEnabled = true;
+                octx.imageSmoothingQuality = 'high';
+                octx.drawImage(small, 0, 0, small.width, small.height, 0, 0, out.width, out.height);
+            }
+            return out;
+        }
+
+        function applyMasksOnCanvas(canvas, rects, strength) {
+            const ctx = canvas.getContext('2d');
+            const radius = blurRadiusFor(canvas.width, strength);
+            rects.forEach(r => {
+                const x = r.nx * canvas.width, y = r.ny * canvas.height;
+                const w = r.nw * canvas.width, h = r.nh * canvas.height;
+                if (r.mode === 'white') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(x, y, w, h);
+                } else {
+                    ctx.drawImage(blurRegion(canvas, x, y, w, h, radius), x, y, w, h);
+                }
+            });
+        }
+
+        function canvasToBytes(canvas, type, quality) {
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(blob => {
+                    if (!blob) return reject(new Error('이미지 변환 실패'));
+                    blob.arrayBuffer().then(ab => resolve(new Uint8Array(ab)), reject);
+                }, type, quality);
+            });
+        }
+
+        // 화면 기준(회전 적용) 비율 좌표 → PDF 좌표(회전 전, 좌하단 원점)
+        function toPdfRect(r, box, rotation) {
+            const W = box.width, H = box.height;
+            let x, y, w, h;
+            switch (rotation) {
+                case 90: x = r.ny * W; y = r.nx * H; w = r.nh * W; h = r.nw * H; break;
+                case 180: x = (1 - r.nx - r.nw) * W; y = r.ny * H; w = r.nw * W; h = r.nh * H; break;
+                case 270: x = (1 - r.ny - r.nh) * W; y = (1 - r.nx - r.nw) * H; w = r.nh * W; h = r.nw * H; break;
+                default: x = r.nx * W; y = (1 - r.ny - r.nh) * H; w = r.nw * W; h = r.nh * H;
+            }
+            return { x: box.x + x, y: box.y + y, width: w, height: h };
+        }
+
+        // 원본 구조 유지: 흰색 사각형 / 흐림 이미지를 페이지 위에 덧그림
+        async function buildMaskedPdfOverlay(onProgress) {
+            const doc = await PDFDocument.load(maskState.pdfBytes, { ignoreEncryption: true });
+            const pages = doc.getPages();
+            const strength = getMaskSettings().strength;
+
+            for (let i = 0; i < pages.length; i++) {
+                onProgress(i + 1, pages.length);
+                const rects = getRectsForPage(i);
+                if (rects.length === 0) continue;
+
+                const page = pages[i];
+                const box = page.getCropBox();
+                const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+                let flatCanvas = null;
+
+                for (const r of rects) {
+                    const pr = toPdfRect(r, box, rotation);
+                    if (r.mode === 'white') {
+                        page.drawRectangle({ x: pr.x, y: pr.y, width: pr.width, height: pr.height, color: rgb(1, 1, 1), borderWidth: 0 });
+                        continue;
+                    }
+                    if (!flatCanvas) {
+                        const jsPage = await maskState.pdfJsDoc.getPage(i + 1);
+                        flatCanvas = await renderPageToCanvas(jsPage, MASK_EXPORT_SCALE, 0);
+                    }
+                    const s = flatCanvas.width / box.width;
+                    const displayWidthPx = (rotation % 180 === 0 ? box.width : box.height) * s;
+                    const region = blurRegion(
+                        flatCanvas,
+                        (pr.x - box.x) * s,
+                        (box.y + box.height - (pr.y + pr.height)) * s,
+                        pr.width * s,
+                        pr.height * s,
+                        blurRadiusFor(displayWidthPx, strength)
+                    );
+                    const png = await doc.embedPng(await canvasToBytes(region, 'image/png'));
+                    page.drawImage(png, { x: pr.x, y: pr.y, width: pr.width, height: pr.height });
+                }
+            }
+            return doc.save();
+        }
+
+        // 원본 내용 완전 제거: 모든 페이지를 이미지로 변환 후 가림 처리
+        async function buildMaskedPdfFlatten(onProgress) {
+            const out = await PDFDocument.create();
+            const strength = getMaskSettings().strength;
+
+            for (let i = 0; i < maskState.pageCount; i++) {
+                onProgress(i + 1, maskState.pageCount);
+                const jsPage = await maskState.pdfJsDoc.getPage(i + 1);
+                const size = jsPage.getViewport({ scale: 1 });
+                const canvas = await renderPageToCanvas(jsPage, MASK_EXPORT_SCALE);
+                applyMasksOnCanvas(canvas, getRectsForPage(i), strength);
+                const jpg = await out.embedJpg(await canvasToBytes(canvas, 'image/jpeg', 0.92));
+                const page = out.addPage([size.width, size.height]);
+                page.drawImage(jpg, { x: 0, y: 0, width: size.width, height: size.height });
+            }
+            return out.save();
+        }
+
+        document.getElementById('btnMaskDownload').addEventListener('click', async () => {
+            if (!maskState.pdfJsDoc || maskState.rects.length === 0) return;
+            const btn = document.getElementById('btnMaskDownload');
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            const onProgress = (done, total) => {
+                btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status"></span> 처리 중... (${done}/${total})`;
+            };
+            try {
+                const flatten = document.getElementById('maskFlatten').checked;
+                const bytes = flatten ? await buildMaskedPdfFlatten(onProgress) : await buildMaskedPdfOverlay(onProgress);
+                const baseName = maskState.fileName.replace(/\.pdf$/i, '');
+                saveAs(new Blob([bytes], { type: 'application/pdf' }), `${baseName}_masked.pdf`);
+            } catch (err) {
+                console.error(err);
+                alert('영역 가리기 처리 중 오류가 발생했습니다.');
+            } finally {
+                btn.innerHTML = originalHTML;
+                updateMaskSummary();
             }
         });
     </script>
