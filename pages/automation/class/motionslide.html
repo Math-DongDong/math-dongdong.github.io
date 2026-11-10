@@ -269,7 +269,13 @@
     .panel-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .obj-head { background: #f5f3ff; border-bottom: 1px solid #ddd6fe; }
     .obj-head h2 { color: #5b21b6; }
-    .obj-body { flex: 1; min-height: 0; overflow-y: auto; }
+    .obj-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+    /* 개체 고치기 입력칸: AI 창처럼 남은 높이를 채운다 */
+    .obj-compose:not(.d-none) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .obj-compose #app-request { flex: 1; min-height: 160px; resize: none; font-size: 0.95rem; border: 2px solid #ddd6fe; }
+    .obj-compose #app-request:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18); }
+    .obj-compose #app-send { background: #7c3aed; border-color: #7c3aed; }
+    .obj-compose #app-send:hover:not(:disabled) { background: #6d28d9; border-color: #6d28d9; }
     #slide-canvas .ls-obj-editing { outline: 4px dashed #7c3aed; outline-offset: 6px; }
     /* 고치는 중인 인터랙티브 요소는 편집 화면에서도 직접 조작해 볼 수 있다 */
     #slide-canvas .app-frame.ls-obj-editing iframe { pointer-events: auto; }
@@ -613,22 +619,21 @@
               <h2 class="h6 fw-bold mb-0 text-truncate"><i class="bi" id="obj-icon"></i> <span id="obj-title"></span></h2>
               <span class="badge rounded-pill text-bg-warning ms-auto d-none" id="obj-dirty">적용 전</span>
             </div>
-            <div class="obj-body p-3">
-              <!-- 인터랙티브 요소·모션그래픽: 말로 고치기 (안내 글은 AppEditor.open에서 종류에 맞게 바꾼다) -->
-              <section class="d-none" id="obj-app" aria-label="코드로 만든 개체 고치기">
-                <label class="form-label small text-muted" for="app-request" id="app-help">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.</label>
-                <textarea class="form-control" id="app-request" rows="5" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
-                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-                  <button type="button" class="btn btn-primary btn-sm" id="app-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
-                  <button type="button" class="btn btn-light btn-sm d-none" id="app-undo"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
+            <div class="obj-body p-2">
+              <!-- 인터랙티브 요소·모션그래픽: 말로 고치기 (AI 창과 같은 꼴. 안내 글은 AppEditor.open에서 종류에 맞게 바꾼다)
+                   적용·취소 단추는 없다: [←]·Esc로 나갈 때 고친 내용이 있으면 [편집 적용]/[편집 취소]를 묻는다. -->
+              <section class="d-none obj-compose" id="obj-app" aria-label="코드로 만든 개체 고치기">
+                <p class="small mb-2 text-muted" id="app-help">어떻게 바꿀지 적으면 Gemini가 이 요소의 코드를 고칩니다. 결과는 슬라이드에 바로 보이고 직접 조작해 볼 수 있습니다.</p>
+                <div class="d-flex flex-wrap gap-1 mb-2 ai-files" id="app-files"></div>
+                <textarea class="form-control mb-2" id="app-request" aria-labelledby="app-help" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-light btn-sm" id="app-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
+                  <button type="button" class="btn btn-light btn-sm d-none text-nowrap" id="app-undo" title="방금 AI가 고친 것을 되돌립니다"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
+                  <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="app-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
                 </div>
                 <div class="small mt-2" id="app-status" role="status"></div>
-                <p class="small text-muted mt-2 mb-0">요청 내용과 코드는 Google Gemini API로 전송됩니다.</p>
+                <p class="small text-muted mt-2 mb-0">요청 내용·참고 자료·코드는 Google Gemini API로 전송됩니다. 다 고쳤으면 왼쪽 위 [←]를 눌러 적용하세요.</p>
               </section>
-            </div>
-            <div class="d-flex gap-2 p-2 border-top">
-              <button type="button" class="btn btn-light flex-grow-1" id="obj-cancel">취소</button>
-              <button type="button" class="btn btn-primary flex-grow-1" id="obj-apply"><i class="bi bi-check-lg"></i> 적용</button>
             </div>
           </div>
         </aside>
@@ -935,6 +940,7 @@
   <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm" multiple>
   <input type="file" class="d-none" id="file-media">
   <input type="file" class="d-none" id="ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
+  <input type="file" class="d-none" id="app-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
@@ -1728,7 +1734,8 @@
         el: null,
         original: null,   // 편집을 시작할 때의 data-code 속성(없으면 null)
         history: [],      // AI가 고치기 전 data-code(되돌리기용)
-        requests: [],     // 이번 편집에서 보낸 요청([적용]할 때 수정 기록에 남긴다)
+        requests: [],     // 이번 편집에서 보낸 요청([편집 적용]할 때 수정 기록에 남긴다)
+        files: [],        // 이번 편집에서 붙인 참고 자료(AI 창의 참고 자료와 따로)
         aborter: null,
         SCHEMA: {
           type: 'OBJECT',
@@ -1758,6 +1765,8 @@
           AppEditor.originalHtml = el.innerHTML;
           AppEditor.history = [];
           AppEditor.requests = [];
+          AppEditor.files = [];
+          AppEditor.drawFiles();
           const text = AppEditor.text();
           $('app-help').textContent = text.help;
           $('app-request').placeholder = text.placeholder;
@@ -1773,7 +1782,16 @@
           $('app-send').disabled = on;
           $('app-request').disabled = on;
           $('app-undo').disabled = on;
-          $('obj-apply').disabled = on;
+          $('app-attach').disabled = on;
+        },
+
+        drawFiles() {
+          const host = $('app-files');
+          host.textContent = '';
+          AppEditor.files.forEach(item => host.append(AiPanel.fileChip(item, () => {
+            AppEditor.files = AppEditor.files.filter(other => other !== item);
+            AppEditor.drawFiles();
+          })));
         },
 
         status(text, tone) {
@@ -1831,11 +1849,17 @@
           // 모션그래픽은 슬라이드 <style>의 키프레임이 SVG 부위(class)를 움직이므로, 그 규칙을 함께 보내 class 이름을 지키게 한다.
           const slide = Editor.current();
           const css = AppEditor.motion && slide && slide.css ? slide.css.slice(0, 6000) : '(없음)';
+          const files = AppEditor.files.slice();
           try {
+            // 참고 자료(그림·PDF 등)는 AI 창과 같은 방법으로 읽어 함께 보낸다.
+            const parts = await AiPanel.prepareFiles(files, { set: text => { if (AppEditor.el === el) AppEditor.status(text, 'primary'); } });
+            if (AppEditor.el !== el) return;
+            AppEditor.status('Gemini가 코드를 고치는 중… (Esc: 중단)', 'primary');
             result = await Gemini.generateJson({
               model: Settings.model(),
               system: Prompts.text(key + '.system'),
-              prompt: Prompts.text(key + '.request', { request, css, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }),
+              prompt: Prompts.text(key + '.request', { request, css, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }) + AiPanel.filePrompt(files),
+              parts,
               schema: AppEditor.SCHEMA,
               signal: controller.signal,
               onProgress: length => { if (AppEditor.el === el) AppEditor.status('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary'); }
@@ -1859,7 +1883,7 @@
           AppEditor.setCode(AppKit.encode(AppKit.tidy(next, AppEditor.motion).slice(0, 300000)));
           $('app-request').value = '';
           AppEditor.status('고쳤습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
-            (AppEditor.motion ? ' 슬라이드에서 확인하고' : ' 슬라이드에서 조작해 보고') + ' 마음에 들면 [적용]을 누르세요.', 'success');
+            (AppEditor.motion ? ' 슬라이드에서 확인하고' : ' 슬라이드에서 조작해 보고') + ' 마음에 들면 왼쪽 위 [←]를 눌러 [편집 적용]을 고르세요.', 'success');
         },
 
         undo() {
@@ -1908,6 +1932,11 @@
         init() {
           $('app-send').addEventListener('click', AppEditor.send);
           $('app-undo').addEventListener('click', AppEditor.undo);
+          $('app-attach').addEventListener('click', () => $('app-file').click());
+          $('app-file').addEventListener('change', event => {
+            AiPanel.addFiles(event.target.files, AppEditor.files, AppEditor.drawFiles);
+            event.target.value = '';
+          });
           $('app-request').addEventListener('keydown', event => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); AppEditor.send(); }
           });
@@ -2060,8 +2089,6 @@
           ObjectPanel.initResizer();
           ObjectPanel.applyWidth();
           $('obj-back').addEventListener('click', ObjectPanel.requestClose);
-          $('obj-cancel').addEventListener('click', () => ObjectPanel.close(true));
-          $('obj-apply').addEventListener('click', () => { if (ObjectPanel.session) ObjectPanel.session.editor.apply(); });
         }
       };
 
@@ -4747,9 +4774,11 @@
         },
 
         /* --- 참고 자료 첨부 --- */
-        addFiles(list) {
+        // target: 담을 목록(기본은 AI 창), draw: 담은 뒤 다시 그리기. 개체 고치기 창도 같은 규칙으로 쓴다.
+        addFiles(list, target, draw) {
+          const files = target || AiPanel.files;
           const MB = 1024 * 1024;
-          let inlineBytes = AiPanel.files.filter(item => item.kind === 'image' || item.kind === 'pdf').reduce((sum, item) => sum + item.file.size, 0);
+          let inlineBytes = files.filter(item => item.kind === 'image' || item.kind === 'pdf').reduce((sum, item) => sum + item.file.size, 0);
           Array.from(list || []).forEach(file => {
             const name = file.name.toLowerCase();
             if (name.endsWith('.ppt')) { Util.toast('옛 .ppt 형식은 읽을 수 없습니다. PowerPoint에서 .pptx나 .pdf로 저장해 첨부해 주세요.', 'warning'); return; }
@@ -4759,42 +4788,45 @@
             else if (name.endsWith('.pptx')) kind = 'pptx';
             else if (/\.(txt|md)$/.test(name)) kind = 'text';
             if (!kind) { Util.toast(file.name + ': 이미지·PDF·PPTX·TXT 파일만 첨부할 수 있습니다.', 'warning'); return; }
-            if (AiPanel.files.length >= 10) { Util.toast('참고 자료는 10개까지 첨부할 수 있습니다.', 'warning'); return; }
+            if (files.length >= 10) { Util.toast('참고 자료는 10개까지 첨부할 수 있습니다.', 'warning'); return; }
             if (file.size > (kind === 'pptx' ? 50 : 20) * MB) { Util.toast(file.name + ' 파일이 너무 큽니다.', 'warning'); return; }
             if (kind === 'image' || kind === 'pdf') {
               if (inlineBytes + file.size > 14 * MB) { Util.toast('이미지·PDF 첨부는 합계 14MB까지 보낼 수 있습니다.', 'warning'); return; }
               inlineBytes += file.size;
             }
-            AiPanel.files.push({ file, kind, parts: null });
+            files.push({ file, kind, parts: null });
           });
-          AiPanel.drawFiles();
+          (draw || AiPanel.drawFiles)();
+        },
+
+        // 참고 자료 칩 하나(이름과 ✕). onRemove: ✕를 눌렀을 때
+        fileChip(item, onRemove) {
+          const icons = { image: 'bi-image', pdf: 'bi-file-earmark-pdf', pptx: 'bi-file-earmark-slides', text: 'bi-file-earmark-text' };
+          const chip = document.createElement('span');
+          chip.className = 'badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-1 fw-normal';
+          const icon = document.createElement('i');
+          icon.className = 'bi ' + icons[item.kind];
+          const label = document.createElement('span');
+          label.className = 'text-truncate';
+          label.style.maxWidth = '200px';
+          label.textContent = item.file.name;
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'btn-close';
+          remove.style.fontSize = '0.55rem';
+          remove.setAttribute('aria-label', item.file.name + ' 첨부 빼기');
+          remove.addEventListener('click', onRemove);
+          chip.append(icon, label, remove);
+          return chip;
         },
 
         drawFiles() {
           const host = $('ai-files');
           host.textContent = '';
-          const icons = { image: 'bi-image', pdf: 'bi-file-earmark-pdf', pptx: 'bi-file-earmark-slides', text: 'bi-file-earmark-text' };
-          AiPanel.files.forEach(item => {
-            const chip = document.createElement('span');
-            chip.className = 'badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-1 fw-normal';
-            const icon = document.createElement('i');
-            icon.className = 'bi ' + icons[item.kind];
-            const label = document.createElement('span');
-            label.className = 'text-truncate';
-            label.style.maxWidth = '200px';
-            label.textContent = item.file.name;
-            const remove = document.createElement('button');
-            remove.type = 'button';
-            remove.className = 'btn-close';
-            remove.style.fontSize = '0.55rem';
-            remove.setAttribute('aria-label', item.file.name + ' 첨부 빼기');
-            remove.addEventListener('click', () => {
-              AiPanel.files = AiPanel.files.filter(other => other !== item);
-              AiPanel.drawFiles();
-            });
-            chip.append(icon, label, remove);
-            host.append(chip);
-          });
+          AiPanel.files.forEach(item => host.append(AiPanel.fileChip(item, () => {
+            AiPanel.files = AiPanel.files.filter(other => other !== item);
+            AiPanel.drawFiles();
+          })));
           // 슬라이드에 넣을 개체(파란 칩)
           const mediaIcons = { image: 'bi-image', video: 'bi-file-earmark-play', youtube: 'bi-youtube', app: 'bi-puzzle', motion: 'bi-bezier2' };
           AiPanel.media.forEach(item => {
