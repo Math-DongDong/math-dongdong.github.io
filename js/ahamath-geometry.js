@@ -117,7 +117,7 @@
         '.geo .gs.on .gd{stroke-dashoffset:0}',
         '.geo .gs .gf{opacity:0;transition:opacity .45s ease}',
         '.geo .gs.on .gf{opacity:1}',
-        '.geo .g-mv{transition:transform 1.3s ease;transform-box:view-box}',
+        /* 움직이는 조각(slide · spin · glide)의 이동은 JS(requestAnimationFrame)가 transform 속성으로 그려요 */
         '.geo.g-instant *{transition:none !important}',
         '.geo .g-cap{text-align:center;font-weight:700;margin:.6rem 0 0;opacity:0;transition:opacity .4s ease}',
         '.geo .g-cap.on{opacity:1}',
@@ -429,22 +429,21 @@
             let move = null;
             if (cmd === 'slide') {
                 const t = sub(p(4), o);
-                move = { to: 'translate(' + fmt(t.x) + 'px,' + fmt(t.y) + 'px)', origin: '' };
+                move = { tx: t.x, ty: t.y };
             } else {
                 const c = p(4);
                 /* 화면의 시계 반대 방향이 + 이므로 CSS 회전은 부호를 바꿉니다 */
-                move = { to: 'rotate(' + (-(+tok[5] || 180)) + 'deg)', origin: fmt(c.x) + 'px ' + fmt(c.y) + 'px' };
+                move = { deg: -(+tok[5] || 180), cx: c.x, cy: c.y };
             }
             moves.push(move);
-            return '<g class="' + cls('g-mv', styles.length ? styles : ['c2'], 'gf') + '" data-mv="' + (moves.length - 1) + '"' +
-                (move.origin ? ' style="transform-origin:' + move.origin + '"' : '') + '>' +
+            return '<g class="' + cls('g-mv', styles.length ? styles : ['c2'], 'gf') + '" data-mv="' + (moves.length - 1) + '">' +
                 wedgeTags(p(1), o, p(3), 24, ['fill']) + '</g>';
         }
 
         if (cmd === 'glide') {
             const t = parseXY(tok[1]);
             const id = moves.length;
-            moves.push({ to: 'translate(' + fmt(t.x) + 'px,' + fmt(t.y) + 'px)' });
+            moves.push({ tx: t.x, ty: t.y });
             const list = tok.slice(2).map(function (n) { return xy(pointOf(n, pts)); });
             return '<g class="' + cls('g-mv', styles.length ? styles : ['c2'], 'gf') + '" data-mv="' + id + '">' +
                 '<polygon points="' + list.join(' ') + '" class="g-poly"/></g>';
@@ -498,8 +497,32 @@
         }
         g.querySelectorAll('[data-mv]').forEach(function (m) {
             const move = (el._moves || [])[+m.dataset.mv];
-            if (move) { setTimeout(function () { m.style.transform = move.to; }, A.wait(650)); }
+            if (move) { setTimeout(function () { animateMove(m, move); }, A.wait(700)); }
         });
+    }
+
+    /* 움직임 한 장면 : rate 0(제자리) ~ 1(도착) */
+    function moveAt(move, rate) {
+        if (move.deg !== undefined) {
+            return 'rotate(' + fmt(move.deg * rate) + ' ' + fmt(move.cx) + ' ' + fmt(move.cy) + ')';
+        }
+        return 'translate(' + fmt(move.tx * rate) + ' ' + fmt(move.ty * rate) + ')';
+    }
+
+    /* 천천히 출발해서 천천히 멈추도록(ease-in-out) 매 프레임 transform 을 바꿔요 */
+    function animateMove(m, move) {
+        const duration = A.wait(1800);
+        if (!duration || !window.requestAnimationFrame) { m.setAttribute('transform', moveAt(move, 1)); return; }
+        const ease = function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+        let start = null;
+        function frame(now) {
+            if (!m.isConnected) { return; }   /* 다시 보기로 그림이 새로 그려지면 멈춰요 */
+            if (start === null) { start = now; }
+            const t = Math.min(1, (now - start) / duration);
+            m.setAttribute('transform', moveAt(move, ease(t)));
+            if (t < 1) { window.requestAnimationFrame(frame); }
+        }
+        window.requestAnimationFrame(frame);
     }
 
     function geoShowAll(el) {
@@ -507,7 +530,7 @@
         el.querySelectorAll('.gs').forEach(function (g) { geoStep(el, g); });
         el.querySelectorAll('[data-mv]').forEach(function (m) {
             const move = (el._moves || [])[+m.dataset.mv];
-            if (move) { m.style.transform = move.to; }
+            if (move) { m.setAttribute('transform', moveAt(move, 1)); }
         });
         const cap = el.querySelector('.g-cap');
         if (cap) { cap.classList.add('on'); }
