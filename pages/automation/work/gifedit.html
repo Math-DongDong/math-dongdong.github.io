@@ -1172,6 +1172,8 @@
             ctx.restore();
         }
 
+        // 각 apply* 함수는 캔버스를 미리 만들지 않고 { delay, draw(ctx) } 형태의 렌더 계획만 반환한다.
+        // (미리보기는 현재 프레임 1장만 그리고, 내보내기 때만 전체 프레임을 실제 캔버스로 만든다)
         function applyCompress() {
             const scale = Number(document.getElementById('scaleRange').value) / 100;
             const step = Number(document.getElementById('frameStep').value);
@@ -1183,12 +1185,15 @@
                 let delay = 0;
                 for (let j = i; j < Math.min(i + step, sourceFrames.length); j++) delay += sourceFrames[j].delay;
 
-                const canvas = createCanvas(width, height);
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingQuality = 'high';
-                paintBackground(ctx, width, height);
-                ctx.drawImage(sourceFrames[i].canvas, 0, 0, width, height);
-                frames.push({ canvas, delay });
+                const source = sourceFrames[i].canvas;
+                frames.push({
+                    delay,
+                    draw(ctx) {
+                        ctx.imageSmoothingQuality = 'high';
+                        paintBackground(ctx, width, height);
+                        ctx.drawImage(source, 0, 0, width, height);
+                    }
+                });
             }
             return { frames, width, height };
         }
@@ -1208,14 +1213,16 @@
                 selected = selected.concat(selected.slice(1, -1).reverse());
             }
 
-            const frames = selected.map(frame => {
-                const canvas = createCanvas(sourceWidth, sourceHeight);
-                const ctx = canvas.getContext('2d');
-                paintBackground(ctx, sourceWidth, sourceHeight);
-                ctx.drawImage(frame.canvas, 0, 0);
-                return { canvas, delay: Math.max(20, Math.round(frame.delay / speed)) };
-            });
-            return { frames, width: sourceWidth, height: sourceHeight };
+            const width = sourceWidth;
+            const height = sourceHeight;
+            const frames = selected.map(frame => ({
+                delay: Math.max(20, Math.round(frame.delay / speed)),
+                draw(ctx) {
+                    paintBackground(ctx, width, height);
+                    ctx.drawImage(frame.canvas, 0, 0);
+                }
+            }));
+            return { frames, width, height };
         }
 
         function applyCrop() {
@@ -1223,13 +1230,13 @@
             const width = Math.max(1, rect.w);
             const height = Math.max(1, rect.h);
 
-            const frames = sourceFrames.map(frame => {
-                const canvas = createCanvas(width, height);
-                const ctx = canvas.getContext('2d');
-                paintBackground(ctx, width, height);
-                ctx.drawImage(frame.canvas, rect.x, rect.y, width, height, 0, 0, width, height);
-                return { canvas, delay: frame.delay };
-            });
+            const frames = sourceFrames.map(frame => ({
+                delay: frame.delay,
+                draw(ctx) {
+                    paintBackground(ctx, width, height);
+                    ctx.drawImage(frame.canvas, rect.x, rect.y, width, height, 0, 0, width, height);
+                }
+            }));
             return { frames, width, height };
         }
 
@@ -1277,20 +1284,23 @@
                 ? { x: 0, y: 0, w: sourceWidth, h: sourceHeight }
                 : blurSelector.getRect();
 
-            const frames = sourceFrames.map((frame, index) => {
-                const canvas = createCanvas(sourceWidth, sourceHeight);
-                const ctx = canvas.getContext('2d');
-                paintBackground(ctx, sourceWidth, sourceHeight);
-                ctx.drawImage(frame.canvas, 0, 0);
-                if (index >= startFrame && index <= endFrame) {
-                    applyBlurEffect(ctx, canvas, region, type, strength);
+            const width = sourceWidth;
+            const height = sourceHeight;
+            const frames = sourceFrames.map((frame, index) => ({
+                delay: frame.delay,
+                draw(ctx) {
+                    paintBackground(ctx, width, height);
+                    ctx.drawImage(frame.canvas, 0, 0);
+                    if (index >= startFrame && index <= endFrame) {
+                        applyBlurEffect(ctx, ctx.canvas, region, type, strength);
+                    }
                 }
-                return { canvas, delay: frame.delay };
-            });
-            return { frames, width: sourceWidth, height: sourceHeight };
+            }));
+            return { frames, width, height };
         }
 
-        function processFrames() {
+        // 미리보기용: 캔버스 생성 없이 렌더 계획만 반환
+        function buildFramePlan() {
             if (!sourceFrames.length) return null;
             switch (getActiveTool()) {
                 case 'trim': return applyTrim();
@@ -1298,6 +1308,18 @@
                 case 'blur': return applyBlur();
                 default: return applyCompress();
             }
+        }
+
+        // 내보내기용: 렌더 계획을 실제 프레임 캔버스로 변환
+        function processFrames() {
+            const plan = buildFramePlan();
+            if (!plan) return null;
+            const frames = plan.frames.map(frame => {
+                const canvas = createCanvas(plan.width, plan.height);
+                frame.draw(canvas.getContext('2d'));
+                return { canvas, delay: frame.delay };
+            });
+            return { frames, width: plan.width, height: plan.height };
         }
 
         // =====================================================
@@ -1325,8 +1347,10 @@
             draw() {
                 if (!this.frames.length) return;
                 const ctx = this.canvas.getContext('2d');
+                ctx.save();
                 ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                ctx.drawImage(this.frames[this.index].canvas, 0, 0);
+                this.frames[this.index].draw(ctx);
+                ctx.restore();
                 const seek = document.getElementById('previewSeek');
                 seek.value = this.index;
                 document.getElementById('previewSeekLabel').textContent =
@@ -1413,7 +1437,7 @@
         }
 
         function refreshPreview() {
-            processedResult = processFrames();
+            processedResult = buildFramePlan();
             if (!processedResult) return;
             player.load(processedResult.frames, processedResult.width, processedResult.height);
             document.getElementById('previewStats').textContent =
