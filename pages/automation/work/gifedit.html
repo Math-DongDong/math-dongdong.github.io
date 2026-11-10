@@ -335,33 +335,6 @@
             </div>
         </div>
 
-        <div id="sourceInfo" class="d-none mb-4">
-            <div class="row g-2">
-                <div class="col-6 col-md-3">
-                    <div class="info-chip"><span class="label">파일명</span><span class="value" id="infoName">-</span>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="info-chip"><span class="label">용량</span><span class="value" id="infoSize">-</span></div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="info-chip"><span class="label">해상도</span><span class="value" id="infoDimension">-</span>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="info-chip"><span class="label">프레임</span><span class="value" id="infoFrames">-</span>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="info-chip"><span class="label">재생시간</span><span class="value" id="infoDuration">-</span>
-                    </div>
-                </div>
-            </div>
-            <div id="heavyWarning" class="alert alert-warning py-2 px-3 small mt-2 mb-0 d-none">
-                <i class="bi bi-exclamation-triangle"></i> 프레임이 많거나 해상도가 큰 GIF입니다. 미리보기와 생성에 시간이 걸릴 수 있습니다.
-            </div>
-        </div>
-
         <div id="emptyState" class="placeholder-box">
             <i class="bi bi-image"></i>
             <span>GIF 파일을 선택하면 편집 도구가 표시됩니다.</span>
@@ -625,7 +598,7 @@
                 </div>
 
                 <!-- 실시간 변화 정보 -->
-                <div class="row g-2 mt-3">
+                <div class="row g-2 mt-3" id="liveSizeInfo">
                     <div class="col-4">
                         <div class="info-chip"><span class="label">원본 용량</span><span class="value" id="liveOriginSize">-</span></div>
                     </div>
@@ -835,7 +808,6 @@
             sourceBuffer = buffer;
             measuredBpp = null;
 
-            updateSourceInfo();
             initControlsForSource();
             document.getElementById('editorArea').classList.remove('d-none');
             document.getElementById('emptyState').classList.add('d-none');
@@ -846,18 +818,6 @@
 
         function totalDuration(frames) {
             return frames.reduce((sum, f) => sum + f.delay, 0);
-        }
-
-        function updateSourceInfo() {
-            document.getElementById('sourceInfo').classList.remove('d-none');
-            document.getElementById('infoName').textContent = sourceName;
-            document.getElementById('infoSize').textContent = formatBytes(sourceSize);
-            document.getElementById('infoDimension').textContent = `${sourceWidth} × ${sourceHeight}`;
-            document.getElementById('infoFrames').textContent = `${sourceFrames.length} 장`;
-            document.getElementById('infoDuration').textContent = formatSeconds(totalDuration(sourceFrames));
-
-            const isHeavy = sourceFrames.length > 150 || sourceWidth * sourceHeight > 640 * 640;
-            document.getElementById('heavyWarning').classList.toggle('d-none', !isHeavy);
         }
 
         // 파일 입력 & 드래그 앤 드롭
@@ -1402,7 +1362,10 @@
             player.load(processedResult.frames, processedResult.width, processedResult.height);
             document.getElementById('previewStats').textContent =
                 `${processedResult.width} × ${processedResult.height} · ${processedResult.frames.length}프레임 · ${formatSeconds(totalDuration(processedResult.frames))}`;
-            
+
+            // 용량 정보 영역은 '용량 줄이기' 탭에서만 표시
+            document.getElementById('liveSizeInfo').classList.toggle('d-none', getActiveTool() !== 'compress');
+
             // Gifsicle WASM 압축 특성을 반영한 정밀 예상 용량 산출
             if (typeof sourceSize !== 'undefined' && sourceSize) {
                 const estimatedSize = estimateGifSize(
