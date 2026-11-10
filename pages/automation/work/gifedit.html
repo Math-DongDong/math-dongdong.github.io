@@ -195,6 +195,47 @@
             max-height: 60vh;
         }
 
+        /* 흐림 타임라인 (자막 트랙 방식) */
+        .blur-timeline {
+            position: relative;
+            height: 36px;
+            background: #f1f3f5;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .blur-clip {
+            position: absolute;
+            height: 24px;
+            padding: 0 6px;
+            font-size: 11px;
+            line-height: 22px;
+            white-space: nowrap;
+            overflow: hidden;
+            color: #0a58ca;
+            background: rgba(13, 110, 253, 0.2);
+            border: 1px solid #0d6efd;
+            border-radius: 4px;
+        }
+
+        .blur-clip.active {
+            color: #fff;
+            background: #0d6efd;
+            z-index: 1;
+        }
+
+        .blur-playhead {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #dc3545;
+            pointer-events: none;
+            z-index: 2;
+        }
+
         .sel-box {
             position: absolute;
             box-sizing: border-box;
@@ -492,6 +533,28 @@
                 <!-- ===== 4. 부분 흐림 처리 ===== -->
                 <section class="tab-pane fade" id="pane-blur" role="tabpanel">
                     <div class="card-custom">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <span class="fw-semibold">흐림 타임라인</span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary btn-sm" id="btnAddBlurClip"><i class="bi bi-plus-lg"></i>
+                                    현재 프레임에 흐림 추가</button>
+                                <button class="btn btn-outline-danger btn-sm" id="btnDeleteBlurClip" disabled><i
+                                        class="bi bi-trash"></i> 선택 구간 삭제</button>
+                            </div>
+                        </div>
+                        <div class="blur-timeline" id="blurTimeline" aria-label="흐림 타임라인">
+                            <div class="blur-playhead" id="blurPlayhead"></div>
+                        </div>
+                        <div class="d-flex justify-content-between small text-muted mt-1">
+                            <span>0.00초</span><span id="blurTimelineEnd">-</span>
+                        </div>
+                        <p class="small text-muted mt-1 mb-0">아래 미리보기에서 원하는 위치로 이동한 뒤 흐림을 추가하세요. 막대를 누르면 해당 구간을 편집하고, 빈 곳을 누르면 그 시점으로 이동합니다.</p>
+
+                        <div id="blurEmptyHint" class="text-center text-muted small border rounded py-3 mt-3">
+                            아직 흐림 구간이 없습니다.
+                        </div>
+
+                        <div id="blurClipEditor" class="d-none mt-3 pt-3 border-top">
                         <div class="row g-4">
                             <div class="col-md-6">
                                 <label for="blurStart" class="form-label fw-semibold">흐림 시작 프레임 <span
@@ -533,6 +596,7 @@
                                     <span class="sel-handle" data-pos="se"></span>
                                 </div>
                             </div>
+                        </div>
                         </div>
                         <div class="alert alert-light border py-2 px-3 small mt-3 mb-0 text-muted">
                             <i class="bi bi-info-circle text-primary"></i> <strong>흐림/모자이크 처리 시 용량 안내</strong><br>
@@ -776,6 +840,7 @@
             sourceBuffer = buffer;
             measuredBpp = null;
 
+            player.index = 0;
             initControlsForSource();
             document.getElementById('editorArea').classList.remove('d-none');
             document.getElementById('emptyState').classList.add('d-none');
@@ -978,7 +1043,12 @@
 
         const cropSelector = new RectSelector('cropStage', () => debouncedPreview());
 
-        const blurSelector = new RectSelector('blurStage', () => debouncedPreview());
+        const blurSelector = new RectSelector('blurStage', (rect) => {
+            const clip = getSelectedClip();
+            if (!clip) return;
+            clip.rect = rect;
+            debouncedPreview();
+        });
 
         window.addEventListener('resize', debounce(() => {
             cropSelector.updateBox();
@@ -1007,14 +1077,188 @@
             cropSelector.setRect({ x: 0, y: 0, w: sourceWidth, h: sourceHeight }, true);
 
             blurSelector.setImage(sourceFrames[0].canvas);
-            blurSelector.setRect({
+            blurSelector.setRect(defaultBlurRect(), true);
+
+            blurClips = [];
+            selectedClipId = null;
+            document.getElementById('blurTimelineEnd').textContent = formatSeconds(totalDuration(sourceFrames));
+            syncClipEditor();
+            renderBlurTimeline();
+
+            setTimeout(() => { cropSelector.updateBox(); blurSelector.updateBox(); }, 50);
+        }
+
+        // =====================================================
+        // 흐림 구간(클립) 관리 - 자막 트랙처럼 구간별로 흐림 적용
+        // =====================================================
+        let blurClips = [];         // [{ id, start, end, type, strength, whole, rect }]
+        let selectedClipId = null;
+        let nextClipId = 1;
+        const TIMELINE_LANE_HEIGHT = 28;
+        const DEFAULT_CLIP_DURATION = 2000; // 새 구간 기본 길이(ms)
+
+        function defaultBlurRect() {
+            return {
                 x: Math.round(sourceWidth * 0.3),
                 y: Math.round(sourceHeight * 0.3),
                 w: Math.round(sourceWidth * 0.4),
                 h: Math.round(sourceHeight * 0.4)
-            }, true);
+            };
+        }
 
-            setTimeout(() => { cropSelector.updateBox(); blurSelector.updateBox(); }, 50);
+        function getSelectedClip() {
+            return blurClips.find(clip => clip.id === selectedClipId) || null;
+        }
+
+        function addBlurClip() {
+            if (!sourceFrames.length) return;
+            const lastIndex = sourceFrames.length - 1;
+            const start = clamp(player.index, 0, lastIndex);
+            let end = start;
+            let elapsed = sourceFrames[start].delay;
+            while (end < lastIndex && elapsed < DEFAULT_CLIP_DURATION) {
+                end++;
+                elapsed += sourceFrames[end].delay;
+            }
+            // 직전에 선택한 구간의 설정(종류/강도/영역)을 이어받아 반복 작업을 줄인다
+            const base = getSelectedClip();
+            const clip = {
+                id: nextClipId++,
+                start,
+                end,
+                type: base ? base.type : 'blur',
+                strength: base ? base.strength : 8,
+                whole: base ? base.whole : false,
+                rect: base ? { ...base.rect } : defaultBlurRect()
+            };
+            blurClips.push(clip);
+            selectBlurClip(clip.id);
+            refreshPreview();
+        }
+
+        function deleteSelectedClip() {
+            blurClips = blurClips.filter(clip => clip.id !== selectedClipId);
+            selectedClipId = null;
+            syncClipEditor();
+            renderBlurTimeline();
+            refreshPreview();
+        }
+
+        function selectBlurClip(id) {
+            selectedClipId = id;
+            syncClipEditor();
+            renderBlurTimeline();
+        }
+
+        // 선택한 구간의 값을 편집 컨트롤에 반영
+        function syncClipEditor() {
+            const clip = getSelectedClip();
+            document.getElementById('blurClipEditor').classList.toggle('d-none', !clip);
+            document.getElementById('blurEmptyHint').classList.toggle('d-none', blurClips.length > 0);
+            document.getElementById('btnDeleteBlurClip').disabled = !clip;
+            if (!clip) return;
+
+            document.getElementById('blurStart').value = clip.start;
+            document.getElementById('blurEnd').value = clip.end;
+            document.getElementById('blurType').value = clip.type;
+            document.getElementById('blurStrength').value = clip.strength;
+            document.getElementById('blurStrengthLabel').textContent = clip.strength;
+            document.getElementById('blurWholeFrame').checked = clip.whole;
+            document.getElementById('blurRegionWrapper').classList.toggle('d-none', clip.whole);
+            updateRangeLabels();
+
+            blurSelector.setImage(sourceFrames[clip.start].canvas);
+            blurSelector.setRect(clip.rect, true);
+        }
+
+        function renderBlurTimeline() {
+            const timeline = document.getElementById('blurTimeline');
+            timeline.querySelectorAll('.blur-clip').forEach(element => element.remove());
+            const total = totalDuration(sourceFrames) || 1;
+
+            // 겹치는 구간은 다음 줄(lane)로 배치
+            const laneEnds = [];
+            const sorted = blurClips.slice().sort((a, b) => a.start - b.start);
+            sorted.forEach(clip => {
+                let lane = laneEnds.findIndex(laneEnd => laneEnd < clip.start);
+                if (lane === -1) {
+                    lane = laneEnds.length;
+                    laneEnds.push(clip.end);
+                } else {
+                    laneEnds[lane] = clip.end;
+                }
+
+                const left = timeAt(clip.start) / total * 100;
+                const right = timeAt(clip.end + 1) / total * 100;
+                const bar = document.createElement('div');
+                bar.className = 'blur-clip' + (clip.id === selectedClipId ? ' active' : '');
+                bar.style.left = left + '%';
+                bar.style.width = Math.max(0.5, right - left) + '%';
+                bar.style.top = (5 + lane * TIMELINE_LANE_HEIGHT) + 'px';
+                bar.dataset.clipId = clip.id;
+                bar.textContent = clip.type === 'pixelate' ? '모자이크' : '블러';
+                bar.title = `${formatSeconds(timeAt(clip.start))} ~ ${formatSeconds(timeAt(clip.end + 1))}`;
+                timeline.appendChild(bar);
+            });
+            timeline.style.height = (8 + Math.max(1, laneEnds.length) * TIMELINE_LANE_HEIGHT) + 'px';
+            updateBlurPlayhead(player.index);
+        }
+
+        function updateBlurPlayhead(index) {
+            if (!sourceFrames.length) return;
+            const total = totalDuration(sourceFrames) || 1;
+            document.getElementById('blurPlayhead').style.left = (timeAt(index) / total * 100) + '%';
+        }
+
+        function frameIndexAtRatio(ratio) {
+            const target = ratio * totalDuration(sourceFrames);
+            let sum = 0;
+            for (let i = 0; i < sourceFrames.length; i++) {
+                sum += sourceFrames[i].delay;
+                if (sum > target) return i;
+            }
+            return sourceFrames.length - 1;
+        }
+
+        // 미리보기를 특정 프레임에 멈춰서 보여준다
+        function pausePlayerAt(index) {
+            player.playing = false;
+            player.stop();
+            player.index = clamp(index, 0, Math.max(0, player.frames.length - 1));
+            player.draw();
+            document.getElementById('btnPlayToggle').innerHTML = '<i class="bi bi-play-fill"></i> 재생';
+        }
+
+        // 선택한 구간에 편집 컨트롤 값을 반영
+        function updateClipFromControls(changedId) {
+            const clip = getSelectedClip();
+            if (!clip) return;
+            const startInput = document.getElementById('blurStart');
+            const endInput = document.getElementById('blurEnd');
+            if (changedId === 'blurStart' && Number(startInput.value) > Number(endInput.value)) endInput.value = startInput.value;
+            if (changedId === 'blurEnd' && Number(endInput.value) < Number(startInput.value)) startInput.value = endInput.value;
+
+            const previousStart = clip.start;
+            clip.start = Number(startInput.value);
+            clip.end = Number(endInput.value);
+            clip.type = document.getElementById('blurType').value;
+            clip.strength = Number(document.getElementById('blurStrength').value);
+            clip.whole = document.getElementById('blurWholeFrame').checked;
+
+            document.getElementById('blurStrengthLabel').textContent = clip.strength;
+            document.getElementById('blurRegionWrapper').classList.toggle('d-none', clip.whole);
+            updateRangeLabels();
+
+            // 시작/끝 프레임을 움직이면 그 프레임을 바로 보여준다
+            if (changedId === 'blurStart' && clip.start !== previousStart) {
+                blurSelector.setImage(sourceFrames[clip.start].canvas);
+                blurSelector.updateBox();
+                pausePlayerAt(clip.start);
+            } else if (changedId === 'blurEnd') {
+                pausePlayerAt(clip.end);
+            }
+            renderBlurTimeline();
+            debouncedPreview();
         }
 
         function updateScaleLabel() {
@@ -1151,26 +1395,26 @@
         }
 
         function applyBlur() {
-            let startFrame = Number(document.getElementById('blurStart').value);
-            let endFrame = Number(document.getElementById('blurEnd').value);
-            if (startFrame > endFrame) [startFrame, endFrame] = [endFrame, startFrame];
-
-            const type = document.getElementById('blurType').value;
-            const strength = Number(document.getElementById('blurStrength').value);
-            const useWholeFrame = document.getElementById('blurWholeFrame').checked;
-            const region = useWholeFrame
-                ? { x: 0, y: 0, w: sourceWidth, h: sourceHeight }
-                : blurSelector.getRect();
-
             const width = sourceWidth;
             const height = sourceHeight;
+            const clips = blurClips.map(clip => ({
+                start: clip.start,
+                end: clip.end,
+                type: clip.type,
+                strength: clip.strength,
+                region: clip.whole ? { x: 0, y: 0, w: width, h: height } : { ...clip.rect }
+            }));
+
             const frames = sourceFrames.map((frame, index) => ({
                 delay: frame.delay,
                 draw(ctx) {
                     paintBackground(ctx, width, height);
                     ctx.drawImage(frame.canvas, 0, 0);
-                    if (index >= startFrame && index <= endFrame) {
-                        applyBlurEffect(ctx, ctx.canvas, region, type, strength);
+                    // 이 프레임 시점에 걸린 흐림 구간만 적용
+                    for (const clip of clips) {
+                        if (index >= clip.start && index <= clip.end) {
+                            applyBlurEffect(ctx, ctx.canvas, clip.region, clip.type, clip.strength);
+                        }
                     }
                 }
             }));
@@ -1213,12 +1457,12 @@
             load(frames, width, height) {
                 this.stop();
                 this.frames = frames;
-                this.index = 0;
+                // 설정 변경으로 다시 불러와도 보던 위치를 유지
+                this.index = Math.min(this.index, Math.max(0, frames.length - 1));
                 this.canvas.width = width;
                 this.canvas.height = height;
                 const seek = document.getElementById('previewSeek');
                 seek.max = Math.max(0, frames.length - 1);
-                seek.value = 0;
                 this.draw();
                 if (this.playing) this.play();
             },
@@ -1233,6 +1477,7 @@
                 seek.value = this.index;
                 document.getElementById('previewSeekLabel').textContent =
                     `${this.index + 1} / ${this.frames.length}`;
+                if (getActiveTool() === 'blur') updateBlurPlayhead(this.index);
             },
             play() {
                 this.stop();
@@ -1358,8 +1603,7 @@
         const debouncedPreview = debounce(refreshPreview, 250);
 
         // 컨트롤 변경 → 미리보기 갱신
-        ['compressLossy', 'scaleRange', 'frameStep', 'colorLevel', 'trimStart', 'trimEnd',
-            'blurStart', 'blurEnd', 'blurType', 'blurStrength', 'blurWholeFrame'].forEach(id => {
+        ['compressLossy', 'scaleRange', 'frameStep', 'colorLevel', 'trimStart', 'trimEnd'].forEach(id => {
                 document.getElementById(id).addEventListener('input', () => {
                     if (id === 'trimStart') {
                         const trimEnd = document.getElementById('trimEnd');
@@ -1375,13 +1619,29 @@
                     }
                     updateScaleLabel();
                     updateRangeLabels();
-                    document.getElementById('blurStrengthLabel').textContent = document.getElementById('blurStrength').value;
                     debouncedPreview();
                 });
             });
 
-        document.getElementById('blurWholeFrame').addEventListener('change', function () {
-            document.getElementById('blurRegionWrapper').classList.toggle('d-none', this.checked);
+        // 흐림 구간 편집 컨트롤
+        ['blurStart', 'blurEnd', 'blurType', 'blurStrength', 'blurWholeFrame'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => updateClipFromControls(id));
+        });
+
+        document.getElementById('btnAddBlurClip').addEventListener('click', addBlurClip);
+        document.getElementById('btnDeleteBlurClip').addEventListener('click', deleteSelectedClip);
+
+        document.getElementById('blurTimeline').addEventListener('click', (event) => {
+            if (!sourceFrames.length) return;
+            const bar = event.target.closest('.blur-clip');
+            if (bar) {
+                const clip = blurClips.find(item => item.id === Number(bar.dataset.clipId));
+                selectBlurClip(clip.id);
+                pausePlayerAt(clip.start);
+                return;
+            }
+            const bounds = event.currentTarget.getBoundingClientRect();
+            pausePlayerAt(frameIndexAtRatio(clamp((event.clientX - bounds.left) / bounds.width, 0, 1)));
         });
 
         document.querySelectorAll('.ratio-btn').forEach(button => {
