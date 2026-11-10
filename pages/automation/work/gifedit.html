@@ -204,12 +204,16 @@
             border-radius: 6px;
             overflow: hidden;
             cursor: pointer;
+            touch-action: none;
+            user-select: none;
         }
 
         .blur-clip {
             position: absolute;
+            display: flex;
+            align-items: stretch;
             height: 24px;
-            padding: 0 6px;
+            cursor: grab;
             font-size: 11px;
             line-height: 22px;
             white-space: nowrap;
@@ -224,6 +228,25 @@
             color: #fff;
             background: #0d6efd;
             z-index: 1;
+        }
+
+        .blur-clip .clip-label {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        /* 막대 양 끝 길이 조절 손잡이 */
+        .blur-clip .clip-handle {
+            flex: 0 0 8px;
+            cursor: ew-resize;
+            background: rgba(13, 110, 253, 0.45);
+        }
+
+        .blur-clip.active .clip-handle {
+            background: rgba(255, 255, 255, 0.55);
         }
 
         .blur-playhead {
@@ -485,7 +508,8 @@
                             <div class="col-12">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <label class="form-label fw-semibold mb-0">남길 구간</label>
-                                    <span class="small text-muted">양쪽 손잡이를 움직여 시작과 끝을 정하세요</span>
+                                    <button class="btn btn-outline-secondary btn-sm" id="btnTrimReset"><i
+                                            class="bi bi-arrow-counterclockwise"></i> 초기화</button>
                                 </div>
                                 <div class="trim-range" aria-label="GIF 자르기 구간">
                                     <input type="range" class="form-range" id="trimStart" min="0" max="0" value="0"
@@ -498,10 +522,6 @@
                                     <span>끝 <span class="range-value" id="trimEndLabel">1</span></span>
                                 </div>
                             </div>
-                        </div>
-                        <div class="d-flex gap-2 mt-3">
-                            <button class="btn btn-outline-secondary btn-sm" id="btnTrimReset"><i
-                                    class="bi bi-arrow-counterclockwise"></i> 전체 구간으로 되돌리기</button>
                         </div>
                         <div class="alert alert-light border py-2 px-3 small mt-3 mb-0 text-muted">
                             <i class="bi bi-info-circle text-primary"></i> <strong>구간 자르기 시 용량 안내</strong><br>
@@ -560,9 +580,11 @@
                             <div class="blur-playhead" id="blurPlayhead"></div>
                         </div>
                         <div class="d-flex justify-content-between small text-muted mt-1">
-                            <span>0.00초</span><span id="blurTimelineEnd">-</span>
+                            <span>0.00초</span>
+                            <span class="text-primary fw-semibold" id="blurClipRange"></span>
+                            <span id="blurTimelineEnd">-</span>
                         </div>
-                        <p class="small text-muted mt-1 mb-0">아래 미리보기에서 원하는 위치로 이동한 뒤 흐림을 추가하세요. 막대를 누르면 해당 구간을 편집하고, 빈 곳을 누르면 그 시점으로 이동합니다.</p>
+                        <p class="small text-muted mt-1 mb-0">아래 미리보기에서 원하는 위치로 이동한 뒤 흐림을 추가하세요. 막대 양 끝을 끌면 길이가, 가운데를 끌면 위치가 바뀌고, 빈 곳을 누르면 그 시점으로 이동합니다.</p>
 
                         <div id="blurEmptyHint" class="text-center text-muted small border rounded py-3 mt-3">
                             아직 흐림 구간이 없습니다.
@@ -570,16 +592,6 @@
 
                         <div id="blurClipEditor" class="d-none mt-3 pt-3 border-top">
                         <div class="row g-4">
-                            <div class="col-md-6">
-                                <label for="blurStart" class="form-label fw-semibold">흐림 시작 프레임 <span
-                                        class="range-value" id="blurStartLabel">1</span></label>
-                                <input type="range" class="form-range" id="blurStart" min="0" max="0" value="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label for="blurEnd" class="form-label fw-semibold">흐림 끝 프레임 <span class="range-value"
-                                        id="blurEndLabel">1</span></label>
-                                <input type="range" class="form-range" id="blurEnd" min="0" max="0" value="0">
-                            </div>
                             <div class="col-md-6">
                                 <label for="blurType" class="form-label fw-semibold">효과 종류</label>
                                 <select class="form-select" id="blurType">
@@ -1057,13 +1069,11 @@
         function initControlsForSource() {
             const lastIndex = sourceFrames.length - 1;
 
-            ['trimStart', 'trimEnd', 'blurStart', 'blurEnd'].forEach(id => {
+            ['trimStart', 'trimEnd'].forEach(id => {
                 document.getElementById(id).max = lastIndex;
             });
             document.getElementById('trimStart').value = 0;
             document.getElementById('trimEnd').value = lastIndex;
-            document.getElementById('blurStart').value = 0;
-            document.getElementById('blurEnd').value = lastIndex;
             updateRangeLabels();
 
             document.getElementById('scaleRange').value = 100;
@@ -1154,14 +1164,11 @@
             document.getElementById('btnDeleteBlurClip').disabled = !clip;
             if (!clip) return;
 
-            document.getElementById('blurStart').value = clip.start;
-            document.getElementById('blurEnd').value = clip.end;
             document.getElementById('blurType').value = clip.type;
             document.getElementById('blurStrength').value = clip.strength;
             document.getElementById('blurStrengthLabel').textContent = clip.strength;
             document.getElementById('blurWholeFrame').checked = clip.whole;
             document.getElementById('blurRegionWrapper').classList.toggle('d-none', clip.whole);
-            updateRangeLabels();
 
             blurSelector.setImage(sourceFrames[clip.start].canvas);
             blurSelector.setRect(clip.rect, true);
@@ -1192,12 +1199,31 @@
                 bar.style.width = Math.max(0.5, right - left) + '%';
                 bar.style.top = (5 + lane * TIMELINE_LANE_HEIGHT) + 'px';
                 bar.dataset.clipId = clip.id;
-                bar.textContent = clip.type === 'pixelate' ? '모자이크' : '블러';
                 bar.title = `${formatSeconds(timeAt(clip.start))} ~ ${formatSeconds(timeAt(clip.end + 1))}`;
+                bar.innerHTML = '<span class="clip-handle" data-edge="start"></span>'
+                    + `<span class="clip-label">${clip.type === 'pixelate' ? '모자이크' : '블러'}</span>`
+                    + '<span class="clip-handle" data-edge="end"></span>';
                 timeline.appendChild(bar);
             });
             timeline.style.height = (8 + Math.max(1, laneEnds.length) * TIMELINE_LANE_HEIGHT) + 'px';
+
+            const selected = getSelectedClip();
+            document.getElementById('blurClipRange').textContent = selected
+                ? `선택 구간 ${formatSeconds(timeAt(selected.start))} ~ ${formatSeconds(timeAt(selected.end + 1))}`
+                : '';
             updateBlurPlayhead(player.index);
+        }
+
+        // 타임라인 위 x좌표 → 프레임 번호
+        function frameIndexAtClientX(clientX) {
+            const bounds = document.getElementById('blurTimeline').getBoundingClientRect();
+            return frameIndexAtRatio(clamp((clientX - bounds.left) / bounds.width, 0, 1));
+        }
+
+        // 구간의 시작 프레임이 바뀌면 영역 선택 화면의 기준 프레임도 갱신
+        function refreshBlurStageFrame(clip) {
+            blurSelector.setImage(sourceFrames[clip.start].canvas);
+            blurSelector.updateBox();
         }
 
         function updateBlurPlayhead(index) {
@@ -1226,33 +1252,15 @@
         }
 
         // 선택한 구간에 편집 컨트롤 값을 반영
-        function updateClipFromControls(changedId) {
+        function updateClipFromControls() {
             const clip = getSelectedClip();
             if (!clip) return;
-            const startInput = document.getElementById('blurStart');
-            const endInput = document.getElementById('blurEnd');
-            if (changedId === 'blurStart' && Number(startInput.value) > Number(endInput.value)) endInput.value = startInput.value;
-            if (changedId === 'blurEnd' && Number(endInput.value) < Number(startInput.value)) startInput.value = endInput.value;
-
-            const previousStart = clip.start;
-            clip.start = Number(startInput.value);
-            clip.end = Number(endInput.value);
             clip.type = document.getElementById('blurType').value;
             clip.strength = Number(document.getElementById('blurStrength').value);
             clip.whole = document.getElementById('blurWholeFrame').checked;
 
             document.getElementById('blurStrengthLabel').textContent = clip.strength;
             document.getElementById('blurRegionWrapper').classList.toggle('d-none', clip.whole);
-            updateRangeLabels();
-
-            // 시작/끝 프레임을 움직이면 그 프레임을 바로 보여준다
-            if (changedId === 'blurStart' && clip.start !== previousStart) {
-                blurSelector.setImage(sourceFrames[clip.start].canvas);
-                blurSelector.updateBox();
-                pausePlayerAt(clip.start);
-            } else if (changedId === 'blurEnd') {
-                pausePlayerAt(clip.end);
-            }
             renderBlurTimeline();
             debouncedPreview();
         }
@@ -1270,11 +1278,6 @@
             const endFrame = Number(document.getElementById('trimEnd').value);
             document.getElementById('trimStartLabel').textContent = `${startFrame + 1} (${formatSeconds(timeAt(startFrame))})`;
             document.getElementById('trimEndLabel').textContent = `${endFrame + 1} (${formatSeconds(timeAt(endFrame))})`;
-
-            const blurStartFrame = Number(document.getElementById('blurStart').value);
-            const blurEndFrame = Number(document.getElementById('blurEnd').value);
-            document.getElementById('blurStartLabel').textContent = `${blurStartFrame + 1} (${formatSeconds(timeAt(blurStartFrame))})`;
-            document.getElementById('blurEndLabel').textContent = `${blurEndFrame + 1} (${formatSeconds(timeAt(blurEndFrame))})`;
         }
 
         function timeAt(index) {
@@ -1617,25 +1620,77 @@
             });
 
         // 흐림 구간 편집 컨트롤
-        ['blurStart', 'blurEnd', 'blurType', 'blurStrength', 'blurWholeFrame'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => updateClipFromControls(id));
+        ['blurType', 'blurStrength', 'blurWholeFrame'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateClipFromControls);
         });
 
         document.getElementById('btnAddBlurClip').addEventListener('click', addBlurClip);
         document.getElementById('btnDeleteBlurClip').addEventListener('click', deleteSelectedClip);
 
-        document.getElementById('blurTimeline').addEventListener('click', (event) => {
-            if (!sourceFrames.length) return;
-            const bar = event.target.closest('.blur-clip');
-            if (bar) {
+        // 타임라인 드래그: 막대 양 끝 = 길이 조절, 막대 가운데 = 구간 이동, 빈 곳 = 재생 위치 이동
+        (function bindBlurTimelineDrag() {
+            const timeline = document.getElementById('blurTimeline');
+            let drag = null; // { mode: 'start'|'end'|'move'|'seek', clip, downFrame, origStart, origEnd }
+
+            timeline.addEventListener('pointerdown', (event) => {
+                if (!sourceFrames.length) return;
+                event.preventDefault();
+                timeline.setPointerCapture(event.pointerId);
+                const downFrame = frameIndexAtClientX(event.clientX);
+                const bar = event.target.closest('.blur-clip');
+
+                if (!bar) {
+                    drag = { mode: 'seek' };
+                    pausePlayerAt(downFrame);
+                    return;
+                }
                 const clip = blurClips.find(item => item.id === Number(bar.dataset.clipId));
-                selectBlurClip(clip.id);
-                pausePlayerAt(clip.start);
-                return;
-            }
-            const bounds = event.currentTarget.getBoundingClientRect();
-            pausePlayerAt(frameIndexAtRatio(clamp((event.clientX - bounds.left) / bounds.width, 0, 1)));
-        });
+                const handle = event.target.closest('.clip-handle');
+                drag = {
+                    mode: handle ? handle.dataset.edge : 'move',
+                    clip,
+                    downFrame,
+                    origStart: clip.start,
+                    origEnd: clip.end
+                };
+                if (selectedClipId !== clip.id) selectBlurClip(clip.id);
+                pausePlayerAt(drag.mode === 'end' ? clip.end : clip.start);
+            });
+
+            timeline.addEventListener('pointermove', (event) => {
+                if (!drag) return;
+                const frame = frameIndexAtClientX(event.clientX);
+                if (drag.mode === 'seek') {
+                    pausePlayerAt(frame);
+                    return;
+                }
+
+                const { clip, origStart, origEnd } = drag;
+                const lastIndex = sourceFrames.length - 1;
+                const previousStart = clip.start;
+                const previousEnd = clip.end;
+
+                if (drag.mode === 'start') {
+                    clip.start = Math.min(frame, origEnd);
+                } else if (drag.mode === 'end') {
+                    clip.end = Math.max(frame, origStart);
+                } else {
+                    const length = origEnd - origStart;
+                    clip.start = clamp(origStart + (frame - drag.downFrame), 0, lastIndex - length);
+                    clip.end = clip.start + length;
+                }
+                if (clip.start === previousStart && clip.end === previousEnd) return;
+
+                if (clip.start !== previousStart) refreshBlurStageFrame(clip);
+                renderBlurTimeline();
+                pausePlayerAt(drag.mode === 'end' ? clip.end : clip.start);
+                debouncedPreview();
+            });
+
+            const finishDrag = () => { drag = null; };
+            timeline.addEventListener('pointerup', finishDrag);
+            timeline.addEventListener('pointercancel', finishDrag);
+        })();
 
         document.querySelectorAll('.ratio-btn').forEach(button => {
             button.addEventListener('click', () => {
