@@ -145,11 +145,26 @@
             <section class="card-box" id="block-c3">
                 <h2 class="card-title">세 변의 길이 사이의 관계</h2>
                 <p class="lead-text">가장 긴 막대를 밑변으로 두고, 양 끝에 짧은 두 막대를 세운 뒤 안쪽으로 쓰러뜨려 봐요. 두 막대의 끝이 만날까요?</p>
-                <div class="vis" id="stickTriangle">
-                    <canvas id="stickCanvas" width="800" height="500" class="w-100 d-block border rounded-3"
-                        style="aspect-ratio:16/10;background:#f9fafb" role="img" aria-label="세 막대로 삼각형 만들기"></canvas>
-                    <p class="text-center fw-bold mt-2 mb-0" id="stickStatus"></p>
-                    <button class="replay" id="stickReplay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
+                <div class="vis stick-demo" data-sides="3,4,8">
+                    <p class="fw-bold mb-1">① 막대 3, 4, 8</p>
+                    <canvas width="800" height="500" class="w-100 d-block border rounded-3"
+                        style="aspect-ratio:16/10;background:#f9fafb" role="img" aria-label="길이 3, 4, 8 인 막대로 삼각형 만들기"></canvas>
+                    <p class="text-center fw-bold mt-2 mb-0 stick-status"></p>
+                    <button class="replay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
+                </div>
+                <div class="vis stick-demo" data-sides="3,4,7">
+                    <p class="fw-bold mb-1">② 막대 3, 4, 7</p>
+                    <canvas width="800" height="500" class="w-100 d-block border rounded-3"
+                        style="aspect-ratio:16/10;background:#f9fafb" role="img" aria-label="길이 3, 4, 7 인 막대로 삼각형 만들기"></canvas>
+                    <p class="text-center fw-bold mt-2 mb-0 stick-status"></p>
+                    <button class="replay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
+                </div>
+                <div class="vis stick-demo" data-sides="3,4,5">
+                    <p class="fw-bold mb-1">③ 막대 3, 4, 5</p>
+                    <canvas width="800" height="500" class="w-100 d-block border rounded-3"
+                        style="aspect-ratio:16/10;background:#f9fafb" role="img" aria-label="길이 3, 4, 5 인 막대로 삼각형 만들기"></canvas>
+                    <p class="text-center fw-bold mt-2 mb-0 stick-status"></p>
+                    <button class="replay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
                 </div>
                 <div class="formula">(가장 긴 변의 길이) &lt; (나머지 두 변의 길이의 합)</div>
                 <div class="fact-box">
@@ -395,13 +410,13 @@
 
     <script>
         /* 세 변의 길이 사이의 관계 : 막대 두 개를 쓰러뜨려 끝이 만나는지 보여 줘요
-           (pages/middleschool/1/triangle_condition.html 과 같은 방식, 화면에 보이면 3·4·8 → 3·4·7 → 3·4·5 순서로 자동 재생) */
-        (function initStickTriangle() {
-            const box = document.getElementById('stickTriangle');
-            if (!box) { return; }
-            const canvas = document.getElementById('stickCanvas');
+           (pages/middleschool/1/triangle_condition.html 과 같은 방식)
+           .stick-demo 하나마다 data-sides 의 세 길이로 그림 하나를 만들고, 화면에 보이면 자동으로 재생해요 */
+        document.querySelectorAll('.stick-demo').forEach(function initStickDemo(box) {
+            const sides = box.dataset.sides.split(',').map(Number);
+            const canvas = box.querySelector('canvas');
             const context = canvas.getContext('2d');
-            const statusText = document.getElementById('stickStatus');
+            const statusText = box.querySelector('.stick-status');
             const SIDE_COLORS = { a: '#ef4444', b: '#10b981', c: '#2563eb' };
             const HALF_PI = Math.PI / 2;
             const GRAVITY = 40;
@@ -411,7 +426,6 @@
             let scene = null;
             let frameId = null;
             let lastTime = 0;
-            let sequenceTimer = null;
 
             function classify(a, b, c) {
                 const longest = Math.max(a, b, c);
@@ -616,33 +630,18 @@
                 if (scene.phase === 'done' && status !== 'impossible') { drawPoint(tipA); }
             }
 
-            /* 자동 재생 : 3·4·8 (안 됨) → 3·4·7 (납작) → 3·4·5 (됨) */
-            const SEQUENCE = [[3, 4, 8], [3, 4, 7], [3, 4, 5]];
-            const SEQUENCE_GAP = 5200;
-            function playSequence() {
-                clearTimeout(sequenceTimer);
-                if (REDUCE_MOTION) { fall(3, 4, 5); return; }
-                let index = 0;
-                function next() {
-                    const sides = SEQUENCE[index];
-                    fall(sides[0], sides[1], sides[2]);
-                    index += 1;
-                    if (index < SEQUENCE.length) { sequenceTimer = setTimeout(next, SEQUENCE_GAP); }
-                }
-                next();
-            }
+            function play() { fall(sides[0], sides[1], sides[2]); }
+            box.querySelector('.replay').addEventListener('click', play);
 
-            document.getElementById('stickReplay').addEventListener('click', playSequence);
-
-            setScene(3, 4, 8);
-            if (!('IntersectionObserver' in window)) { playSequence(); return; }
+            setScene(sides[0], sides[1], sides[2]);
+            if (!('IntersectionObserver' in window)) { play(); return; }
             const observer = new IntersectionObserver(function (entries) {
                 if (!entries[0].isIntersecting) { return; }
                 observer.disconnect();
-                playSequence();
-            }, { threshold: 0, rootMargin: '0px 0px -50% 0px' });
+                play();
+            }, { threshold: 0, rootMargin: '0px 0px -40% 0px' });
             observer.observe(box);
-        })();
+        });
 
         /* 문항 안의 그림 : 처음부터 다 보이는(instant) geo 그림을 HTML 로 넣어요 */
         function figure(view, pts, base) {

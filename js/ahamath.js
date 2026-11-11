@@ -285,7 +285,7 @@
                 ? '한 문제도 헤매지 않았어요. 정말 잘했어요.'
                 : '조건이 늘어난 문제까지 한 번에 해냈어요. 대단해요.';
         }
-        if (thisTime * 2 >= total) { return '끝까지 풀었어요. 아래 다시 볼 문제만 한 번 더 풀어 볼까요?'; }
+        if (thisTime * 2 >= total) { return '끝까지 풀었어요. 개념을 한 번 더 읽고 아래 다시 볼 문제에 도전해 볼까요?'; }
         if (thisTime > 0) { return '끝까지 포기하지 않았어요. 헷갈린 문제는 아래에 담아 두었어요.'; }
         return '끝까지 풀어냈어요. 아직 한 번에 맞힌 문제가 없으니 개념을 한 번 더 보고 올까요?';
     }
@@ -322,13 +322,7 @@
         const actions = document.getElementById('doneActions');
         actions.innerHTML = '';
 
-        if (items.length) {
-            actions.appendChild(makeButton(
-                '<i class="bi bi-arrow-repeat"></i> 다시 볼 문제만 풀어 보기',
-                'btn btn-outline-primary fw-bold w-100 py-2 mb-2',
-                function () { startMission(flow, 'review', null); }
-            ));
-        }
+        /* '다시 볼 문제만 풀어 보기'는 개념을 다시 읽은 뒤 풀도록 첫 화면의 다시 볼 문제 영역에 둬요 */
         if (flow === 'basic' && FLOW.challenge.ids.length) {
             /* 도전 미션을 이미 다 맞혔어도 심화 개념으로 돌아갈 길은 남겨 둡니다 */
             const cleared = isMastered('challenge');
@@ -383,9 +377,10 @@
         });
     }
 
-    function fillReviewList(listId, items) {
+    function fillReviewList(listId, items, clickable) {
         const list = document.getElementById(listId);
         list.innerHTML = items.map(function (item) {
+            if (clickable === false) { return '<li><span class="review-static">' + item.label + '</span></li>'; }
             return '<li><button data-q="' + item.id + '" data-flow="' + item.flow + '">' + item.label + '</button></li>';
         }).join('');
         list.querySelectorAll('[data-q]').forEach(function (button) {
@@ -397,8 +392,28 @@
 
     function renderReview() {
         const items = reviewItems(ALL_IDS);
-        document.getElementById('reviewCard').hidden = (items.length === 0);
+        const reviewCard = document.getElementById('reviewCard');
+        reviewCard.hidden = (items.length === 0);
         fillReviewList('reviewList', items);
+
+        /* 첫 화면의 '다시 볼 문제만 풀어 보기' 버튼 (기초 · 도전 따로) */
+        let actions = document.getElementById('reviewActions');
+        if (!actions) {
+            actions = document.createElement('div');
+            actions.id = 'reviewActions';
+            actions.className = 'd-grid gap-2 mt-2';
+            reviewCard.appendChild(actions);
+        }
+        actions.innerHTML = '';
+        ['basic', 'challenge'].forEach(function (flow) {
+            if (!reviewIdsOf(flow).length) { return; }
+            const label = (flow === 'basic' ? '기초' : '도전') + ' 다시 볼 문제만 풀어 보기';
+            actions.appendChild(makeButton(
+                '<i class="bi bi-arrow-repeat"></i> ' + label,
+                'btn btn-outline-primary fw-bold w-100 py-2',
+                function () { startMission(flow, 'review', null); }
+            ));
+        });
     }
 
     function buildVis(el) {
