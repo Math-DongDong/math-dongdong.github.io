@@ -385,14 +385,10 @@
 
     function fillReviewList(listId, items) {
         const list = document.getElementById(listId);
+        /* 목록은 보여 주기만 해요. 다시 풀기는 첫 화면의 '다시 볼 문제만 풀어 보기' 버튼으로 */
         list.innerHTML = items.map(function (item) {
-            return '<li><button data-q="' + item.id + '" data-flow="' + item.flow + '">' + item.label + '</button></li>';
+            return '<li><span class="review-item">' + item.label + '</span></li>';
         }).join('');
-        list.querySelectorAll('[data-q]').forEach(function (button) {
-            button.addEventListener('click', function () {
-                startMission(button.dataset.flow, 'review', button.dataset.q);
-            });
-        });
     }
 
     function renderReview() {
