@@ -84,13 +84,13 @@
         '    padding:0 .03em}',
 
         /* ---------- 선분 · 반직선 · 직선 기호 ---------- */
-        '.gn{display:inline-block;position:relative;padding:.36em .1em 0;line-height:1;',
-        '    background:linear-gradient(currentColor,currentColor) no-repeat;',
-        '    background-size:calc(100% - .2em) 1.5px;background-position:center .12em}',
-        '.gn-ray::after,.gn-lin::after{content:"";position:absolute;right:-.02em;top:-.03em;',
-        '    border-left:.36em solid currentColor;border-top:.17em solid transparent;border-bottom:.17em solid transparent}',
-        '.gn-lin::before{content:"";position:absolute;left:-.02em;top:-.03em;',
-        '    border-right:.36em solid currentColor;border-top:.17em solid transparent;border-bottom:.17em solid transparent}',
+        /* 윗줄은 배경 그라데이션이 아니라 테두리로 그려요 : 브라우저 강제 다크 모드에서도 글자색을 따라가요 */
+        '.gn{display:inline-block;position:relative;margin:.12em .1em 0;padding-top:.22em;line-height:1;',
+        '    border-top:1.5px solid}',
+        '.gn-ray::after,.gn-lin::after{content:"";position:absolute;right:-.12em;top:calc(-.17em - 1px);',
+        '    border-left:.36em solid;border-top:.17em solid transparent;border-bottom:.17em solid transparent}',
+        '.gn-lin::before{content:"";position:absolute;left:-.12em;top:calc(-.17em - 1px);',
+        '    border-right:.36em solid;border-top:.17em solid transparent;border-bottom:.17em solid transparent}',
 
         /* ---------- geo ---------- */
         '.geo{width:100%;margin:0 auto}',
