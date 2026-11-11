@@ -377,10 +377,9 @@
         });
     }
 
-    function fillReviewList(listId, items, clickable) {
+    function fillReviewList(listId, items) {
         const list = document.getElementById(listId);
         list.innerHTML = items.map(function (item) {
-            if (clickable === false) { return '<li><span class="review-static">' + item.label + '</span></li>'; }
             return '<li><button data-q="' + item.id + '" data-flow="' + item.flow + '">' + item.label + '</button></li>';
         }).join('');
         list.querySelectorAll('[data-q]').forEach(function (button) {
