@@ -126,6 +126,13 @@ const adminRoomOptionRenderers = new WeakMap();
  * @param {Array} rooms [{ code, data }] — 학교 필터는 data.creatorSchool 로 나눕니다
  */
 export function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '') {
+    // 메모 이름순 정렬 (한글·숫자 자연 정렬). 메모 없는 방은 뒤로, 같으면 코드순.
+    const getMemo = room => String(room.data.memo || '').trim();
+    rooms = [...rooms].sort((a, b) => {
+        const memoA = getMemo(a), memoB = getMemo(b);
+        if (!memoA !== !memoB) return memoA ? -1 : 1;
+        return memoA.localeCompare(memoB, 'ko', { numeric: true }) || a.code.localeCompare(b.code);
+    });
     const schoolFilter = document.getElementById('admin-school-select');
     const schoolFilterWrap = document.getElementById('admin-school-filter');
     const isAdmin = Boolean(window.isAdmin && schoolFilter && schoolFilterWrap);
