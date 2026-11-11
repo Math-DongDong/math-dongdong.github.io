@@ -2001,7 +2001,12 @@
     async function loadTeacherRooms() {
       const base = collection(db, COLLECTION);
       const snap = S.teacher.isAdmin ? await getDocs(base) : await getDocs(query(base, where('createdBy', '==', S.user.uid)));
-      S.rooms = snap.docs.map(d => ({ code: d.id, data: d.data() })).sort((a, b) => timestampMillis(b.data.createdAt) - timestampMillis(a.data.createdAt));
+      // 메모 이름순 (메모 없는 반은 뒤로, 같으면 코드순)
+      S.rooms = snap.docs.map(d => ({ code: d.id, data: d.data() })).sort((a, b) => {
+        const memoA = String(a.data.memo || '').trim(), memoB = String(b.data.memo || '').trim();
+        if (!memoA !== !memoB) return memoA ? -1 : 1;
+        return memoA.localeCompare(memoB, 'ko', { numeric: true }) || a.code.localeCompare(b.code);
+      });
       S.teachers = [];
       if (S.teacher.isAdmin) {
         try {
