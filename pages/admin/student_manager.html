@@ -88,20 +88,28 @@
         <section id="manager-section" class="d-none">
             <div class="filter-box mb-4">
                 <div class="row g-3">
-                    <div class="col-12 col-md-3">
+                    <div class="col-12 col-md-6 col-lg-3">
                         <label class="form-label small fw-bold text-secondary" for="schoolSelect">학교</label>
                         <select id="schoolSelect" class="form-select fw-bold bg-white"></select>
                     </div>
-                    <div class="col-12 col-md-3">
+                    <div class="col-12 col-md-6 col-lg-3">
                         <label class="form-label small fw-bold text-secondary" for="teacherSelect">담당 선생님</label>
                         <select id="teacherSelect" class="form-select fw-bold bg-white"></select>
                         <div class="form-text small" id="teacherSelectHelp"></div>
                     </div>
-                    <div class="col-12 col-md-3">
+                    <div class="col-6 col-md-3 col-lg-1">
+                        <label class="form-label small fw-bold text-secondary" for="gradeSelect">학년</label>
+                        <select id="gradeSelect" class="form-select fw-bold bg-white"><option value="">전체</option></select>
+                    </div>
+                    <div class="col-6 col-md-3 col-lg-1">
+                        <label class="form-label small fw-bold text-secondary" for="classSelect">반</label>
+                        <select id="classSelect" class="form-select fw-bold bg-white" disabled><option value="">전체</option></select>
+                    </div>
+                    <div class="col-6 col-md-3 col-lg-2">
                         <label class="form-label small fw-bold text-secondary" for="searchInput">학번 검색</label>
                         <input type="text" id="searchInput" class="form-control bg-white" placeholder="예: 1230" inputmode="numeric" maxlength="5">
                     </div>
-                    <div class="col-12 col-md-3">
+                    <div class="col-6 col-md-3 col-lg-2">
                         <label class="form-label small fw-bold text-secondary" for="btnReload">새로고침</label>
                         <button id="btnReload" class="btn btn-outline-secondary fw-bold w-100" title="새로고침">
                             <i class="bi bi-arrow-clockwise"></i> 새로고침
@@ -193,6 +201,8 @@
         const schoolSelect = document.getElementById('schoolSelect');
         const teacherSelect = document.getElementById('teacherSelect');
         const searchInput = document.getElementById('searchInput');
+        const gradeSelect = document.getElementById('gradeSelect');
+        const classSelect = document.getElementById('classSelect');
         const tbody = document.getElementById('studentTbody');
         const countBadge = document.getElementById('countBadge');
         const selectedBadge = document.getElementById('selectedBadge');
@@ -288,17 +298,61 @@
 
         // ── 표 렌더링 ─────────────────────────────────────────────
 
-        function visibleStudents() {
-            const keyword = searchInput.value.trim().toLowerCase();
+        // 담당 선생님 필터만 통과한 학생 — 학년·반 선택지는 이 목록에서 만듭니다
+        function teacherStudents() {
             // 선생님은 자기 이름으로 고정 (이름이 없으면 아무도 보이지 않음), 관리자는 고른 선생님 또는 전체
             const teacher = window.isAdmin ? teacherSelect.value : String(window.currentTeacherName || '').trim();
             return allStudents.filter(s => {
                 const owners = Array.isArray(s.teachers) ? s.teachers : [];
                 if (!window.isAdmin && (!teacher || !owners.includes(teacher))) return false;
                 if (window.isAdmin && teacher && !owners.includes(teacher)) return false;
+                return true;
+            });
+        }
+
+        // 실제 학생이 있는 학년·반만 선택지로. 고른 값이 사라지면 '전체'로, 학년이 '전체'면 반은 비활성
+        function renderGradeClassOptions(students) {
+            const parsed = students.map(parseStudentId).filter(Boolean);
+            const fillOptions = (selectEl, values, suffix) => {
+                const keep = selectEl.value;
+                selectEl.innerHTML = '<option value="">전체</option>' +
+                    values.map(v => `<option value="${v}">${v}${suffix}</option>`).join('');
+                selectEl.value = values.map(String).includes(keep) ? keep : '';
+            };
+            fillOptions(gradeSelect, [...new Set(parsed.map(p => p.grade))].sort((a, b) => a - b), '학년');
+            const grade = Number(gradeSelect.value);
+            fillOptions(classSelect, grade
+                ? [...new Set(parsed.filter(p => p.grade === grade).map(p => p.classNo))].sort((a, b) => a - b)
+                : [], '반');
+            classSelect.disabled = !grade;
+        }
+
+        function visibleStudents() {
+            const keyword = searchInput.value.trim().toLowerCase();
+            const base = teacherStudents();
+            renderGradeClassOptions(base);
+            const grade = Number(gradeSelect.value), classNo = Number(classSelect.value);
+            return base.filter(s => {
+                if (grade) {
+                    const p = parseStudentId(s);
+                    if (!p || p.grade !== grade || (classNo && p.classNo !== classNo)) return false;
+                }
                 if (!keyword) return true;
                 return String(s.studentId || s.id).toLowerCase().includes(keyword);
             });
+        }
+
+        // 학번 → 학년·반·번호. 첫 자리 학년, 끝 두 자리 번호, 가운데가 반 (1230 = 1-2-30, 11230 = 1-12-30)
+        function parseStudentId(student) {
+            const id = String(student.studentId || student.id || '');
+            if (!/^\d{4,5}$/.test(id)) return null;
+            return { grade: Number(id[0]), classNo: Number(id.slice(1, -2)), number: Number(id.slice(-2)) };
+        }
+
+        function compareStudentIds(a, b) {
+            const pa = parseStudentId(a), pb = parseStudentId(b);
+            if (!pa || !pb) return (pa ? -1 : pb ? 1 : 0) || String(a.studentId || a.id).localeCompare(String(b.studentId || b.id), 'ko', { numeric: true });
+            return pa.grade - pb.grade || pa.classNo - pb.classNo || pa.number - pb.number;
         }
 
         function formatTime(ts) {
@@ -337,8 +391,8 @@
         }
 
         function renderTable() {
-            // 접속 상태 순(접속중 → 다른화면 → 승인 대기 → 끊김 → 미접속), 같은 상태 안에서는 학번 순
-            const list = visibleStudents().sort((a, b) => statusInfo(a).order - statusInfo(b).order);
+            // 학번 순 (학년 → 반 → 번호)
+            const list = visibleStudents().sort(compareStudentIds);
             renderStatusSummary(list);
             countBadge.textContent = `${list.length}명`;
             document.getElementById('checkAll').checked = false;
@@ -553,6 +607,8 @@
         schoolSelect.onchange = loadStudents;
         searchInput.oninput = renderTable;
         teacherSelect.onchange = renderTable;
+        gradeSelect.onchange = () => { classSelect.value = ''; renderTable(); };
+        classSelect.onchange = renderTable;
         document.getElementById('btnReload').onclick = loadStudents;
         document.getElementById('checkAll').onchange = (e) => {
             tbody.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
