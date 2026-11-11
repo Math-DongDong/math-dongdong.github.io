@@ -304,11 +304,17 @@
             doneLeadText(flow, thisTime, sessionIds.length);
         document.getElementById('doneThisTime').textContent = thisTime + ' / ' + sessionIds.length;
 
+        /* 안내 문구는 '이번 결과' 기준 : 예전에 모두 맞힌 기록이 있어도 이번에 틀렸으면 완벽하다고 하지 않아요 */
         const master = document.getElementById('doneMaster');
-        if (isMastered(flow)) {
+        const allThisTime = thisTime === sessionIds.length;
+        if (isMastered(flow) && allThisTime) {
             master.className = 'badge-master on';
             master.innerHTML = '<i class="bi bi-lightbulb-fill"></i> ' +
                 (flow === 'basic' ? '기초 미션' : '도전 미션') + '을 모두 한 번에 맞혔어요! 완벽해요!';
+        } else if (isMastered(flow)) {
+            master.className = 'badge-master off';
+            master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 전에 모두 맞힌 기록은 <b>그대로 남아 있어요.</b><br>' +
+                '이번에 헷갈린 문제는 개념을 다시 보며 확인해 봐요.';
         } else {
             master.className = 'badge-master off';
             master.innerHTML = '<i class="bi bi-bookmark-fill"></i> 아래 <b>다시 볼 문제</b>를 한 번에 맞히면<br><b>기록에 하나씩 쌓여요!</b>';
