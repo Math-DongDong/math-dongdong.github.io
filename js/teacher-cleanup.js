@@ -22,7 +22,7 @@ import {
     collection, doc, getDoc, getDocs, deleteDoc, updateDoc, query, where, arrayRemove, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { REGISTRY_COLLECTION, purgeRoomParts } from './room-registry.js';
-import { purgeStudent } from './room-auth.js?v=4.4';   // 다른 페이지와 같은 버전 (모듈을 한 번만 불러오도록)
+import { purgeStudent } from './room-auth.js?v=4.5';   // 다른 페이지와 같은 버전 (모듈을 한 번만 불러오도록)
 
 /**
  * 정리 대상 수집 → { uid, name, school, rooms, studentsToDelete, studentsToDetach, nameConflict }

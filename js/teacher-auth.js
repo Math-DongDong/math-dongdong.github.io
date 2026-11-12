@@ -13,6 +13,7 @@
 import { auth, googleProvider, db } from './firebase-config.js';
 import { signInWithPopup, signOut, onAuthStateChanged, deleteUser, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { uiAlert, uiConfirm } from "./ui-dialog.js";   // 사이트 공용 모달
 
 // 화면 표시용입니다. 실제 권한은 firestore.rules의 isAdmin() uid 비교가 결정합니다.
 const ADMIN_EMAIL = 'jjes0107@gmail.com';
@@ -230,52 +231,15 @@ function hideModalAsync(el) {
     });
 }
 
-function ensureAuthDialogModalDOM() {
-    if (document.getElementById('authDialogModal')) return;
-    document.body.insertAdjacentHTML('beforeend', `
-    <div class="modal fade" id="authDialogModal" tabindex="-1" aria-labelledby="authDialogTitle" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content rounded-4 border-0 shadow">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-bold" id="authDialogTitle"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body pb-3">
-                    <p class="mb-0" id="authDialogBody" style="white-space: pre-line;"></p>
-                </div>
-                <div class="modal-footer border-0 pt-0">
-                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal" id="authDialogCancel">취소</button>
-                    <button type="button" class="btn rounded-3" id="authDialogOk"></button>
-                </div>
-            </div>
-        </div>
-    </div>`);
-}
-
 /**
- * 안내·확인 모달 (alert/confirm 대체).
+ * 안내 · 확인 모달 (alert/confirm 대체) — 사이트 공용 모달(ui-dialog.js)로 그립니다.
  * isConfirm=true 이면 취소 버튼을 보이고, 확인 버튼을 눌렀을 때만 true로 끝납니다.
- * type은 Bootstrap 색상 이름(primary, success, danger, warning…)입니다.
+ * type은 Bootstrap 색상 이름(primary, success, danger, warning…)입니다. message는 글자 그대로(줄바꿈 유지).
  */
 function showAuthDialog(title, message, { isConfirm = false, confirmText = '확인', type = 'primary' } = {}) {
-    ensureAuthDialogModalDOM();
-    const modalEl = document.getElementById('authDialogModal');
-    const okBtn = document.getElementById('authDialogOk');
-    const titleEl = document.getElementById('authDialogTitle');
-
-    titleEl.textContent = title;
-    titleEl.className = `modal-title fw-bold text-${type}`;
-    document.getElementById('authDialogBody').textContent = message;
-    document.getElementById('authDialogCancel').classList.toggle('d-none', !isConfirm);
-    okBtn.textContent = confirmText;
-    okBtn.className = `btn btn-${type} rounded-3`;
-
-    return new Promise(resolve => {
-        let confirmed = false;
-        okBtn.onclick = () => { confirmed = true; modalFor(modalEl).hide(); };
-        modalEl.addEventListener('hidden.bs.modal', () => resolve(confirmed), { once: true });
-        modalFor(modalEl).show();
-    });
+    return isConfirm
+        ? uiConfirm(title, message, { confirmText, type })
+        : uiAlert(title, message, { confirmText, type });
 }
 
 /**

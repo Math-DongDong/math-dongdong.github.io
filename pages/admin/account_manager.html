@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="../../css/navbar.css">
     <link rel="stylesheet" href="../../css/dashboard.css">
     <style>
-        body { background-color: #f8f9fa; }
         .admin-container { max-width: 960px; margin: 40px auto; padding: 0 15px; }
         .card { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; }
         .table th { background-color: #f1f5f9; color: #475569; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
@@ -78,24 +77,6 @@
         </div>
     </div>
 
-    <!-- 안내 메시지 모달 -->
-    <div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalTitle" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content rounded-4 border-0 shadow">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-bold" id="messageModalTitle"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body pb-3">
-                    <p class="mb-0" id="messageModalBody" style="white-space: pre-line;"></p>
-                </div>
-                <div class="modal-footer border-0 pt-0">
-                    <button type="button" class="btn btn-primary rounded-3" data-bs-dismiss="modal">확인</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- 교사 삭제 모달 (방·학생 정리 포함) -->
     <div class="modal fade" id="deleteTeacherModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="deleteTeacherTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -138,25 +119,6 @@
         </div>
     </div>
 
-    <!-- 확인 모달 -->
-    <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalTitle" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content rounded-4 border-0 shadow">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-bold" id="confirmModalTitle"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body pb-3">
-                    <p class="mb-0" id="confirmModalBody" style="white-space: pre-line;"></p>
-                </div>
-                <div class="modal-footer border-0 pt-0">
-                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">취소</button>
-                    <button type="button" class="btn rounded-3" id="confirmModalOk"></button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div class="container text-center mt-5" id="loadingContent">
         <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
         <p class="mt-3 text-muted">권한을 확인하는 중입니다...</p>
@@ -174,6 +136,7 @@
         import {
             collectTeacherCleanupPlan, runTeacherCleanup, formatCleanupFailures
         } from '../../js/teacher-cleanup.js';   // 회원 탈퇴(teacher-auth.js)와 같은 정리 로직
+        import { uiAlert, uiConfirm } from '../../js/ui-dialog.js';   // 사이트 공용 모달
 
         // ★ 화면 접근 제어는 uid로 합니다. firestore.rules 의 isAdmin() 과 같은 값이어야 합니다.
         //   이메일 비교는 표시용일 뿐, 실제 권한은 규칙이 결정합니다.
@@ -209,37 +172,14 @@
             return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
-        // 안내 모달 (type: 'success' | 'danger' 등 Bootstrap 색상) — 모달이 닫히면 resolve
+        // 안내 · 확인 모달 — 사이트 공용 모달(js/ui-dialog.js)로 그립니다
+        //  showMessageModal: 닫히면 resolve · showConfirmModal: 확인 버튼이면 true
         function showMessageModal(title, message, type = 'primary') {
-            const modalEl = document.getElementById('messageModal');
-            const titleEl = document.getElementById('messageModalTitle');
-            titleEl.textContent = title;
-            titleEl.className = `modal-title fw-bold text-${type}`;
-            document.getElementById('messageModalBody').textContent = message;
-            return new Promise((resolve) => {
-                modalEl.addEventListener('hidden.bs.modal', () => resolve(), { once: true });
-                bootstrap.Modal.getOrCreateInstance(modalEl).show();
-            });
+            return uiAlert(title, message, { type });
         }
 
-        // 확인 모달 — 확인 버튼을 누르면 true, 그 외(취소·X·바깥 클릭·Esc)는 false
         function showConfirmModal(title, message, confirmText = '확인', type = 'primary') {
-            const modalEl = document.getElementById('confirmModal');
-            const okBtn = document.getElementById('confirmModalOk');
-            const titleEl = document.getElementById('confirmModalTitle');
-            titleEl.textContent = title;
-            titleEl.className = `modal-title fw-bold text-${type}`;
-            document.getElementById('confirmModalBody').textContent = message;
-            okBtn.textContent = confirmText;
-            okBtn.className = `btn btn-${type} rounded-3`;
-
-            const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
-            return new Promise((resolve) => {
-                let confirmed = false;
-                okBtn.onclick = () => { confirmed = true; bsModal.hide(); };
-                modalEl.addEventListener('hidden.bs.modal', () => resolve(confirmed), { once: true });
-                bsModal.show();
-            });
+            return uiConfirm(title, message, { confirmText, type });
         }
 
         // ── 권한 동기화 ────────────────────────────────────────────────

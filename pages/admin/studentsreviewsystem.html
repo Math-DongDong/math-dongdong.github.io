@@ -1260,12 +1260,11 @@
             collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
             onSnapshot, serverTimestamp, query, where, orderBy, writeBatch, deleteField
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
-        import { firestoreRoom } from '../../js/game-kit.js?v=4.5';
+        import { firestoreRoom } from '../../js/game-kit.js?v=4.6';
         import {
-            renderRoomEntrance, resolveRoomOwner, makeStudentKey, resetStudentPin, STUDENT_ID_PATTERN,
-            getPhoneOwnerAuth, getDeviceId, customPrompt as authPrompt   // PIN 입력은 입장 화면과 같은 비밀번호 칸
-        } from '../../js/room-auth.js?v=4.4';
-        import { derivePinProof, deriveDeviceFingerprint, verifyProofViaGate } from '../../js/student-crypto.js';
+            renderRoomEntrance, resolveRoomOwner, makeStudentKey, resetStudentPinChecked, PIN_RESET_MESSAGES, STUDENT_ID_PATTERN,
+            getStudentDeviceFp, rememberGuestPinProof, clearSessionPinProof, ensureStudentPinProof   // 제출 전 PIN 확인 (설문과 공통)
+        } from '../../js/room-auth.js?v=4.5';
         import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
 
         // ── 컬렉션 및 기본 상수 ──
@@ -1325,8 +1324,6 @@
         let currentStudentId = '';
         let currentStudentKey = '';          // student_auth 키 (방 학교 + 학번) — PIN 게이트 경로
         let currentIsGuest = false;
-        let sessionPinProof = null;          // { key, proof } — 게스트가 입장 때 · 제출 때 입력한 PIN의 증명값 (메모리에만)
-        let cachedDeviceFp = '';
         let selectedReviewIds = new Set();
         let currentFilter = 'all';
         let unsubRooms = null;
@@ -1644,27 +1641,18 @@
                     studentPinResetError.classList.remove('d-none');
                     return;
                 }
-                const studentKey = makeStudentKey(school, studentId);
-                const studentSnap = await getDoc(doc(db, 'student_auth', studentKey));
-                if (!studentSnap.exists()) {
-                    studentPinResetError.textContent = `${studentId} 학생 계정을 찾을 수 없습니다. 학번을 확인해주세요.`;
+                // 공통 PIN 초기화 (room-auth.js) — 내 학생(담당 선생님 uid)인지 확인한 뒤 초기화
+                const result = await resetStudentPinChecked(makeStudentKey(school, studentId));
+                if (result !== 'done') {
+                    studentPinResetError.textContent = result === 'not-found' ? PIN_RESET_MESSAGES.notFound(studentId) : PIN_RESET_MESSAGES.notOwner;
                     studentPinResetError.classList.remove('d-none');
                     return;
                 }
-                // 담당 선생님(uid)만 초기화할 수 있습니다 — 보안 규칙과 같은 기준
-                const ownerUids = Array.isArray(studentSnap.data()?.teacherUids) ? studentSnap.data().teacherUids : [];
-                if (!window.isAdmin && !ownerUids.includes(window.currentTeacherUid)) {
-                    studentPinResetError.textContent = `${studentId} 학생은 내 방에 들어온 학생이 아니라 초기화할 수 없습니다. (학생이 내 방에 한 번 들어오면 초기화할 수 있습니다)`;
-                    studentPinResetError.classList.remove('d-none');
-                    return;
-                }
-
-                await resetStudentPin(studentKey);
                 studentPinResetModal.hide();
-                await customAlert('완료', `${escapeHtml(studentId)} 학생의 PIN이 초기화되었습니다.`);
+                await customAlert('PIN 초기화 완료', escapeHtml(PIN_RESET_MESSAGES.done(studentId)));
             } catch (err) {
                 console.error('학생 PIN 초기화 오류:', err);
-                studentPinResetError.textContent = 'PIN 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.';
+                studentPinResetError.textContent = PIN_RESET_MESSAGES.failed;
                 studentPinResetError.classList.remove('d-none');
             } finally {
                 studentPinResetButton.disabled = false;
@@ -1970,11 +1958,7 @@
             useNicknameMarkers: false,
             // 방 안의 이름으로 학번을 씁니다. 게스트는 이때 입력한 PIN으로 제출용 증명값을 만들어 메모리에만 둡니다.
             authenticatedRoomKey: async (student) => {
-                sessionPinProof = null;
-                if (student?.isGuest && /^\d{4}$/.test(String(student.pin || ''))) {
-                    const key = makeStudentKey(student.school, student.studentId);
-                    sessionPinProof = { key, proof: await derivePinProof(student.pin, key) };
-                }
+                await rememberGuestPinProof(student);
                 return student?.studentId;
             },
             waitingDestination: "소감문 작성 화면",
@@ -2007,7 +1991,7 @@
             currentStudentId = '';
             currentStudentKey = '';
             currentIsGuest = false;
-            sessionPinProof = null;
+            clearSessionPinProof();
             currentRoomCode = '';
             // 이 학생의 기록 구독을 끊고 화면에 남은 기록을 비웁니다 (다음 학생이 같은 기기를 쓸 수 있음)
             if (unsubReviews) { unsubReviews(); unsubReviews = null; }
@@ -2063,43 +2047,9 @@
         /* ── 학생 소감문 저장: PIN 증명 (v4.3) ──
          *  소감문 저장 · 본인 확인 체크는 같은 batch에서 PIN 게이트(student_auth/{키}/gate/{기기})를 통과해야 합니다.
          *  보안 규칙이 이것과 함께 '교사 칸(feedback · teacherView)은 학생이 바꿀 수 없음'을 확인합니다. */
-        async function getStudentDeviceFp() {
-            if (!cachedDeviceFp) cachedDeviceFp = await deriveDeviceFingerprint(getDeviceId());
-            return cachedDeviceFp;
-        }
-
-        /** 게이트에 증명값을 써서 PIN을 확인합니다. 기억한 값이 없거나 틀리면 PIN을 다시 받습니다 → proof | null(취소) */
-        async function ensureStudentPinProof() {
-            const key = currentStudentKey;
-            const deviceFp = await getStudentDeviceFp();
-            const gateDeps = { db, doc, setDoc, serverTimestamp };
-            let proof = null;
-            if (sessionPinProof?.key === key) proof = sessionPinProof.proof;
-            else {
-                const owner = getPhoneOwnerAuth();
-                if (!currentIsGuest && owner && makeStudentKey(owner.school, owner.studentId) === key) proof = owner.proof;
-            }
-            if (proof && await verifyProofViaGate(gateDeps, key, deviceFp, proof)) return proof;
-
-            for (let attempt = 0; attempt < 2; attempt++) {
-                const pin = await authPrompt('PIN 확인', attempt
-                    ? 'PIN이 일치하지 않습니다.<br>이 학번의 4자리 PIN을 다시 입력해주세요.'
-                    : '소감문을 저장하려면 이 학번의 4자리 PIN을 입력해주세요.', true);
-                if (pin === null) return null;
-                const typedPin = String(pin).trim();
-                if (!/^\d{4}$/.test(typedPin)) continue;
-                const typedProof = await derivePinProof(typedPin, key);
-                if (await verifyProofViaGate(gateDeps, key, deviceFp, typedProof)) {
-                    sessionPinProof = { key, proof: typedProof };
-                    return typedProof;
-                }
-            }
-            throw new Error('PIN이 일치하지 않아 저장할 수 없습니다. 로그아웃했다가 다시 입장해 PIN을 확인하거나, 잊었다면 선생님께 초기화를 요청하세요.');
-        }
-
         /** 소감문 저장 — PIN 게이트와 한 batch로 씁니다. 취소하면 false */
         async function saveRecordWithProof(recordId, data) {
-            const proof = await ensureStudentPinProof();
+            const proof = await ensureStudentPinProof(currentStudentKey, { isGuest: currentIsGuest, purpose: '소감문을 저장' });
             if (!proof) return false;
             const deviceFp = await getStudentDeviceFp();
             const batch = writeBatch(db);

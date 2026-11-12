@@ -25,40 +25,18 @@
 (function (global) {
     'use strict';
 
+    // 이 파일(js/ahamath.js)의 주소 — 같은 폴더의 공용 모달(ui-dialog.js)을 찾을 때 씁니다
+    const SCRIPT_URL = (document.currentScript && document.currentScript.src) || '';
+
     /**
-     * 확인 모달 (window.confirm 대체). 확인 버튼을 눌렀을 때만 true로 끝납니다.
-     * Bootstrap이 없는 환경이면 기본 확인창으로 대신합니다.
+     * 확인 모달 (window.confirm 대체) — 사이트 공용 모달(js/ui-dialog.js)로 그립니다.
+     * 확인 버튼을 눌렀을 때만 true로 끝나고, 공용 모달을 못 불러오면 기본 확인창으로 대신합니다.
      */
     function confirmDialog(title, message, okText) {
-        if (!global.bootstrap || !global.bootstrap.Modal) {
-            return Promise.resolve(global.confirm(message));
-        }
-        let modalEl = document.getElementById('ahaConfirmModal');
-        if (!modalEl) {
-            document.body.insertAdjacentHTML('beforeend',
-                '<div class="modal fade" id="ahaConfirmModal" tabindex="-1" aria-labelledby="ahaConfirmTitle" aria-hidden="true">' +
-                '<div class="modal-dialog modal-dialog-centered"><div class="modal-content rounded-4 border-0 shadow">' +
-                '<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold text-danger" id="ahaConfirmTitle"></h5>' +
-                '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div>' +
-                '<div class="modal-body pb-3"><p class="mb-0" id="ahaConfirmBody" style="white-space: pre-line;"></p></div>' +
-                '<div class="modal-footer border-0 pt-0">' +
-                '<button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">취소</button>' +
-                '<button type="button" class="btn btn-danger rounded-3" id="ahaConfirmOk"></button>' +
-                '</div></div></div></div>');
-            modalEl = document.getElementById('ahaConfirmModal');
-        }
-        document.getElementById('ahaConfirmTitle').textContent = title;
-        document.getElementById('ahaConfirmBody').textContent = message;
-        const okBtn = document.getElementById('ahaConfirmOk');
-        okBtn.textContent = okText || '확인';
-
-        const bsModal = global.bootstrap.Modal.getOrCreateInstance(modalEl);
-        return new Promise(function (resolve) {
-            let confirmed = false;
-            okBtn.onclick = function () { confirmed = true; bsModal.hide(); };
-            modalEl.addEventListener('hidden.bs.modal', function () { resolve(confirmed); }, { once: true });
-            bsModal.show();
-        });
+        if (!SCRIPT_URL) return Promise.resolve(global.confirm(message));
+        return import(new URL('ui-dialog.js', SCRIPT_URL).href)
+            .then(function (m) { return m.uiConfirm(title, message, { confirmText: okText || '확인', type: 'danger' }); })
+            .catch(function () { return global.confirm(message); });
     }
 
     const CHART_H = 150;

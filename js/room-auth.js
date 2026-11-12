@@ -25,7 +25,7 @@
  *   C. 인증 + 게스트(공용 기기) — 매번 학번·PIN 입력 → 교사 승인 후 입장. 기기에 남기지 않습니다.
  *  세 경우 모두 닉네임은 자동 발급입니다.
  */
-import { db } from "./firebase-config.js";
+import { db, auth } from "./firebase-config.js";
 import {
     doc,
     getDoc,
@@ -44,6 +44,7 @@ import {
     isCryptoAvailable, derivePinProof, deriveDeviceFingerprint,
     verifyProofViaGate, buildPinRecordFromProof
 } from "./student-crypto.js";
+import { uiAlert, uiConfirm, uiPrompt } from "./ui-dialog.js";   // 사이트 공용 모달
 
 // =====================================================================
 // 0. 공통 유틸
@@ -246,6 +247,82 @@ export function getDeviceId() {
         if (!window.__tempDeviceId) window.__tempDeviceId = 'tmp_' + Math.random().toString(36).slice(2, 10);
         return window.__tempDeviceId;
     }
+}
+
+/**
+ * 방별 기기 표시값 — 실시간 게임(블로토 · 오목 · 가위바위보)의 참가자 칸에 기기 원본 ID 대신 저장합니다.
+ * 원본 ID는 학번 인증용 기기 지문(student_auth)과 이어 붙일 수 있어 누구나 읽는 칸에 두지 않습니다.
+ * 같은 기기 · 같은 방이면 늘 같은 값이라 '내 기기로 재접속' 판정은 그대로 됩니다.
+ */
+export async function getRoomDeviceTag(roomCode) {
+    const source = `mathdongdong|room-device|v1|${roomCode}|${getDeviceId()}`;
+    try {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+        return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+    } catch (e) {
+        // https가 아닌 환경(파일 직접 열기 등) — 원본이 드러나지 않는 간단한 해시로 대신합니다
+        let h1 = 0x811c9dc5, h2 = 0x01000193;
+        for (let i = 0; i < source.length; i++) {
+            h1 = Math.imul(h1 ^ source.charCodeAt(i), 16777619) >>> 0;
+            h2 = Math.imul(h2 + source.charCodeAt(i), 2246822519) >>> 0;
+        }
+        return 'h' + h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+    }
+}
+
+// ── 제출 전 PIN 확인 (설문 · 소감문 공통) ─────────────────────────────
+//  학번 인증 방의 저장은 같은 batch에서 PIN 게이트(student_auth/{키}/gate/{기기})를 통과해야 합니다.
+//  게스트가 입장 때 입력한 PIN, 제출 때 다시 입력한 PIN의 증명값은 메모리에만 둡니다 (기기에 남기지 않음).
+let _sessionPinProof = null;   // { key, proof }
+let _cachedDeviceFp = '';
+
+/** 이 기기의 지문 (PIN 게이트 문서 ID) */
+export async function getStudentDeviceFp() {
+    if (!_cachedDeviceFp) _cachedDeviceFp = await deriveDeviceFingerprint(getDeviceId());
+    return _cachedDeviceFp;
+}
+
+/** 게스트가 입장 때 입력한 PIN으로 제출용 증명값을 기억합니다 (renderRoomEntrance의 authenticatedRoomKey에서 부름) */
+export async function rememberGuestPinProof(student) {
+    _sessionPinProof = null;
+    if (student?.isGuest && /^\d{4}$/.test(String(student.pin || ''))) {
+        const key = makeStudentKey(student.school, student.studentId);
+        _sessionPinProof = { key, proof: await derivePinProof(student.pin, key) };
+    }
+}
+
+/** 로그아웃 · 나가기 때 기억한 증명값을 지웁니다 */
+export function clearSessionPinProof() { _sessionPinProof = null; }
+
+/**
+ * 게이트에 증명값을 써서 PIN을 확인합니다. 기억한 값이 없거나 틀리면 PIN을 다시 받습니다 → proof | null(취소)
+ * @param {string} studentKey  makeStudentKey(방 학교, 학번)
+ * @param {object} opts { isGuest, purpose: '응답을 저장' 처럼 안내 문구에 들어갈 말 }
+ */
+export async function ensureStudentPinProof(studentKey, { isGuest = false, purpose = '저장' } = {}) {
+    const deviceFp = await getStudentDeviceFp();
+    let proof = null;
+    if (_sessionPinProof?.key === studentKey) proof = _sessionPinProof.proof;
+    else {
+        const owner = getPhoneOwnerAuth();
+        if (!isGuest && owner && makeStudentKey(owner.school, owner.studentId) === studentKey) proof = owner.proof;
+    }
+    if (proof && await verifyProofViaGate(cryptoDeps, studentKey, deviceFp, proof)) return proof;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const pin = await customPrompt('PIN 확인', attempt
+            ? 'PIN이 일치하지 않습니다.<br>이 학번의 4자리 PIN을 다시 입력해주세요.'
+            : `${escapeHtml(purpose)}하려면 이 학번의 4자리 PIN을 입력해주세요.`, true);
+        if (pin === null) return null;
+        const typedPin = String(pin).trim();
+        if (!/^\d{4}$/.test(typedPin)) continue;
+        const typedProof = await derivePinProof(typedPin, studentKey);
+        if (await verifyProofViaGate(cryptoDeps, studentKey, deviceFp, typedProof)) {
+            _sessionPinProof = { key: studentKey, proof: typedProof };
+            return typedProof;
+        }
+    }
+    throw new Error('PIN이 일치하지 않아 저장할 수 없습니다. 나갔다가 다시 입장해 PIN을 확인하거나, 잊었다면 선생님께 초기화를 요청하세요.');
 }
 
 /** 대시보드에서 알아보기 쉬운 기기 이름 */
@@ -670,32 +747,6 @@ export async function saveGameNickname(nickname) {
 // =====================================================================
 // 1. 공통 모달
 // =====================================================================
-function ensureModalDOM() {
-    if (document.getElementById('customModal')) return;
-    document.body.insertAdjacentHTML('beforeend', `
-    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content rounded-4 border-0 shadow">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body pb-0" id="customModalBody"></div>
-                <div class="modal-footer border-0 pt-3">
-                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none" id="customModalCancel">취소</button>
-                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
-                </div>
-            </div>
-        </div>
-    </div>`);
-
-    document.getElementById('customModal').addEventListener('hide.bs.modal', function () {
-        if (document.activeElement && this.contains(document.activeElement)) {
-            document.activeElement.blur();
-        }
-    });
-}
-
 function ensureShakeStyle() {
     if (document.getElementById('room-auth-inline-style')) return;
     const style = document.createElement('style');
@@ -714,102 +765,18 @@ function ensureShakeStyle() {
     document.head.appendChild(style);
 }
 
-/** 모달을 하나씩 순서대로 띄우기 위한 큐 */
-let modalQueue = Promise.resolve();
-
 function bsModalFor(el) {
     return bootstrap.Modal.getOrCreateInstance(el);
 }
 
-function openCustomModal(title, message, isPrompt, isPassword, isConfirm) {
-    ensureModalDOM();
-    ensureShakeStyle();
-
-    if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
-        const plain = String(message).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
-        if (isPrompt) return Promise.resolve(window.prompt(`${title}\n${plain}`));
-        if (isConfirm) return Promise.resolve(window.confirm(`${title}\n${plain}`));
-        window.alert(`${title}\n${plain}`);
-        return Promise.resolve(true);
-    }
-
-    return new Promise((resolve) => {
-        const modalEl = document.getElementById('customModal');
-        const instance = bsModalFor(modalEl);
-
-        // 주의: title/message는 개발자가 작성한 문자열만 넘겨야 합니다.
-        //       학생이 입력한 값은 반드시 escapeHtml()로 감싸세요.
-        document.getElementById('customModalTitle').innerHTML = title;
-
-        let bodyHtml = `<p class="mb-0 fs-5">${message}</p>`;
-        if (isPrompt) {
-            const type = isPassword ? 'password' : 'text';
-            bodyHtml += `<input type="${type}" class="form-control form-control-lg mt-3 text-center fw-bold" id="customModalInput" autocomplete="off">`;
-        }
-        document.getElementById('customModalBody').innerHTML = bodyHtml;
-
-        const btnCancel = document.getElementById('customModalCancel');
-        const btnConfirm = document.getElementById('customModalConfirm');
-
-        if (isPrompt || isConfirm) btnCancel.classList.remove('d-none');
-        else btnCancel.classList.add('d-none');
-
-        let resolveValue = null;
-        let settled = false;
-
-        const blurBeforeHide = () => {
-            if (document.activeElement && modalEl.contains(document.activeElement)) {
-                document.activeElement.blur();
-            }
-        };
-
-        const handleConfirm = () => {
-            if (settled) return;
-            settled = true;
-            resolveValue = isPrompt ? (document.getElementById('customModalInput')?.value ?? "") : true;
-            blurBeforeHide();
-            instance.hide();
-        };
-        const handleCancel = () => {
-            if (settled) return;
-            settled = true;
-            resolveValue = isConfirm ? false : null;
-            blurBeforeHide();
-            instance.hide();
-        };
-        const handleHidden = () => {
-            btnConfirm.removeEventListener('click', handleConfirm);
-            btnCancel.removeEventListener('click', handleCancel);
-            modalEl.removeEventListener('hidden.bs.modal', handleHidden);
-            setTimeout(() => resolve(resolveValue), 0);
-        };
-
-        btnConfirm.addEventListener('click', handleConfirm);
-        btnCancel.addEventListener('click', handleCancel);
-        modalEl.addEventListener('hidden.bs.modal', handleHidden);
-
-        instance.show();
-
-        if (isPrompt) {
-            modalEl.addEventListener('shown.bs.modal', function onShown() {
-                const input = document.getElementById('customModalInput');
-                if (input) {
-                    input.focus();
-                    input.addEventListener('keypress', (e) => {
-                        if (e.key === 'Enter') handleConfirm();
-                    });
-                }
-                modalEl.removeEventListener('shown.bs.modal', onShown);
-            });
-        }
-    });
-}
-
+/**
+ * 공통 알림 · 확인 · 입력 모달 — 실제 화면은 사이트 공용 모달(ui-dialog.js)이 그립니다.
+ * ★ title/message는 HTML로 들어갑니다. 개발자가 작성한 문자열만 넘기고, 학생이 입력한 값은 escapeHtml()로 감싸세요.
+ */
 export function showCustomModal(title, message, isPrompt = false, isPassword = false, isConfirm = false) {
-    const run = () => openCustomModal(title, message, isPrompt, isPassword, isConfirm);
-    const result = modalQueue.then(run, run);
-    modalQueue = result.catch(() => { });
-    return result;
+    if (isPrompt) return uiPrompt(title, message, { html: true, password: isPassword });
+    if (isConfirm) return uiConfirm(title, message, { html: true });
+    return uiAlert(title, message, { html: true });
 }
 
 export const customAlert = (t, m) => showCustomModal(t, m, false);
@@ -1364,12 +1331,12 @@ export function promptNewPinModal() {
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content rounded-4 border-0 shadow">
                         <div class="modal-header border-0 pb-0">
-                            <h5 class="modal-title fw-bold text-danger">🔑 PIN 번호 재설정</h5>
+                            <h5 class="modal-title fw-bold text-danger">🔑 PIN 재설정</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
                         </div>
                         <div class="modal-body py-3">
                             <div class="alert alert-warning py-2 small mb-3">
-                                선생님이 PIN 번호를 초기화했습니다.<br>
+                                선생님이 PIN을 초기화했습니다.<br>
                                 앞으로 사용할 새로운 4자리 숫자 PIN을 입력해주세요.
                             </div>
                             <div class="mb-3">
@@ -1401,7 +1368,7 @@ export function promptNewPinModal() {
         const onConfirm = () => {
             const p = pinIn.value.trim();
             if (!/^\d{4}$/.test(p)) {
-                errEl.textContent = "PIN 번호는 4자리 숫자로 입력해주세요.";
+                errEl.textContent = "PIN은 4자리 숫자로 입력해주세요.";
                 errEl.style.display = 'block';
                 pinIn.focus();
                 return;
@@ -1561,7 +1528,6 @@ export function hideGuestExitButton() {
 export async function showPinResetModal() {
     const isAdminUser = !!window.isAdmin;
     const teacherSchool = String(window.currentTeacherSchool || '').trim();
-    const teacherName = String(window.currentTeacherName || '').trim();
     if (!teacherSchool || teacherSchool === '관리자') {
         await customAlert("학교명이 필요해요", "상단 메뉴 → <b>정보수정</b>에서 학교명을 먼저 등록해주세요.");
         return false;
@@ -1620,28 +1586,18 @@ export async function showPinResetModal() {
             confirmBtn.disabled = true;
             confirmBtn.textContent = "처리 중...";
             try {
-                const sKey = makeStudentKey(teacherSchool, studentId);
-                const snap = await getDoc(doc(db, "student_auth", sKey));
-                if (!snap.exists()) {
-                    errEl.textContent = "내 학교에서 해당 학번의 학생을 찾지 못했습니다. 학번을 확인해주세요.";
+                const result = await resetStudentPinChecked(makeStudentKey(teacherSchool, studentId), { isAdmin: isAdminUser });
+                if (result !== 'done') {
+                    errEl.textContent = result === 'not-found' ? PIN_RESET_MESSAGES.notFound(studentId) : PIN_RESET_MESSAGES.notOwner;
                     errEl.style.display = 'block';
                     return;
                 }
-                // v4.4: 담당 선생님 uid로만 확인합니다 (보안 규칙과 같은 기준 — 이름은 겹칠 수 있음)
-                const ownerUids = Array.isArray(snap.data()?.teacherUids) ? snap.data().teacherUids : [];
-                if (!isAdminUser && !ownerUids.includes(window.currentTeacherUid)) {
-                    errEl.textContent = "내 방에 들어온 학생만 초기화할 수 있습니다. 학번을 다시 확인해주세요.";
-                    errEl.style.display = 'block';
-                    return;
-                }
-                await resetStudentPin(sKey);
                 executed = true;
                 bsModal.hide();
-                await customAlert("초기화 완료",
-                    `<strong>${escapeHtml(teacherSchool)}</strong>의 <strong>${escapeHtml(studentId)}</strong> 학생 PIN이 초기화되었습니다.<br>학생이 다음 접속 시 새 4자리 PIN을 설정합니다.`);
+                await customAlert("PIN 초기화 완료", escapeHtml(PIN_RESET_MESSAGES.done(studentId)));
             } catch (err) {
                 console.error('PIN 초기화 실패:', err);
-                errEl.textContent = "초기화에 실패했습니다. 교사 로그인 상태와 네트워크를 확인해주세요.";
+                errEl.textContent = PIN_RESET_MESSAGES.failed;
                 errEl.style.display = 'block';
             } finally {
                 confirmBtn.disabled = false;
@@ -1661,8 +1617,41 @@ export async function showPinResetModal() {
     });
 }
 
+// ── 교사용 PIN 초기화 (모든 화면 공통) ─────────────────────────────
+//  공통 모달 · 학생 관리 · 관계지도 · 소감문 관리가 모두 이 함수와 문구를 씁니다.
+//  '내 학생' = 담당 선생님 uid 목록(teacherUids)에 내 uid — 보안 규칙(ownsStudent)과 같은 기준. 관리자는 모든 학생.
+
+/** PIN 초기화 안내 문구 — 화면마다 다른 말이 나오지 않도록 한곳에 둡니다 */
+export const PIN_RESET_MESSAGES = {
+    notFound: (studentId) => `${studentId} 학생 계정을 찾지 못했습니다. 학번을 확인해주세요.`,
+    notOwner: '내 방에 들어온 학생만 PIN을 초기화할 수 있습니다. (학생이 내 방에 한 번 들어오면 초기화할 수 있습니다)',
+    failed: 'PIN 초기화에 실패했습니다. 교사 로그인 상태와 네트워크를 확인해주세요.',
+    done: (studentId) => `${studentId} 학생의 PIN을 초기화했습니다. 학생은 다음에 들어올 때 새 4자리 PIN을 정합니다.`
+};
+
 /**
- * PIN 초기화 실제 처리 (교사 전용) — 학생 관리 페이지에서도 씁니다.
+ * PIN 초기화 대상 확인 → 'ok' | 'not-found' | 'not-owner'
+ * @param {object} opts { isAdmin } — 기본값은 teacher-auth.js가 넣는 window.isAdmin
+ */
+export async function checkPinResetTarget(studentKey, { isAdmin = !!window.isAdmin } = {}) {
+    const snap = await getDoc(doc(db, "student_auth", studentKey));
+    if (!snap.exists()) return 'not-found';
+    if (isAdmin) return 'ok';
+    const ownerUids = Array.isArray(snap.data()?.teacherUids) ? snap.data().teacherUids : [];
+    const myUid = auth.currentUser?.uid || '';
+    return (myUid && ownerUids.includes(myUid)) ? 'ok' : 'not-owner';
+}
+
+/** 확인 + 초기화를 한 번에 → 'done' | 'not-found' | 'not-owner' (네트워크 · 권한 오류는 throw) */
+export async function resetStudentPinChecked(studentKey, opts = {}) {
+    const verdict = await checkPinResetTarget(studentKey, opts);
+    if (verdict !== 'ok') return verdict;
+    await resetStudentPin(studentKey);
+    return 'done';
+}
+
+/**
+ * PIN 초기화 실제 처리 (교사 전용) — 확인 없이 바로 초기화합니다. 화면에서는 resetStudentPinChecked를 쓰세요.
  * pinHash를 null로 두면 규칙이 "초기화된 계정"으로 보고 학생의 새 PIN 기록을 허용합니다.
  */
 export async function resetStudentPin(studentKey) {
@@ -2031,7 +2020,7 @@ export function renderRoomEntrance(container, options = {}) {
                     });
                     if (verdict === 'wrong') {
                         await customAlert("인증 실패",
-                            "PIN 번호가 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
+                            "PIN이 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
                             '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
                         return;
                     }
@@ -2207,7 +2196,7 @@ export function renderRoomEntrance(container, options = {}) {
                     });
                     if (verdict === 'wrong') {
                         await customAlert("인증 실패",
-                            "등록된 PIN 번호와 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
+                            "등록된 PIN과 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
                             '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
                         continue;
                     }
