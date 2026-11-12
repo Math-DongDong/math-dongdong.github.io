@@ -36,8 +36,8 @@
             <b>①</b> Firestore의 교사 상태를 <code>approved</code>로 바꾸고,
             <b>②</b> 정보 최소화를 위해 승인 교사 공개 목록(<code>teacher_directory</code>)에 학교·이름만 등록하고,
             <b>③</b> 연동된 실시간 데이터베이스의 교사 권한 목록에 uid를 추가합니다.
-            승인 취소·삭제 시에는 ②, ③이 함께 회수됩니다.
-            <b>삭제</b>하면 그 교사가 만든 방(기록 포함)도 모두 지우고, 학생 정보는 담당 교사가 그 교사뿐이면 삭제·
+            <b>반려</b>(승인 대기)·<b>삭제</b>(승인 완료) 시에는 ②, ③이 함께 회수되고,
+            그 교사가 만든 방(기록 포함)도 모두 지웁니다. 학생 정보는 담당 교사가 그 교사뿐이면 삭제·
             다른 담당 교사가 있으면 담당 교사 목록에서 이름만 뺍니다.
         </div>
 
@@ -104,7 +104,7 @@
                     <h5 class="modal-title fw-bold text-danger" id="deleteTeacherTitle"><i class="bi bi-exclamation-triangle-fill me-2"></i>교사 삭제</h5>
                 </div>
                 <div class="modal-body pb-3">
-                    <p class="mb-2"><b id="deleteTeacherLabel"></b> 선생님의 데이터를 삭제합니다.</p>
+                    <p class="mb-2"><b id="deleteTeacherLabel"></b> <span id="deleteTeacherIntro"></span></p>
                     <ul class="list-group small mb-2">
                         <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                             <span>만든 방 삭제 <span class="text-muted">(기록 포함)</span></span>
@@ -293,25 +293,6 @@
             }
         }
 
-        async function revoke(uid) {
-            if (!await showConfirmModal("승인 취소",
-                "승인을 취소하시겠습니까?\n(대기 상태로 돌아가고, 방 관리 권한이 회수됩니다)", "승인 취소", 'warning')) return;
-            try {
-                await updateDoc(doc(db, "teachers", uid), { status: 'pending' });
-                const failed = await revokeTeacher(uid);
-                if (failed.length) {
-                    showMessageModal("일부 권한 회수 실패",
-                        `승인은 취소되었지만 다음 게임의 권한 회수에 실패했습니다: ${failed.join(', ')}`, 'warning');
-                } else {
-                    showMessageModal("승인 취소 완료", "승인이 취소되었습니다.", 'success');
-                }
-                loadTeachers();
-            } catch (e) {
-                console.error(e);
-                showMessageModal("처리 실패", "처리 중 오류가 발생했습니다.", 'danger');
-            }
-        }
-
         // ── 교사 삭제 (방·학생 정리 포함) ──────────────────────────────
 
         /**
@@ -401,7 +382,7 @@
          * 삭제 모달. 삭제가 끝나면 { plan, failures }, 취소하면 null 로 끝납니다 (모달이 완전히 닫힌 뒤).
          * 실패 항목이 있으면 교사 계정은 남기고 [다시 시도] / [실패 항목은 두고 계정만 삭제] 를 고르게 합니다.
          */
-        function openDeleteTeacherModal(uid, initialPlan) {
+        function openDeleteTeacherModal(uid, initialPlan, actionLabel) {
             const modalEl = document.getElementById('deleteTeacherModal');
             const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
             const $ = (id) => document.getElementById(id);
@@ -436,13 +417,18 @@
                 $('deleteProgressText').textContent = total ? `${done} / ${total} 처리 중...` : '정리할 방·학생이 없습니다.';
             }
 
-            // 초기 상태
+            // 초기 상태 — actionLabel: '반려'(승인 대기) | '삭제'(승인 완료)
+            $('deleteTeacherTitle').innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>교사 ${esc(actionLabel)}`;
+            $('deleteTeacherIntro').textContent = actionLabel === '반려'
+                ? '선생님의 가입 신청을 반려하고, 남아 있는 데이터를 정리합니다.'
+                : '선생님의 데이터를 삭제합니다.';
             renderPlan();
             errorEl.classList.add('d-none');
             progressWrap.classList.add('d-none');
             btnForce.classList.add('d-none');
+            btnForce.textContent = `실패 항목은 두고 계정만 ${actionLabel}`;
             btnCancel.textContent = '취소';
-            btnConfirm.innerHTML = '<i class="bi bi-trash3 me-1"></i>삭제';
+            btnConfirm.innerHTML = `<i class="bi bi-trash3 me-1"></i>${esc(actionLabel)}`;
             setBusy(false);
 
             return new Promise((resolve) => {
@@ -492,17 +478,17 @@
             });
         }
 
-        async function removeTeacherAccount(uid) {
+        async function removeTeacherAccount(uid, actionLabel = '삭제') {
             let plan;
             try {
                 plan = await collectTeacherData(uid);
             } catch (e) {
                 console.error(e);
-                showMessageModal("삭제 준비 실패", "삭제할 방·학생 목록을 불러오지 못했습니다.\n새로고침 후 다시 시도해 주세요.", 'danger');
+                showMessageModal(`${actionLabel} 준비 실패`, "정리할 방·학생 목록을 불러오지 못했습니다.\n새로고침 후 다시 시도해 주세요.", 'danger');
                 return;
             }
 
-            const result = await openDeleteTeacherModal(uid, plan);
+            const result = await openDeleteTeacherModal(uid, plan, actionLabel);
             loadTeachers();
             if (!result) return;
 
@@ -510,10 +496,10 @@
                 + `${plan.studentsToDetach.length}명 담당 교사에서 제외`;
             if (result.failures.length) {
                 showMessageModal("일부 항목 남음",
-                    `교사 계정은 삭제했지만 다음 항목은 지우지 못했습니다.\n${formatFailures(result.failures)}`, 'warning');
+                    `교사 계정은 ${actionLabel}했지만 다음 항목은 지우지 못했습니다.\n${formatFailures(result.failures)}`, 'warning');
             } else {
-                showMessageModal("삭제 완료",
-                    `${plan.name || '교사'} 선생님의 데이터를 삭제했습니다.\n${summary}`
+                showMessageModal(`${actionLabel} 완료`,
+                    `${plan.name || '교사'} 선생님을 ${actionLabel}했습니다.\n${summary}`
                     + (plan.nameConflict ? '\n(같은 이름의 교사가 있어 학생 정보는 정리하지 않았습니다)' : ''), 'success');
             }
         }
@@ -547,9 +533,9 @@
                             <td class="small">${esc(formatDate(data.createdAt))}</td>
                             <td>
                                 ${isPending
-                            ? `<button class="btn btn-sm btn-success me-1 act" data-act="approve" data-uid="${esc(uid)}">승인</button>`
-                            : `<button class="btn btn-sm btn-warning me-1 act" data-act="revoke" data-uid="${esc(uid)}">승인 취소</button>`}
-                                <button class="btn btn-sm btn-outline-danger act" data-act="delete" data-uid="${esc(uid)}">삭제</button>
+                            ? `<button class="btn btn-sm btn-success me-1 act" data-act="approve" data-uid="${esc(uid)}">승인</button>
+                               <button class="btn btn-sm btn-outline-danger act" data-act="reject" data-uid="${esc(uid)}">반려</button>`
+                            : `<button class="btn btn-sm btn-outline-danger act" data-act="delete" data-uid="${esc(uid)}">삭제</button>`}
                             </td>
                         </tr>`;
 
@@ -573,8 +559,8 @@
             const uid = btn.dataset.uid;
             const act = btn.dataset.act;
             if (act === 'approve') approve(uid);
-            else if (act === 'revoke') revoke(uid);
-            else if (act === 'delete') removeTeacherAccount(uid);
+            else if (act === 'reject') removeTeacherAccount(uid, '반려');
+            else if (act === 'delete') removeTeacherAccount(uid, '삭제');
         });
         document.getElementById('btnReload').addEventListener('click', loadTeachers);
 
