@@ -1317,7 +1317,7 @@
         let unsubNotes = null;
         let teacherNotes = {};               // 교사 화면: { 기록ID: { teacherView } } — 교사 전용 생기부 관찰기록
         let teacherNotesLoaded = false;      // 관찰기록을 한 번이라도 받아 왔는지 (옛 기록 옮기기는 그 뒤에만)
-        let migratingNotes = false;
+        const migratingNotes = new Set();    // 관찰기록을 옮기는 중인 방 코드
         let allReviews = [];                 // 현재 방의 소감문 목록
         let studentRoster = [];              // 학생 명단 [{id, pw}]
         let activityList = [];               // 창체활동 목록 [{date, activity}]
@@ -1651,6 +1651,13 @@
                     studentPinResetError.classList.remove('d-none');
                     return;
                 }
+                // 담당 선생님(uid)만 초기화할 수 있습니다 — 보안 규칙과 같은 기준
+                const ownerUids = Array.isArray(studentSnap.data()?.teacherUids) ? studentSnap.data().teacherUids : [];
+                if (!window.isAdmin && !ownerUids.includes(window.currentTeacherUid)) {
+                    studentPinResetError.textContent = `${studentId} 학생은 내 방에 들어온 학생이 아니라 초기화할 수 없습니다. (학생이 내 방에 한 번 들어오면 초기화할 수 있습니다)`;
+                    studentPinResetError.classList.remove('d-none');
+                    return;
+                }
 
                 await resetStudentPin(studentKey);
                 studentPinResetModal.hide();
@@ -1777,6 +1784,7 @@
             allReviews = [];
             teacherNotes = {};
             teacherNotesLoaded = false;
+            lastRecordDocs = [];   // 이전 방의 기록으로 관찰기록 옮기기가 돌지 않도록
             roomData = null;
 
             if (!code) {
@@ -1893,17 +1901,20 @@
          * ★ 관찰기록 구독을 한 번 받은 뒤에만 실행합니다 — 새 위치에 이미 쓴 값을 옛 값으로 덮지 않도록.
          */
         async function migrateLegacyTeacherViews(code, docs) {
-            if (migratingNotes || !teacherNotesLoaded || code !== currentRoomCode) return;
+            if (migratingNotes.has(code) || !teacherNotesLoaded || code !== currentRoomCode) return;
             // 빈 값('')으로 남은 칸도 함께 지워, 학생이 읽을 수 있는 기록에는 관찰기록 칸이 아예 없게 합니다
-            const legacy = (docs || []).filter(d => typeof (d.data() || {}).teacherView === 'string');
+            // ★ 이 방(code)의 기록만 — 방을 빨리 바꿔도 다른 방 기록이 섞이지 않도록 경로로 한 번 더 확인
+            const legacy = (docs || []).filter(d => d.ref.parent.parent?.id === code
+                && typeof (d.data() || {}).teacherView === 'string');
             if (!legacy.length) return;
-            migratingNotes = true;
+            const notesAtStart = { ...teacherNotes };   // 이 방의 관찰기록 (도중에 방을 바꿔도 그대로)
+            migratingNotes.add(code);
             try {
                 for (let i = 0; i < legacy.length; i += 200) {
                     const batch = writeBatch(db);
                     legacy.slice(i, i + 200).forEach(d => {
                         const text = String(d.data().teacherView || '');
-                        if (text && !teacherNotes[d.id]) {
+                        if (text && !notesAtStart[d.id]) {
                             batch.set(doc(db, COLLECTION_NAME, code, "teacher_notes", d.id),
                                 { teacherView: text, updatedAt: serverTimestamp() }, { merge: true });
                         }
@@ -1914,7 +1925,7 @@
             } catch (err) {
                 console.error('옛 관찰기록 옮기기 실패:', err);
             } finally {
-                migratingNotes = false;
+                migratingNotes.delete(code);
             }
         }
 
@@ -2108,6 +2119,9 @@
             if (!date || !content) return customAlert("알림", "활동을 선택하고 소감문 내용을 입력해주세요.");
 
             const recordId = editId || `${date}_${currentStudentId}`;
+            // [불러오기] 없이 이미 낸 활동을 다시 제출하면 기존 기록 수정으로 처리합니다
+            // (새 기록처럼 쓰면 교사 피드백 · 본인 확인 체크를 지우려 해 규칙에 막히거나 체크가 초기화됨)
+            const alreadySubmitted = !!editId || allReviews.some(r => r.id === recordId);
 
             const recordData = {
                 studentId: currentStudentId,
@@ -2117,7 +2131,7 @@
                 updatedAt: serverTimestamp()
             };
 
-            if (!editId) {
+            if (!alreadySubmitted) {
                 recordData.createdAt = serverTimestamp();
                 recordData.check = '';
                 recordData.feedback = '';
@@ -2126,7 +2140,7 @@
 
             try {
                 if (!await saveRecordWithProof(recordId, recordData)) return;   // PIN 확인 취소
-                await customAlert("제출 완료", editId ? "소감문이 수정되었습니다." : "소감문이 성공적으로 제출되었습니다!");
+                await customAlert("제출 완료", alreadySubmitted ? "소감문이 수정되었습니다." : "소감문이 성공적으로 제출되었습니다!");
                 resetStudentForm();
                 $('tabList-btn').click();
             } catch (err) {

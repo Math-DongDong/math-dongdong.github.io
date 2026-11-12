@@ -38,11 +38,16 @@ export async function collectTeacherCleanupPlan(uid) {
 
     const plan = { uid, name, school, rooms, studentsToDelete: [], studentsToDetach: [], nameConflict: false };
 
-    // 같은 학교 · 같은 이름의 다른 승인 교사가 있으면 이름으로는 학생을 구분할 수 없습니다
-    if (name && school) {
-        const sameNameSnap = await getDocs(query(collection(db, "teacher_directory"),
-            where("school", "==", school), where("name", "==", name)));
-        plan.nameConflict = sameNameSnap.docs.some(d => d.id !== uid);
+    // 같은 학교의 현재 승인 교사 이름 — 같은 이름의 다른 교사가 있는지, 학생의 다른 담당 이름이 실제 교사인지 판단
+    const liveNames = new Set();
+    if (school) {
+        const schoolSnap = await getDocs(query(collection(db, "teacher_directory"), where("school", "==", school)));
+        schoolSnap.forEach(d => {
+            const n = String(d.data()?.name || '').trim();
+            if (d.id === uid || !n) return;
+            liveNames.add(n);
+            if (n === name) plan.nameConflict = true;   // 같은 학교 · 같은 이름의 다른 승인 교사
+        });
     }
 
     // ① uid로 담당 학생 찾기  ② uid가 아직 없는 옛 학생은 학교 + 이름으로 (동명이인이 없을 때만)
@@ -62,10 +67,11 @@ export async function collectTeacherCleanupPlan(uid) {
 
     found.forEach((student, id) => {
         const otherUids = (Array.isArray(student.teacherUids) ? student.teacherUids : []).filter(u => u && u !== uid);
-        const otherNames = (Array.isArray(student.teachers) ? student.teachers : [])
-            .map(t => String(t || '').trim()).filter(t => t && t !== name);
+        // 다른 담당 이름 중 지금도 이 학교에 있는 교사 이름만 셉니다 (삭제 · 탈퇴한 교사의 옛 이름은 아무 권한이 없음)
+        const otherLiveNames = (Array.isArray(student.teachers) ? student.teachers : [])
+            .map(t => String(t || '').trim()).filter(t => t && t !== name && liveNames.has(t));
         // 동명이인이 있으면 같은 이름이 다른 선생님 것일 수 있으므로 지우지 않고 담당에서만 뺍니다
-        const soleTeacher = !otherUids.length && !otherNames.length && !plan.nameConflict;
+        const soleTeacher = !otherUids.length && !otherLiveNames.length && !plan.nameConflict;
         (soleTeacher ? plan.studentsToDelete : plan.studentsToDetach).push(id);
     });
     return plan;

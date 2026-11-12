@@ -1627,10 +1627,9 @@ export async function showPinResetModal() {
                     errEl.style.display = 'block';
                     return;
                 }
-                // v4.4: uid로 확인하고, uid가 아직 없는 옛 학생은 이름으로 (규칙도 같은 기준 — 2단계 뒤에는 uid만)
-                const owners = Array.isArray(snap.data()?.teachers) ? snap.data().teachers : [];
+                // v4.4: 담당 선생님 uid로만 확인합니다 (보안 규칙과 같은 기준 — 이름은 겹칠 수 있음)
                 const ownerUids = Array.isArray(snap.data()?.teacherUids) ? snap.data().teacherUids : [];
-                if (!isAdminUser && !ownerUids.includes(window.currentTeacherUid) && !owners.includes(teacherName)) {
+                if (!isAdminUser && !ownerUids.includes(window.currentTeacherUid)) {
                     errEl.textContent = "내 방에 들어온 학생만 초기화할 수 있습니다. 학번을 다시 확인해주세요.";
                     errEl.style.display = 'block';
                     return;

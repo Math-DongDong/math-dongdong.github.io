@@ -41,7 +41,7 @@
         .pitch-width {
             width: 100%;
             max-width: min(100%, calc((100vh - 200px) * 1.5));
-            margin: 0 auto;
+            margin: 0;
         }
 
         .pitch-wrapper {
@@ -108,8 +108,10 @@
             </div>
         </header>
 
-        <!-- 경기장 -->
-        <section class="card shadow-sm mb-3" aria-label="경기장과 보로노이 다이어그램">
+        <div class="row g-3 mb-3">
+        <!-- 경기장 (왼쪽) -->
+        <div class="col-lg-8">
+        <section class="card shadow-sm h-100" aria-label="경기장과 보로노이 다이어그램">
             <div class="card-body p-2 p-md-3">
                 <button class="btn btn-sm btn-outline-secondary d-md-none mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#layerCollapse" aria-expanded="false" aria-controls="layerCollapse">
                     <i class="bi bi-layers"></i> 레이어 보기
@@ -175,7 +177,6 @@
                         </div>
                     </div>
                 </div>
-                <p id="canvasHint" class="small text-secondary text-center mt-2 mb-0"></p>
                 <p id="laneLegend" class="small text-center mt-1 mb-0 d-none">
                     패스길 안전도 (팀 델로네 변 ↔ 가장 가까운 상대):
                     <span class="legend-line" style="background:#ef4444"></span> 2m 미만 차단 위험
@@ -184,12 +185,11 @@
                 </p>
             </div>
         </section>
+        </div>
 
-        <!-- 경기 기록 -->
-        <div id="matchPanel">
-            <section class="row g-3 mb-3" aria-label="경기 기록">
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100">
+        <!-- 경기 기록 · 지배율 변화 (오른쪽) -->
+        <div class="col-lg-4 d-flex flex-column gap-3" id="matchPanel">
+                    <section class="card shadow-sm" aria-label="경기 기록">
                         <div class="card-header bg-white fw-bold"><i class="bi bi-clipboard2-pulse"></i> 경기 기록</div>
                         <div class="card-body">
                             <table class="table table-sm align-middle text-center mb-3">
@@ -205,18 +205,15 @@
                             <h3 class="h6 fw-bold mb-2">주요 장면</h3>
                             <ul class="list-group list-group-flush small event-log" id="eventLog"></ul>
                         </div>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100">
+                    </section>
+                    <section class="card shadow-sm" aria-label="지배율 변화">
                         <div class="card-header bg-white fw-bold"><i class="bi bi-graph-up"></i> 지배율 변화 (블루 기준)</div>
                         <div class="card-body">
                             <canvas id="dominanceGraph" class="graph-canvas" aria-label="시간에 따른 블루 팀 지배율 그래프"></canvas>
                             <p class="small text-secondary mt-2 mb-0">0.5초마다 블루 팀의 지배 면적 비율을 기록합니다. 50% 선 위(파랑)는 블루가, 아래(빨강)는 레드가 더 넓은 땅을 차지한 순간이에요. 세로선은 골.</p>
                         </div>
-                    </div>
-                </div>
-            </section>
+                    </section>
+        </div>
         </div>
 
     </main>
@@ -307,6 +304,7 @@
             TACKLE_PROTECT: 0.8,         // 공을 얻은 직후 태클 면제 시간
             SHOT_RANGE: 25,
             SHOT_PROB_SCALE: 3,          // 골 확률 배율 (기존 공식 × 3, 최대 95%)
+            XG_GOAL_THRESHOLD: 0.5,      // 운이 아닌 판정: 누적 골 확률이 이 값 이상이면 골
             SAMPLE_INTERVAL: 0.5,
             PLAYER_GAP: 0.9,             // 선수끼리 최소 간격
             LOOSE_FRICTION: 1.2
@@ -470,7 +468,7 @@
             return {
                 phase: 'READY',          // READY → KICKOFF → PLAYING ⇄ (일시정지) → GOAL → … → FULLTIME
                 time: 0, phaseTimer: 0, luck, rng: mulberry32(seed),
-                xgBank: { blue: 0, red: 0 },   // 운이 아닌 쪽: 골 확률(기대 득점)을 쌓아 1을 넘으면 골
+                xgBank: { blue: 0, red: 0 },   // 운이 아닌 쪽: 골 확률(기대 득점)을 쌓아 0.5 이상이면 골, 골마다 1을 뺌
                 score: { blue: 0, red: 0 },
                 stats: { blue: emptyStats(), red: emptyStats() },
                 samples: [], sampleTimer: 0,
@@ -1520,9 +1518,10 @@
                 isGoal = m.rng() < b.shotProb;                 // 운: 골 확률로 추첨
                 how = `골 확률 ${pct}% · 추첨`;
             } else {
-                m.xgBank[shooter.team] += b.shotProb;          // 실력: 골 확률을 쌓아 1을 넘으면 골
-                isGoal = m.xgBank[shooter.team] >= 1 - 1e-9;
-                how = `골 확률 ${pct}% · 누적 ${Math.min(m.xgBank[shooter.team], 1).toFixed(2)}`;
+                // 실력: 골 확률을 쌓아 0.5 이상이 되면 골, 골이 되면 1을 뺌 (반올림 → 평균적으로 기대 득점만큼 골)
+                m.xgBank[shooter.team] += b.shotProb;
+                isGoal = m.xgBank[shooter.team] >= SIM.XG_GOAL_THRESHOLD - 1e-9;
+                how = `골 확률 ${pct}% · 누적 ${m.xgBank[shooter.team].toFixed(2)}`;
                 if (isGoal) m.xgBank[shooter.team] -= 1;
             }
             if (isGoal) {
@@ -1714,14 +1713,8 @@
             updateHint();
         }
 
+        // 델로네 범례 표시
         function updateHint() {
-            let text;
-            const m = state.match;
-            if (rafId) text = '경기 중에는 선수와 공을 옮길 수 없어요. 일시정지하면 끌어서 장면을 바꿔 볼 수 있습니다.';
-            else if (isMatchLive()) text = '일시정지 중: 선수와 공을 끌어 장면을 바꿔 보세요. 이때 옮긴 위치는 내 대형에 저장되지 않아요. ▶ 계속을 누르면 이어서 진행합니다.';
-            else if (m.phase === 'FULLTIME') text = '경기가 끝났어요. ‘경기 초기화’를 누르면 내가 만든 대형으로 돌아가고, ▶ 시작을 누르면 그 대형으로 새 경기를 시작합니다.';
-            else text = '블루는 오른쪽(→), 레드는 왼쪽(←)으로 공격해요. 연두색 원은 골키퍼예요. 선수와 공을 끌어 나만의 포메이션을 만들고 ▶ 시작을 누르세요(공을 선수 가까이에 놓으면 그 선수가 공을 가져요). 운적인 요소를 0으로 두면 같은 배치에서는 항상 같은 경기가 나와요.';
-            setText($('canvasHint'), text);
             $('laneLegend').classList.toggle('d-none', !state.layers.delaunay);
         }
 

@@ -412,6 +412,7 @@ function openWithdrawModal(user, initialPlan, cleanup) {
 
     let plan = initialPlan;
     let failures = [];
+    let attempted = false;              // 한 번이라도 정리를 시도했는지 — 다시 시도할 때는 남은 대상만 새로 모읍니다
     let accountRecordDeleted = false;   // 교사 정보까지 지웠으면 되돌아갈 곳이 없으므로 취소를 숨깁니다
 
     function renderPlan() {
@@ -484,7 +485,8 @@ function openWithdrawModal(user, initialPlan, cleanup) {
                 $w('withdrawProgressWrap').classList.remove('d-none');
                 try {
                     // 다시 시도할 때는 남은 항목만 다시 모읍니다 (지운 방 · 학생은 목록에서 빠져 있음)
-                    if (failures.length) { plan = await cleanup.collectTeacherCleanupPlan(user.uid); renderPlan(); }
+                    if (attempted) { plan = await cleanup.collectTeacherCleanupPlan(user.uid); renderPlan(); }
+                    attempted = true;
                     setProgress(0, cleanup.countCleanupTargets(plan));
                     failures = await cleanup.runTeacherCleanup(plan, setProgress);
                 } catch (e) {
