@@ -37,6 +37,8 @@
             <b>②</b> 정보 최소화를 위해 승인 교사 공개 목록(<code>teacher_directory</code>)에 학교·이름만 등록하고,
             <b>③</b> 연동된 실시간 데이터베이스의 교사 권한 목록에 uid를 추가합니다.
             승인 취소·삭제 시에는 ②, ③이 함께 회수됩니다.
+            <b>삭제</b>하면 그 교사가 만든 방(기록 포함)도 모두 지우고, 학생 정보는 담당 교사가 그 교사뿐이면 삭제·
+            다른 담당 교사가 있으면 담당 교사 목록에서 이름만 뺍니다.
         </div>
 
         <div class="card mb-4">
@@ -94,6 +96,49 @@
         </div>
     </div>
 
+    <!-- 교사 삭제 모달 (방·학생 정리 포함) -->
+    <div class="modal fade" id="deleteTeacherModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="deleteTeacherTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-danger" id="deleteTeacherTitle"><i class="bi bi-exclamation-triangle-fill me-2"></i>교사 삭제</h5>
+                </div>
+                <div class="modal-body pb-3">
+                    <p class="mb-2"><b id="deleteTeacherLabel"></b> 선생님의 데이터를 삭제합니다.</p>
+                    <ul class="list-group small mb-2">
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <span>만든 방 삭제 <span class="text-muted">(기록 포함)</span></span>
+                            <b class="text-danger text-nowrap" id="deleteRoomCount"></b>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <span>학생 정보 삭제 <span class="text-muted">(담당 교사가 이 선생님뿐)</span></span>
+                            <b class="text-danger text-nowrap" id="deleteStudentCount"></b>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <span>담당 교사에서만 제외 <span class="text-muted">(다른 담당 교사 있음)</span></span>
+                            <b class="text-nowrap" id="detachStudentCount"></b>
+                        </li>
+                    </ul>
+                    <div class="alert alert-warning small py-2 mb-2 d-none" id="deleteNameConflict"></div>
+                    <p class="small text-muted mb-0">삭제한 데이터는 되돌릴 수 없습니다. 구글 계정 로그인 자체는 남으며, 다시 가입 신청할 수 있습니다.</p>
+
+                    <div class="mt-3 d-none" id="deleteProgressWrap">
+                        <div class="progress" role="progressbar" aria-label="삭제 진행률" style="height: 10px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-danger" id="deleteProgressBar" style="width: 0%;"></div>
+                        </div>
+                        <div class="small text-muted text-center mt-1" id="deleteProgressText"></div>
+                    </div>
+                    <div class="alert alert-danger small py-2 mt-3 mb-0 d-none" id="deleteError" style="white-space: pre-line;"></div>
+                </div>
+                <div class="modal-footer border-0 pt-0 flex-wrap">
+                    <button type="button" class="btn btn-secondary rounded-3" id="btnDeleteCancel">취소</button>
+                    <button type="button" class="btn btn-outline-danger rounded-3 d-none" id="btnDeleteForce">실패 항목은 두고 계정만 삭제</button>
+                    <button type="button" class="btn btn-danger rounded-3" id="btnDeleteConfirm">삭제</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 확인 모달 -->
     <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -124,9 +169,12 @@
         } from '../../js/firebase-config.js';
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
         import {
-            collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc, query, orderBy
+            collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc, query, orderBy, where,
+            arrayRemove, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { ref, set, remove } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+        import { REGISTRY_COLLECTION, purgeRoomParts } from '../../js/room-registry.js';
+        import { purgeStudent } from '../../js/room-auth.js?v=4.2';   // 학생 관리 페이지와 같은 버전
 
         // ★ 화면 접근 제어는 uid로 합니다. firestore.rules 의 isAdmin() 과 같은 값이어야 합니다.
         //   이메일 비교는 표시용일 뿐, 실제 권한은 규칙이 결정합니다.
@@ -264,20 +312,209 @@
             }
         }
 
+        // ── 교사 삭제 (방·학생 정리 포함) ──────────────────────────────
+
+        /**
+         * 삭제 대상 수집.
+         *  · 방: room_registry 에서 createdBy == uid
+         *  · 학생: 같은 학교 + teachers 에 이 교사 이름 → 담당이 이 교사뿐이면 삭제, 아니면 이름만 제외
+         * ★ 담당 교사는 이름으로 저장되므로, 같은 학교에 같은 이름의 승인 교사가 또 있으면
+         *   다른 선생님의 학생을 건드리지 않도록 학생 정리를 건너뜁니다.
+         */
+        async function collectTeacherData(uid) {
+            const teacherSnap = await getDoc(doc(db, "teachers", uid));
+            const data = teacherSnap.exists() ? (teacherSnap.data() || {}) : {};
+            const name = String(data.name || '').trim();
+            const school = String(data.school || '').trim();
+
+            const roomSnap = await getDocs(query(collection(db, REGISTRY_COLLECTION), where('createdBy', '==', uid)));
+            const rooms = roomSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const plan = { uid, name, school, rooms, studentsToDelete: [], studentsToDetach: [], nameConflict: false };
+            if (!name || !school) return plan;
+
+            const sameNameSnap = await getDocs(query(collection(db, "teacher_directory"),
+                where("school", "==", school), where("name", "==", name)));
+            plan.nameConflict = sameNameSnap.docs.some(d => d.id !== uid);
+            if (plan.nameConflict) return plan;
+
+            const studentSnap = await getDocs(query(collection(db, "student_auth"),
+                where("school", "==", school), where("teachers", "array-contains", name)));
+            studentSnap.forEach((d) => {
+                const teachers = Array.isArray(d.data()?.teachers) ? d.data().teachers : [];
+                const others = teachers.map(t => String(t || '').trim()).filter(t => t && t !== name);
+                (others.length ? plan.studentsToDetach : plan.studentsToDelete).push(d.id);
+            });
+            return plan;
+        }
+
+        /** 방 → 담당 제외 → 학생 삭제 순으로 정리. 항목마다 따로 시도하고 실패 목록을 돌려줍니다. */
+        async function runTeacherCleanup(plan, onProgress) {
+            const failures = [];
+            const total = plan.rooms.length + plan.studentsToDetach.length + plan.studentsToDelete.length;
+            let done = 0;
+            const step = () => onProgress(++done, total);
+
+            for (const room of plan.rooms) {
+                try {
+                    await purgeRoomParts(room.code, room.parts);
+                    await deleteDoc(doc(db, REGISTRY_COLLECTION, room.id));
+                } catch (e) {
+                    console.error('방 삭제 실패', room.id, e);
+                    failures.push(`방 ${room.code}`);
+                }
+                step();
+            }
+            for (const id of plan.studentsToDetach) {
+                try {
+                    await updateDoc(doc(db, "student_auth", id), { teachers: arrayRemove(plan.name), updatedAt: serverTimestamp() });
+                } catch (e) {
+                    console.error('담당 교사 제외 실패', id, e);
+                    failures.push(`학생 ${id} (담당 제외)`);
+                }
+                step();
+            }
+            for (const id of plan.studentsToDelete) {
+                try {
+                    await purgeStudent(id);
+                } catch (e) {
+                    console.error('학생 삭제 실패', id, e);
+                    failures.push(`학생 ${id} (삭제)`);
+                }
+                step();
+            }
+            return failures;
+        }
+
+        /** 교사 문서 삭제 + 공개 목록·RTDB 권한 회수 */
+        async function deleteTeacherRecord(uid) {
+            await revokeTeacher(uid);
+            await deleteDoc(doc(db, "teachers", uid));
+        }
+
+        function formatFailures(failures) {
+            const shown = failures.slice(0, 8).join('\n· ');
+            return `· ${shown}${failures.length > 8 ? `\n· 외 ${failures.length - 8}건` : ''}`;
+        }
+
+        /**
+         * 삭제 모달. 삭제가 끝나면 { plan, failures }, 취소하면 null 로 끝납니다 (모달이 완전히 닫힌 뒤).
+         * 실패 항목이 있으면 교사 계정은 남기고 [다시 시도] / [실패 항목은 두고 계정만 삭제] 를 고르게 합니다.
+         */
+        function openDeleteTeacherModal(uid, initialPlan) {
+            const modalEl = document.getElementById('deleteTeacherModal');
+            const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            const $ = (id) => document.getElementById(id);
+            const btnCancel = $('btnDeleteCancel');
+            const btnForce = $('btnDeleteForce');
+            const btnConfirm = $('btnDeleteConfirm');
+            const errorEl = $('deleteError');
+            const progressWrap = $('deleteProgressWrap');
+
+            let plan = initialPlan;
+            let lastFailures = [];
+
+            function renderPlan() {
+                $('deleteTeacherLabel').textContent = plan.school ? `${plan.school} ${plan.name || '(이름 없음)'}` : (plan.name || '이름 없는');
+                $('deleteRoomCount').textContent = `${plan.rooms.length}개`;
+                $('deleteStudentCount').textContent = `${plan.studentsToDelete.length}명`;
+                $('detachStudentCount').textContent = `${plan.studentsToDetach.length}명`;
+                const conflictEl = $('deleteNameConflict');
+                conflictEl.classList.toggle('d-none', !plan.nameConflict);
+                conflictEl.textContent = plan.nameConflict
+                    ? `같은 학교에 '${plan.name}' 이름의 다른 승인 교사가 있어, 다른 선생님의 학생을 지우지 않도록 학생 정보는 정리하지 않습니다.`
+                    : '';
+            }
+
+            function setBusy(busy) {
+                [btnCancel, btnForce, btnConfirm].forEach(b => { b.disabled = busy; });
+            }
+
+            function setProgress(done, total) {
+                const percent = total ? Math.round(done / total * 100) : 100;
+                $('deleteProgressBar').style.width = `${percent}%`;
+                $('deleteProgressText').textContent = total ? `${done} / ${total} 처리 중...` : '정리할 방·학생이 없습니다.';
+            }
+
+            // 초기 상태
+            renderPlan();
+            errorEl.classList.add('d-none');
+            progressWrap.classList.add('d-none');
+            btnForce.classList.add('d-none');
+            btnCancel.textContent = '취소';
+            btnConfirm.innerHTML = '<i class="bi bi-trash3 me-1"></i>삭제';
+            setBusy(false);
+
+            return new Promise((resolve) => {
+                let result = null;
+                const close = (value) => { result = value; bsModal.hide(); };
+
+                async function finishWithAccountDelete() {
+                    try {
+                        await deleteTeacherRecord(uid);
+                        close({ plan: initialPlan, failures: lastFailures });
+                    } catch (e) {
+                        console.error(e);
+                        errorEl.textContent = '교사 계정을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+                        errorEl.classList.remove('d-none');
+                        setBusy(false);
+                    }
+                }
+
+                btnConfirm.onclick = async () => {
+                    setBusy(true);
+                    errorEl.classList.add('d-none');
+                    progressWrap.classList.remove('d-none');
+                    try {
+                        // 다시 시도할 때는 남은 항목만 다시 모읍니다 (지운 방·학생은 목록에서 빠져 있음)
+                        if (lastFailures.length) { plan = await collectTeacherData(uid); renderPlan(); }
+                        setProgress(0, plan.rooms.length + plan.studentsToDetach.length + plan.studentsToDelete.length);
+                        lastFailures = await runTeacherCleanup(plan, setProgress);
+                    } catch (e) {
+                        console.error(e);
+                        lastFailures = ['삭제 대상 목록 불러오기'];
+                    }
+
+                    if (!lastFailures.length) { await finishWithAccountDelete(); return; }
+
+                    errorEl.textContent = `다음 항목을 지우지 못했습니다. 교사 계정은 아직 남겨 두었습니다.\n${formatFailures(lastFailures)}`;
+                    errorEl.classList.remove('d-none');
+                    btnConfirm.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>다시 시도';
+                    btnForce.classList.remove('d-none');
+                    btnCancel.textContent = '닫기';
+                    setBusy(false);
+                };
+
+                btnForce.onclick = async () => { setBusy(true); await finishWithAccountDelete(); };
+                btnCancel.onclick = () => close(null);
+                modalEl.addEventListener('hidden.bs.modal', () => resolve(result), { once: true });
+                bsModal.show();
+            });
+        }
+
         async function removeTeacherAccount(uid) {
-            const confirmed = await showConfirmModal(
-                "교사 데이터 삭제",
-                "이 교사 데이터를 삭제하시겠습니까?\n(계정 로그인 자체는 남으며, 다시 가입 신청할 수 있습니다)",
-                "삭제", 'danger');
-            if (!confirmed) return;
+            let plan;
             try {
-                await revokeTeacher(uid);
-                await deleteDoc(doc(db, "teachers", uid));
-                showMessageModal("삭제 완료", "삭제되었습니다.\n이 선생님이 만든 방과 기록은 그대로 남아 있으니, 필요하면 각 게임 대시보드에서 정리해 주세요.", 'success');
-                loadTeachers();
+                plan = await collectTeacherData(uid);
             } catch (e) {
                 console.error(e);
-                showMessageModal("삭제 실패", "삭제 중 오류가 발생했습니다.", 'danger');
+                showMessageModal("삭제 준비 실패", "삭제할 방·학생 목록을 불러오지 못했습니다.\n새로고침 후 다시 시도해 주세요.", 'danger');
+                return;
+            }
+
+            const result = await openDeleteTeacherModal(uid, plan);
+            loadTeachers();
+            if (!result) return;
+
+            const summary = `방 ${plan.rooms.length}개 삭제, 학생 ${plan.studentsToDelete.length}명 삭제, `
+                + `${plan.studentsToDetach.length}명 담당 교사에서 제외`;
+            if (result.failures.length) {
+                showMessageModal("일부 항목 남음",
+                    `교사 계정은 삭제했지만 다음 항목은 지우지 못했습니다.\n${formatFailures(result.failures)}`, 'warning');
+            } else {
+                showMessageModal("삭제 완료",
+                    `${plan.name || '교사'} 선생님의 데이터를 삭제했습니다.\n${summary}`
+                    + (plan.nameConflict ? '\n(같은 이름의 교사가 있어 학생 정보는 정리하지 않았습니다)' : ''), 'success');
             }
         }
 
