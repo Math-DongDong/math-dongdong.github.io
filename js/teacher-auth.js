@@ -447,6 +447,9 @@ async function showTeacherInfoModal(user, docData) {
 }
 
 function handleAdminAlert() {
+    // 이미 승인 관리 페이지에 있으면 알림 불필요
+    if (/\/pages\/admin\/account_manager(\.html)?$/.test(decodeURIComponent(window.location.pathname).replace(/\\/g, '/'))) return;
+
     const today = new Date().toLocaleDateString();
     if (localStorage.getItem('hideAdminAlertDate') === today) return;
 
