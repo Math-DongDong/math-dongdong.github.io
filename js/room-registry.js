@@ -81,6 +81,12 @@ export async function unregisterRoom(code, parts) {
  * ★ 방 문서가 없는 위치(이름표만 두는 유형 D)도 있어, 있을 때만 지웁니다.
  * ★ Storage 파일은 규칙이 방 문서로 소유자를 확인하므로 Firestore보다 먼저 지웁니다.
  */
+/**
+ * 예전에 등록된 방 목록 항목에는 적혀 있지 않지만, 지금은 함께 지워야 하는 하위 컬렉션.
+ *  · studentsreview_records/{방}/teacher_notes — 생기부 관찰기록 (교사 전용으로 분리, 소감문 v4.3)
+ */
+const EXTRA_SUBS = { studentsreview_records: ['teacher_notes'] };
+
 export async function purgeRoomParts(code, parts) {
     for (const part of parts || []) {
         if (part.storage) {
@@ -88,7 +94,8 @@ export async function purgeRoomParts(code, parts) {
             await deleteStorageFolder(`${part.storage}/${code}`);
         }
         if (part.fs) {
-            for (const sub of part.subs || []) {
+            const subs = [...new Set([...(part.subs || []), ...(EXTRA_SUBS[part.fs] || [])])];
+            for (const sub of subs) {
                 const snap = await getDocs(collection(db, part.fs, code, sub));
                 await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
             }

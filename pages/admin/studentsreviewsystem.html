@@ -1259,7 +1259,7 @@
         import { onAuthStateChanged, signOut as firebaseSignOut } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
         import {
             collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-            onSnapshot, serverTimestamp, query, where, orderBy, writeBatch
+            onSnapshot, serverTimestamp, query, where, orderBy, writeBatch, deleteField
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { firestoreRoom } from '../../js/game-kit.js?v=4.4';
         import {
@@ -1271,7 +1271,9 @@
 
         // ── 컬렉션 및 기본 상수 ──
         const COLLECTION_NAME = "studentsreview_records";
-        const roomKit = firestoreRoom(COLLECTION_NAME);
+        // ★ teacher_notes: 생기부 관찰기록(teacherView)은 학생이 읽을 수 있는 소감문 기록과 분리해
+        //   방을 만든 교사만 읽는 하위 컬렉션에 둡니다. 방을 지울 때 함께 지우도록 하위 컬렉션 목록에 넣습니다.
+        const roomKit = firestoreRoom(COLLECTION_NAME, { subs: ['students', 'records', 'nicknames', 'guests', 'teacher_notes'] });
 
         // AI 작업별 기본 프롬프트
         const DEFAULT_PROMPTS = {
@@ -1313,6 +1315,10 @@
         let unsubRoomDoc = null;
         let unsubReviews = null;
         let unsubStudents = null;
+        let unsubNotes = null;
+        let teacherNotes = {};               // 교사 화면: { 기록ID: { teacherView } } — 교사 전용 생기부 관찰기록
+        let teacherNotesLoaded = false;      // 관찰기록을 한 번이라도 받아 왔는지 (옛 기록 옮기기는 그 뒤에만)
+        let migratingNotes = false;
         let allReviews = [];                 // 현재 방의 소감문 목록
         let studentRoster = [];              // 학생 명단 [{id, pw}]
         let activityList = [];               // 창체활동 목록 [{date, activity}]
@@ -1768,7 +1774,10 @@
             if (unsubRoomDoc) { unsubRoomDoc(); unsubRoomDoc = null; }
             if (unsubReviews) { unsubReviews(); unsubReviews = null; }
             if (unsubStudents) { unsubStudents(); unsubStudents = null; }
+            if (unsubNotes) { unsubNotes(); unsubNotes = null; }
             allReviews = [];
+            teacherNotes = {};
+            teacherNotesLoaded = false;
             roomData = null;
 
             if (!code) {
@@ -1845,10 +1854,85 @@
                 snap.forEach(d => {
                     const r = d.data();
                     r.id = d.id;
+                    // 옛 기록에 남아 있는 관찰기록 — 교사 화면이 teacher_notes로 옮기기 전까지만 씁니다
+                    r.legacyTeacherView = typeof r.teacherView === 'string' ? r.teacherView : '';
+                    delete r.teacherView;
                     allReviews.push(r);
                 });
+                mergeTeacherNotes();
                 renderAll();
+                lastRecordDocs = snap.docs;
+                if (isTeacherLocked) migrateLegacyTeacherViews(code, lastRecordDocs);
             });
+
+            // 교사 화면: 생기부 관찰기록(교사 전용 하위 컬렉션)을 따로 구독해 기록에 합칩니다
+            if (isTeacherLocked) {
+                unsubNotes = onSnapshot(collection(db, COLLECTION_NAME, code, "teacher_notes"), (snap) => {
+                    teacherNotes = {};
+                    snap.forEach(d => { teacherNotes[d.id] = d.data() || {}; });
+                    teacherNotesLoaded = true;
+                    mergeTeacherNotes();
+                    renderAll();
+                    migrateLegacyTeacherViews(code, lastRecordDocs);   // 기록이 먼저 도착했으면 여기서 옮깁니다
+                }, (err) => console.warn('관찰기록을 불러오지 못했습니다:', err));
+            }
+        }
+
+        let lastRecordDocs = [];
+
+        /** 교사 화면: 기록마다 관찰기록(teacherView)을 붙입니다 — 새 위치(teacher_notes)가 우선, 없으면 옛 값 */
+        function mergeTeacherNotes() {
+            allReviews.forEach(r => {
+                const note = teacherNotes[r.id];
+                r.teacherView = (note && typeof note.teacherView === 'string') ? note.teacherView : (r.legacyTeacherView || '');
+            });
+        }
+
+        /**
+         * 옛 소감문 기록에 남아 있는 생기부 관찰기록을 교사 전용 위치(teacher_notes)로 옮기고 기록에서는 지웁니다.
+         * 교사가 방을 열 때 자동으로 한 번 실행됩니다. (기록은 학번만 알면 읽을 수 있어 관찰기록을 둘 수 없음)
+         * ★ 관찰기록 구독을 한 번 받은 뒤에만 실행합니다 — 새 위치에 이미 쓴 값을 옛 값으로 덮지 않도록.
+         */
+        async function migrateLegacyTeacherViews(code, docs) {
+            if (migratingNotes || !teacherNotesLoaded || code !== currentRoomCode) return;
+            // 빈 값('')으로 남은 칸도 함께 지워, 학생이 읽을 수 있는 기록에는 관찰기록 칸이 아예 없게 합니다
+            const legacy = (docs || []).filter(d => typeof (d.data() || {}).teacherView === 'string');
+            if (!legacy.length) return;
+            migratingNotes = true;
+            try {
+                for (let i = 0; i < legacy.length; i += 200) {
+                    const batch = writeBatch(db);
+                    legacy.slice(i, i + 200).forEach(d => {
+                        const text = String(d.data().teacherView || '');
+                        if (text && !teacherNotes[d.id]) {
+                            batch.set(doc(db, COLLECTION_NAME, code, "teacher_notes", d.id),
+                                { teacherView: text, updatedAt: serverTimestamp() }, { merge: true });
+                        }
+                        batch.update(d.ref, { teacherView: deleteField() });
+                    });
+                    await batch.commit();
+                }
+            } catch (err) {
+                console.error('옛 관찰기록 옮기기 실패:', err);
+            } finally {
+                migratingNotes = false;
+            }
+        }
+
+        /** 교사가 쓰는 칸 저장 — 생기부 관찰기록은 교사 전용 위치(teacher_notes), 피드백은 학생이 봐야 하므로 소감문 기록에 */
+        async function saveReviewField(reviewId, field, value) {
+            if (field === 'teacherView') {
+                await setDoc(doc(db, COLLECTION_NAME, currentRoomCode, "teacher_notes", reviewId),
+                    { teacherView: value, updatedAt: serverTimestamp() }, { merge: true });
+            } else {
+                await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", reviewId), { [field]: value });
+            }
+        }
+
+        /** 교사: 소감문 기록과 그 기록의 관찰기록을 함께 지웁니다 */
+        async function deleteRecordAndNote(recordId) {
+            await deleteDoc(doc(db, COLLECTION_NAME, currentRoomCode, "teacher_notes", recordId)).catch(() => { });
+            await deleteDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", recordId));
         }
 
         $('btnDeleteRoom').addEventListener('click', async () => {
@@ -2038,7 +2122,7 @@
                 recordData.createdAt = serverTimestamp();
                 recordData.check = '';
                 recordData.feedback = '';
-                recordData.teacherView = '';
+                // 생기부 관찰기록(teacherView)은 기록에 두지 않습니다 — 교사 전용 teacher_notes에 따로 저장
             }
 
             try {
@@ -2276,9 +2360,7 @@
                         await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode), { activities: updated });
 
                         if (reviewsToDelete.length) {
-                            await Promise.all(reviewsToDelete.map(r =>
-                                deleteDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", r.id))
-                            ));
+                            await Promise.all(reviewsToDelete.map(r => deleteRecordAndNote(r.id)));   // 관찰기록도 함께
                         }
 
                         if (selectedActivityDate === d) selectedActivityDate = '';
@@ -2335,7 +2417,7 @@
 
                 const targetRevs = allReviews.filter(r => r.studentId === sid);
                 for (const r of targetRevs) {
-                    await deleteDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", r.id));
+                    await deleteRecordAndNote(r.id);   // 관찰기록도 함께
                 }
 
                 const newStudents = studentRoster.filter(studentId => studentId !== sid);
@@ -2596,7 +2678,7 @@
             const modal = new bootstrap.Modal($('editTextModal'));
             $('btnSaveTextModal').onclick = async () => {
                 const val = $('modalTextInput').value.trim();
-                await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", reviewId), { [field]: val });
+                await saveReviewField(reviewId, field, val);   // 관찰기록은 teacher_notes, 피드백은 기록
                 modal.hide();
                 renderAll();
             };
@@ -2615,7 +2697,7 @@
             if (!confirmed) return;
 
             try {
-                await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", reviewId), { [field]: '' });
+                await saveReviewField(reviewId, field, '');
                 review[field] = '';
                 renderAll();
             } catch (err) {
@@ -2737,9 +2819,7 @@
                 try {
                     const resultText = await callGeminiApi(apiKey, model, promptText, rec);
                     if (resultText) {
-                        await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", rec.id), {
-                            [currentAiTask]: resultText
-                        });
+                        await saveReviewField(rec.id, currentAiTask, resultText);   // 관찰기록은 teacher_notes, 피드백은 기록
                         successCount++;
                     }
                 } catch (err) {

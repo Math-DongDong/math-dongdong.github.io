@@ -132,7 +132,6 @@
                 </div>
                 <div class="modal-footer border-0 pt-0 flex-wrap">
                     <button type="button" class="btn btn-secondary rounded-3" id="btnDeleteCancel">취소</button>
-                    <button type="button" class="btn btn-outline-danger rounded-3 d-none" id="btnDeleteForce">실패 항목은 두고 계정만 삭제</button>
                     <button type="button" class="btn btn-danger rounded-3" id="btnDeleteConfirm">삭제</button>
                 </div>
             </div>
@@ -304,14 +303,14 @@
 
         /**
          * 삭제 모달. 삭제가 끝나면 { plan, failures }, 취소하면 null 로 끝납니다 (모달이 완전히 닫힌 뒤).
-         * 실패 항목이 있으면 교사 계정은 남기고 [다시 시도] / [실패 항목은 두고 계정만 삭제] 를 고르게 합니다.
+         * ★ 지우지 못한 방 · 학생이 하나라도 있으면 교사 계정을 남기고 [다시 시도]만 보여 줍니다.
+         *   계정만 먼저 지우면 남은 방 · 학생이 주인 없는 찌꺼기가 되어 다시 정리할 방법이 없습니다.
          */
         function openDeleteTeacherModal(uid, initialPlan) {
             const modalEl = document.getElementById('deleteTeacherModal');
             const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
             const $ = (id) => document.getElementById(id);
             const btnCancel = $('btnDeleteCancel');
-            const btnForce = $('btnDeleteForce');
             const btnConfirm = $('btnDeleteConfirm');
             const errorEl = $('deleteError');
             const progressWrap = $('deleteProgressWrap');
@@ -332,7 +331,7 @@
             }
 
             function setBusy(busy) {
-                [btnCancel, btnForce, btnConfirm].forEach(b => { b.disabled = busy; });
+                [btnCancel, btnConfirm].forEach(b => { b.disabled = busy; });
             }
 
             function setProgress(done, total) {
@@ -345,7 +344,6 @@
             renderPlan();
             errorEl.classList.add('d-none');
             progressWrap.classList.add('d-none');
-            btnForce.classList.add('d-none');
             btnCancel.textContent = '취소';
             btnConfirm.innerHTML = '<i class="bi bi-trash3 me-1"></i>삭제';
             setBusy(false);
@@ -382,15 +380,14 @@
 
                     if (!lastFailures.length) { await finishWithAccountDelete(); return; }
 
-                    errorEl.textContent = `다음 항목을 지우지 못했습니다. 교사 계정은 아직 남겨 두었습니다.\n${formatCleanupFailures(lastFailures)}`;
+                    errorEl.textContent = `다음 항목을 지우지 못했습니다. 교사 계정은 아직 남겨 두었습니다.\n${formatCleanupFailures(lastFailures)}\n\n` +
+                        '[다시 시도]를 누르면 남은 것만 다시 지웁니다. 계속 실패하면 네트워크와 Firebase 규칙(실시간 DB · Storage 포함)을 확인해 주세요.';
                     errorEl.classList.remove('d-none');
                     btnConfirm.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>다시 시도';
-                    btnForce.classList.remove('d-none');
                     btnCancel.textContent = '닫기';
                     setBusy(false);
                 };
 
-                btnForce.onclick = async () => { setBusy(true); await finishWithAccountDelete(); };
                 btnCancel.onclick = () => close(null);
                 modalEl.addEventListener('hidden.bs.modal', () => resolve(result), { once: true });
                 bsModal.show();
@@ -463,7 +460,9 @@
                     // ★ 모든 값이 esc()를 거칩니다. 버튼도 onclick 대신 data-uid + 이벤트 위임.
                     const row = `
                         <tr>
-                            <td class="fw-bold">${esc(data.name || '-')}</td>
+                            <td class="fw-bold">${esc(data.name || '-')}${data.withdrawRequested
+                                ? ' <span class="badge text-bg-danger ms-1" title="회원 탈퇴 중 지우지 못한 방·학생이 있어 관리자 정리를 요청했습니다. [삭제]로 마저 정리해 주세요.">탈퇴 요청</span>'
+                                : ''}</td>
                             <td>${esc(data.school || '-')}</td>
                             <td class="small text-muted">${esc(data.email || '-')}</td>
                             <td class="small">${esc(formatDate(data.createdAt))}</td>

@@ -377,7 +377,7 @@ function ensureWithdrawModalDOM() {
                 </div>
                 <div class="modal-footer border-0 pt-0 flex-wrap">
                     <button type="button" class="btn btn-secondary rounded-3" id="btnWithdrawCancel">취소</button>
-                    <button type="button" class="btn btn-outline-danger rounded-3 d-none" id="btnWithdrawForce">실패 항목은 두고 탈퇴</button>
+                    <button type="button" class="btn btn-outline-secondary rounded-3 d-none" id="btnWithdrawRequest">관리자에게 탈퇴 요청</button>
                     <button type="button" class="btn btn-danger rounded-3" id="btnWithdrawConfirm"></button>
                 </div>
             </div>
@@ -393,17 +393,19 @@ function ensureWithdrawModalDOM() {
  *   팝업은 버튼을 누른 그 순간에 열어야 브라우저가 막지 않으므로 await보다 먼저 엽니다.
  * ★ 순서: 방 · 학생 정리 → 교사 정보 → 로그인 연결. 로그인 연결을 먼저 끊으면 교사 정보를 지울 권한이 사라집니다.
  * ★ 실시간 게임 권한(RTDB teacher_uids)은 관리자만 지울 수 있어 남지만, 로그인 연결을 지우면 그 uid로는 다시 로그인할 수 없습니다.
+ * ★ 지우지 못한 방 · 학생이 하나라도 있으면 탈퇴하지 않습니다 (데이터 찌꺼기 방지).
+ *   [다시 시도]로 남은 것만 다시 지우거나, [관리자에게 탈퇴 요청]으로 관리자가 관리자 권한으로 마저 정리하게 합니다.
  *
  * @param {object|null} initialPlan  collectTeacherCleanupPlan 결과 (승인 전 교사는 null — 정리할 것이 없음)
  * @param {object|null} cleanup      teacher-cleanup.js 모듈
- * @returns {Promise<boolean>} 탈퇴를 마쳤으면 true, 취소하면 false (모달이 완전히 닫힌 뒤)
+ * @returns {Promise<'done'|'requested'|false>} 탈퇴 완료 · 관리자에게 요청 · 취소 (모달이 완전히 닫힌 뒤)
  */
 function openWithdrawModal(user, initialPlan, cleanup) {
     ensureWithdrawModalDOM();
     const el = document.getElementById('withdrawModal');
     const $w = (id) => document.getElementById(id);
     const btnCancel = $w('btnWithdrawCancel');
-    const btnForce = $w('btnWithdrawForce');
+    const btnRequest = $w('btnWithdrawRequest');
     const btnConfirm = $w('btnWithdrawConfirm');
     const errEl = $w('withdrawError');
     const confirmLabel = '<i class="bi bi-person-x me-1"></i>탈퇴';
@@ -429,7 +431,7 @@ function openWithdrawModal(user, initialPlan, cleanup) {
             ? `같은 학교에 '${plan.name}' 이름의 다른 선생님이 있어, 그 선생님의 학생을 지우지 않도록 학생 정보는 정리하지 않습니다.`
             : '';
     }
-    const setBusy = (busy) => { [btnCancel, btnForce, btnConfirm].forEach(b => { b.disabled = busy; }); };
+    const setBusy = (busy) => { [btnCancel, btnRequest, btnConfirm].forEach(b => { b.disabled = busy; }); };
     const showError = (message) => { errEl.textContent = message; errEl.classList.remove('d-none'); };
     function setProgress(done, total) {
         $w('withdrawProgressBar').style.width = `${total ? Math.round(done / total * 100) : 100}%`;
@@ -440,7 +442,7 @@ function openWithdrawModal(user, initialPlan, cleanup) {
     renderPlan();
     errEl.classList.add('d-none');
     $w('withdrawProgressWrap').classList.add('d-none');
-    btnForce.classList.add('d-none');
+    btnRequest.classList.add('d-none');
     btnCancel.classList.remove('d-none');
     btnCancel.textContent = '취소';
     btnConfirm.innerHTML = confirmLabel;
@@ -457,7 +459,7 @@ function openWithdrawModal(user, initialPlan, cleanup) {
                 await deleteDoc(doc(db, "teachers", user.uid));
                 accountRecordDeleted = true;
                 await deleteUser(user);
-                close(true);
+                close('done');
             } catch (e) {
                 console.error(e);
                 if (!accountRecordDeleted) {
@@ -470,7 +472,7 @@ function openWithdrawModal(user, initialPlan, cleanup) {
                     ? '방·학생 정리와 교사 정보 삭제는 끝났습니다.\n로그인 연결을 끊으려면 [다시 로그인하고 마치기]를 눌러 주세요.'
                     : '탈퇴를 마치지 못했습니다. [다시 로그인하고 마치기]를 눌러 다시 시도해 주세요.');
                 btnConfirm.innerHTML = '<i class="bi bi-box-arrow-in-right me-1"></i>다시 로그인하고 마치기';
-                btnForce.classList.add('d-none');
+                btnRequest.classList.add('d-none');
                 btnCancel.classList.add('d-none');
                 setBusy(false);
             }
@@ -490,9 +492,12 @@ function openWithdrawModal(user, initialPlan, cleanup) {
                     failures = ['정리할 목록 불러오기'];
                 }
                 if (failures.length) {
-                    showError(`다음 항목을 지우지 못했습니다. 아직 탈퇴하지 않았습니다.\n${cleanup.formatCleanupFailures(failures)}`);
+                    // ★ 하나라도 남으면 탈퇴하지 않습니다 — 남은 방 · 학생이 주인 없는 찌꺼기가 되기 때문입니다
+                    showError(`다음 항목을 지우지 못해 아직 탈퇴하지 않았습니다.\n${cleanup.formatCleanupFailures(failures)}\n\n` +
+                        '[다시 시도]로 남은 것만 다시 지우거나, 계속 실패하면 [관리자에게 탈퇴 요청]을 눌러 주세요. ' +
+                        '관리자가 관리자 권한으로 마저 정리한 뒤 계정을 삭제합니다.');
                     btnConfirm.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>다시 시도';
-                    btnForce.classList.remove('d-none');
+                    btnRequest.classList.remove('d-none');
                     btnCancel.textContent = '닫기';
                     setBusy(false);
                     return;
@@ -523,7 +528,19 @@ function openWithdrawModal(user, initialPlan, cleanup) {
                 }
             );
         };
-        btnForce.onclick = () => { setBusy(true); finishAccount(); };
+        // 관리자에게 탈퇴 요청 — 교사 정보에 표시만 남기고, 계정 관리에서 관리자가 정리 · 삭제합니다
+        btnRequest.onclick = async () => {
+            setBusy(true);
+            try {
+                await setDoc(doc(db, "teachers", user.uid),
+                    { withdrawRequested: true, withdrawRequestedAt: serverTimestamp() }, { merge: true });
+                close('requested');
+            } catch (e) {
+                console.error(e);
+                showError('탈퇴 요청을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                setBusy(false);
+            }
+        };
         btnCancel.onclick = () => close(false);
 
         modalFor(el).show();
@@ -700,8 +717,13 @@ async function showTeacherInfoModal(user, docData) {
             }
         }
 
-        const withdrawn = await openWithdrawModal(user, plan, cleanup);
-        if (!withdrawn) { bsModal.show(); return; }
+        const outcome = await openWithdrawModal(user, plan, cleanup);
+        if (outcome === 'requested') {
+            await showAuthDialog("탈퇴 요청 완료",
+                "관리자에게 탈퇴를 요청했습니다.\n관리자가 남은 방·학생 정보를 정리한 뒤 계정을 삭제합니다.", { type: 'success' });
+            return;
+        }
+        if (outcome !== 'done') { bsModal.show(); return; }
         await showAuthDialog("탈퇴 완료", "탈퇴가 완료되었습니다.", { type: 'success' });
         location.reload();
     };
@@ -718,12 +740,19 @@ function handleAdminAlert() {
 
     import("https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js").then(async ({ collection, query, where, getDocs }) => {
         try {
-            const snapshot = await getDocs(query(collection(db, "teachers"), where("status", "==", "pending")));
-            if (snapshot.empty) return;
+            // 가입 승인 요청 + 교사 본인이 남긴 탈퇴 요청 (회원 탈퇴 중 지우지 못한 방 · 학생을 관리자가 마저 정리)
+            const [pendingSnap, withdrawSnap] = await Promise.all([
+                getDocs(query(collection(db, "teachers"), where("status", "==", "pending"))),
+                getDocs(query(collection(db, "teachers"), where("withdrawRequested", "==", true)))
+            ]);
+            if (pendingSnap.empty && withdrawSnap.empty) return;
 
             ensureAdminAlertModalDOM();
-            document.getElementById('adminAlertMessage').innerHTML =
-                `현재 <strong>${snapshot.size}건</strong>의 교사 가입 승인 요청이 대기 중입니다.`;
+            const items = [];
+            if (!pendingSnap.empty) items.push(`교사 가입 승인 요청 <strong>${pendingSnap.size}건</strong>`);
+            if (!withdrawSnap.empty) items.push(`교사 탈퇴 요청 <strong>${withdrawSnap.size}건</strong>`);
+            document.querySelector('#adminAlertModal .modal-title').textContent = withdrawSnap.empty ? '승인 대기 알림' : '처리 대기 알림';
+            document.getElementById('adminAlertMessage').innerHTML = `현재 ${items.join(', ')}이 대기 중입니다.`;
 
             const modalEl = document.getElementById('adminAlertModal');
             const bsModal = modalFor(modalEl);

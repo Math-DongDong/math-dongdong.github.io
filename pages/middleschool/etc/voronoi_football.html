@@ -370,7 +370,6 @@
             red: { name: '레드', color: '#dc3545', hue: 354, sat: 76, dir: -1 }
         };
         const GK_FILL = '#f59e0b';
-        const SELECT_COLORS = ['#facc15', '#fb923c'];
         const FONT = "'Pretendard Variable', Pretendard, 'Malgun Gothic', sans-serif";
         const TAU = Math.PI * 2;
         const DEFAULT_FORMATION = { blue: '4-3-3', red: '4-4-2' };
@@ -568,7 +567,6 @@
             },
             layers: { delaunay: false, roles: false },
             cellOpacity: 0.6,
-            selection: [],
             analysis: null,
             simSpeed: 1,
             match: createMatch(1234),
@@ -903,7 +901,6 @@
             drawPitch();
             drawCells(a.view);
             if (state.layers.delaunay) drawPassLanes(a);      // 델로네 = 팀 델로네 변(패스길)
-            drawSelectionCells(a);
             drawBallPath();
             drawPlayers();
             drawBall();
@@ -1064,28 +1061,6 @@
             ctx.lineCap = 'butt';
         }
 
-        function drawSelectionCells(a) {
-            state.selection.forEach((id, i) => {
-                const cell = a.viewById.get(id);
-                if (!cell || cell.poly.length < 3) return;
-                if (i === 0) {
-                    ctx.save();
-                    ctx.setLineDash([6, 5]);
-                    ctx.strokeStyle = 'rgba(254, 240, 138, 0.95)';
-                    ctx.lineWidth = 2;
-                    for (const n of cell.neighbors) {
-                        const nc = a.viewById.get(n);
-                        if (nc && nc.poly.length >= 3) { tracePolygon(nc.poly); ctx.stroke(); }
-                    }
-                    ctx.restore();
-                }
-                tracePolygon(cell.poly);
-                ctx.strokeStyle = SELECT_COLORS[i];
-                ctx.lineWidth = 3.5;
-                ctx.stroke();
-            });
-        }
-
         function drawBallPath() {
             const b = state.ball;
             if ((b.state !== 'pass' && b.state !== 'shot') || !b.target) return;
@@ -1105,14 +1080,6 @@
                 const s = toScreen(p.pos.x, p.pos.y);
                 const info = TEAM_INFO[p.team];
                 const isGK = p.role === 'GK';
-                const selIndex = state.selection.indexOf(p.id);
-                if (selIndex >= 0) {
-                    ctx.beginPath();
-                    ctx.arc(s.x, s.y, r + 4, 0, TAU);
-                    ctx.lineWidth = 3.5;
-                    ctx.strokeStyle = SELECT_COLORS[selIndex];
-                    ctx.stroke();
-                }
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, r, 0, TAU);
                 ctx.fillStyle = isGK ? GK_FILL : info.color;
@@ -1717,14 +1684,7 @@
             return state.mode === 'tactics' || !rafId;
         }
 
-        function toggleSelection(id) {
-            const i = state.selection.indexOf(id);
-            if (i >= 0) state.selection.splice(i, 1);
-            else {
-                state.selection.push(id);
-                if (state.selection.length > 2) state.selection.shift();
-            }
-            requestRender();
+           requestRender();
             requestUiUpdate(true);
         }
 
@@ -1817,10 +1777,7 @@
             if (pointer.ball) {
                 // 선수와 1.5m 이내에 놓으면 그 선수가 공을 가짐
                 if (pointer.moved) placeBall(state.ball, closestWithin(state.players, state.ball, 1.5));
-            } else if (!pointer.moved) {
-                if (p) toggleSelection(p.id);
-                else if (state.selection.length) { state.selection = []; requestUiUpdate(true); }
-            } else if (p) {
+            } else if (p && pointer.moved) {
                 separateFromOthers(p);
             }
             if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
@@ -1925,7 +1882,7 @@
             if (state.mode === 'match' && rafId) text = '경기 중에는 선수를 클릭해 선택만 할 수 있어요. 일시정지하면 선수를 끌어 장면을 바꿀 수 있습니다.';
             else if (state.mode === 'match' && isMatchLive()) text = '일시정지 중: 선수를 끌어 옮기면 영역이 어떻게 바뀌는지 볼 수 있어요. ‘전술판’으로 가면 이 장면을 그대로 분석합니다.';
             else if (state.mode === 'match') text = '▶ 시작을 누르면 전술판의 기준 대형으로 킥오프합니다. 같은 시드 + 같은 전술이면 같은 경기가 재현돼요.';
-            else text = '선수와 공을 끌어 옮겨 보세요(공을 선수 가까이에 놓으면 그 선수가 공을 가져요). 선수를 클릭하면 그 영역과 이웃 영역(경계를 공유하는 선수)이 강조됩니다.';
+            else text = '선수와 공을 끌어 옮겨 보세요(공을 선수 가까이에 놓으면 그 선수가 공을 가져요).';
             setText($('canvasHint'), text);
             $('laneLegend').classList.toggle('d-none', !state.layers.delaunay);
             $('btnRoleGuide').classList.toggle('d-none', !state.layers.roles);
@@ -2176,7 +2133,6 @@
             const owner = ball.ownerId ? playerById.get(ball.ownerId) : null;
             if (owner) placeBall(owner.pos, owner);
             else placeBall({ x: Number(ball.x) || FIELD.L / 2, y: Number(ball.y) || FIELD.W / 2 }, null);
-            state.selection = [];
             syncTeamControls();
             requestRender();
             requestUiUpdate(true);
@@ -2231,7 +2187,6 @@
                 alignTeam(team, true);
             }
             state.ball = createBall();
-            state.selection = [];
             state.match = createMatch(readSeed());
             syncTeamControls();
             requestRender();
