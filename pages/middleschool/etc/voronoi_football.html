@@ -192,7 +192,7 @@
                     <section class="card shadow-sm" aria-label="경기 기록">
                         <div class="card-header bg-white fw-bold"><i class="bi bi-clipboard2-pulse"></i> 경기 기록</div>
                         <div class="card-body">
-                            <table class="table table-sm align-middle text-center mb-3">
+                            <table class="table table-sm align-middle text-center mb-0">
                                 <thead>
                                     <tr>
                                         <th class="text-primary w-25">블루</th>
@@ -202,25 +202,26 @@
                                 </thead>
                                 <tbody id="matchStatsBody" class="stat-num"></tbody>
                             </table>
-                            <h3 class="h6 fw-bold mb-2">주요 장면</h3>
-                            <ul class="list-group list-group-flush small event-log" id="eventLog"></ul>
                         </div>
                     </section>
                     <section class="card shadow-sm" aria-label="지배율 변화">
                         <div class="card-header bg-white fw-bold"><i class="bi bi-graph-up"></i> 지배율 변화 (블루 기준)</div>
                         <div class="card-body">
                             <canvas id="dominanceGraph" class="graph-canvas" aria-label="시간에 따른 블루 팀 지배율 그래프"></canvas>
-                            <p class="small text-secondary mt-2 mb-0">0.5초마다 블루 팀의 지배 면적 비율을 기록합니다. 50% 선 위(파랑)는 블루가, 아래(빨강)는 레드가 더 넓은 땅을 차지한 순간이에요. 세로선은 골.</p>
+                            <p class="small text-secondary mt-2 mb-0">0.5초마다 블루 팀의 지배 면적 비율을 기록합니다. 세로선은 골.</p>
                         </div>
                     </section>
         </div>
         </div>
 
+        <!-- 주요 장면 (2열 아래, 한 열) -->
+        <section class="card shadow-sm mb-3" aria-label="주요 장면">
+            <div class="card-header bg-white fw-bold"><i class="bi bi-megaphone"></i> 주요 장면</div>
+            <div class="card-body py-2">
+                <ul class="list-group list-group-flush small event-log" id="eventLog"></ul>
+            </div>
+        </section>
     </main>
-
-    <footer class="border-top py-3 text-center small text-secondary">
-        보로노이 축구 전술 시뮬레이터 · 수직이등분선 · 다각형의 넓이(신발끈 공식) · 델로네 삼각분할
-    </footer>
 
     <!-- 알림 토스트 -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -1068,10 +1069,13 @@
             return Math.min(90, Math.floor(state.match.time / SIM.MATCH_SECONDS * 90));
         }
 
-        function logEvent(text, team = null) {
+        // 주요 장면 기록 (toast = true면 토스트로 한 번 더 강조)
+        function logEvent(text, team = null, toast = false) {
             const m = state.match;
-            m.events.unshift({ minute: matchMinute(), text, team });
+            const minute = matchMinute();
+            m.events.unshift({ minute, text, team });
             if (m.events.length > 40) m.events.pop();
+            if (toast) showToast(`${minute}' ${text}`, team === 'blue' ? 'primary' : team === 'red' ? 'danger' : 'dark');
         }
 
         function startMatch(luck = readLuck(), seed) {
@@ -1130,7 +1134,7 @@
         function endMatch() {
             const m = state.match;
             m.phase = 'FULLTIME';
-            logEvent(`경기 종료 — 블루 ${m.score.blue} : ${m.score.red} 레드`);
+            logEvent(`경기 종료 — 블루 ${m.score.blue} : ${m.score.red} 레드`, null, true);
         }
 
         function possessionTeam() {
@@ -1529,14 +1533,14 @@
                 m.stats[shooter.team].goals++;
                 m.lastGoal = { team: shooter.team, number: shooter.number };
                 m.goals.push({ t: m.time, team: shooter.team });
-                logEvent(`⚽ ${name} 골! (${how})`, shooter.team);
+                logEvent(`⚽ ${name} 골! (${how})`, shooter.team, true);
                 b.state = 'dead';
                 m.phase = 'GOAL';
                 m.phaseTimer = SIM.GOAL_SECONDS;
                 m.kickoffTeam = otherTeam(shooter.team);
             } else {
                 const keeper = teamPlayers[otherTeam(shooter.team)].find(p => p.role === 'GK');
-                logEvent(`${name} 슈팅 → 선방 (${how})`, shooter.team);
+                logEvent(`${name} 슈팅 → 선방 (${how})`, shooter.team, true);
                 gainPossession(keeper, 'save');
             }
         }
@@ -1691,9 +1695,13 @@
             }
         }
 
-        function showToast(message) {
+        // variant: 'dark' | 'primary'(블루) | 'danger'(레드)
+        function showToast(message, variant = 'dark') {
+            const toast = $('appToast');
+            toast.classList.remove('text-bg-dark', 'text-bg-primary', 'text-bg-danger');
+            toast.classList.add('text-bg-' + variant);
             $('appToastBody').textContent = message;
-            if (window.bootstrap) bootstrap.Toast.getOrCreateInstance($('appToast'), { delay: 2500 }).show();
+            if (window.bootstrap) bootstrap.Toast.getOrCreateInstance(toast, { delay: 2500 }).show();
         }
 
         function readLuck() {
