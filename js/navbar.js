@@ -23,6 +23,7 @@
                         { "name": "도형의 작도", "path": "pages/middleschool/1/construction.html" },
                         { "name": "삼각형이 되는 조건", "path": "pages/middleschool/1/triangle_condition.html" },
                         { "name": "삼각형의 합동", "path": "pages/middleschool/1/congruence.html" },
+                        { "name": "다각형의 외각의 합", "path": "pages/middleschool/1/exterior_angle.html" },
                         { "name": "원과 부채꼴의 넓이", "path": "pages/middleschool/1/circle_sector_area.html" },
                         { "name": "회전체 탐구", "path": "pages/middleschool/1/rotation.html" },
                         { "name": "가위바위보", "path": "pages/middleschool/1/relativefrequency.html" }

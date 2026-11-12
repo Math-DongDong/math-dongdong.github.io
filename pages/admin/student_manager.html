@@ -99,7 +99,7 @@
                     </div>
                     <div class="col-6 col-md-3 col-lg-1">
                         <label class="form-label small fw-bold text-secondary" for="classSelect">반</label>
-                        <select id="classSelect" class="form-select fw-bold bg-white" disabled><option value="">전체</option></select>
+                        <select id="classSelect" class="form-select fw-bold bg-white"><option value="">전체</option></select>
                     </div>
                     <div class="col-6 col-md-3 col-lg-2">
                         <label class="form-label small fw-bold text-secondary" for="searchInput">학번 검색</label>
@@ -286,21 +286,27 @@
             });
         }
 
-        // 실제 학생이 있는 학년·반만 선택지로. 고른 값이 사라지면 '전체'로, 학년이 '전체'면 반은 비활성
+        // 실제 학생이 있는 학년·반만 선택지로. 고른 값이 사라지면 '전체'로.
+        // 학년이 '전체'면 모든 학년의 반 번호를 보여줘 반만 따로 거를 수 있습니다.
         function renderGradeClassOptions(students) {
             const parsed = students.map(parseStudentId).filter(Boolean);
+            const uniqueSorted = (arr) => [...new Set(arr)].sort((a, b) => a - b);
             const fillOptions = (selectEl, values, suffix) => {
                 const keep = selectEl.value;
-                selectEl.innerHTML = '<option value="">전체</option>' +
-                    values.map(v => `<option value="${v}">${v}${suffix}</option>`).join('');
+                const signature = values.join(',');
+                // ★ 목록이 같으면 다시 그리지 않습니다 — 방금 고른(열려 있던) select를 innerHTML로 갈아끼우면
+                //   브라우저가 드롭다운을 다시 띄우는 경우가 있습니다.
+                if (selectEl.dataset.signature !== signature) {
+                    selectEl.dataset.signature = signature;
+                    selectEl.innerHTML = '<option value="">전체</option>' +
+                        values.map(v => `<option value="${v}">${v}${suffix}</option>`).join('');
+                }
                 selectEl.value = values.map(String).includes(keep) ? keep : '';
             };
-            fillOptions(gradeSelect, [...new Set(parsed.map(p => p.grade))].sort((a, b) => a - b), '학년');
+            fillOptions(gradeSelect, uniqueSorted(parsed.map(p => p.grade)), '학년');
             const grade = Number(gradeSelect.value);
-            fillOptions(classSelect, grade
-                ? [...new Set(parsed.filter(p => p.grade === grade).map(p => p.classNo))].sort((a, b) => a - b)
-                : [], '반');
-            classSelect.disabled = !grade;
+            fillOptions(classSelect, uniqueSorted(parsed.filter(p => !grade || p.grade === grade).map(p => p.classNo)), '반');
+            classSelect.disabled = false;
         }
 
         function visibleStudents() {
@@ -309,9 +315,9 @@
             renderGradeClassOptions(base);
             const grade = Number(gradeSelect.value), classNo = Number(classSelect.value);
             return base.filter(s => {
-                if (grade) {
+                if (grade || classNo) {
                     const p = parseStudentId(s);
-                    if (!p || p.grade !== grade || (classNo && p.classNo !== classNo)) return false;
+                    if (!p || (grade && p.grade !== grade) || (classNo && p.classNo !== classNo)) return false;
                 }
                 if (!keyword) return true;
                 return String(s.studentId || s.id).toLowerCase().includes(keyword);
@@ -540,7 +546,7 @@
         schoolSelect.onchange = loadStudents;
         searchInput.oninput = renderTable;
         teacherSelect.onchange = renderTable;
-        gradeSelect.onchange = () => { classSelect.value = ''; renderTable(); };
+        gradeSelect.onchange = renderTable;   // 고른 반이 새 학년에 없으면 renderGradeClassOptions가 '전체'로 돌립니다
         classSelect.onchange = renderTable;
         document.getElementById('btnReload').onclick = loadStudents;
         document.getElementById('checkAll').onchange = (e) => {
