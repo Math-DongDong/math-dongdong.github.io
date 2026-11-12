@@ -1,7 +1,8 @@
 /**
- * room-auth.js  (v4.3)
+ * room-auth.js  (v4.4)
  * 방 입장 카드 UI, 공통 모달, 학생/교사 인증 공통 모듈
  *
+ *  v4.4 — 담당 선생님을 uid(teacherUids)로도 기록합니다. '내 학생' 판단은 uid 기준 (이름은 표시용).
  *  v4.3 — 학생 문서의 담당 선생님·기기·PIN 설정 칸은 PIN 증명과 한 batch로만 씁니다.
  *         (writePinProof · createStudentWithPin · updateStudentWithProof — firestore.rules의 student_auth와 짝)
  *
@@ -386,7 +387,10 @@ async function updateStudentWithProof(studentKey, deviceFp, proof, patch) {
 export const STUDENT_ID_PATTERN = /^[1-3]\d{3,4}$/;
 export const STUDENT_ID_MAX_LEN = 5;          // ★ 자릿수를 바꾸면 위 정규식과 함께 고치세요
 
-/** 담당 선생님 목록에 이름 하나를 더합니다 (중복 제외, 최대 10명) */
+/**
+ * 담당 선생님 목록에 값 하나를 더합니다 (중복 제외, 최대 10개)
+ * v4.4: 이름 목록(teachers — 화면 표시용)과 uid 목록(teacherUids — '내 학생' 판단 기준)에 함께 씁니다.
+ */
 function mergeTeacherList(list, name) {
     const base = Array.isArray(list) ? list.map(v => String(v || '').trim()).filter(Boolean) : [];
     const n = String(name || '').trim();
@@ -471,7 +475,7 @@ export async function resolveRoomOwner(roomData) {
         } catch (e) { }
     }
     if (!school || school === '관리자') return null;
-    return { school, teacherName };
+    return { school, teacherName, uid: String(data.createdBy || '').trim() };
 }
 
 // =====================================================================
@@ -1623,8 +1627,10 @@ export async function showPinResetModal() {
                     errEl.style.display = 'block';
                     return;
                 }
+                // v4.4: uid로 확인하고, uid가 아직 없는 옛 학생은 이름으로 (규칙도 같은 기준 — 2단계 뒤에는 uid만)
                 const owners = Array.isArray(snap.data()?.teachers) ? snap.data().teachers : [];
-                if (!isAdminUser && !owners.includes(teacherName)) {
+                const ownerUids = Array.isArray(snap.data()?.teacherUids) ? snap.data().teacherUids : [];
+                if (!isAdminUser && !ownerUids.includes(window.currentTeacherUid) && !owners.includes(teacherName)) {
                     errEl.textContent = "내 방에 들어온 학생만 초기화할 수 있습니다. 학번을 다시 확인해주세요.";
                     errEl.style.display = 'block';
                     return;
@@ -1954,6 +1960,8 @@ export function renderRoomEntrance(container, options = {}) {
             }
             const roomSchool = String(roomOwner.school).trim();
             const roomTeacher = String(roomOwner.teacherName || '').trim();
+            // v4.4: 담당 선생님은 uid로 구분합니다 (이름은 겹칠 수 있음). 방 문서의 createdBy = 방을 만든 선생님
+            const roomTeacherUid = String(roomOwner.uid || roomData?.createdBy || '').trim();
             const isGuest = guestCheck ? guestCheck.checked : false;
             const deviceFp = await deriveDeviceFingerprint(getDeviceId());
 
@@ -2014,6 +2022,7 @@ export function renderRoomEntrance(container, options = {}) {
 
                 const guestProof = await derivePinProof(guestInput.pin, guestKey);
                 guestInput.teachers = mergeTeacherList(sData?.teachers, roomTeacher);
+                const guestTeacherUids = mergeTeacherList(sData?.teacherUids, roomTeacherUid);
 
                 // (2) PIN 확인 — 등록된 학번이면 반드시 일치해야 합니다. 새 학번이면 이 PIN으로 등록합니다.
                 //     학생 관리에 쌓이도록 이 방 선생님을 담당 선생님에 더합니다 (게스트는 기기 등록 안 함).
@@ -2027,12 +2036,13 @@ export function renderRoomEntrance(container, options = {}) {
                             '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
                         return;
                     }
-                    await updateStudentWithProof(guestKey, deviceFp, guestProof, { teachers: guestInput.teachers });
+                    await updateStudentWithProof(guestKey, deviceFp, guestProof, { teachers: guestInput.teachers, teacherUids: guestTeacherUids });
                 } else {
                     await createStudentWithPin(guestKey, {
                         school: roomSchool,
                         studentId: guestInput.studentId,
                         teachers: guestInput.teachers,
+                        teacherUids: guestTeacherUids,
                         devices: [],
                         presence: 'pending',
                         createdAt: serverTimestamp(),
@@ -2213,6 +2223,7 @@ export function renderRoomEntrance(container, options = {}) {
             const school = roomSchool;
             const ownerKey = makeStudentKey(school, studentId);
             const teachersToSave = mergeTeacherList(sData?.teachers, roomTeacher);
+            const teacherUidsToSave = mergeTeacherList(sData?.teacherUids, roomTeacherUid);
 
             // ── 기기 등록 (최대 MAX_DEVICES대) ──────────────────
             //  공개 문서에는 기기 원본 id가 아니라 지문(해시)만 적습니다.
@@ -2235,6 +2246,7 @@ export function renderRoomEntrance(container, options = {}) {
                 const patch = {
                     devices: devCheck.list,
                     teachers: teachersToSave,
+                    teacherUids: teacherUidsToSave,
                     presence: 'online',
                     lastActive: serverTimestamp()
                 };
@@ -2245,6 +2257,7 @@ export function renderRoomEntrance(container, options = {}) {
                 await createStudentWithPin(ownerKey, {
                     school, studentId,
                     teachers: teachersToSave,
+                    teacherUids: teacherUidsToSave,
                     devices: devCheck.list,
                     presence: 'online',
                     createdAt: serverTimestamp(),

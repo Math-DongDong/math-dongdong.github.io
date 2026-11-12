@@ -428,7 +428,7 @@ function openWithdrawModal(user, initialPlan, cleanup) {
         const conflict = !!(plan && plan.nameConflict);
         conflictEl.classList.toggle('d-none', !conflict);
         conflictEl.textContent = conflict
-            ? `같은 학교에 '${plan.name}' 이름의 다른 선생님이 있어, 그 선생님의 학생을 지우지 않도록 학생 정보는 정리하지 않습니다.`
+            ? `같은 학교에 '${plan.name}' 이름의 다른 선생님이 있습니다. 그 선생님의 학생을 지우지 않도록, 학생 정보는 지우지 않고 나만 담당에서 뺍니다.`
             : '';
     }
     const setBusy = (busy) => { [btnCancel, btnRequest, btnConfirm].forEach(b => { b.disabled = busy; }); };
@@ -593,15 +593,25 @@ async function showRegistrationModal(user) {
 }
 
 /**
- * 이 선생님에게 딸린 학생 수 — student_auth 중 같은 학교이면서 teachers에 이름이 있는 학생.
- * 학생 관리와 같은 쿼리입니다 (승인된 교사만 읽을 수 있습니다).
+ * 이 선생님에게 딸린 학생 수 — 학생 관리와 같은 기준입니다 (승인된 교사만 읽을 수 있습니다).
+ *  ① teacherUids에 내 uid가 있는 학생  ② uid가 아직 없는 옛 학생: 같은 학교 + teachers에 내 이름
+ *  (2단계 규칙 뒤에는 ②가 거부되므로 조용히 건너뜁니다)
  */
 async function countMyStudents(school, name) {
-    if (!school || !name) return 0;
-    // 보안 규칙(v4.1)이 '내 학교 + 담당 선생님에 내 이름'인 목록만 허락하므로 같은 조건으로 셉니다.
-    const snap = await getDocs(query(collection(db, "student_auth"),
-        where("school", "==", school), where("teachers", "array-contains", name)));
-    return snap.size;
+    const uid = auth.currentUser?.uid;
+    const ids = new Set();
+    if (uid) {
+        const byUid = await getDocs(query(collection(db, "student_auth"), where("teacherUids", "array-contains", uid)));
+        byUid.forEach(d => { if (String(d.data()?.school || '') === school) ids.add(d.id); });
+    }
+    if (school && name) {
+        try {
+            const byName = await getDocs(query(collection(db, "student_auth"),
+                where("school", "==", school), where("teachers", "array-contains", name)));
+            byName.forEach(d => ids.add(d.id));
+        } catch (e) { /* 2단계 규칙: 이름 조회 거부 — uid 조회만으로 충분 */ }
+    }
+    return ids.size;
 }
 
 async function showTeacherInfoModal(user, docData) {

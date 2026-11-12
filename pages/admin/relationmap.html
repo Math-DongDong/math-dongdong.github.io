@@ -956,7 +956,7 @@
     import { auth, db } from '../../js/firebase-config.js';
     import {
       customAlert, customConfirm, escapeHtml, getDeviceId, getPhoneOwnerAuth, makeStudentKey, renderRoomEntrance, resetStudentPin, safeNumber, STUDENT_ID_PATTERN
-    } from '../../js/room-auth.js?v=4.3';
+    } from '../../js/room-auth.js?v=4.4';
     import { deriveDeviceFingerprint, derivePinProof } from '../../js/student-crypto.js';
     import { closeQrPanel, openQrPanel } from '../../js/qr-modal.js';
     import { registerRoom, unregisterRoom } from '../../js/room-registry.js';
@@ -3418,8 +3418,11 @@
       try {
         const snap = await getDoc(doc(db, 'student_auth', key));
         if (!snap.exists()) return mAlert('아직 들어온 적 없는 학생이에요', `${student.name} 학생은 아직 한 번도 들어오지 않았어요. 처음 들어올 때 PIN을 정해요.`);
+        // v4.4: uid로 확인하고, uid가 아직 없는 옛 학생은 이름으로 (보안 규칙과 같은 기준)
         const teachers = Array.isArray(snap.data().teachers) ? snap.data().teachers : [];
-        if (!S.teacher.isAdmin && !teachers.includes(S.teacher.name)) return mAlert('초기화할 수 없어요', '이 반에 들어온 적이 있는 학생만 PIN을 초기화할 수 있어요.');
+        const teacherUids = Array.isArray(snap.data().teacherUids) ? snap.data().teacherUids : [];
+        const myUid = (S.teacher && S.teacher.uid) || window.currentTeacherUid || '';
+        if (!S.teacher.isAdmin && !(myUid && teacherUids.includes(myUid)) && !teachers.includes(S.teacher.name)) return mAlert('초기화할 수 없어요', '이 반에 들어온 적이 있는 학생만 PIN을 초기화할 수 있어요.');
         if (!(await mConfirm(`${student.name} 학생의 PIN을 초기화할까요?`, `${student.name}(${student.id}) 학생은 다음에 들어올 때 새 4자리 PIN을 정해요.`, { ok: '초기화', danger: true }))) return;
         await resetStudentPin(key);
         S.pinStates[student.id] = 'reset';

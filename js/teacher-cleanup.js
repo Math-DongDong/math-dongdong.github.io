@@ -1,5 +1,5 @@
 /**
- * teacher-cleanup.js  (v1)
+ * teacher-cleanup.js  (v2)
  * 교사가 만든 방과 담당 학생 정리 — 두 곳이 함께 씁니다.
  *   · 관리자가 계정 관리에서 교사를 삭제할 때   (pages/admin/account_manager.html)
  *   · 교사 본인이 정보수정에서 회원 탈퇴할 때    (js/teacher-auth.js — 탈퇴할 때만 불러옵니다)
@@ -10,8 +10,10 @@
  *       - 담당 선생님이 이 교사뿐이면 학생 정보를 모두 지웁니다 (PIN · 기기 인증 포함)
  *       - 다른 담당 선생님이 있으면 담당 선생님 목록에서 이름만 뺍니다
  *
- * ★ 담당 선생님은 이름으로 저장됩니다. 같은 학교에 같은 이름의 승인 교사가 또 있으면
- *   다른 선생님의 학생을 건드리지 않도록 학생 정리를 건너뜁니다 (plan.nameConflict).
+ * ★ v2: 담당 선생님은 uid(teacherUids)로 구분합니다 — 동명이인이 있어도 내 학생만 정확히 찾습니다.
+ *   uid가 아직 없는 옛 학생(이름만 있음)은 '학교 + 이름'으로도 찾되, 같은 학교에 같은 이름의
+ *   승인 교사가 또 있으면 누구 학생인지 알 수 없으므로 이름으로는 찾지 않습니다 (plan.nameConflict).
+ *   (2단계 규칙 뒤에는 교사 본인이 이름으로 조회할 수 없어 그 조회는 조용히 건너뜁니다)
  * ★ 권한: 관리자는 모두 정리할 수 있고, 승인 교사는 자기 방 · 자기 학생만 정리할 수 있습니다 (보안 규칙).
  *   승인 전(pending) 교사는 방 목록 · 학생 목록을 읽을 수 없으므로 부르지 마세요 — 만든 방도 학생도 없습니다.
  */
@@ -20,7 +22,7 @@ import {
     collection, doc, getDoc, getDocs, deleteDoc, updateDoc, query, where, arrayRemove, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { REGISTRY_COLLECTION, purgeRoomParts } from './room-registry.js';
-import { purgeStudent } from './room-auth.js?v=4.3';   // 다른 페이지와 같은 버전 (모듈을 한 번만 불러오도록)
+import { purgeStudent } from './room-auth.js?v=4.4';   // 다른 페이지와 같은 버전 (모듈을 한 번만 불러오도록)
 
 /**
  * 정리 대상 수집 → { uid, name, school, rooms, studentsToDelete, studentsToDetach, nameConflict }
@@ -35,19 +37,36 @@ export async function collectTeacherCleanupPlan(uid) {
     const rooms = roomSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
     const plan = { uid, name, school, rooms, studentsToDelete: [], studentsToDetach: [], nameConflict: false };
-    if (!name || !school) return plan;
 
-    const sameNameSnap = await getDocs(query(collection(db, "teacher_directory"),
-        where("school", "==", school), where("name", "==", name)));
-    plan.nameConflict = sameNameSnap.docs.some(d => d.id !== uid);
-    if (plan.nameConflict) return plan;
+    // 같은 학교 · 같은 이름의 다른 승인 교사가 있으면 이름으로는 학생을 구분할 수 없습니다
+    if (name && school) {
+        const sameNameSnap = await getDocs(query(collection(db, "teacher_directory"),
+            where("school", "==", school), where("name", "==", name)));
+        plan.nameConflict = sameNameSnap.docs.some(d => d.id !== uid);
+    }
 
-    const studentSnap = await getDocs(query(collection(db, "student_auth"),
-        where("school", "==", school), where("teachers", "array-contains", name)));
-    studentSnap.forEach((d) => {
-        const teachers = Array.isArray(d.data()?.teachers) ? d.data().teachers : [];
-        const others = teachers.map(t => String(t || '').trim()).filter(t => t && t !== name);
-        (others.length ? plan.studentsToDetach : plan.studentsToDelete).push(d.id);
+    // ① uid로 담당 학생 찾기  ② uid가 아직 없는 옛 학생은 학교 + 이름으로 (동명이인이 없을 때만)
+    const found = new Map();
+    const byUid = await getDocs(query(collection(db, "student_auth"), where("teacherUids", "array-contains", uid)));
+    byUid.forEach(d => found.set(d.id, d.data() || {}));
+    if (name && school && !plan.nameConflict) {
+        try {
+            const byName = await getDocs(query(collection(db, "student_auth"),
+                where("school", "==", school), where("teachers", "array-contains", name)));
+            byName.forEach(d => found.set(d.id, d.data() || {}));
+        } catch (e) {
+            // 2단계 규칙(uid만 인정)에서는 교사 본인의 이름 조회가 거부됩니다 — uid 조회만으로 충분합니다
+            console.warn('[teacher-cleanup] 이름 조회 건너뜀:', e?.code || e);
+        }
+    }
+
+    found.forEach((student, id) => {
+        const otherUids = (Array.isArray(student.teacherUids) ? student.teacherUids : []).filter(u => u && u !== uid);
+        const otherNames = (Array.isArray(student.teachers) ? student.teachers : [])
+            .map(t => String(t || '').trim()).filter(t => t && t !== name);
+        // 동명이인이 있으면 같은 이름이 다른 선생님 것일 수 있으므로 지우지 않고 담당에서만 뺍니다
+        const soleTeacher = !otherUids.length && !otherNames.length && !plan.nameConflict;
+        (soleTeacher ? plan.studentsToDelete : plan.studentsToDetach).push(id);
     });
     return plan;
 }
@@ -80,7 +99,10 @@ export async function runTeacherCleanup(plan, onProgress = () => { }) {
     }
     for (const id of plan.studentsToDetach) {
         try {
-            await updateDoc(doc(db, "student_auth", id), { teachers: arrayRemove(plan.name), updatedAt: serverTimestamp() });
+            // uid는 항상 빼고, 이름은 동명이인이 없을 때만 뺍니다 (같은 이름이 다른 선생님 것일 수 있음)
+            const patch = { teacherUids: arrayRemove(plan.uid), updatedAt: serverTimestamp() };
+            if (plan.name && !plan.nameConflict) patch.teachers = arrayRemove(plan.name);
+            await updateDoc(doc(db, "student_auth", id), patch);
         } catch (e) {
             console.error('담당 교사 제외 실패', id, e);
             failures.push(`학생 ${id} (담당 제외)`);

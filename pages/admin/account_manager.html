@@ -38,7 +38,24 @@
             <b>③</b> 연동된 실시간 데이터베이스의 교사 권한 목록에 uid를 추가합니다.
             <b>반려</b>(승인 대기)는 가입 신청만 지웁니다.
             <b>삭제</b>(승인 완료)는 ②, ③을 회수하고 그 교사가 만든 방(기록 포함)도 모두 지웁니다.
-            학생 정보는 담당 교사가 그 교사뿐이면 삭제·다른 담당 교사가 있으면 담당 교사 목록에서 이름만 뺍니다.
+            학생 정보는 담당 교사가 그 교사뿐이면 삭제·다른 담당 교사가 있으면 담당 교사 목록에서만 뺍니다.
+        </div>
+
+        <!-- 담당 교사 uid 옮기기 (이름 → uid) — 2단계 규칙을 게시하기 전에 실행 -->
+        <div class="card mb-4">
+            <div class="card-body py-3">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div>
+                        <div class="fw-bold"><i class="bi bi-arrow-left-right me-1"></i>담당 교사 정보 옮기기 (이름 → uid)</div>
+                        <div class="small text-muted">
+                            기존 학생의 담당 교사를 이름 대신 계정 고유번호(uid)로도 기록합니다.
+                            <b>2단계 규칙을 게시하기 전에</b> 실행하세요. 여러 번 실행해도 안전합니다.
+                        </div>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm" id="btnMigrateUids"><i class="bi bi-play-fill me-1"></i>옮기기 실행</button>
+                </div>
+                <div class="small mt-2" id="migrateResult" style="white-space: pre-line;"></div>
+            </div>
         </div>
 
         <div class="card mb-4">
@@ -168,7 +185,7 @@
         } from '../../js/firebase-config.js';
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
         import {
-            collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc, query, orderBy
+            collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc, query, orderBy, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { ref, set, remove } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
         import {
@@ -326,7 +343,7 @@
                 const conflictEl = $('deleteNameConflict');
                 conflictEl.classList.toggle('d-none', !plan.nameConflict);
                 conflictEl.textContent = plan.nameConflict
-                    ? `같은 학교에 '${plan.name}' 이름의 다른 승인 교사가 있어, 다른 선생님의 학생을 지우지 않도록 학생 정보는 정리하지 않습니다.`
+                    ? `같은 학교에 '${plan.name}' 이름의 다른 승인 교사가 있습니다. 다른 선생님의 학생을 지우지 않도록, 학생 정보는 지우지 않고 이 선생님만 담당에서 뺍니다. (uid가 없는 옛 학생은 정리하지 않습니다)`
                     : '';
             }
 
@@ -498,6 +515,77 @@
             else if (act === 'delete') removeTeacherAccount(uid);
         });
         document.getElementById('btnReload').addEventListener('click', loadTeachers);
+
+        // ── 담당 교사 uid 옮기기 (1단계 → 2단계 준비) ──────────────────
+        //  학생의 담당 교사 이름(teachers)마다 '학교 + 이름'으로 공개 교사 목록에서 uid를 찾아 teacherUids에 채웁니다.
+        //  · 한 명만 찾으면 채움  · 같은 학교에 같은 이름이 여럿이면 누구인지 알 수 없어 건너뜀(동명이인)
+        //  · 못 찾으면(삭제 · 탈퇴한 교사) 건너뜀 — 그 이름은 2단계 뒤에는 화면 표시용으로만 남습니다
+        //  동명이인 학생은 그 선생님 방에 다시 들어올 때 자동으로 채워집니다.
+        async function migrateTeacherUids() {
+            const btn = document.getElementById('btnMigrateUids');
+            const out = document.getElementById('migrateResult');
+            btn.disabled = true;
+            out.className = 'small mt-2 text-muted';
+            out.textContent = '학생 정보를 불러오는 중...';
+            try {
+                const byKey = new Map();   // '학교|이름' → [uid]
+                (await getDocs(collection(db, "teacher_directory"))).forEach(d => {
+                    const school = String(d.data().school || '').trim();
+                    const name = String(d.data().name || '').trim();
+                    if (!school || !name) return;
+                    const key = `${school}|${name}`;
+                    byKey.set(key, [...(byKey.get(key) || []), d.id]);
+                });
+
+                const studentsSnap = await getDocs(collection(db, "student_auth"));
+                const updates = [];
+                const ambiguous = [];
+                const missing = new Set();
+                studentsSnap.forEach(d => {
+                    const s = d.data() || {};
+                    const school = String(s.school || '').trim();
+                    const uids = new Set(Array.isArray(s.teacherUids) ? s.teacherUids : []);
+                    const before = uids.size;
+                    (Array.isArray(s.teachers) ? s.teachers : []).forEach(raw => {
+                        const name = String(raw || '').trim();
+                        if (!name) return;
+                        const candidates = byKey.get(`${school}|${name}`) || [];
+                        if (candidates.length === 1) uids.add(candidates[0]);
+                        else if (candidates.length > 1) {
+                            if (!candidates.some(u => uids.has(u))) ambiguous.push(`${d.id} (${name})`);
+                        } else missing.add(`${school} ${name}`);
+                    });
+                    if (uids.size !== before) updates.push({ ref: d.ref, uids: [...uids].slice(0, 10) });
+                });
+
+                let done = 0;
+                const failed = [];
+                for (let i = 0; i < updates.length; i += 20) {
+                    await Promise.all(updates.slice(i, i + 20).map(u =>
+                        updateDoc(u.ref, { teacherUids: u.uids, updatedAt: serverTimestamp() })
+                            .then(() => { done++; })
+                            .catch(e => { console.error('uid 채우기 실패', u.ref.id, e); failed.push(u.ref.id); })));
+                    out.textContent = `채우는 중... ${done + failed.length} / ${updates.length}`;
+                }
+
+                const lines = [`학생 ${studentsSnap.size}명 확인 · ${done}명에게 uid를 채웠습니다.`];
+                if (failed.length) lines.push(`실패 ${failed.length}명 (1단계 규칙이 게시됐는지 확인 후 다시 실행): ${failed.slice(0, 10).join(', ')}${failed.length > 10 ? ' …' : ''}`);
+                if (ambiguous.length) lines.push(`동명이인이라 건너뜀 ${ambiguous.length}건 — 그 선생님 방에 학생이 다시 들어오면 채워집니다: ${ambiguous.slice(0, 10).join(', ')}${ambiguous.length > 10 ? ' …' : ''}`);
+                if (missing.size) lines.push(`공개 교사 목록에 없는 이름(삭제 · 탈퇴한 교사 등, 표시용으로만 남음): ${[...missing].slice(0, 10).join(', ')}${missing.size > 10 ? ' …' : ''}`);
+                lines.push(!failed.length && !ambiguous.length
+                    ? '✅ 2단계 규칙을 게시해도 됩니다.'
+                    : '⚠ 실패 · 동명이인 학생이 남아 있습니다. 2단계 뒤에는 해당 선생님이 그 학생을 관리하려면 학생이 다시 입장해야 합니다.');
+                out.className = `small mt-2 ${failed.length ? 'text-danger' : 'text-success'}`;
+                out.textContent = lines.join('\n');
+            } catch (e) {
+                console.error(e);
+                out.className = 'small mt-2 text-danger';
+                out.textContent = '옮기지 못했습니다. 관리자 로그인 상태와 1단계 규칙 게시 여부를 확인해 주세요.';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        document.getElementById('btnMigrateUids').addEventListener('click', migrateTeacherUids);
 
         onAuthStateChanged(auth, (user) => {
             if (user && user.uid === ADMIN_UID) {

@@ -170,7 +170,7 @@
             escapeHtml, safeNumber, customAlert, customConfirm, ONLINE_FRESH_MS,
             fetchApprovedTeachers, fetchSchoolList, MAX_DEVICES,
             resetStudentPin, purgeStudent
-        } from '../../js/room-auth.js?v=4.3';
+        } from '../../js/room-auth.js?v=4.4';
 
         const gateSection = document.getElementById('gate-section');
         const managerSection = document.getElementById('manager-section');
@@ -249,15 +249,30 @@
             }
             tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-muted text-center">불러오는 중...</td></tr>';
             try {
-                // ★ 보안 규칙(v4.1)은 선생님에게 '내 학교 + 담당 선생님에 내 이름'인 학생 목록만 허락합니다.
-                //   규칙은 필터가 아니므로 쿼리에도 같은 조건을 넣어야 통과합니다. 관리자는 학교 전체.
+                // ★ v4.4: '내 학생' = teacherUids에 내 uid가 있는 학생 (이름은 겹칠 수 있어 uid로 구분합니다).
+                //   uid가 아직 없는 옛 학생은 '내 학교 + 담당 선생님에 내 이름'으로도 찾습니다 (1단계 규칙).
+                //   2단계 규칙 뒤에는 이름 조회가 거부되므로 조용히 건너뜁니다. 규칙은 필터가 아니라서
+                //   쿼리에 같은 조건을 넣어야 통과합니다. 관리자는 학교 전체.
                 const base = collection(db, "student_auth");
                 const myName = String(window.currentTeacherName || '').trim();
-                const snap = await getDocs(window.isAdmin
-                    ? query(base, where("school", "==", school))
-                    : query(base, where("school", "==", school), where("teachers", "array-contains", myName || '__none__')));
+                const myUid = String(window.currentTeacherUid || '').trim();
+                const found = new Map();
+                if (window.isAdmin) {
+                    (await getDocs(query(base, where("school", "==", school)))).forEach(d => found.set(d.id, d.data()));
+                } else {
+                    if (myUid) {
+                        (await getDocs(query(base, where("school", "==", school), where("teacherUids", "array-contains", myUid))))
+                            .forEach(d => found.set(d.id, d.data()));
+                    }
+                    if (myName) {
+                        try {
+                            (await getDocs(query(base, where("school", "==", school), where("teachers", "array-contains", myName))))
+                                .forEach(d => found.set(d.id, d.data()));
+                        } catch (e) { console.warn('이름 기준 조회 건너뜀 (2단계 규칙):', e?.code || e); }
+                    }
+                }
                 allStudents = [];
-                snap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
+                found.forEach((data, id) => allStudents.push({ id, ...data }));
                 fetchedAt = Date.now();
                 document.getElementById('fetchedAtText').textContent =
                     `새로고침 기준: ${new Date(fetchedAt).toLocaleTimeString('ko-KR')}`;
@@ -278,9 +293,12 @@
         function teacherStudents() {
             // 선생님은 자기 이름으로 고정 (이름이 없으면 아무도 보이지 않음), 관리자는 고른 선생님 또는 전체
             const teacher = window.isAdmin ? teacherSelect.value : String(window.currentTeacherName || '').trim();
+            const myUid = String(window.currentTeacherUid || '').trim();
             return allStudents.filter(s => {
                 const owners = Array.isArray(s.teachers) ? s.teachers : [];
-                if (!window.isAdmin && (!teacher || !owners.includes(teacher))) return false;
+                const ownerUids = Array.isArray(s.teacherUids) ? s.teacherUids : [];
+                // 선생님: uid가 있으면 uid로, 없는 옛 학생은 이름으로
+                if (!window.isAdmin && !(myUid && ownerUids.includes(myUid)) && (!teacher || !owners.includes(teacher))) return false;
                 if (window.isAdmin && teacher && !owners.includes(teacher)) return false;
                 return true;
             });
