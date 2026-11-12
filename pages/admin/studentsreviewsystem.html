@@ -2551,6 +2551,9 @@
                             <td class="td text-center font-bold text-board">${r.check === 'O' ? '✓' : '-'}</td>
                             <td class="td">
                                 <div class="mb-2 whitespace-pre-wrap leading-relaxed text-ink text-sm">${escapeHtml(r.content)}</div>
+                                <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs text-stamp btn-delete-rev" data-id="${r.id}">
+                                    <i class="bi bi-trash3" aria-hidden="true"></i> 소감문 삭제
+                                </button>
                             </td>
                             <td class="td">
 
@@ -2622,7 +2625,31 @@
                 b.addEventListener('click', () => removeReviewText(b.dataset.id, 'teacherView'));
             });
 
+            // 소감문 한 건 삭제 (학생은 지울 수 없으므로 학생 요청이 오면 여기서 지웁니다)
+            tbody.querySelectorAll('.btn-delete-rev').forEach(b => {
+                b.addEventListener('click', () => deleteSingleReview(b.dataset.id));
+            });
+
             updateBulkBar();
+        }
+
+        /** 교사: 소감문 한 건 삭제 — 피드백 · 생기부 관찰기록도 함께 지워집니다 */
+        async function deleteSingleReview(reviewId) {
+            const review = allReviews.find(r => r.id === reviewId);
+            if (!review) return;
+            const ok = await customConfirm("소감문 삭제",
+                `[<strong>${escapeHtml(review.studentId)}</strong>] 학생의 [${escapeHtml(review.date)}] 소감문을 삭제할까요?<br>` +
+                `<span class="text-muted small">피드백과 교사 시점 관찰기록도 함께 삭제되며 되돌릴 수 없습니다.</span>`);
+            if (!ok) return;
+            try {
+                await deleteRecordAndNote(reviewId);
+                allReviews = allReviews.filter(r => r.id !== reviewId);
+                selectedReviewIds.delete(reviewId);
+                renderAll();
+            } catch (err) {
+                console.error('소감문 삭제 오류:', err);
+                await customAlert('오류', '소감문을 삭제하지 못했습니다.');
+            }
         }
 
         // 전체 선택 체크박스
