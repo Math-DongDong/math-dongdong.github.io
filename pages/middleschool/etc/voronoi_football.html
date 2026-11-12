@@ -1,0 +1,2640 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>보로노이 축구 전술 시뮬레이터 - 체험수학</title>
+    <meta name="description" content="선수마다 가장 가까운 땅을 나누는 보로노이 다각형으로 축구 전술과 경기를 분석하는 수학 시뮬레이터">
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg">
+    <!-- Bootstrap 5 CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Navbar CSS -->
+    <link rel="stylesheet" href="../../../css/navbar.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        body {
+            font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+
+        .page-title {
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .stat-num {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* 지배율 막대 */
+        .share-bar,
+        .share-bar .progress {
+            --bs-progress-height: 14px;
+        }
+
+        .share-mini,
+        .share-mini .progress {
+            --bs-progress-height: 6px;
+        }
+
+        /* 경기장 캔버스: 화면 높이에 맞춰 최대 폭 제한 (105+6 : 68+6 = 1.5 : 1) */
+        .pitch-wrapper {
+            width: 100%;
+            max-width: min(100%, calc((100vh - 110px) * 1.5));
+            margin: 0 auto;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            background: #2e7d32;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+        }
+
+        #pitchCanvas {
+            display: block;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* 팀 패널 */
+        .team-panel {
+            border-top: 4px solid var(--team-color) !important;
+        }
+
+        .team-blue {
+            --team-color: #0d6efd;
+        }
+
+        .team-red {
+            --team-color: #dc3545;
+        }
+
+        .team-red .form-range::-webkit-slider-thumb {
+            background-color: #dc3545;
+        }
+
+        .team-red .form-range::-moz-range-thumb {
+            background-color: #dc3545;
+        }
+
+        .layer-toggles .form-check-input,
+        .layer-toggles .form-check-label {
+            cursor: pointer;
+        }
+
+        .player-table tbody tr {
+            cursor: pointer;
+        }
+
+        .legend-dot {
+            display: inline-block;
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            vertical-align: -1px;
+        }
+
+        .legend-line {
+            display: inline-block;
+            width: 1.4rem;
+            height: 4px;
+            border-radius: 2px;
+            vertical-align: middle;
+        }
+
+        .graph-canvas {
+            display: block;
+            width: 100%;
+            height: 170px;
+        }
+
+        .event-log {
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .vertex-list {
+            columns: 2;
+            padding-left: 1.4rem;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 공통 Navbar -->
+    <script src="../../../js/navbar.js"></script>
+
+    <main class="container py-4">
+        <!-- 제목 · 모드 전환 · 팀 지배율 -->
+        <header class="mb-3">
+            <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+                <div>
+                    <h1 class="page-title h2 mb-1">⚽ 보로노이 축구 전술 시뮬레이터</h1>
+                    <p class="text-secondary small mb-0">선수마다 ‘나에게 가장 가까운 땅’을 나누면 보로노이 다각형이 됩니다. 두 선수 영역의 경계는 두 선수를 잇는 선분의 <strong>수직이등분선</strong>이에요.</p>
+                </div>
+                <ul class="nav nav-pills" role="tablist" aria-label="모드 선택">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="modeTactics" data-mode="tactics" type="button" role="tab" aria-selected="true"><i class="bi bi-clipboard-data"></i> 전술판</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="modeMatch" data-mode="match" type="button" role="tab" aria-selected="false"><i class="bi bi-play-circle"></i> 경기</button>
+                    </li>
+                </ul>
+            </div>
+            <div class="d-flex justify-content-between small fw-bold mb-1">
+                <span class="text-primary">블루 <span id="blueShareText" class="stat-num">50.0%</span></span>
+                <span class="text-secondary fw-normal">팀 지배 면적</span>
+                <span class="text-danger"><span id="redShareText" class="stat-num">50.0%</span> 레드</span>
+            </div>
+            <div class="progress-stacked share-bar">
+                <div class="progress" role="progressbar" id="blueShareProgress" aria-label="블루 지배율" aria-valuemin="0" aria-valuemax="100" style="width: 50%">
+                    <div class="progress-bar bg-primary"></div>
+                </div>
+                <div class="progress" role="progressbar" id="redShareProgress" aria-label="레드 지배율" aria-valuemin="0" aria-valuemax="100" style="width: 50%">
+                    <div class="progress-bar bg-danger"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 팀 설정 -->
+        <section class="mb-3" aria-labelledby="teamSettingsHeading">
+            <div class="accordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="teamSettingsHeading">
+                        <button class="accordion-button py-2 fw-bold" id="teamSettingsToggle" type="button" data-bs-toggle="collapse" data-bs-target="#teamSettings" aria-expanded="true" aria-controls="teamSettings">
+                            <i class="bi bi-people-fill me-2"></i>팀 설정 · 포메이션, 라인 높이, 폭, 간격
+                        </button>
+                    </h2>
+                    <div id="teamSettings" class="accordion-collapse collapse show" aria-labelledby="teamSettingsHeading">
+                        <div class="accordion-body p-2 p-md-3">
+                            <div class="row g-3">
+                                <div class="col-md-6" id="bluePanel"></div>
+                                <div class="col-md-6" id="redPanel"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 경기장 -->
+        <section class="card shadow-sm mb-3" aria-label="경기장과 보로노이 다이어그램">
+            <div class="card-body p-2 p-md-3">
+                <button class="btn btn-sm btn-outline-secondary d-md-none mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#layerCollapse" aria-expanded="false" aria-controls="layerCollapse">
+                    <i class="bi bi-layers"></i> 레이어 보기
+                </button>
+                <div class="collapse d-md-block" id="layerCollapse">
+                    <div class="layer-toggles d-flex flex-wrap align-items-center column-gap-1 row-gap-1 small mb-2">
+                        <span class="fw-bold text-secondary me-1"><i class="bi bi-layers"></i> 레이어</span>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerCells" data-layer="cells" checked><label class="form-check-label" for="layerCells">영역</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerAreas" data-layer="areas" checked><label class="form-check-label" for="layerAreas">넓이</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerDelaunay" data-layer="delaunay"><label class="form-check-label" for="layerDelaunay">델로네</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerPassLanes" data-layer="passLanes"><label class="form-check-label" for="layerPassLanes">패스길</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerBisector" data-layer="bisector"><label class="form-check-label" for="layerBisector">수직이등분선</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerThirds" data-layer="thirds"><label class="form-check-label" for="layerThirds">3분할</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerVertices" data-layer="vertices"><label class="form-check-label" for="layerVertices">꼭짓점 좌표</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerRoles" data-layer="roles"><label class="form-check-label" for="layerRoles">역할</label></div>
+                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerExcludeGK" data-layer="excludeGK"><label class="form-check-label" for="layerExcludeGK">GK 제외</label></div>
+                        <div class="d-flex align-items-center gap-2 ms-md-auto">
+                            <label for="cellOpacity" class="text-secondary"><i class="bi bi-circle-half"></i> 투명도</label>
+                            <input type="range" class="form-range" id="cellOpacity" min="10" max="90" step="5" value="60" style="width: 110px;">
+                            <span id="cellOpacityVal" class="stat-num fw-bold" style="min-width: 2.5rem;">60%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 전술판 도구 -->
+                <div id="tacticsToolbar" class="d-flex flex-wrap gap-2 mb-2">
+                    <button class="btn btn-sm btn-outline-primary" id="btnAlign" type="button"><i class="bi bi-grid-3x3-gap"></i> 포메이션 정렬</button>
+                    <button class="btn btn-sm btn-outline-dark" id="btnPlaceBall" type="button"><i class="bi bi-record-circle"></i> 공 지정</button>
+                    <button class="btn btn-sm btn-outline-success" id="btnCopyImage" type="button"><i class="bi bi-clipboard-image"></i> 이미지 복사</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="btnExport" type="button"><i class="bi bi-download"></i> 내보내기</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="btnImport" type="button"><i class="bi bi-upload"></i> 불러오기</button>
+                    <input type="file" id="importFile" accept="application/json,.json" class="d-none">
+                    <button class="btn btn-sm btn-outline-danger ms-sm-auto" id="btnReset" type="button"><i class="bi bi-arrow-counterclockwise"></i> 초기화</button>
+                </div>
+
+                <!-- 경기 도구 -->
+                <div id="matchToolbar" class="d-none">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <button class="btn btn-sm btn-primary" id="btnPlay" type="button" style="min-width: 7rem;"><i class="bi bi-play-fill"></i> 시작</button>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="재생 속도">
+                            <input type="radio" class="btn-check" name="simSpeed" id="speed05" value="0.5" autocomplete="off">
+                            <label class="btn btn-outline-secondary" for="speed05">0.5×</label>
+                            <input type="radio" class="btn-check" name="simSpeed" id="speed1" value="1" autocomplete="off" checked>
+                            <label class="btn btn-outline-secondary" for="speed1">1×</label>
+                            <input type="radio" class="btn-check" name="simSpeed" id="speed2" value="2" autocomplete="off">
+                            <label class="btn btn-outline-secondary" for="speed2">2×</label>
+                        </div>
+                        <div class="input-group input-group-sm" style="width: 10.5rem;">
+                            <span class="input-group-text">시드</span>
+                            <input type="number" class="form-control" id="seedInput" value="1234" min="0" max="999999" aria-label="난수 시드">
+                            <button class="btn btn-outline-secondary" id="btnRandomSeed" type="button" title="무작위 시드"><i class="bi bi-dice-5"></i></button>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" id="btnRestart" type="button"><i class="bi bi-arrow-repeat"></i> 경기 초기화</button>
+                        <div class="ms-sm-auto d-flex align-items-center gap-2 fw-bold">
+                            <span class="badge text-bg-primary">블루</span>
+                            <span id="scoreText" class="fs-5 stat-num">0 : 0</span>
+                            <span class="badge text-bg-danger">레드</span>
+                            <span id="clockText" class="badge text-bg-dark stat-num">0'</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pitch-wrapper" id="pitchWrapper">
+                    <canvas id="pitchCanvas" role="img" aria-label="보로노이 영역이 그려진 축구 경기장"></canvas>
+                </div>
+                <p id="canvasHint" class="small text-secondary text-center mt-2 mb-0"></p>
+                <p id="laneLegend" class="small text-center mt-1 mb-0 d-none">
+                    패스길 안전도 (팀 델로네 변 ↔ 가장 가까운 상대):
+                    <span class="legend-line" style="background:#ef4444"></span> 2m 미만 차단 위험
+                    <span class="legend-line ms-2" style="background:#facc15"></span> 2~5m
+                    <span class="legend-line ms-2" style="background:#22c55e"></span> 5m 이상 안전
+                </p>
+            </div>
+        </section>
+
+        <!-- 경기 기록 (경기 모드) -->
+        <div id="matchPanel" class="d-none">
+            <section class="row g-3 mb-3" aria-label="경기 기록">
+                <div class="col-lg-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold"><i class="bi bi-clipboard2-pulse"></i> 경기 기록</div>
+                        <div class="card-body">
+                            <table class="table table-sm align-middle text-center mb-3">
+                                <thead>
+                                    <tr>
+                                        <th class="text-primary w-25">블루</th>
+                                        <th class="text-secondary fw-normal">지표</th>
+                                        <th class="text-danger w-25">레드</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="matchStatsBody" class="stat-num"></tbody>
+                            </table>
+                            <h3 class="h6 fw-bold mb-2">주요 장면</h3>
+                            <ul class="list-group list-group-flush small event-log" id="eventLog"></ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold"><i class="bi bi-graph-up"></i> 지배율 변화 (블루 기준)</div>
+                        <div class="card-body">
+                            <canvas id="dominanceGraph" class="graph-canvas" aria-label="시간에 따른 블루 팀 지배율 그래프"></canvas>
+                            <p class="small text-secondary mt-2 mb-0">0.5초마다 블루 팀의 지배 면적 비율을 기록합니다. 50% 선 위(파랑)는 블루가, 아래(빨강)는 레드가 더 넓은 땅을 차지한 순간이에요. 세로선은 골.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 분석 -->
+        <section class="row g-3 mb-3" aria-label="분석">
+            <div class="col-lg-6 d-flex flex-column gap-3">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white fw-bold"><i class="bi bi-bar-chart-steps"></i> 구역별 지배율</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-2">
+                                <thead>
+                                    <tr>
+                                        <th>구역</th>
+                                        <th class="text-end text-primary">블루</th>
+                                        <th class="text-end text-danger">레드</th>
+                                        <th style="min-width: 80px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="zoneTableBody" class="stat-num"></tbody>
+                            </table>
+                        </div>
+                        <p id="invariantText" class="small text-secondary mb-0"></p>
+                    </div>
+                </div>
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white fw-bold"><i class="bi bi-layout-split"></i> A/B 배치 비교</div>
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            <button class="btn btn-sm btn-outline-primary" id="btnSaveA" type="button"><i class="bi bi-box-arrow-in-down"></i> A에 담기</button>
+                            <button class="btn btn-sm btn-outline-primary" id="btnSaveB" type="button"><i class="bi bi-box-arrow-in-down"></i> B에 담기</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="btnLoadA" type="button" disabled><i class="bi bi-arrow-counterclockwise"></i> A 배치로</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="btnLoadB" type="button" disabled><i class="bi bi-arrow-counterclockwise"></i> B 배치로</button>
+                        </div>
+                        <div id="compareArea" class="small text-secondary">현재 배치를 A, B 슬롯에 담으면 두 배치의 구역별 지배율(블루 : 레드)을 나란히 비교합니다. (새로고침하면 사라져요)</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 d-flex flex-column gap-3">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white fw-bold"><i class="bi bi-person-bounding-box"></i> 선택한 선수</div>
+                    <div class="card-body" id="selectedInfo"></div>
+                </div>
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white fw-bold"><i class="bi bi-table"></i> 선수별 담당 넓이 (㎡)</div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-sm-6">
+                                <table class="table table-sm table-hover player-table mb-0">
+                                    <thead><tr class="table-primary"><th>#</th><th>역할</th><th class="text-end">넓이</th><th class="text-end">비율</th></tr></thead>
+                                    <tbody id="playerTableBlue" class="stat-num"></tbody>
+                                </table>
+                            </div>
+                            <div class="col-sm-6">
+                                <table class="table table-sm table-hover player-table mb-0">
+                                    <thead><tr class="table-danger"><th>#</th><th>역할</th><th class="text-end">넓이</th><th class="text-end">비율</th></tr></thead>
+                                    <tbody id="playerTableRed" class="stat-num"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <p class="small text-secondary mt-2 mb-0">행을 클릭하면 그 선수가 선택됩니다. 팀에서 가장 넓은 영역은 굵게 표시돼요.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-top py-3 text-center small text-secondary">
+        보로노이 축구 전술 시뮬레이터 · 수직이등분선 · 다각형의 넓이(신발끈 공식) · 델로네 삼각분할
+    </footer>
+
+    <!-- 알림 토스트 -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="appToast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body" id="appToastBody"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="닫기"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 경기 결과 모달 -->
+    <div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold" id="resultModalLabel">🏁 경기 종료</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body" id="resultBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
+                    <button type="button" class="btn btn-primary" id="btnRematch"><i class="bi bi-arrow-repeat"></i> 같은 시드로 다시 하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        'use strict';
+
+        // =====================================================================
+        // ① CONFIG : 경기장 규격(m), 색상, 시뮬레이션 상수, 가중치
+        // =====================================================================
+        const FIELD = {
+            L: 105, W: 68, margin: 3,
+            penaltyDepth: 16.5, penaltyWidth: 40.32,
+            goalAreaDepth: 5.5, goalAreaWidth: 18.32,
+            centerR: 9.15, penaltySpot: 11, goalWidth: 7.32
+        };
+        const FIELD_AREA = FIELD.L * FIELD.W; // 7,140㎡
+        const TEAMS = ['blue', 'red'];
+        const TEAM_INFO = {
+            blue: { name: '블루', color: '#0d6efd', hue: 217, sat: 88, dir: 1 },
+            red: { name: '레드', color: '#dc3545', hue: 354, sat: 76, dir: -1 }
+        };
+        const GK_FILL = '#f59e0b';
+        const SELECT_COLORS = ['#facc15', '#fb923c'];
+        const FONT = "'Pretendard Variable', Pretendard, 'Malgun Gothic', sans-serif";
+        const TAU = Math.PI * 2;
+        const DEFAULT_FORMATION = { blue: '4-3-3', red: '4-4-2' };
+        const DEFAULT_TACTIC = { lineHeight: 0, width: 1, compact: 1 };
+        const UI_INTERVAL_MS = 200;
+        const WALLS = new Set(['top', 'right', 'bottom', 'left']);
+
+        const SIM = {
+            STEP: 1 / 60,
+            MATCH_SECONDS: 180,          // 실시간 3분 = 90'
+            KICKOFF_SECONDS: 1,
+            GOAL_SECONDS: 2,
+            DECISION_INTERVAL: 0.4,
+            PASS_SPEED: 16,              // m/s
+            SHOT_SPEED: 25,              // m/s
+            PASS_LEAD_TIME: 0.5,         // 수신자의 0.5초 뒤 예상 위치로 패스
+            INTERCEPT_RADIUS: 1.0,
+            RECEIVE_RADIUS: 1.2,
+            PICKUP_RADIUS: 1.0,
+            TACKLE_RADIUS: 1.2,
+            TACKLE_RATE: 0.6,            // 초당 확률
+            TACKLE_PROTECT: 0.8,         // 공을 얻은 직후 태클 면제 시간
+            SHOT_RANGE: 25,
+            SAMPLE_INTERVAL: 0.5,
+            PLAYER_GAP: 0.9,             // 선수끼리 최소 간격
+            LOOSE_FRICTION: 1.2
+        };
+
+        // 팀 블록 이동 (공 위치 기준)
+        const BLOCK = {
+            shiftFactor: 0.5, shiftMax: 20,  // shiftX = clamp((공 x − 52.5) × 0.5, −20, 20)
+            shiftYFactor: 0.25,              // shiftY = (공 y − 34) × 0.25
+            attackPush: 8,                   // 공격팀 기본 전진 8m
+            attackPushGain: 0.5,             // 공이 자기 골대에서 35m를 넘어서면 추가 전진
+            attackPushMax: 25,
+            attackWidth: 1.1, defendWidth: 0.85
+        };
+
+        const WEIGHTS = {
+            passForward: 1.0,            // 전진량(m)
+            passArea: 0.05,              // 수신자 셀 넓이(㎡)
+            passSafety: 2.0,             // 패스 길 안전도(m)
+            passSafetyCap: 6,
+            passDistance: 0.3,           // 패스 거리(m) 감점
+            passRiskRadius: 1.5,         // 길목에 상대가 1.5m 안에 있으면
+            passRiskPenalty: 12,         // 차단 위험 감점
+            shotValue: 140,              // 골 확률 × 140
+            shotClose: 8,                // 12m 이내 가산점
+            dribbleBase: 10,
+            dribbleFree: 12,             // 1차 압박자가 4m보다 멀 때
+            dribblePressure: 8           // 압박자가 2m 이내일 때 감점
+        };
+
+        const ZONES = [
+            { name: '블루 진영 ⅓', range: '0~35m', rect: [0, 0, 35, FIELD.W] },
+            { name: '중원 ⅓', range: '35~70m', rect: [35, 0, 70, FIELD.W] },
+            { name: '레드 진영 ⅓', range: '70~105m', rect: [70, 0, FIELD.L, FIELD.W] },
+            { name: '블루 페널티박스', range: '왼쪽 박스', rect: [0, FIELD.W / 2 - FIELD.penaltyWidth / 2, FIELD.penaltyDepth, FIELD.W / 2 + FIELD.penaltyWidth / 2] },
+            { name: '레드 페널티박스', range: '오른쪽 박스', rect: [FIELD.L - FIELD.penaltyDepth, FIELD.W / 2 - FIELD.penaltyWidth / 2, FIELD.L, FIELD.W / 2 + FIELD.penaltyWidth / 2] }
+        ];
+
+        // =====================================================================
+        // ② FORMATIONS : 블루 시점(오른쪽 공격) 정규화 좌표, fy = 1(화면 아래)이 블루의 오른쪽
+        // =====================================================================
+        const FORMATIONS = {
+            '4-4-2': [
+                { role: 'GK', num: 1, fx: 0.05, fy: 0.50 },
+                { role: 'LB', num: 3, fx: 0.22, fy: 0.15 },
+                { role: 'LCB', num: 4, fx: 0.20, fy: 0.38 },
+                { role: 'RCB', num: 5, fx: 0.20, fy: 0.62 },
+                { role: 'RB', num: 2, fx: 0.22, fy: 0.85 },
+                { role: 'LM', num: 11, fx: 0.36, fy: 0.15 },
+                { role: 'LCM', num: 8, fx: 0.34, fy: 0.39 },
+                { role: 'RCM', num: 6, fx: 0.34, fy: 0.61 },
+                { role: 'RM', num: 7, fx: 0.36, fy: 0.85 },
+                { role: 'LST', num: 10, fx: 0.46, fy: 0.40 },
+                { role: 'RST', num: 9, fx: 0.46, fy: 0.60 }
+            ],
+            '4-3-3': [
+                { role: 'GK', num: 1, fx: 0.05, fy: 0.50 },
+                { role: 'LB', num: 3, fx: 0.22, fy: 0.15 },
+                { role: 'LCB', num: 4, fx: 0.20, fy: 0.38 },
+                { role: 'RCB', num: 5, fx: 0.20, fy: 0.62 },
+                { role: 'RB', num: 2, fx: 0.22, fy: 0.85 },
+                { role: 'DM', num: 6, fx: 0.32, fy: 0.50 },
+                { role: 'LCM', num: 10, fx: 0.38, fy: 0.32 },
+                { role: 'RCM', num: 8, fx: 0.38, fy: 0.68 },
+                { role: 'LW', num: 11, fx: 0.45, fy: 0.15 },
+                { role: 'ST', num: 9, fx: 0.47, fy: 0.50 },
+                { role: 'RW', num: 7, fx: 0.45, fy: 0.85 }
+            ],
+            '4-2-3-1': [
+                { role: 'GK', num: 1, fx: 0.05, fy: 0.50 },
+                { role: 'LB', num: 3, fx: 0.22, fy: 0.15 },
+                { role: 'LCB', num: 4, fx: 0.20, fy: 0.38 },
+                { role: 'RCB', num: 5, fx: 0.20, fy: 0.62 },
+                { role: 'RB', num: 2, fx: 0.22, fy: 0.85 },
+                { role: 'LDM', num: 6, fx: 0.30, fy: 0.40 },
+                { role: 'RDM', num: 8, fx: 0.30, fy: 0.60 },
+                { role: 'LAM', num: 11, fx: 0.40, fy: 0.18 },
+                { role: 'CAM', num: 10, fx: 0.41, fy: 0.50 },
+                { role: 'RAM', num: 7, fx: 0.40, fy: 0.82 },
+                { role: 'ST', num: 9, fx: 0.47, fy: 0.50 }
+            ],
+            '3-5-2': [
+                { role: 'GK', num: 1, fx: 0.05, fy: 0.50 },
+                { role: 'LCB', num: 3, fx: 0.19, fy: 0.28 },
+                { role: 'CB', num: 4, fx: 0.18, fy: 0.50 },
+                { role: 'RCB', num: 5, fx: 0.19, fy: 0.72 },
+                { role: 'LWB', num: 11, fx: 0.33, fy: 0.10 },
+                { role: 'DM', num: 6, fx: 0.29, fy: 0.50 },
+                { role: 'LCM', num: 10, fx: 0.37, fy: 0.33 },
+                { role: 'RCM', num: 8, fx: 0.37, fy: 0.67 },
+                { role: 'RWB', num: 2, fx: 0.33, fy: 0.90 },
+                { role: 'LST', num: 7, fx: 0.46, fy: 0.40 },
+                { role: 'RST', num: 9, fx: 0.46, fy: 0.60 }
+            ],
+            '3-4-3': [
+                { role: 'GK', num: 1, fx: 0.05, fy: 0.50 },
+                { role: 'LCB', num: 3, fx: 0.19, fy: 0.28 },
+                { role: 'CB', num: 4, fx: 0.18, fy: 0.50 },
+                { role: 'RCB', num: 5, fx: 0.19, fy: 0.72 },
+                { role: 'LM', num: 11, fx: 0.33, fy: 0.12 },
+                { role: 'LCM', num: 6, fx: 0.31, fy: 0.40 },
+                { role: 'RCM', num: 8, fx: 0.31, fy: 0.60 },
+                { role: 'RM', num: 2, fx: 0.33, fy: 0.88 },
+                { role: 'LW', num: 10, fx: 0.44, fy: 0.20 },
+                { role: 'ST', num: 9, fx: 0.47, fy: 0.50 },
+                { role: 'RW', num: 7, fx: 0.44, fy: 0.80 }
+            ],
+            '5-3-2': [
+                { role: 'GK', num: 1, fx: 0.05, fy: 0.50 },
+                { role: 'LWB', num: 3, fx: 0.24, fy: 0.10 },
+                { role: 'LCB', num: 4, fx: 0.19, fy: 0.30 },
+                { role: 'CB', num: 5, fx: 0.18, fy: 0.50 },
+                { role: 'RCB', num: 6, fx: 0.19, fy: 0.70 },
+                { role: 'RWB', num: 2, fx: 0.24, fy: 0.90 },
+                { role: 'LCM', num: 10, fx: 0.35, fy: 0.30 },
+                { role: 'CM', num: 8, fx: 0.33, fy: 0.50 },
+                { role: 'RCM', num: 7, fx: 0.35, fy: 0.70 },
+                { role: 'LST', num: 11, fx: 0.46, fy: 0.40 },
+                { role: 'RST', num: 9, fx: 0.46, fy: 0.60 }
+            ]
+        };
+
+        // 최대 속도(m/s): GK 5.0, CB 6.0, 풀백·미드필더 6.5, 윙·ST 7.0
+        const ROLE_SPEED = {
+            GK: 5.0, CB: 6.0, LCB: 6.0, RCB: 6.0,
+            LB: 6.5, RB: 6.5, LWB: 6.8, RWB: 6.8,
+            DM: 6.5, LDM: 6.5, RDM: 6.5, CM: 6.5, LCM: 6.5, RCM: 6.5,
+            CAM: 6.7, LAM: 6.8, RAM: 6.8, LM: 6.8, RM: 6.8,
+            LW: 7.0, RW: 7.0, ST: 7.0, LST: 7.0, RST: 7.0
+        };
+
+        // =====================================================================
+        // ③ STATE
+        // =====================================================================
+        const $ = id => document.getElementById(id);
+        const canvas = $('pitchCanvas');
+        const ctx = canvas.getContext('2d');
+        const pitchWrapper = $('pitchWrapper');
+        let scale = 8;          // px per meter (CSS 픽셀 기준)
+        let viewW = 0, viewH = 0;
+
+        const playerById = new Map();
+        const teamPlayers = { blue: [], red: [] };
+
+        const state = {
+            mode: 'tactics',
+            players: [],
+            ball: createBall(),
+            teams: {
+                blue: { formation: DEFAULT_FORMATION.blue, tactic: { ...DEFAULT_TACTIC } },
+                red: { formation: DEFAULT_FORMATION.red, tactic: { ...DEFAULT_TACTIC } }
+            },
+            layers: { cells: true, areas: true, delaunay: false, passLanes: false, bisector: false, thirds: false, vertices: false, roles: false, excludeGK: false },
+            cellOpacity: 0.6,
+            selection: [],
+            placingBall: false,
+            analysis: null,
+            simSpeed: 1,
+            match: createMatch(1234),
+            snapshots: { A: null, B: null }
+        };
+
+        function createBall() {
+            return {
+                x: FIELD.L / 2, y: FIELD.W / 2, vx: 0, vy: 0,
+                state: 'loose',          // 'held' | 'pass' | 'shot' | 'loose' | 'dead'
+                ownerId: null, team: 'blue',
+                receiverId: null, target: null, travel: 0,
+                shooterId: null, shotProb: 0,
+                pendingPass: null, protectUntil: 0, noPickupUntil: 0
+            };
+        }
+
+        function emptyStats() {
+            return { possession: 0, passAttempts: 0, passSuccess: 0, intercepts: 0, tackles: 0, shots: 0, goals: 0 };
+        }
+
+        function createMatch(seed) {
+            return {
+                phase: 'READY',          // READY → KICKOFF → PLAYING ⇄ (일시정지) → GOAL → … → FULLTIME
+                time: 0, phaseTimer: 0, seed, rng: mulberry32(seed),
+                score: { blue: 0, red: 0 },
+                stats: { blue: emptyStats(), red: emptyStats() },
+                samples: [], sampleTimer: 0,
+                decisionTimer: SIM.DECISION_INTERVAL,
+                kickoffTeam: 'blue', lastGoal: null, goals: [], events: []
+            };
+        }
+
+        // 시드 난수 (같은 시드 + 같은 전술 = 같은 경기)
+        function mulberry32(seed) {
+            let a = seed >>> 0;
+            return function () {
+                a = (a + 0x6D2B79F5) >>> 0;
+                let t = a;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+
+        const otherTeam = team => (team === 'blue' ? 'red' : 'blue');
+        const teamDir = team => TEAM_INFO[team].dir;
+        const attackGoal = team => ({ x: team === 'blue' ? FIELD.L : 0, y: FIELD.W / 2 });
+        const ownGoal = team => ({ x: team === 'blue' ? 0 : FIELD.L, y: FIELD.W / 2 });
+
+        // 프리셋 슬롯 → 경기장 좌표 (레드는 180° 회전)
+        function slotToWorld(slot, team, tactic) {
+            let x = slot.fx * FIELD.L;
+            let y = FIELD.W / 2 + (slot.fy - 0.5) * FIELD.W * tactic.width;
+            if (slot.role !== 'GK') {
+                x = 18 + (x - 18) * tactic.compact + tactic.lineHeight; // 18m 지점 기준 세로 압축
+            }
+            x = clamp(x, 1, FIELD.L - 1);
+            y = clamp(y, 1, FIELD.W - 1);
+            return team === 'blue' ? { x, y } : { x: FIELD.L - x, y: FIELD.W - y };
+        }
+
+        // 포메이션 슬롯을 선수에게 배정 (선수 id는 유지)
+        function buildTeam(team) {
+            FORMATIONS[state.teams[team].formation].forEach((slot, index) => {
+                const id = team[0] + index;
+                let p = playerById.get(id);
+                if (!p) {
+                    p = { id, team, index, pos: { x: 0, y: 0 }, anchor: { x: 0, y: 0 }, vel: { x: 0, y: 0 } };
+                    state.players.push(p);
+                    teamPlayers[team].push(p);
+                    playerById.set(id, p);
+                }
+                p.slot = slot;
+                p.role = slot.role;
+                p.number = slot.num;
+                p.maxSpeed = ROLE_SPEED[slot.role] || 6.5;
+            });
+        }
+
+        // "포메이션 정렬": anchor = 프리셋 위치 (movePos면 pos도 함께)
+        function alignTeam(team, movePos) {
+            const tactic = state.teams[team].tactic;
+            for (const p of teamPlayers[team]) {
+                p.anchor = slotToWorld(p.slot, team, tactic);
+                if (movePos) { p.pos = { ...p.anchor }; p.vel = { x: 0, y: 0 }; }
+            }
+        }
+
+        function isMatchLive() {
+            return ['KICKOFF', 'PLAYING', 'GOAL'].includes(state.match.phase);
+        }
+
+        // 경기 진행 중(일시정지 포함) 경기 화면에서는 기준 위치만 바꾸고 현재 위치는 유지
+        function shouldMovePositions() {
+            return state.mode === 'tactics' || !isMatchLive();
+        }
+
+        function resetPositionsToAnchors() {
+            for (const p of state.players) { p.pos = { ...p.anchor }; p.vel = { x: 0, y: 0 }; }
+        }
+
+        // =====================================================================
+        // ④ GEOMETRY : 반평면 클리핑, 보로노이 셀, 넓이, 무게중심, 점-선분 거리
+        // =====================================================================
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+        const lerpPoint = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+        const clampInField = (p, pad = 0) => ({ x: clamp(p.x, pad, FIELD.L - pad), y: clamp(p.y, pad, FIELD.W - pad) });
+
+        function fieldRect() {
+            return [
+                { x: 0, y: 0, edge: 'top' },
+                { x: FIELD.L, y: 0, edge: 'right' },
+                { x: FIELD.L, y: FIELD.W, edge: 'bottom' },
+                { x: 0, y: FIELD.W, edge: 'left' }
+            ];
+        }
+
+        // 반평면 { v | nx·x + ny·y ≤ c } 만 남기기 (Sutherland–Hodgman 한 단계)
+        // edge = 이 꼭짓점에서 다음 꼭짓점까지의 변이 놓인 선(선수 id 또는 경기장 벽)
+        function clipHalfPlane(poly, nx, ny, c, label) {
+            const out = [];
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i], b = poly[(i + 1) % poly.length];
+                const da = a.x * nx + a.y * ny - c;
+                const db = b.x * nx + b.y * ny - c;
+                const aInside = da <= 0, bInside = db <= 0;
+                if (aInside) out.push(a);
+                if (aInside !== bInside) {
+                    const t = da / (da - db);
+                    // 나가는 교점: 다음 변은 자르는 선 위(label) / 들어오는 교점: 원래 변 유지
+                    out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, edge: aInside ? label : a.edge });
+                }
+            }
+            return out;
+        }
+
+        // 선분 PQ의 수직이등분선으로 잘라 P 쪽만 남기기
+        function clipByBisector(poly, p, q, pId, qId) {
+            let nx = q.x - p.x, ny = q.y - p.y;          // 법선 n = P→Q
+            if (nx * nx + ny * ny < 1e-12) {               // 같은 자리 보호: id 순서로 좌우를 나눔
+                nx = pId < qId ? 1 : -1;
+                ny = 0;
+            }
+            const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2; // 중점 M
+            return clipHalfPlane(poly, nx, ny, mx * nx + my * ny, qId);
+        }
+
+        function clipRect(poly, x0, y0, x1, y1) {
+            let out = clipHalfPlane(poly, -1, 0, -x0, 'left');
+            if (out.length) out = clipHalfPlane(out, 1, 0, x1, 'right');
+            if (out.length) out = clipHalfPlane(out, 0, -1, -y0, 'top');
+            if (out.length) out = clipHalfPlane(out, 0, 1, y1, 'bottom');
+            return out;
+        }
+
+        function removeDuplicateVertices(poly) {
+            if (poly.length < 2) return poly;
+            const out = [];
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i], b = poly[(i + 1) % poly.length];
+                if (Math.abs(a.x - b.x) > 1e-9 || Math.abs(a.y - b.y) > 1e-9) out.push(a);
+            }
+            return out;
+        }
+
+        // 경기장 직사각형을 다른 모든 선수와의 수직이등분선으로 잘라낸 다각형 = 보로노이 셀
+        function computeVoronoiCells(sites) {
+            return sites.map(p => {
+                let poly = fieldRect();
+                for (const q of sites) {
+                    if (q === p) continue;
+                    poly = clipByBisector(poly, p.pos, q.pos, p.id, q.id);
+                    if (poly.length === 0) break;
+                }
+                poly = removeDuplicateVertices(poly);
+                const neighbors = new Set();
+                for (let i = 0; i < poly.length; i++) {
+                    const a = poly[i], b = poly[(i + 1) % poly.length];
+                    if (!WALLS.has(a.edge) && Math.hypot(b.x - a.x, b.y - a.y) > 1e-6) neighbors.add(a.edge);
+                }
+                const area = polygonArea(poly);
+                const centroid = area > 1e-9 ? polygonCentroid(poly) : { x: p.pos.x, y: p.pos.y };
+                return { playerId: p.id, poly, area, centroid, neighbors };
+            });
+        }
+
+        // 신발끈 공식
+        function polygonArea(poly) {
+            let s = 0;
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i], b = poly[(i + 1) % poly.length];
+                s += a.x * b.y - b.x * a.y;
+            }
+            return Math.abs(s) / 2;
+        }
+
+        function polygonCentroid(poly) {
+            let s = 0, cx = 0, cy = 0;
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i], b = poly[(i + 1) % poly.length];
+                const c = a.x * b.y - b.x * a.y;
+                s += c;
+                cx += (a.x + b.x) * c;
+                cy += (a.y + b.y) * c;
+            }
+            return { x: cx / (3 * s), y: cy / (3 * s) };
+        }
+
+        function segmentInfo(p, a, b) {
+            const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+            const t = len2 > 1e-12 ? clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len2, 0, 1) : 0;
+            return { t, dist: Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t)) };
+        }
+
+        const distPointToSegment = (p, a, b) => segmentInfo(p, a, b).dist;
+
+        // =====================================================================
+        // ⑤ ANALYSIS : 팀 면적, 구역별 면적, 델로네, 패스 길 안전도, 슈팅 확률
+        // =====================================================================
+        function computeAnalysis() {
+            const full = computeVoronoiCells(state.players);           // AI는 항상 22명 기준
+            const view = state.layers.excludeGK
+                ? computeVoronoiCells(state.players.filter(p => p.role !== 'GK'))
+                : full;
+            const teamArea = { blue: 0, red: 0 };
+            let totalArea = 0;
+            for (const c of view) {
+                teamArea[playerById.get(c.playerId).team] += c.area;
+                totalArea += c.area;
+            }
+            console.assert(Math.abs(totalArea - FIELD_AREA) < 0.1, '셀 넓이 합 불일치', totalArea);
+            return {
+                full, view, teamArea, totalArea,
+                fullById: new Map(full.map(c => [c.playerId, c])),
+                viewById: new Map(view.map(c => [c.playerId, c])),
+                delaunay: collectEdges(view),
+                teamNet: { blue: buildTeamNetwork('blue'), red: buildTeamNetwork('red') }
+            };
+        }
+
+        // 셀이 변을 공유하는 쌍 = 델로네 변
+        function collectEdges(cells) {
+            const seen = new Set(), edges = [];
+            for (const c of cells) {
+                for (const n of c.neighbors) {
+                    const pair = c.playerId < n ? [c.playerId, n] : [n, c.playerId];
+                    const key = pair[0] + '|' + pair[1];
+                    if (!seen.has(key)) { seen.add(key); edges.push(pair); }
+                }
+            }
+            return edges;
+        }
+
+        // 같은 팀 11명만으로 보로노이를 다시 계산 → 팀 델로네 = 패스망
+        function buildTeamNetwork(team) {
+            const cells = computeVoronoiCells(teamPlayers[team]);
+            const edges = collectEdges(cells).map(([a, b]) => ({
+                a, b, safety: laneSafety(playerById.get(a).pos, playerById.get(b).pos, team, 0)
+            }));
+            return { neighbors: new Map(cells.map(c => [c.playerId, c.neighbors])), edges };
+        }
+
+        // 패스 길(선분)에서 가장 가까운 상대 선수까지 거리. skipStart: 패서 바로 앞 구간 제외(m)
+        function laneSafety(from, to, team, skipStart) {
+            const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy);
+            if (len < 1e-6) return 0;
+            const skip = Math.min(skipStart, len * 0.3);
+            const start = { x: from.x + dx / len * skip, y: from.y + dy / len * skip };
+            let best = Infinity;
+            for (const o of teamPlayers[otherTeam(team)]) best = Math.min(best, distPointToSegment(o.pos, start, to));
+            return best;
+        }
+
+        function computeZoneStats(cells) {
+            return ZONES.map(zone => {
+                const area = { blue: 0, red: 0 };
+                for (const c of cells) {
+                    const part = clipRect(c.poly, zone.rect[0], zone.rect[1], zone.rect[2], zone.rect[3]);
+                    if (part.length >= 3) area[playerById.get(c.playerId).team] += polygonArea(part);
+                }
+                return { zone, blue: area.blue, red: area.red, total: area.blue + area.red };
+            });
+        }
+
+        // 골 확률 = clamp(0.45 − 0.015 × 거리, 0.03, 0.4) × (1 − 차단율) × 각도 보정
+        function shotProbability(shooter) {
+            const goal = attackGoal(shooter.team);
+            const d = dist(shooter.pos, goal);
+            const base = clamp(0.45 - 0.015 * d, 0.03, 0.4);
+            let block = 0;
+            for (const o of teamPlayers[otherTeam(shooter.team)]) {
+                if (o.role === 'GK') continue;
+                const info = segmentInfo(o.pos, shooter.pos, goal);
+                if (info.t > 0.02 && info.t < 0.999 && info.dist < 1.5) block += 0.3;
+            }
+            block = Math.min(block, 0.9);
+            const half = FIELD.goalWidth / 2;
+            const a1 = Math.atan2(goal.y - half - shooter.pos.y, goal.x - shooter.pos.x);
+            const a2 = Math.atan2(goal.y + half - shooter.pos.y, goal.x - shooter.pos.x);
+            let theta = Math.abs(a1 - a2);
+            if (theta > Math.PI) theta = TAU - theta;
+            const straight = 2 * Math.atan(half / Math.max(d, 0.5));
+            const angleFactor = clamp(theta / straight, 0.2, 1);
+            return { prob: base * (1 - block) * angleFactor, distance: d };
+        }
+
+        // =====================================================================
+        // ⑥ RENDER : 경기장 → 셀 → 델로네 → 보조선 → 선수 → 공 → 라벨
+        // =====================================================================
+        function resizeCanvas() {
+            const cssW = pitchWrapper.clientWidth || 800;
+            scale = cssW / (FIELD.L + FIELD.margin * 2);
+            const cssH = (FIELD.W + FIELD.margin * 2) * scale;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            viewW = cssW;
+            viewH = cssH;
+        }
+
+        const toScreen = (x, y) => ({ x: (x + FIELD.margin) * scale, y: (y + FIELD.margin) * scale });
+        const toWorld = (sx, sy) => ({ x: sx / scale - FIELD.margin, y: sy / scale - FIELD.margin });
+
+        let renderQueued = false;
+        function requestRender() {
+            if (rafId || renderQueued) return;
+            renderQueued = true;
+            requestAnimationFrame(() => { renderQueued = false; render(); });
+        }
+
+        function render() {
+            syncHeldBall();
+            const a = state.analysis = computeAnalysis();   // 계산은 항상, 체크박스는 그리기만 (M5)
+            ctx.clearRect(0, 0, viewW, viewH);
+            drawPitch();
+            if (state.layers.cells) drawCells(a.view);
+            if (state.layers.thirds) drawThirds();
+            if (state.layers.delaunay) drawDelaunay(a.delaunay);
+            if (state.layers.passLanes) drawPassLanes(a);
+            drawSelectionCells(a);
+            if (state.layers.areas) drawAreaLabels(a.view);
+            if (state.layers.bisector) drawBisectorTool();
+            if (state.layers.vertices) drawVertexLabels(a);
+            drawBallPath();
+            drawPlayers();
+            drawBall();
+            drawOverlay();
+            requestUiUpdate();
+        }
+
+        function tracePolygon(poly) {
+            ctx.beginPath();
+            poly.forEach((v, i) => {
+                const s = toScreen(v.x, v.y);
+                if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+            });
+            ctx.closePath();
+        }
+
+        function lineM(x1, y1, x2, y2) {
+            const a = toScreen(x1, y1), b = toScreen(x2, y2);
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+
+        function rectM(x, y, w, h) {
+            const a = toScreen(x, y);
+            ctx.strokeRect(a.x, a.y, w * scale, h * scale);
+        }
+
+        function arcM(cx, cy, r, a0, a1) {
+            const c = toScreen(cx, cy);
+            ctx.beginPath(); ctx.arc(c.x, c.y, r * scale, a0, a1); ctx.stroke();
+        }
+
+        function dotM(cx, cy, radiusPx) {
+            const c = toScreen(cx, cy);
+            ctx.beginPath(); ctx.arc(c.x, c.y, radiusPx, 0, TAU); ctx.fill();
+        }
+
+        function roundRectPath(x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        }
+
+        function drawTextOutlined(text, x, y, { size = 12, color = '#ffffff', align = 'center', baseline = 'middle', weight = 700 } = {}) {
+            ctx.font = `${weight} ${size}px ${FONT}`;
+            ctx.textAlign = align;
+            ctx.textBaseline = baseline;
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = Math.max(2.5, size / 3.5);
+            ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.strokeText(text, x, y);
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y);
+        }
+
+        function drawPill(text, x, y, { size = 13, bg = 'rgba(15, 23, 42, 0.72)', color = '#ffffff', weight = 700 } = {}) {
+            ctx.font = `${weight} ${size}px ${FONT}`;
+            const w = ctx.measureText(text).width + size * 1.3;
+            const h = size * 1.9;
+            roundRectPath(x - w / 2, y - h / 2, w, h, h / 2);
+            ctx.fillStyle = bg;
+            ctx.fill();
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, x, y + 0.5);
+        }
+
+        function drawPitch() {
+            ctx.fillStyle = '#2e7d32';
+            ctx.fillRect(0, 0, viewW, viewH);
+            const stripes = 14, sw = FIELD.L / stripes;
+            for (let i = 0; i < stripes; i++) {
+                const s = toScreen(i * sw, 0);
+                ctx.fillStyle = i % 2 ? '#43a047' : '#3c9441';
+                ctx.fillRect(s.x, s.y, sw * scale + 0.5, FIELD.W * scale);
+            }
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+            ctx.lineWidth = Math.max(1.5, 0.12 * scale);
+            const cx = FIELD.L / 2, cy = FIELD.W / 2;
+            const pw = FIELD.penaltyWidth / 2, gw = FIELD.goalAreaWidth / 2, gh = FIELD.goalWidth / 2;
+            rectM(0, 0, FIELD.L, FIELD.W);
+            lineM(cx, 0, cx, FIELD.W);
+            arcM(cx, cy, FIELD.centerR, 0, TAU);
+            dotM(cx, cy, Math.max(2, 0.25 * scale));
+            rectM(0, cy - pw, FIELD.penaltyDepth, pw * 2);
+            rectM(FIELD.L - FIELD.penaltyDepth, cy - pw, FIELD.penaltyDepth, pw * 2);
+            rectM(0, cy - gw, FIELD.goalAreaDepth, gw * 2);
+            rectM(FIELD.L - FIELD.goalAreaDepth, cy - gw, FIELD.goalAreaDepth, gw * 2);
+            dotM(FIELD.penaltySpot, cy, Math.max(2, 0.22 * scale));
+            dotM(FIELD.L - FIELD.penaltySpot, cy, Math.max(2, 0.22 * scale));
+            const arcAngle = Math.acos((FIELD.penaltyDepth - FIELD.penaltySpot) / FIELD.centerR);
+            arcM(FIELD.penaltySpot, cy, FIELD.centerR, -arcAngle, arcAngle);
+            arcM(FIELD.L - FIELD.penaltySpot, cy, FIELD.centerR, Math.PI - arcAngle, Math.PI + arcAngle);
+            arcM(0, 0, 1, 0, Math.PI / 2);
+            arcM(FIELD.L, 0, 1, Math.PI / 2, Math.PI);
+            arcM(FIELD.L, FIELD.W, 1, Math.PI, Math.PI * 1.5);
+            arcM(0, FIELD.W, 1, Math.PI * 1.5, TAU);
+            // 골대 (골라인 뒤 2m)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+            [[-2, cy - gh], [FIELD.L, cy - gh]].forEach(([x, y]) => {
+                const s = toScreen(x, y);
+                ctx.fillRect(s.x, s.y, 2 * scale, FIELD.goalWidth * scale);
+                ctx.strokeRect(s.x, s.y, 2 * scale, FIELD.goalWidth * scale);
+            });
+        }
+
+        function cellFill(p) {
+            const info = TEAM_INFO[p.team];
+            const light = 36 + (p.index % 4) * 8;   // 선수마다 명도를 조금씩 다르게
+            return `hsla(${info.hue}, ${info.sat}%, ${light}%, ${state.cellOpacity})`;
+        }
+
+        function drawCells(cells) {
+            for (const c of cells) {
+                if (c.poly.length < 3) continue;
+                tracePolygon(c.poly);
+                ctx.fillStyle = cellFill(playerById.get(c.playerId));
+                ctx.fill();
+            }
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.lineWidth = 1.5;
+            for (const c of cells) {
+                if (c.poly.length < 3) continue;
+                tracePolygon(c.poly);
+                ctx.stroke();
+            }
+        }
+
+        function drawThirds() {
+            ctx.save();
+            ctx.setLineDash([8, 6]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = 2;
+            lineM(35, 0, 35, FIELD.W);
+            lineM(70, 0, 70, FIELD.W);
+            ctx.restore();
+            const size = clamp(Math.round(scale * 1.25), 10, 14);
+            [['블루 진영 ⅓', 17.5], ['중원 ⅓', 52.5], ['레드 진영 ⅓', 87.5]].forEach(([label, x]) => {
+                const s = toScreen(x, FIELD.W - 2.2);   // 아래쪽: 경기 모드 점수판과 겹치지 않게
+                drawTextOutlined(label, s.x, s.y, { size });
+            });
+        }
+
+        function drawDelaunay(edges) {
+            ctx.strokeStyle = 'rgba(15, 23, 42, 0.8)';
+            ctx.lineWidth = 1.4;
+            for (const [a, b] of edges) {
+                const pa = playerById.get(a).pos, pb = playerById.get(b).pos;
+                lineM(pa.x, pa.y, pb.x, pb.y);
+            }
+        }
+
+        function laneColor(safety) {
+            if (safety < 2) return '#ef4444';
+            if (safety < 5) return '#facc15';
+            return '#22c55e';
+        }
+
+        function drawPassLanes(a) {
+            const ball = state.ball;
+            const carrierId = ball.state === 'held' ? ball.ownerId : null;
+            const teams = carrierId ? [playerById.get(carrierId).team] : TEAMS;   // 공을 가진 팀만 강조
+            ctx.lineCap = 'round';
+            for (const team of teams) {
+                for (const e of a.teamNet[team].edges) {
+                    const pa = playerById.get(e.a).pos, pb = playerById.get(e.b).pos;
+                    const isCarrierLane = carrierId && (e.a === carrierId || e.b === carrierId);
+                    const width = isCarrierLane ? 4.5 : 2.5;
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+                    ctx.lineWidth = width + 2.5;
+                    lineM(pa.x, pa.y, pb.x, pb.y);
+                    ctx.strokeStyle = laneColor(e.safety);
+                    ctx.lineWidth = width;
+                    lineM(pa.x, pa.y, pb.x, pb.y);
+                }
+            }
+            ctx.lineCap = 'butt';
+        }
+
+        function drawSelectionCells(a) {
+            state.selection.forEach((id, i) => {
+                const cell = a.viewById.get(id);
+                if (!cell || cell.poly.length < 3) return;
+                if (i === 0) {
+                    ctx.save();
+                    ctx.setLineDash([6, 5]);
+                    ctx.strokeStyle = 'rgba(254, 240, 138, 0.95)';
+                    ctx.lineWidth = 2;
+                    for (const n of cell.neighbors) {
+                        const nc = a.viewById.get(n);
+                        if (nc && nc.poly.length >= 3) { tracePolygon(nc.poly); ctx.stroke(); }
+                    }
+                    ctx.restore();
+                }
+                tracePolygon(cell.poly);
+                ctx.strokeStyle = SELECT_COLORS[i];
+                ctx.lineWidth = 3.5;
+                ctx.stroke();
+            });
+        }
+
+        function drawAreaLabels(cells) {
+            const size = clamp(Math.round(scale * 1.25), 9, 13);
+            for (const c of cells) {
+                if (c.area * scale * scale < 1800 || (scale < 5 && c.area < 300)) continue;   // 화면에서 너무 작은 셀은 생략
+                const p = playerById.get(c.playerId);
+                let at = c.centroid;
+                if (dist(at, p.pos) < 2.3) at = { x: p.pos.x, y: p.pos.y + 2.6 };
+                const s = toScreen(at.x, at.y);
+                drawTextOutlined(`${Math.round(c.area)}㎡`, s.x, s.y, { size });
+            }
+        }
+
+        function drawBisectorTool() {
+            if (state.selection.length < 2) return;
+            const p = playerById.get(state.selection[0]).pos, q = playerById.get(state.selection[1]).pos;
+            if (dist(p, q) < 0.01) return;
+            const P = toScreen(p.x, p.y), Q = toScreen(q.x, q.y);
+            const M = { x: (P.x + Q.x) / 2, y: (P.y + Q.y) / 2 };
+            const len = Math.hypot(Q.x - P.x, Q.y - P.y);
+            const ux = (Q.x - P.x) / len, uy = (Q.y - P.y) / len;
+            const vx = -uy, vy = ux;
+            const far = (FIELD.L + FIELD.W) * scale;
+            const field = toScreen(0, 0);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(field.x, field.y, FIELD.L * scale, FIELD.W * scale);
+            ctx.clip();
+            ctx.lineCap = 'round';
+            [['rgba(0, 0, 0, 0.55)', 5.5], ['#fde047', 2.5]].forEach(([color, width]) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.beginPath();
+                ctx.moveTo(M.x - vx * far, M.y - vy * far);
+                ctx.lineTo(M.x + vx * far, M.y + vy * far);
+                ctx.stroke();
+            });
+            ctx.restore();
+
+            // 선분 PQ
+            ctx.save();
+            ctx.setLineDash([7, 5]);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(Q.x, Q.y); ctx.stroke();
+            ctx.restore();
+
+            // 같은 길이 표시(PM = MQ)
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            [[P, M], [M, Q]].forEach(([A, B]) => {
+                const cx = (A.x + B.x) / 2, cy = (A.y + B.y) / 2;
+                ctx.beginPath();
+                ctx.moveTo(cx - vx * 6, cy - vy * 6);
+                ctx.lineTo(cx + vx * 6, cy + vy * 6);
+                ctx.stroke();
+            });
+
+            // 직각 기호
+            const s = Math.max(8, 1.1 * scale);
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(M.x + ux * s, M.y + uy * s);
+            ctx.lineTo(M.x + ux * s + vx * s, M.y + uy * s + vy * s);
+            ctx.lineTo(M.x + vx * s, M.y + vy * s);
+            ctx.stroke();
+
+            // 중점
+            ctx.fillStyle = '#fde047';
+            ctx.strokeStyle = '#0f172a';
+            ctx.beginPath(); ctx.arc(M.x, M.y, 4.5, 0, TAU); ctx.fill(); ctx.stroke();
+            const size = clamp(Math.round(scale * 1.2), 10, 13);
+            drawTextOutlined('M', M.x - ux * 12 - vx * 10, M.y - uy * 12 - vy * 10, { size, color: '#fde047' });
+
+            // 라벨: 수직이등분선 위, 경기장 안쪽 지점
+            let labelPoint = null;
+            for (const k of [14, -14, 8, -8, 4, -4]) {
+                const w = toWorld(M.x + vx * k * scale, M.y + vy * k * scale);
+                if (w.x > 4 && w.x < FIELD.L - 4 && w.y > 3 && w.y < FIELD.W - 3) { labelPoint = toScreen(w.x, w.y); break; }
+            }
+            if (labelPoint) drawTextOutlined('수직이등분선', labelPoint.x, labelPoint.y, { size, color: '#fde047' });
+        }
+
+        const fmtCoord = v => `(${v.x.toFixed(1)}, ${(FIELD.W - v.y).toFixed(1)})`;   // 원점: 왼쪽 아래 모서리
+
+        function drawVertexLabels(a) {
+            if (!state.selection.length) return;
+            const cell = a.viewById.get(state.selection[0]);
+            if (!cell) return;
+            const size = clamp(Math.round(scale * 1.05), 9, 12);
+            const c = toScreen(cell.centroid.x, cell.centroid.y);
+            for (const v of cell.poly) {
+                const s = toScreen(v.x, v.y);
+                ctx.fillStyle = '#fde047';
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, TAU); ctx.fill(); ctx.stroke();
+                const dx = s.x - c.x, dy = s.y - c.y, d = Math.hypot(dx, dy) || 1;
+                let lx = s.x + dx / d * 10, ly = s.y + dy / d * 10;
+                lx = clamp(lx, 40, viewW - 40);
+                ly = clamp(ly, 8, viewH - 8);
+                drawTextOutlined(fmtCoord(v), lx, ly, { size, align: dx >= 0 ? 'left' : 'right', color: '#fef9c3' });
+            }
+        }
+
+        function drawBallPath() {
+            const b = state.ball;
+            if ((b.state !== 'pass' && b.state !== 'shot') || !b.target) return;
+            const s = toScreen(b.x, b.y), t = toScreen(b.target.x, b.target.y);
+            ctx.save();
+            ctx.setLineDash([4, 5]);
+            ctx.strokeStyle = b.state === 'shot' ? 'rgba(254, 240, 138, 0.95)' : 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawPlayers() {
+            const r = Math.max(1.15 * scale, 8);
+            const fontSize = Math.round(r * 1.05);
+            for (const p of state.players) {
+                const s = toScreen(p.pos.x, p.pos.y);
+                const info = TEAM_INFO[p.team];
+                const isGK = p.role === 'GK';
+                const selIndex = state.selection.indexOf(p.id);
+                if (selIndex >= 0) {
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, r + 4, 0, TAU);
+                    ctx.lineWidth = 3.5;
+                    ctx.strokeStyle = SELECT_COLORS[selIndex];
+                    ctx.stroke();
+                }
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, r, 0, TAU);
+                ctx.fillStyle = isGK ? GK_FILL : info.color;
+                ctx.fill();
+                ctx.lineWidth = isGK ? 3 : 2;
+                ctx.strokeStyle = isGK ? info.color : '#ffffff';
+                ctx.stroke();
+                ctx.font = `800 ${fontSize}px ${FONT}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = isGK ? '#1f2937' : '#ffffff';
+                ctx.fillText(String(p.number), s.x, s.y + 0.5);
+                if (state.layers.roles) {
+                    drawTextOutlined(p.role, s.x, s.y + r + 8, { size: Math.max(10, Math.round(r * 0.8)) });
+                }
+            }
+        }
+
+        function drawBall() {
+            const b = state.ball;
+            const s = toScreen(b.x, b.y);
+            const r = Math.max(0.6 * scale, 4.5);
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, r, 0, TAU);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#111827';
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, r * 0.4, 0, TAU);
+            ctx.fillStyle = '#111827';
+            ctx.fill();
+        }
+
+        function drawBanner(title, subtitle) {
+            const w = Math.min(viewW * 0.7, 420), h = subtitle ? 92 : 64;
+            const x = (viewW - w) / 2, y = (viewH - h) / 2;
+            roundRectPath(x, y, w, h, 16);
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `800 ${clamp(Math.round(viewW / 26), 20, 34)}px ${FONT}`;
+            ctx.fillText(title, viewW / 2, y + (subtitle ? 34 : h / 2));
+            if (subtitle) {
+                ctx.font = `600 ${clamp(Math.round(viewW / 60), 12, 16)}px ${FONT}`;
+                ctx.fillStyle = '#e2e8f0';
+                ctx.fillText(subtitle, viewW / 2, y + 66);
+            }
+        }
+
+        function drawOverlay() {
+            const m = state.match;
+            const pillSize = clamp(Math.round(viewW / 70), 11, 14);
+            if (state.placingBall) {
+                drawPill('⚽ 공을 줄 선수 또는 공을 놓을 위치를 클릭하세요', viewW / 2, toScreen(0, 3).y, { size: pillSize });
+            }
+            if (state.mode !== 'match') return;
+            drawPill(`블루 ${m.score.blue} : ${m.score.red} 레드 · ${matchMinute()}'`, viewW / 2, toScreen(0, 3).y, { size: pillSize });
+            if (m.phase === 'KICKOFF') drawBanner('킥오프', `${TEAM_INFO[m.kickoffTeam].name} 공으로 시작합니다`);
+            else if (m.phase === 'GOAL' && m.lastGoal) drawBanner(`⚽ GOAL! ${TEAM_INFO[m.lastGoal.team].name}`, `#${m.lastGoal.number} 득점 · 블루 ${m.score.blue} : ${m.score.red} 레드`);
+            else if (m.phase === 'FULLTIME') drawBanner('경기 종료', `블루 ${m.score.blue} : ${m.score.red} 레드`);
+            else if (m.phase === 'READY') drawPill('▶ 시작을 누르면 킥오프!', viewW / 2, viewH / 2, { size: pillSize + 2 });
+            if (isMatchLive() && !rafId) drawPill('⏸ 일시정지', viewW / 2, toScreen(0, 7).y, { size: pillSize, bg: 'rgba(245, 158, 11, 0.9)', color: '#1f2937' });
+        }
+
+        // =====================================================================
+        // ⑦ SIM : 상태 머신, 고정 타임스텝, 팀·선수 AI, 패스·슈팅·태클 판정
+        // =====================================================================
+        let rafId = null, lastFrameTime = 0, accumulator = 0;
+
+        function frame(now) {
+            rafId = requestAnimationFrame(frame);
+            accumulator += clamp((now - lastFrameTime) / 1000, 0, 0.1) * state.simSpeed;
+            lastFrameTime = now;
+            while (accumulator >= SIM.STEP) {
+                update(SIM.STEP);
+                accumulator -= SIM.STEP;
+                if (state.match.phase === 'FULLTIME') break;
+            }
+            render();
+            if (state.match.phase === 'FULLTIME') {
+                pause();
+                showResultModal();
+            }
+        }
+
+        function play() {
+            if (rafId) return;                       // 루프 중복 방지 (B6)
+            lastFrameTime = performance.now();
+            accumulator = 0;
+            rafId = requestAnimationFrame(frame);
+            updateControlsState();
+        }
+
+        function pause() {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = null;
+            updateControlsState();
+            requestRender();
+        }
+
+        function matchMinute() {
+            return Math.min(90, Math.floor(state.match.time / SIM.MATCH_SECONDS * 90));
+        }
+
+        function logEvent(text, team = null) {
+            const m = state.match;
+            m.events.unshift({ minute: matchMinute(), text, team });
+            if (m.events.length > 40) m.events.pop();
+        }
+
+        function startMatch(seed = readSeed()) {
+            state.match = createMatch(seed);
+            state.ball = createBall();
+            logEvent(`킥오프! (시드 ${seed} · 블루 ${state.teams.blue.formation} vs 레드 ${state.teams.red.formation})`);
+            startKickoff('blue');
+        }
+
+        function resetMatch() {
+            pause();
+            state.match = createMatch(readSeed());
+            state.ball = createBall();
+            resetPositionsToAnchors();
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        function pickKicker(team) {
+            const center = { x: FIELD.L / 2, y: FIELD.W / 2 };
+            const field = teamPlayers[team].filter(p => p.role !== 'GK');
+            const strikers = field.filter(p => p.role.includes('ST'));
+            const pool = strikers.length ? strikers : field;
+            return pool.reduce((best, p) => (dist(p.anchor, center) < dist(best.anchor, center) ? p : best));
+        }
+
+        // 양 팀을 자기 진영 대형으로 배치하고, 킥오프 팀 ST에게 센터서클에서 공을 준다 (B2)
+        function startKickoff(team) {
+            const m = state.match, b = state.ball;
+            const cx = FIELD.L / 2, cy = FIELD.W / 2, ring = FIELD.centerR + 1;
+            m.phase = 'KICKOFF';
+            m.phaseTimer = SIM.KICKOFF_SECONDS;
+            m.kickoffTeam = team;
+            for (const p of state.players) {
+                const dir = teamDir(p.team);
+                let x = dir > 0 ? Math.min(p.anchor.x, cx - 1) : Math.max(p.anchor.x, cx + 1);
+                let y = p.anchor.y;
+                if (p.team !== team) {
+                    const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+                    if (d < ring) {
+                        x = cx + (d > 1e-6 ? dx / d : -dir) * ring;
+                        y = cy + (d > 1e-6 ? dy / d : 0) * ring;
+                    }
+                }
+                p.pos = clampInField({ x, y }, 0.5);
+                p.vel = { x: 0, y: 0 };
+            }
+            const kicker = pickKicker(team);
+            kicker.pos = { x: cx - teamDir(team) * 0.6, y: cy };
+            b.pendingPass = null;
+            gainPossession(kicker, 'kickoff');
+            m.decisionTimer = SIM.DECISION_INTERVAL;   // 시작 첫 프레임 패스 방지 (B4)
+        }
+
+        function endMatch() {
+            const m = state.match;
+            m.phase = 'FULLTIME';
+            logEvent(`경기 종료 — 블루 ${m.score.blue} : ${m.score.red} 레드`);
+        }
+
+        function possessionTeam() {
+            const b = state.ball;
+            if (b.state === 'held') return playerById.get(b.ownerId).team;
+            if (b.state === 'pass' || b.state === 'shot') return b.team;
+            return null;
+        }
+
+        function update(dt) {
+            const m = state.match;
+            if (m.phase === 'KICKOFF') {
+                m.phaseTimer -= dt;
+                if (m.phaseTimer <= 0) m.phase = 'PLAYING';
+                return;
+            }
+            if (m.phase === 'GOAL') {                 // 골 세리머니 중에는 위치 업데이트 정지 (B1)
+                m.phaseTimer -= dt;
+                if (m.phaseTimer <= 0) startKickoff(m.kickoffTeam);
+                return;
+            }
+            if (m.phase !== 'PLAYING') return;
+
+            m.time += dt;
+            const a = state.analysis = computeAnalysis();
+            const team = possessionTeam();
+            if (team) m.stats[team].possession += dt;
+            m.sampleTimer -= dt;
+            if (m.sampleTimer <= 0) {
+                m.sampleTimer += SIM.SAMPLE_INTERVAL;
+                m.samples.push({ t: m.time, blue: a.teamArea.blue / a.totalArea });
+            }
+            updatePlayers(dt);
+            updateBall(dt);
+            if (m.phase === 'PLAYING' && m.time >= SIM.MATCH_SECONDS) endMatch();
+        }
+
+        // 최대 속도 제한 이동 (B7)
+        function moveToward(p, target, speed, dt) {
+            const dx = target.x - p.pos.x, dy = target.y - p.pos.y, d = Math.hypot(dx, dy);
+            if (d < 0.05) return;
+            const step = Math.min(d, speed * dt);
+            p.pos.x += dx / d * step;
+            p.pos.y += dy / d * step;
+        }
+
+        function clampPlayer(p) {
+            p.pos.x = clamp(p.pos.x, 0.3, FIELD.L - 0.3);   // 모든 선수 공통 클램프 (B3)
+            p.pos.y = clamp(p.pos.y, 0.3, FIELD.W - 0.3);
+        }
+
+        // 팀 블록: 공 위치를 따라 앞뒤·좌우로 이동. 공격팀은 공이 전진할수록 더 올라가 공 앞에 패스 길을 만든다
+        function blockTarget(p, attacking, shiftX, shiftY) {
+            const dir = teamDir(p.team);
+            let push = 0;
+            if (attacking) {
+                const progress = (state.ball.x - ownGoal(p.team).x) * dir;   // 자기 골대에서 공까지 거리
+                push = Math.min(BLOCK.attackPush + BLOCK.attackPushGain * Math.max(0, progress - 35), BLOCK.attackPushMax);
+            }
+            const x = p.anchor.x + shiftX + push * dir;
+            const y = FIELD.W / 2 + (p.anchor.y - FIELD.W / 2) * (attacking ? BLOCK.attackWidth : BLOCK.defendWidth) + shiftY;
+            return { x: clamp(x, 1, FIELD.L - 1), y: clamp(y, 1, FIELD.W - 1) };
+        }
+
+        function goalkeeperTarget(p, attTeam) {
+            const b = state.ball, goal = ownGoal(p.team), dir = teamDir(p.team);
+            const dBall = dist(b, goal);
+            if (b.state === 'loose' && dBall < 14) return { x: b.x, y: b.y };
+            if (attTeam === p.team && b.state !== 'loose') {
+                return { x: goal.x + dir * 6, y: FIELD.W / 2 + (b.y - FIELD.W / 2) * 0.1 };
+            }
+            const half = FIELD.goalWidth / 2 - 0.5;
+            return {
+                x: goal.x + dir * (dBall < 25 ? 2.5 : 1.5),
+                y: clamp(FIELD.W / 2 + (b.y - FIELD.W / 2) * 0.5, FIELD.W / 2 - half, FIELD.W / 2 + half)
+            };
+        }
+
+        // 골대 방향 + 6m 이내 상대 회피(반발력)
+        function dribbleTarget(p) {
+            const goal = attackGoal(p.team), dir = teamDir(p.team);
+            let vx = goal.x - p.pos.x, vy = goal.y - p.pos.y;
+            let d = Math.hypot(vx, vy) || 1;
+            vx /= d; vy /= d;
+            for (const o of teamPlayers[otherTeam(p.team)]) {
+                const ox = p.pos.x - o.pos.x, oy = p.pos.y - o.pos.y, od = Math.hypot(ox, oy);
+                if (od < 6 && od > 0.01) {
+                    const w = (6 - od) / 6 * 1.2;
+                    vx += ox / od * w;
+                    vy += oy / od * w;
+                }
+            }
+            if (p.pos.y < 4) vy += (4 - p.pos.y) / 4;
+            if (p.pos.y > FIELD.W - 4) vy -= (p.pos.y - (FIELD.W - 4)) / 4;
+            if (vx * dir < 0) vx = 0;                  // 뒤로는 드리블하지 않음
+            d = Math.hypot(vx, vy);
+            if (d < 1e-6) { vx = dir; vy = 0; d = 1; }
+            return { x: p.pos.x + vx / d * 5, y: p.pos.y + vy / d * 5 };
+        }
+
+        function nearestTo(players, point) {
+            let best = null, bestD = Infinity;
+            for (const p of players) {
+                const d = dist(p.pos, point);
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            return best;
+        }
+
+        function updatePlayers(dt) {
+            const b = state.ball, a = state.analysis;
+            const attTeam = b.team, defTeam = otherTeam(attTeam);
+            const carrier = b.state === 'held' ? playerById.get(b.ownerId) : null;
+            const ref = (b.state === 'pass' && b.target) ? b.target : b;    // 수비는 공이 향하는 곳에 반응
+            const shiftX = clamp((b.x - FIELD.L / 2) * BLOCK.shiftFactor, -BLOCK.shiftMax, BLOCK.shiftMax);
+            const shiftY = (b.y - FIELD.W / 2) * BLOCK.shiftYFactor;
+
+            // 수비 역할: 1차 압박 1명 + 커버 1명 + 나머지 대형 유지 (A2)
+            const defenders = teamPlayers[defTeam].filter(p => p.role !== 'GK')
+                .map(p => ({ p, d: dist(p.pos, ref) }))
+                .sort((x, y) => x.d - y.d || x.p.index - y.p.index);
+            const presser = defenders[0] ? defenders[0].p : null;
+            const cover = defenders[1] ? defenders[1].p : null;
+
+            const chasers = new Set();
+            if (b.state === 'loose') {
+                TEAMS.forEach(t => {
+                    const n = nearestTo(teamPlayers[t].filter(p => p.role !== 'GK'), b);
+                    if (n) chasers.add(n.id);
+                });
+            }
+
+            for (const p of state.players) {
+                const prevX = p.pos.x, prevY = p.pos.y;
+                let target, speed = p.maxSpeed;
+                if (p === carrier) {
+                    if (p.role === 'GK') target = p.pos;
+                    else { target = dribbleTarget(p); speed = p.maxSpeed * 0.85; }
+                } else if (p.role === 'GK') {
+                    target = goalkeeperTarget(p, attTeam);
+                } else if (chasers.has(p.id)) {
+                    target = { x: b.x, y: b.y };
+                } else if (b.state === 'pass' && p.id === b.receiverId) {
+                    target = b.target;
+                } else if (p.team === attTeam) {
+                    // 오프더볼: 블록 위치와 내 셀의 무게중심 사이 → 빈 공간으로 퍼짐 (로이드 알고리즘 아이디어)
+                    const block = blockTarget(p, true, shiftX, shiftY);
+                    const cell = a.fullById.get(p.id);
+                    target = cell ? lerpPoint(block, cell.centroid, 0.3) : block;
+                    speed = p.maxSpeed * 0.75;
+                } else if (p === presser) {
+                    target = carrier ? carrier.pos : { x: ref.x, y: ref.y };
+                } else if (p === cover) {
+                    const goal = ownGoal(p.team);
+                    const dx = goal.x - ref.x, dy = goal.y - ref.y, d = Math.hypot(dx, dy) || 1;
+                    const k = Math.min(8, d * 0.6);
+                    target = { x: ref.x + dx / d * k, y: ref.y + dy / d * k };
+                } else {
+                    target = blockTarget(p, false, shiftX, shiftY);
+                    speed = p.maxSpeed * 0.8;
+                }
+                moveToward(p, target, speed, dt);
+                clampPlayer(p);
+                p.vel.x = (p.pos.x - prevX) / dt;
+                p.vel.y = (p.pos.y - prevY) / dt;
+            }
+            separatePlayers();
+        }
+
+        function separatePlayers() {
+            const list = state.players, gap = SIM.PLAYER_GAP;
+            for (let i = 0; i < list.length; i++) {
+                for (let j = i + 1; j < list.length; j++) {
+                    const p = list[i].pos, q = list[j].pos;
+                    let dx = q.x - p.x, dy = q.y - p.y;
+                    let d = Math.hypot(dx, dy);
+                    if (d >= gap) continue;
+                    if (d < 1e-6) { dx = 1; dy = 0; d = 1e-6; }
+                    const push = (gap - d) / 2;
+                    const nx = dx / Math.max(d, 1e-6), ny = dy / Math.max(d, 1e-6);
+                    p.x -= nx * push; p.y -= ny * push;
+                    q.x += nx * push; q.y += ny * push;
+                }
+            }
+            list.forEach(clampPlayer);
+        }
+
+        function attachBallToOwner(owner) {
+            const b = state.ball;
+            const sp = Math.hypot(owner.vel.x, owner.vel.y);
+            let ux = teamDir(owner.team), uy = 0;
+            if (sp > 0.5) { ux = owner.vel.x / sp; uy = owner.vel.y / sp; }
+            b.x = clamp(owner.pos.x + ux * 0.8, 0.2, FIELD.L - 0.2);
+            b.y = clamp(owner.pos.y + uy * 0.8, 0.2, FIELD.W - 0.2);
+        }
+
+        function syncHeldBall() {
+            const b = state.ball;
+            if (b.state === 'held' && b.ownerId) attachBallToOwner(playerById.get(b.ownerId));
+        }
+
+        function gainPossession(player, reason) {
+            const b = state.ball, m = state.match;
+            if (b.pendingPass) {
+                if (player.team === b.pendingPass.team) m.stats[player.team].passSuccess++;
+                b.pendingPass = null;
+            }
+            if (reason === 'intercept') m.stats[player.team].intercepts++;
+            if (reason === 'tackle') m.stats[player.team].tackles++;
+            b.state = 'held';
+            b.ownerId = player.id;
+            b.team = player.team;
+            b.receiverId = null;
+            b.target = null;
+            b.vx = b.vy = 0;
+            b.protectUntil = m.time + SIM.TACKLE_PROTECT;
+            m.decisionTimer = player.role === 'GK' ? 0.8 : (reason === 'pass' ? 0.25 : SIM.DECISION_INTERVAL);
+            attachBallToOwner(player);
+        }
+
+        function stepBallToward(b, target, speed, dt) {
+            const dx = target.x - b.x, dy = target.y - b.y, d = Math.hypot(dx, dy);
+            const step = speed * dt;
+            if (d <= step) { b.x = target.x; b.y = target.y; return true; }
+            b.x += dx / d * step;
+            b.y += dy / d * step;
+            return false;
+        }
+
+        function closestWithin(players, point, radius) {
+            let best = null, bestD = radius;
+            for (const p of players) {
+                const d = dist(p.pos, point);
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            return best;
+        }
+
+        function updateBall(dt) {
+            const b = state.ball, m = state.match;
+            if (b.state === 'held') {
+                const owner = playerById.get(b.ownerId);
+                attachBallToOwner(owner);
+                if (m.time >= b.protectUntil) {
+                    for (const o of teamPlayers[otherTeam(owner.team)]) {
+                        if (dist(o.pos, owner.pos) < SIM.TACKLE_RADIUS && m.rng() < SIM.TACKLE_RATE * dt) {
+                            gainPossession(o, 'tackle');
+                            return;
+                        }
+                    }
+                }
+                m.decisionTimer -= dt;
+                if (m.decisionTimer <= 0) {
+                    m.decisionTimer = SIM.DECISION_INTERVAL;
+                    decide(owner);
+                }
+            } else if (b.state === 'pass') {
+                const arrived = stepBallToward(b, b.target, SIM.PASS_SPEED, dt);
+                b.travel += SIM.PASS_SPEED * dt;
+                const receiver = playerById.get(b.receiverId);
+                const dReceiver = dist(receiver.pos, b);
+                if (b.travel > 1.5) {
+                    // 비행 중 상대가 공 1.0m 안에 들어오면 인터셉트 (수신자가 더 가까우면 수신자 우선)
+                    const interceptor = closestWithin(teamPlayers[otherTeam(b.team)], b, SIM.INTERCEPT_RADIUS);
+                    if (interceptor && !(dReceiver < SIM.RECEIVE_RADIUS && dReceiver <= dist(interceptor.pos, b))) {
+                        gainPossession(interceptor, 'intercept');
+                        return;
+                    }
+                }
+                if (dReceiver < SIM.RECEIVE_RADIUS || (arrived && dReceiver < 2.5)) {
+                    gainPossession(receiver, 'pass');
+                } else if (arrived) {
+                    b.state = 'loose';
+                    b.vx = b.dirX * 3;
+                    b.vy = b.dirY * 3;
+                    b.noPickupUntil = m.time;
+                }
+            } else if (b.state === 'shot') {
+                if (stepBallToward(b, b.target, SIM.SHOT_SPEED, dt)) resolveShot();
+            } else if (b.state === 'loose') {
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                const f = Math.exp(-SIM.LOOSE_FRICTION * dt);
+                b.vx *= f;
+                b.vy *= f;
+                if (b.x < 0 || b.x > FIELD.L || b.y < 0 || b.y > FIELD.W) {
+                    restartOut();
+                    return;
+                }
+                if (m.time >= b.noPickupUntil) {
+                    const picker = closestWithin(state.players, b, SIM.PICKUP_RADIUS);
+                    if (picker) gainPossession(picker, 'loose');
+                }
+            }
+        }
+
+        // 공을 가진 선수의 선택지: 패스 / 슈팅 / 드리블 점수화 (A3, A4)
+        function evaluateOptions(owner) {
+            const a = state.analysis, W = WEIGHTS, dir = teamDir(owner.team);
+            const options = [];
+            const net = a.teamNet[owner.team].neighbors.get(owner.id) || new Set();
+            for (const mate of teamPlayers[owner.team]) {
+                if (mate === owner) continue;
+                const target = clampInField({
+                    x: mate.pos.x + mate.vel.x * SIM.PASS_LEAD_TIME,
+                    y: mate.pos.y + mate.vel.y * SIM.PASS_LEAD_TIME
+                }, 1);
+                const d = dist(owner.pos, target);
+                const forward = (target.x - owner.pos.x) * dir;
+                const isCandidate = net.has(mate.id) || (d >= 5 && d <= 35 && forward > 0);
+                if (!isCandidate || d < 3 || d > 40) continue;
+                const cell = a.fullById.get(mate.id);
+                const safety = laneSafety(owner.pos, target, owner.team, 1.5);
+                const score = W.passForward * forward
+                    + W.passArea * (cell ? cell.area : 0)
+                    + W.passSafety * Math.min(safety, W.passSafetyCap)
+                    - W.passDistance * d
+                    - (safety < W.passRiskRadius ? W.passRiskPenalty : 0);
+                options.push({ type: 'pass', score, receiver: mate, target, distance: d });
+            }
+            if (owner.role !== 'GK') {
+                const shot = shotProbability(owner);
+                if (shot.distance <= SIM.SHOT_RANGE) {
+                    options.push({ type: 'shot', score: W.shotValue * shot.prob + (shot.distance < 12 ? W.shotClose : 0), prob: shot.prob });
+                }
+                const nearestOpp = nearestTo(teamPlayers[otherTeam(owner.team)], owner.pos);
+                const pressure = nearestOpp ? dist(nearestOpp.pos, owner.pos) : Infinity;
+                options.push({ type: 'dribble', score: W.dribbleBase + (pressure > 4 ? W.dribbleFree : 0) - (pressure < 2 ? W.dribblePressure : 0) });
+            }
+            return options;
+        }
+
+        function decide(owner) {
+            let best = null;
+            for (const o of evaluateOptions(owner)) if (!best || o.score > best.score) best = o;
+            if (!best) return;
+            if (best.type === 'pass') executePass(owner, best);
+            else if (best.type === 'shot') executeShot(owner, best);
+        }
+
+        function executePass(owner, option) {
+            const b = state.ball, m = state.match;
+            const noise = option.distance * 0.04;
+            const target = clampInField({
+                x: option.target.x + (m.rng() * 2 - 1) * noise,
+                y: option.target.y + (m.rng() * 2 - 1) * noise
+            }, 0.5);
+            const d = dist(b, target) || 1;
+            b.state = 'pass';
+            b.ownerId = null;
+            b.team = owner.team;
+            b.receiverId = option.receiver.id;
+            b.target = target;
+            b.dirX = (target.x - b.x) / d;
+            b.dirY = (target.y - b.y) / d;
+            b.travel = 0;
+            b.pendingPass = { team: owner.team };
+            m.stats[owner.team].passAttempts++;
+        }
+
+        function executeShot(owner, option) {
+            const b = state.ball, m = state.match;
+            const goal = attackGoal(owner.team);
+            b.state = 'shot';
+            b.ownerId = null;
+            b.team = owner.team;
+            b.shooterId = owner.id;
+            b.shotProb = option.prob;
+            b.target = { x: goal.x, y: goal.y + (m.rng() * 2 - 1) * (FIELD.goalWidth / 2 - 0.4) };
+            m.stats[owner.team].shots++;
+        }
+
+        function resolveShot() {
+            const b = state.ball, m = state.match;
+            const shooter = playerById.get(b.shooterId);
+            const name = `${TEAM_INFO[shooter.team].name} #${shooter.number}`;
+            const pct = Math.round(b.shotProb * 100);
+            if (m.rng() < b.shotProb) {
+                m.score[shooter.team]++;
+                m.stats[shooter.team].goals++;
+                m.lastGoal = { team: shooter.team, number: shooter.number };
+                m.goals.push({ t: m.time, team: shooter.team });
+                logEvent(`⚽ ${name} 골! (골 확률 ${pct}%)`, shooter.team);
+                b.state = 'dead';
+                m.phase = 'GOAL';
+                m.phaseTimer = SIM.GOAL_SECONDS;
+                m.kickoffTeam = otherTeam(shooter.team);
+            } else {
+                const keeper = teamPlayers[otherTeam(shooter.team)].find(p => p.role === 'GK');
+                logEvent(`${name} 슈팅 → 선방 (골 확률 ${pct}%)`, shooter.team);
+                gainPossession(keeper, 'save');
+            }
+        }
+
+        // 공 아웃: 마지막으로 건드린 팀의 상대 공으로 가장 가까운 경계에서 재개
+        function restartOut() {
+            const b = state.ball;
+            const restartTeam = otherTeam(b.team);
+            const spot = clampInField(b, 0.5);
+            const taker = nearestTo(teamPlayers[restartTeam].filter(p => p.role !== 'GK'), spot);
+            taker.pos = { ...spot };
+            taker.vel = { x: 0, y: 0 };
+            gainPossession(taker, 'restart');
+            state.match.decisionTimer = 0.6;
+        }
+
+        // =====================================================================
+        // ⑧ INPUT : Pointer Events 하나로 드래그·선택·공 지정 (B11)
+        // =====================================================================
+        let pointer = null;
+
+        function eventToWorld(e) {
+            const r = canvas.getBoundingClientRect();
+            return toWorld(e.clientX - r.left, e.clientY - r.top);
+        }
+
+        function hitTestPlayer(w) {
+            return closestWithin(state.players, w, Math.max(1.8, 16 / scale));
+        }
+
+        function canDragPlayers() {
+            return state.mode === 'tactics' || !rafId;
+        }
+
+        function toggleSelection(id) {
+            const i = state.selection.indexOf(id);
+            if (i >= 0) state.selection.splice(i, 1);
+            else {
+                state.selection.push(id);
+                if (state.selection.length > 2) state.selection.shift();
+            }
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        // 같은 자리 보호: 놓을 때 0.05m 밀어내기
+        function separateFromOthers(p) {
+            for (const q of state.players) {
+                if (q === p) continue;
+                const d = dist(p.pos, q.pos);
+                if (d >= 0.05) continue;
+                const nx = d > 1e-9 ? (p.pos.x - q.pos.x) / d : teamDir(p.team);
+                const ny = d > 1e-9 ? (p.pos.y - q.pos.y) / d : 0;
+                let next = clampInField({ x: q.pos.x + nx * 0.05, y: q.pos.y + ny * 0.05 }, 0.3);
+                if (dist(next, q.pos) < 0.05) next = clampInField({ x: q.pos.x - nx * 0.05, y: q.pos.y - ny * 0.05 }, 0.3);
+                p.pos = next;
+            }
+            if (state.mode === 'tactics') p.anchor = { ...p.pos };
+        }
+
+        function placeBall(w, player) {
+            const b = state.ball;
+            if (player) {
+                b.state = 'held';
+                b.ownerId = player.id;
+                b.team = player.team;
+            } else {
+                const spot = clampInField(w, 0.3);
+                b.state = 'loose';
+                b.ownerId = null;
+                b.x = spot.x;
+                b.y = spot.y;
+            }
+            b.vx = b.vy = 0;
+            setPlacingBall(false);
+        }
+
+        canvas.addEventListener('pointerdown', e => {
+            if (e.button > 0) return;
+            const w = eventToWorld(e);
+            if (state.placingBall) {
+                placeBall(w, hitTestPlayer(w));
+                e.preventDefault();
+                return;
+            }
+            const hit = hitTestPlayer(w);
+            pointer = { id: e.pointerId, playerId: hit ? hit.id : null, start: w, moved: false };
+            if (hit && canDragPlayers()) {
+                canvas.setPointerCapture(e.pointerId);
+                canvas.style.cursor = 'grabbing';
+            }
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('pointermove', e => {
+            const w = eventToWorld(e);
+            if (!pointer || pointer.id !== e.pointerId) {
+                if (state.placingBall) canvas.style.cursor = 'crosshair';
+                else canvas.style.cursor = hitTestPlayer(w) ? (canDragPlayers() ? 'grab' : 'pointer') : 'default';
+                return;
+            }
+            if (!pointer.playerId || !canDragPlayers()) return;
+            if (!pointer.moved && dist(w, pointer.start) < 0.4) return;
+            pointer.moved = true;
+            const p = playerById.get(pointer.playerId);
+            const spot = clampInField(w, 0.3);
+            p.pos = spot;
+            p.vel = { x: 0, y: 0 };
+            if (state.mode === 'tactics') p.anchor = { ...spot };   // 드래그는 anchor만 바꿈, slot은 유지 (B8)
+            requestRender();
+        });
+
+        function endPointer(e) {
+            if (!pointer || pointer.id !== e.pointerId) return;
+            const p = pointer.playerId ? playerById.get(pointer.playerId) : null;
+            if (!pointer.moved) {
+                if (p) toggleSelection(p.id);
+                else if (state.selection.length) { state.selection = []; requestUiUpdate(true); }
+            } else if (p) {
+                separateFromOthers(p);
+            }
+            if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+            pointer = null;
+            canvas.style.cursor = 'default';
+            requestRender();
+        }
+
+        canvas.addEventListener('pointerup', endPointer);
+        canvas.addEventListener('pointercancel', e => {
+            if (pointer && pointer.id === e.pointerId) pointer = null;
+        });
+
+        // =====================================================================
+        // ⑨ UI : Bootstrap 컨트롤 바인딩, 통계 패널 갱신
+        // =====================================================================
+        const fmtNum = (v, digits = 1) => v.toLocaleString('ko-KR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        const pct = v => (v * 100).toFixed(1) + '%';
+
+        function setText(element, text) {
+            if (element.textContent !== text) element.textContent = text;
+        }
+
+        function setHtml(element, html) {
+            if (element.dataset.html !== html) {
+                element.dataset.html = html;
+                element.innerHTML = html;
+            }
+        }
+
+        function showToast(message) {
+            $('appToastBody').textContent = message;
+            if (window.bootstrap) bootstrap.Toast.getOrCreateInstance($('appToast'), { delay: 2500 }).show();
+        }
+
+        function readSeed() {
+            const input = $('seedInput');
+            const seed = clamp(parseInt(input.value, 10) || 0, 0, 999999);
+            input.value = seed;
+            return seed;
+        }
+
+        function teamPanelHtml(team) {
+            const info = TEAM_INFO[team];
+            const options = Object.keys(FORMATIONS).map(f => `<option value="${f}">${f}</option>`).join('');
+            const slider = (key, label, min, max, step) => `
+                <div class="col-4">
+                    <label class="form-label small mb-0 d-flex flex-wrap justify-content-between column-gap-1" for="${team}-${key}">
+                        <span>${label}</span><span class="fw-bold stat-num" id="${team}-${key}-val"></span>
+                    </label>
+                    <input type="range" class="form-range" id="${team}-${key}" data-team="${team}" data-key="${key}" min="${min}" max="${max}" step="${step}">
+                </div>`;
+            return `
+                <div class="border rounded-3 p-3 h-100 team-panel team-${team}">
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                        <span class="badge ${team === 'blue' ? 'text-bg-primary' : 'text-bg-danger'} fs-6">${info.name}</span>
+                        <span class="small text-secondary">${team === 'blue' ? '오른쪽(→)으로 공격' : '왼쪽(←)으로 공격'}</span>
+                        <select class="form-select form-select-sm ms-auto w-auto" id="${team}-formation" data-team="${team}" aria-label="${info.name} 포메이션">${options}</select>
+                    </div>
+                    <div class="row g-2">
+                        ${slider('lineHeight', '라인 높이', 0, 20, 1)}
+                        ${slider('width', '폭', 70, 120, 5)}
+                        ${slider('compact', '간격', 70, 110, 5)}
+                    </div>
+                </div>`;
+        }
+
+        function tacticLabel(key, value) {
+            return key === 'lineHeight' ? `${value}m` : `${Math.round(value * 100)}%`;
+        }
+
+        function syncTeamControls() {
+            for (const team of TEAMS) {
+                const t = state.teams[team];
+                $(`${team}-formation`).value = t.formation;
+                for (const key of ['lineHeight', 'width', 'compact']) {
+                    $(`${team}-${key}`).value = key === 'lineHeight' ? t.tactic[key] : Math.round(t.tactic[key] * 100);
+                    $(`${team}-${key}-val`).textContent = tacticLabel(key, t.tactic[key]);
+                }
+            }
+        }
+
+        function setFormation(team, formation) {
+            state.teams[team].formation = formation;
+            buildTeam(team);
+            alignTeam(team, shouldMovePositions());
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        // 슬라이더: 프리셋 위치 변화량만큼 anchor를 옮겨 드래그한 배치를 유지
+        function setTactic(team, key, value) {
+            const before = teamPlayers[team].map(p => slotToWorld(p.slot, team, state.teams[team].tactic));
+            state.teams[team].tactic[key] = value;
+            const movePos = shouldMovePositions();
+            teamPlayers[team].forEach((p, i) => {
+                const after = slotToWorld(p.slot, team, state.teams[team].tactic);
+                const dx = after.x - before[i].x, dy = after.y - before[i].y;
+                p.anchor = clampInField({ x: p.anchor.x + dx, y: p.anchor.y + dy }, 0.3);
+                if (movePos) p.pos = clampInField({ x: p.pos.x + dx, y: p.pos.y + dy }, 0.3);
+            });
+            $(`${team}-${key}-val`).textContent = tacticLabel(key, value);
+            requestRender();
+        }
+
+        function setPlacingBall(on) {
+            state.placingBall = on;
+            const btn = $('btnPlaceBall');
+            btn.classList.toggle('btn-dark', on);
+            btn.classList.toggle('btn-outline-dark', !on);
+            canvas.style.cursor = on ? 'crosshair' : 'default';
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        function setMode(mode) {
+            if (state.mode === mode) return;
+            if (mode === 'tactics') pause();
+            state.mode = mode;
+            state.placingBall = false;
+            $('btnPlaceBall').classList.replace('btn-dark', 'btn-outline-dark');
+            [['modeTactics', 'tactics'], ['modeMatch', 'match']].forEach(([id, m]) => {
+                $(id).classList.toggle('active', m === mode);
+                $(id).setAttribute('aria-selected', String(m === mode));
+            });
+            $('tacticsToolbar').classList.toggle('d-none', mode !== 'tactics');
+            $('matchToolbar').classList.toggle('d-none', mode !== 'match');
+            $('matchPanel').classList.toggle('d-none', mode !== 'match');
+            if (mode === 'match' && state.match.phase === 'READY') resetPositionsToAnchors();
+            updateControlsState();
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        function updateControlsState() {
+            const btn = $('btnPlay');
+            const live = isMatchLive();
+            if (rafId) btn.innerHTML = '<i class="bi bi-pause-fill"></i> 일시정지';
+            else if (live) btn.innerHTML = '<i class="bi bi-play-fill"></i> 계속';
+            else btn.innerHTML = '<i class="bi bi-play-fill"></i> 시작';
+            btn.classList.toggle('btn-warning', !!rafId);
+            btn.classList.toggle('btn-primary', !rafId);
+            $('seedInput').disabled = live;
+            $('btnRandomSeed').disabled = live;
+            updateHint();
+        }
+
+        function updateHint() {
+            let text;
+            if (state.placingBall) text = '⚽ 공을 줄 선수를 클릭하거나, 공을 놓을 빈 곳을 클릭하세요.';
+            else if (state.mode === 'match' && rafId) text = '경기 중에는 선수를 클릭해 선택만 할 수 있어요. 일시정지하면 선수를 끌어 장면을 바꿀 수 있습니다.';
+            else if (state.layers.bisector && state.selection.length < 2) text = '수직이등분선 도구: 선수 2명을 차례로 클릭하세요. 두 영역의 경계와 겹치는지 확인해 보세요!';
+            else if (state.mode === 'match' && isMatchLive()) text = '일시정지 중: 선수를 끌어 옮기면 영역이 어떻게 바뀌는지 볼 수 있어요. ‘전술판’으로 가면 이 장면을 그대로 분석합니다.';
+            else if (state.mode === 'match') text = '▶ 시작을 누르면 전술판의 기준 대형으로 킥오프합니다. 같은 시드 + 같은 전술이면 같은 경기가 재현돼요.';
+            else text = '선수를 끌어 옮기고, 클릭해 선택하세요(최대 2명). 좌표 원점은 경기장 왼쪽 아래 모서리, 단위는 m입니다.';
+            setText($('canvasHint'), text);
+            $('laneLegend').classList.toggle('d-none', !state.layers.passLanes);
+        }
+
+        let lastUiTime = 0, uiTimer = null;
+        // 통계 DOM 갱신은 200ms 간격으로 묶음 (B10)
+        function requestUiUpdate(force = false) {
+            const now = performance.now();
+            if (force || now - lastUiTime >= UI_INTERVAL_MS) {
+                if (uiTimer) { clearTimeout(uiTimer); uiTimer = null; }
+                lastUiTime = now;
+                updateUi();
+            } else if (!uiTimer) {
+                uiTimer = setTimeout(() => {
+                    uiTimer = null;
+                    lastUiTime = performance.now();
+                    updateUi();
+                }, UI_INTERVAL_MS - (now - lastUiTime));
+            }
+        }
+
+        function updateUi() {
+            const a = state.analysis;
+            if (!a) return;
+            updateDominanceBar(a);
+            updateZoneTable(a);
+            updatePlayerTables(a);
+            updateSelectedCard(a);
+            updateHint();
+            if (state.mode === 'match') updateMatchPanel();
+        }
+
+        function updateDominanceBar(a) {
+            const blue = a.teamArea.blue / a.totalArea * 100;
+            const red = 100 - blue;
+            setText($('blueShareText'), blue.toFixed(1) + '%');
+            setText($('redShareText'), red.toFixed(1) + '%');
+            const bp = $('blueShareProgress'), rp = $('redShareProgress');
+            if (bp.style.width !== blue.toFixed(2) + '%') {
+                bp.style.width = blue.toFixed(2) + '%';
+                rp.style.width = red.toFixed(2) + '%';
+                bp.setAttribute('aria-valuenow', blue.toFixed(1));
+                rp.setAttribute('aria-valuenow', red.toFixed(1));
+            }
+        }
+
+        function shareBarHtml(blueRatio) {
+            const b = (blueRatio * 100).toFixed(1), r = (100 - blueRatio * 100).toFixed(1);
+            return `<div class="progress-stacked share-mini"><div class="progress" style="width:${b}%"><div class="progress-bar bg-primary"></div></div><div class="progress" style="width:${r}%"><div class="progress-bar bg-danger"></div></div></div>`;
+        }
+
+        function zoneRowHtml(name, sub, blue, red) {
+            const total = blue + red || 1;
+            const bw = blue >= red ? 'fw-bold' : '', rw = red > blue ? 'fw-bold' : '';
+            return `<tr>
+                <th scope="row" class="fw-semibold">${name}<div class="small text-secondary fw-normal">${sub}</div></th>
+                <td class="text-end text-primary ${bw}">${pct(blue / total)}<div class="small text-secondary fw-normal">${fmtNum(blue, 0)}㎡</div></td>
+                <td class="text-end text-danger ${rw}">${pct(red / total)}<div class="small text-secondary fw-normal">${fmtNum(red, 0)}㎡</div></td>
+                <td>${shareBarHtml(blue / total)}</td>
+            </tr>`;
+        }
+
+        function updateZoneTable(a) {
+            const stats = computeZoneStats(a.view);
+            const rows = stats.map(s => zoneRowHtml(s.zone.name, `${s.zone.range} · ${fmtNum(s.total, 0)}㎡`, s.blue, s.red));
+            rows.push(zoneRowHtml('전체', `105m × 68m = ${fmtNum(FIELD_AREA, 0)}㎡`, a.teamArea.blue, a.teamArea.red));
+            setHtml($('zoneTableBody'), rows.join(''));
+            const n = a.view.length;
+            const ok = Math.abs(a.totalArea - FIELD_AREA) < 0.1;
+            setText($('invariantText'),
+                `✔ 검증: 셀 ${n}개 넓이의 합 = ${fmtNum(a.totalArea, 1)}㎡ ${ok ? '= 105 × 68 ✓' : '(오차 발생!)'} · 델로네 변 ${a.delaunay.length}개 (최대 3n − 6 = ${3 * n - 6}개)` +
+                (state.layers.excludeGK ? ' · GK 제외 모드' : ''));
+        }
+
+        function updatePlayerTables(a) {
+            for (const team of TEAMS) {
+                const rows = teamPlayers[team];
+                const areas = rows.map(p => (a.viewById.get(p.id) || { area: null }).area);
+                const maxArea = Math.max(...areas.filter(v => v !== null));
+                const html = rows.map((p, i) => {
+                    const area = areas[i];
+                    const selected = state.selection.includes(p.id) ? 'table-warning' : '';
+                    const bold = area !== null && area === maxArea ? 'fw-bold' : '';
+                    return `<tr data-player="${p.id}" class="${selected} ${bold}">
+                        <td>${p.number}</td><td>${p.role}</td>
+                        <td class="text-end">${area === null ? '–' : fmtNum(area, 1)}</td>
+                        <td class="text-end">${area === null ? '–' : pct(area / a.totalArea)}</td>
+                    </tr>`;
+                }).join('');
+                setHtml($(team === 'blue' ? 'playerTableBlue' : 'playerTableRed'), html);
+            }
+        }
+
+        let vertexListOpen = false;
+
+        function playerName(p) {
+            return `${TEAM_INFO[p.team].name} #${p.number}`;
+        }
+
+        function playerSummaryHtml(p, cell, index, a) {
+            const info = TEAM_INFO[p.team];
+            const header = `<div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                <span class="legend-dot" style="background:${SELECT_COLORS[index]}"></span>
+                <span class="badge" style="background:${info.color}">${playerName(p)}</span>
+                <strong>${p.role}</strong>
+                <span class="ms-auto fw-bold stat-num">${cell ? fmtNum(cell.area, 1) + '㎡' : '영역 없음'}</span>
+            </div>`;
+            if (!cell) {
+                return `<div class="mb-3">${header}<div class="small text-secondary">GK 제외 모드라서 영역 계산에서 빠졌어요.</div></div>`;
+            }
+            const neighbors = [...cell.neighbors]
+                .map(id => playerById.get(id))
+                .sort((x, y) => (x.team === p.team ? 0 : 1) - (y.team === p.team ? 0 : 1) || x.number - y.number)
+                .map(n => `<span class="badge rounded-pill ${n.team === 'blue' ? 'text-bg-primary' : 'text-bg-danger'} bg-opacity-75">#${n.number}</span>`)
+                .join(' ');
+            const vertices = cell.poly.map(v => `<li>${fmtCoord(v)}</li>`).join('');
+            return `<div class="mb-3">${header}
+                <div class="small text-secondary mb-1">전체의 <strong class="text-body">${pct(cell.area / a.totalArea)}</strong> · 위치 ${fmtCoord(p.pos)} · 무게중심 ${fmtCoord(cell.centroid)}</div>
+                <div class="small mb-1">이웃(경계를 공유하는 선수) ${cell.neighbors.size}명: ${neighbors || '없음'}</div>
+                <details class="small" ${vertexListOpen ? 'open' : ''}>
+                    <summary>꼭짓점 좌표 ${cell.poly.length}개 — 손으로 넓이 구해 보기</summary>
+                    <ol class="vertex-list stat-num my-1">${vertices}</ol>
+                    <div class="text-secondary">신발끈 공식 S = ½ |Σ (xᵢ·yᵢ₊₁ − xᵢ₊₁·yᵢ)| = <strong class="text-body">${fmtNum(cell.area, 1)}㎡</strong></div>
+                </details>
+            </div>`;
+        }
+
+        function pairSummaryHtml(p, q, a) {
+            const cp = a.viewById.get(p.id), cq = a.viewById.get(q.id);
+            const d = dist(p.pos, q.pos);
+            const mid = { x: (p.pos.x + q.pos.x) / 2, y: (p.pos.y + q.pos.y) / 2 };
+            const touching = cp && cq && (cp.neighbors.has(q.id) || cq.neighbors.has(p.id));
+            const message = touching
+                ? '두 셀이 경계를 공유합니다. 그 경계는 두 선수를 잇는 선분의 <strong>수직이등분선</strong> 위에 있어요. → 두 선수는 델로네 이웃입니다.'
+                : '두 셀은 직접 맞닿지 않아요. 수직이등분선이 있어도 그 사이를 다른 선수의 영역이 가로막고 있습니다.';
+            return `<div class="alert alert-light border small mb-0">
+                <div class="fw-bold mb-1"><i class="bi bi-rulers"></i> 두 선수 사이</div>
+                거리 ${d.toFixed(2)}m · 중점 M ${fmtCoord(mid)}<br>${message}
+                ${state.layers.bisector ? '' : '<div class="text-secondary mt-1">레이어에서 ‘수직이등분선’을 켜면 직접 확인할 수 있어요.</div>'}
+            </div>`;
+        }
+
+        function updateSelectedCard(a) {
+            const ids = state.selection;
+            let html;
+            if (!ids.length) {
+                html = '<p class="text-secondary small mb-0">경기장에서 선수를 클릭하면 담당 넓이, 이웃 선수, 꼭짓점 좌표를 볼 수 있어요. 두 명을 고르면 둘 사이의 수직이등분선을 확인할 수 있습니다.</p>';
+            } else {
+                const players = ids.map(id => playerById.get(id));
+                html = players.map((p, i) => playerSummaryHtml(p, a.viewById.get(p.id), i, a)).join('');
+                if (players.length === 2) html += pairSummaryHtml(players[0], players[1], a);
+            }
+            setHtml($('selectedInfo'), html);
+        }
+
+        function matchStatRows() {
+            const m = state.match, s = m.stats;
+            const possTotal = s.blue.possession + s.red.possession;
+            const poss = possTotal > 0 ? s.blue.possession / possTotal : null;
+            const avg = m.samples.length ? m.samples.reduce((sum, x) => sum + x.blue, 0) / m.samples.length : null;
+            const rate = t => (s[t].passAttempts ? Math.round(s[t].passSuccess / s[t].passAttempts * 100) + '%' : '–');
+            return [
+                ['골', s.blue.goals, s.red.goals],
+                ['볼 점유율', poss === null ? '–' : pct(poss), poss === null ? '–' : pct(1 - poss)],
+                ['평균 지배 면적', avg === null ? '–' : pct(avg), avg === null ? '–' : pct(1 - avg)],
+                ['패스 성공 / 시도', `${s.blue.passSuccess} / ${s.blue.passAttempts}`, `${s.red.passSuccess} / ${s.red.passAttempts}`],
+                ['패스 성공률', rate('blue'), rate('red')],
+                ['인터셉트', s.blue.intercepts, s.red.intercepts],
+                ['태클 성공', s.blue.tackles, s.red.tackles],
+                ['슈팅', s.blue.shots, s.red.shots]
+            ];
+        }
+
+        function updateMatchPanel() {
+            const m = state.match;
+            setText($('scoreText'), `${m.score.blue} : ${m.score.red}`);
+            setText($('clockText'), `${matchMinute()}'`);
+            setHtml($('matchStatsBody'), matchStatRows()
+                .map(([label, b, r]) => `<tr><td class="text-primary fw-bold">${b}</td><td class="small text-secondary">${label}</td><td class="text-danger fw-bold">${r}</td></tr>`)
+                .join(''));
+            const events = m.events.slice(0, 12).map(ev => {
+                const color = ev.team ? (ev.team === 'blue' ? 'text-primary' : 'text-danger') : 'text-secondary';
+                return `<li class="list-group-item px-0 py-1"><span class="badge text-bg-light border me-2 stat-num">${ev.minute}'</span><span class="${color}">${ev.text}</span></li>`;
+            }).join('');
+            setHtml($('eventLog'), events || '<li class="list-group-item px-0 text-secondary">아직 기록이 없어요.</li>');
+            drawDominanceGraph();
+        }
+
+        function drawDominanceGraph() {
+            const c = $('dominanceGraph');
+            const w = c.clientWidth, h = c.clientHeight;
+            if (!w || !h) return;
+            const dpr = window.devicePixelRatio || 1;
+            if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+                c.width = Math.round(w * dpr);
+                c.height = Math.round(h * dpr);
+            }
+            const g = c.getContext('2d');
+            g.setTransform(dpr, 0, 0, dpr, 0, 0);
+            g.clearRect(0, 0, w, h);
+            const pad = { l: 36, r: 8, t: 8, b: 20 };
+            const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+            const lo = 0.2, hi = 0.8;
+            const X = t => pad.l + clamp(t / SIM.MATCH_SECONDS, 0, 1) * pw;
+            const Y = v => pad.t + (1 - (clamp(v, lo, hi) - lo) / (hi - lo)) * ph;
+            g.font = `11px ${FONT}`;
+            g.fillStyle = '#64748b';
+            g.lineWidth = 1;
+            g.textAlign = 'right';
+            g.textBaseline = 'middle';
+            [0.3, 0.5, 0.7].forEach(v => {
+                g.strokeStyle = v === 0.5 ? '#94a3b8' : '#e2e8f0';
+                g.setLineDash(v === 0.5 ? [4, 4] : []);
+                g.beginPath(); g.moveTo(pad.l, Y(v)); g.lineTo(w - pad.r, Y(v)); g.stroke();
+                g.fillText(Math.round(v * 100) + '%', pad.l - 5, Y(v));
+            });
+            g.setLineDash([]);
+            g.textAlign = 'center';
+            g.textBaseline = 'top';
+            [0, 45, 90].forEach(min => g.fillText(min + "'", X(min / 90 * SIM.MATCH_SECONDS), h - pad.b + 4));
+
+            const samples = state.match.samples;
+            if (samples.length >= 2) {
+                const mid = Y(0.5);
+                const path = () => {
+                    g.beginPath();
+                    g.moveTo(X(samples[0].t), mid);
+                    samples.forEach(s => g.lineTo(X(s.t), Y(s.blue)));
+                    g.lineTo(X(samples[samples.length - 1].t), mid);
+                    g.closePath();
+                };
+                [[pad.t, mid - pad.t, 'rgba(13, 110, 253, 0.28)'], [mid, pad.t + ph - mid, 'rgba(220, 53, 69, 0.25)']].forEach(([y, hh, color]) => {
+                    g.save();
+                    g.beginPath(); g.rect(pad.l, y, pw, hh); g.clip();
+                    path(); g.fillStyle = color; g.fill();
+                    g.restore();
+                });
+                g.beginPath();
+                samples.forEach((s, i) => (i ? g.lineTo(X(s.t), Y(s.blue)) : g.moveTo(X(s.t), Y(s.blue))));
+                g.strokeStyle = '#1e293b';
+                g.lineWidth = 1.5;
+                g.stroke();
+            }
+            state.match.goals.forEach(goal => {
+                g.strokeStyle = TEAM_INFO[goal.team].color;
+                g.lineWidth = 2;
+                g.beginPath(); g.moveTo(X(goal.t), pad.t); g.lineTo(X(goal.t), pad.t + ph); g.stroke();
+            });
+        }
+
+        function showResultModal() {
+            const m = state.match;
+            const winner = m.score.blue === m.score.red ? '무승부' : `${TEAM_INFO[m.score.blue > m.score.red ? 'blue' : 'red'].name} 승리!`;
+            const rows = matchStatRows()
+                .map(([label, b, r]) => `<tr><td class="text-primary fw-bold">${b}</td><td class="small text-secondary">${label}</td><td class="text-danger fw-bold">${r}</td></tr>`)
+                .join('');
+            $('resultBody').innerHTML = `
+                <p class="text-center fs-3 fw-bold mb-1 stat-num"><span class="text-primary">블루 ${m.score.blue}</span> : <span class="text-danger">${m.score.red} 레드</span></p>
+                <p class="text-center fw-bold mb-3">${winner}</p>
+                <table class="table table-sm text-center align-middle stat-num mb-2"><tbody>${rows}</tbody></table>
+                <p class="small text-secondary mb-0">시드 ${m.seed} · 블루 ${state.teams.blue.formation} vs 레드 ${state.teams.red.formation}. 전술만 바꿔 같은 시드로 여러 번 실행하고 골·패스 성공률의 상대도수를 비교해 보세요.</p>`;
+            if (window.bootstrap) bootstrap.Modal.getOrCreateInstance($('resultModal')).show();
+        }
+
+        // ----- 저장: JSON 내보내기/불러오기, A/B 비교, 이미지 복사 -----
+        function serializeScene() {
+            const team = t => ({
+                formation: state.teams[t].formation,
+                tactic: { ...state.teams[t].tactic },
+                anchors: teamPlayers[t].map(p => ({ id: p.id, x: p.anchor.x, y: p.anchor.y }))
+            });
+            const b = state.ball;
+            return {
+                version: 1,
+                blue: team('blue'),
+                red: team('red'),
+                ball: { x: b.x, y: b.y, ownerId: b.state === 'held' ? b.ownerId : null }
+            };
+        }
+
+        function applyScene(scene) {
+            if (!scene || !scene.blue || !scene.red) throw new Error('blue / red 정보가 없습니다.');
+            for (const team of TEAMS) {
+                const t = scene[team];
+                if (!FORMATIONS[t.formation]) throw new Error(`알 수 없는 포메이션: ${t.formation}`);
+                if (!Array.isArray(t.anchors)) throw new Error('anchors 배열이 없습니다.');
+            }
+            pause();
+            for (const team of TEAMS) {
+                const t = scene[team], tactic = t.tactic || {};
+                state.teams[team] = {
+                    formation: t.formation,
+                    tactic: {
+                        lineHeight: clamp(Number(tactic.lineHeight) || 0, 0, 20),
+                        width: clamp(Number(tactic.width) || 1, 0.7, 1.2),
+                        compact: clamp(Number(tactic.compact) || 1, 0.7, 1.1)
+                    }
+                };
+                buildTeam(team);
+                alignTeam(team, true);
+                for (const anchor of t.anchors) {
+                    const p = playerById.get(anchor.id);
+                    if (p && p.team === team && Number.isFinite(+anchor.x) && Number.isFinite(+anchor.y)) {
+                        p.anchor = clampInField({ x: +anchor.x, y: +anchor.y }, 0.3);
+                    }
+                }
+            }
+            resetPositionsToAnchors();
+            state.match = createMatch(readSeed());
+            state.ball = createBall();
+            const ball = scene.ball || {};
+            const owner = ball.ownerId ? playerById.get(ball.ownerId) : null;
+            if (owner) placeBall(owner.pos, owner);
+            else placeBall({ x: Number(ball.x) || FIELD.L / 2, y: Number(ball.y) || FIELD.W / 2 }, null);
+            state.selection = [];
+            syncTeamControls();
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        function exportScene() {
+            const blob = new Blob([JSON.stringify(serializeScene(), null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `voronoi-football-${state.teams.blue.formation}-vs-${state.teams.red.formation}.json`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast('현재 배치를 JSON 파일로 저장했어요.');
+        }
+
+        function importScene(file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    applyScene(JSON.parse(reader.result));
+                    showToast('배치를 불러왔어요.');
+                } catch (err) {
+                    showToast('불러오기 실패: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function copyImage() {
+            render();
+            canvas.toBlob(blob => {
+                if (!blob) return;
+                const download = () => {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'voronoi-football.png';
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    showToast('클립보드를 지원하지 않아 PNG 파일로 저장했어요.');
+                };
+                if (!navigator.clipboard || !window.ClipboardItem) { download(); return; }
+                navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+                    .then(() => showToast('경기장 이미지를 클립보드에 복사했어요.'))
+                    .catch(download);
+            });
+        }
+
+        function saveSnapshot(slot) {
+            const a = state.analysis;
+            state.snapshots[slot] = {
+                label: `${state.teams.blue.formation} vs ${state.teams.red.formation}`,
+                scene: serializeScene(),
+                zones: computeZoneStats(a.view).map(s => s.blue / (s.total || 1)),
+                total: a.teamArea.blue / a.totalArea,
+                excludeGK: state.layers.excludeGK
+            };
+            $('btnLoad' + slot).disabled = false;
+            renderCompare();
+            showToast(`현재 배치를 ${slot} 슬롯에 담았어요.`);
+        }
+
+        function renderCompare() {
+            const { A, B } = state.snapshots;
+            if (!A && !B) return;
+            const cell = (snap, i) => {
+                if (!snap) return '<td class="text-secondary">–</td>';
+                const v = i === null ? snap.total : snap.zones[i];
+                return `<td class="text-end"><span class="text-primary">${(v * 100).toFixed(1)}</span> : <span class="text-danger">${(100 - v * 100).toFixed(1)}</span></td>`;
+            };
+            const diff = i => {
+                if (!A || !B) return '<td class="text-secondary">–</td>';
+                const d = ((i === null ? B.total - A.total : B.zones[i] - A.zones[i]) * 100);
+                const color = d > 0.05 ? 'text-primary' : d < -0.05 ? 'text-danger' : 'text-secondary';
+                return `<td class="text-end ${color}">${d > 0 ? '+' : ''}${d.toFixed(1)}%p</td>`;
+            };
+            const names = ZONES.map(z => z.name).concat('전체');
+            const rows = names.map((name, i) => {
+                const idx = i < ZONES.length ? i : null;
+                return `<tr><th scope="row" class="fw-semibold">${name}</th>${cell(A, idx)}${cell(B, idx)}${diff(idx)}</tr>`;
+            }).join('');
+            const head = s => (s ? `${s.label}${s.excludeGK ? ' (GK 제외)' : ''}` : '비어 있음');
+            $('compareArea').innerHTML = `
+                <div class="table-responsive"><table class="table table-sm align-middle stat-num mb-1">
+                    <thead><tr><th>구역</th><th class="text-end">A <span class="fw-normal small text-secondary d-block">${head(A)}</span></th><th class="text-end">B <span class="fw-normal small text-secondary d-block">${head(B)}</span></th><th class="text-end">블루 변화<span class="fw-normal small text-secondary d-block">B − A</span></th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table></div>
+                <div class="small text-secondary">값은 블루 : 레드 지배율(%)입니다.</div>`;
+        }
+
+        function resetAll() {
+            pause();
+            for (const team of TEAMS) {
+                state.teams[team] = { formation: DEFAULT_FORMATION[team], tactic: { ...DEFAULT_TACTIC } };
+                buildTeam(team);
+                alignTeam(team, true);
+            }
+            state.ball = createBall();
+            state.selection = [];
+            state.match = createMatch(readSeed());
+            setPlacingBall(false);
+            syncTeamControls();
+            requestRender();
+            requestUiUpdate(true);
+            showToast('처음 상태로 되돌렸어요.');
+        }
+
+        function bindControls() {
+            $('bluePanel').innerHTML = teamPanelHtml('blue');
+            $('redPanel').innerHTML = teamPanelHtml('red');
+            syncTeamControls();
+
+            document.querySelectorAll('select[data-team]').forEach(select => {
+                select.addEventListener('change', () => setFormation(select.dataset.team, select.value));
+            });
+            document.querySelectorAll('input[type=range][data-team]').forEach(range => {
+                range.addEventListener('input', () => {
+                    const key = range.dataset.key;
+                    const value = key === 'lineHeight' ? Number(range.value) : Number(range.value) / 100;
+                    setTactic(range.dataset.team, key, value);
+                });
+            });
+
+            $('modeTactics').addEventListener('click', () => setMode('tactics'));
+            $('modeMatch').addEventListener('click', () => setMode('match'));
+
+            document.querySelectorAll('input[data-layer]').forEach(box => {
+                box.addEventListener('change', () => {
+                    state.layers[box.dataset.layer] = box.checked;
+                    requestRender();
+                    requestUiUpdate(true);
+                });
+            });
+            $('cellOpacity').addEventListener('input', e => {
+                state.cellOpacity = Number(e.target.value) / 100;
+                $('cellOpacityVal').textContent = e.target.value + '%';
+                requestRender();
+            });
+
+            $('btnAlign').addEventListener('click', () => {
+                TEAMS.forEach(team => alignTeam(team, true));
+                requestRender();
+                requestUiUpdate(true);
+            });
+            $('btnPlaceBall').addEventListener('click', () => setPlacingBall(!state.placingBall));
+            $('btnCopyImage').addEventListener('click', copyImage);
+            $('btnExport').addEventListener('click', exportScene);
+            $('btnImport').addEventListener('click', () => $('importFile').click());
+            $('importFile').addEventListener('change', e => {
+                if (e.target.files[0]) importScene(e.target.files[0]);
+                e.target.value = '';
+            });
+            $('btnReset').addEventListener('click', resetAll);
+
+            $('btnPlay').addEventListener('click', () => {
+                if (rafId) { pause(); return; }
+                if (!isMatchLive()) startMatch();
+                play();
+            });
+            document.querySelectorAll('input[name=simSpeed]').forEach(radio => {
+                radio.addEventListener('change', () => { state.simSpeed = Number(radio.value); });
+            });
+            $('btnRandomSeed').addEventListener('click', () => {
+                $('seedInput').value = Math.floor(Math.random() * 100000);
+            });
+            $('btnRestart').addEventListener('click', resetMatch);
+            $('btnRematch').addEventListener('click', () => {
+                if (window.bootstrap) bootstrap.Modal.getOrCreateInstance($('resultModal')).hide();
+                resetMatch();
+                startMatch();
+                play();
+            });
+
+            ['A', 'B'].forEach(slot => {
+                $('btnSave' + slot).addEventListener('click', () => saveSnapshot(slot));
+                $('btnLoad' + slot).addEventListener('click', () => {
+                    applyScene(state.snapshots[slot].scene);
+                    showToast(`${slot} 배치를 불러왔어요.`);
+                });
+            });
+
+            ['playerTableBlue', 'playerTableRed'].forEach(id => {
+                $(id).addEventListener('click', e => {
+                    const row = e.target.closest('tr[data-player]');
+                    if (row) toggleSelection(row.dataset.player);
+                });
+            });
+            $('selectedInfo').addEventListener('toggle', e => {
+                if (e.target.tagName === 'DETAILS') vertexListOpen = e.target.open;
+            }, true);
+
+            new ResizeObserver(() => { resizeCanvas(); render(); }).observe(pitchWrapper);
+        }
+
+        function init() {
+            TEAMS.forEach(team => { buildTeam(team); alignTeam(team, true); });
+            bindControls();
+            if (window.innerWidth < 768) {                 // 모바일: 팀 설정 접기
+                $('teamSettings').classList.remove('show');
+                $('teamSettingsToggle').classList.add('collapsed');
+                $('teamSettingsToggle').setAttribute('aria-expanded', 'false');
+            }
+            resizeCanvas();
+            render();
+            updateControlsState();
+            requestUiUpdate(true);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

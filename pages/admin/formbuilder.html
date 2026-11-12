@@ -1127,7 +1127,10 @@
 
     <script type="module">
         import { auth, db } from '../../js/firebase-config.js';
-        import { customAlert, customConfirm, renderRoomEntrance } from '../../js/room-auth.js?v=4.3';
+        import {
+            customAlert, customConfirm, customPrompt, renderRoomEntrance, getPhoneOwnerAuth, makeStudentKey, getDeviceId
+        } from '../../js/room-auth.js?v=4.3';
+        import { derivePinProof, deriveDeviceFingerprint, verifyProofViaGate } from '../../js/student-crypto.js';
         import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
         import { registerRoom, unregisterRoom } from '../../js/room-registry.js';
         import { storage, deleteStorageFolder } from '../../js/firebase-storage.js';
@@ -3852,6 +3855,47 @@
         let studentSubmittedFiles = {};
         const canUseCamera = window.matchMedia?.('(pointer: coarse)').matches;
 
+        /* ── 학번 인증 설문: PIN 증명 (v4.3) ──
+         *  응답 저장은 같은 트랜잭션에서 PIN 게이트(student_auth/{키}/gate/{기기})를 통과해야 하고,
+         *  첨부파일은 최근 15분 안에 그 기기로 게이트를 통과했어야 올라갑니다 (Firestore · Storage 규칙과 짝).
+         *  게스트가 입장 때 입력한 PIN, 제출 때 다시 입력한 PIN의 증명값은 메모리에만 둡니다. */
+        let sessionPinProof = null;       // { key, proof }
+        let cachedDeviceFp = '';
+        const gateDeps = { db, doc, setDoc, serverTimestamp };
+
+        async function getStudentDeviceFp() {
+            if (!cachedDeviceFp) cachedDeviceFp = await deriveDeviceFingerprint(getDeviceId());
+            return cachedDeviceFp;
+        }
+
+        /** 게이트에 증명값을 써서 PIN을 확인합니다. 기억한 값이 없거나 틀리면 PIN을 다시 받습니다 → proof | null(취소) */
+        async function ensureStudentPinProof() {
+            const key = studentSession.studentKey;
+            const deviceFp = await getStudentDeviceFp();
+            let proof = null;
+            if (sessionPinProof?.key === key) proof = sessionPinProof.proof;
+            else {
+                const owner = getPhoneOwnerAuth();
+                if (!studentSession.isGuest && owner && makeStudentKey(owner.school, owner.studentId) === key) proof = owner.proof;
+            }
+            if (proof && await verifyProofViaGate(gateDeps, key, deviceFp, proof)) return proof;
+
+            for (let attempt = 0; attempt < 2; attempt++) {
+                const pin = await customPrompt('PIN 확인', attempt
+                    ? 'PIN이 일치하지 않습니다.<br>이 학번의 4자리 PIN을 다시 입력해주세요.'
+                    : '응답을 저장하려면 이 학번의 4자리 PIN을 입력해주세요.', true);
+                if (pin === null) return null;
+                const typedPin = String(pin).trim();
+                if (!/^\d{4}$/.test(typedPin)) continue;
+                const typedProof = await derivePinProof(typedPin, key);
+                if (await verifyProofViaGate(gateDeps, key, deviceFp, typedProof)) {
+                    sessionPinProof = { key, proof: typedProof };
+                    return typedProof;
+                }
+            }
+            throw new Error('PIN이 일치하지 않아 응답을 저장할 수 없습니다. 설문을 나갔다가 다시 입장해 PIN을 확인하거나, 잊었다면 선생님께 초기화를 요청하세요.');
+        }
+
         function clearStudentFileDrafts() {
             Object.values(studentFileDrafts).flat().forEach(draft => draft.previewUrl && URL.revokeObjectURL(draft.previewUrl));
             studentFileDrafts = {};
@@ -3919,8 +3963,10 @@
             renderStudentQuestions(studentRoomData.formSchema, collectAnswers(studentRoomData.formSchema), studentRoomData.status === 'closed');
         }
 
-        /** 제출 직전: 고른 파일을 슬롯 0,1,2…에 덮어써서 올리고 응답 값을 돌려줍니다 */
-        async function uploadStudentFileDrafts(visibleItems, onProgress) {
+        /** 제출 직전: 고른 파일을 슬롯 0,1,2…에 덮어써서 올리고 응답 값을 돌려줍니다
+         *  학번 인증(pinProof 있음): 파일마다 게이트를 새로 쓰고, 파일 정보에 기기 지문을 붙입니다 (Storage 규칙이 확인) */
+        async function uploadStudentFileDrafts(visibleItems, onProgress, pinProof = null) {
+            const deviceFp = pinProof ? await getStudentDeviceFp() : '';
             const targets = visibleItems.filter(({ question }) => question.type === 'file' && studentFileDrafts[question.id]?.length);
             const totalBytes = targets.reduce((sum, { question }) => sum + studentFileDrafts[question.id].reduce((acc, draft) => acc + draft.file.size, 0), 0) || 1;
             let doneBytes = 0;
@@ -3929,7 +3975,14 @@
                 const files = [];
                 for (const [slot, draft] of studentFileDrafts[question.id].entries()) {
                     const path = fileStoragePath(studentSession.roomCode, studentSession.studentId, question.id, slot);
-                    const task = uploadBytesResumable(storageRef(storage, path), draft.file, { contentType: draft.file.type || 'application/octet-stream' });
+                    const metadata = { contentType: draft.file.type || 'application/octet-stream' };
+                    if (pinProof) {
+                        if (!await verifyProofViaGate(gateDeps, studentSession.studentKey, deviceFp, pinProof)) {
+                            throw new Error('PIN 확인이 풀렸습니다. 다시 제출해주세요.');
+                        }
+                        metadata.customMetadata = { deviceFp };
+                    }
+                    const task = uploadBytesResumable(storageRef(storage, path), draft.file, metadata);
                     await new Promise((resolve, reject) => {
                         task.on('state_changed', snapshot => onProgress((doneBytes + snapshot.bytesTransferred) / totalBytes), reject, resolve);
                     });
@@ -4212,6 +4265,8 @@
                 roomCode,
                 studentId: effectiveStudentId,
                 studentName: isQuick ? '익명' : effectiveStudentId,
+                // 학번 인증: PIN 게이트 경로. room-auth가 입장 때 쓴 키와 같아야 합니다 (방 학교 + 학번)
+                studentKey: isQuick ? '' : makeStudentKey(roomData.creatorSchool || roomData.school || authInfo.school, effectiveStudentId),
                 isQuick,
                 isGuest: !!authInfo.isGuest
             };
@@ -4264,6 +4319,16 @@
                 return snapshot.exists() ? snapshot.data() : null;
             },
             studentsCollectionRef: roomCode => collection(db, 'custom_forms', roomCode, 'students'),
+            // 학번 인증: 방 안의 이름으로 학번을 씁니다 (응답 문서도 학번).
+            // 게스트는 이때 입력한 PIN으로 제출용 증명값을 만들어 메모리에만 둡니다 (관계지도와 같은 방식).
+            authenticatedRoomKey: async student => {
+                sessionPinProof = null;
+                if (student?.isGuest && /^\d{4}$/.test(String(student.pin || ''))) {
+                    const key = makeStudentKey(student.school, student.studentId);
+                    sessionPinProof = { key, proof: await derivePinProof(student.pin, key) };
+                }
+                return student?.studentId;
+            },
             getRoomOwner: async (roomCode, data) => ({
                 school: data?.creatorSchool || data?.school || '',
                 teacherName: data?.creatorName || '선생님'
@@ -4283,6 +4348,7 @@
             studentSession = null;
             studentRoomData = null;
             studentResponseExists = false;
+            sessionPinProof = null;
             clearStudentFileDrafts();
             studentSubmittedFiles = {};
             clearDirty();
@@ -4380,11 +4446,20 @@
                 for (const { question } of visibleItems) {
                     if (answers[question.id] !== undefined) finalAnswers[question.id] = answers[question.id];
                 }
+                // 학번 인증: 이 학번의 PIN을 먼저 확인합니다 (응답·첨부 모두 PIN 증명이 있어야 저장됨)
+                let pinProof = null;
+                let submitDeviceFp = '';
+                if (!studentSession.isQuick) {
+                    button.textContent = 'PIN 확인 중...';
+                    pinProof = await ensureStudentPinProof();
+                    if (!pinProof) { button.textContent = buttonLabel; return; }
+                    submitDeviceFp = await getStudentDeviceFp();
+                }
                 if (visibleItems.some(({ question }) => question.type === 'file' && studentFileDrafts[question.id]?.length)) {
                     button.textContent = '파일 업로드 중... 0%';
                     const uploaded = await uploadStudentFileDrafts(visibleItems, ratio => {
                         button.textContent = `파일 업로드 중... ${Math.min(100, Math.round(ratio * 100))}%`;
-                    });
+                    }, pinProof);
                     Object.entries(uploaded).forEach(([questionId, files]) => {
                         finalAnswers[questionId] = { ...(finalAnswers[questionId] || {}), files };
                     });
@@ -4411,6 +4486,11 @@
                         updatedAt: serverTimestamp(),
                         answers: finalAnswers
                     };
+                    if (pinProof) {
+                        // 학번 인증: PIN 게이트를 같은 트랜잭션에 담습니다 (규칙이 deviceFp의 게이트를 확인)
+                        transaction.set(doc(db, 'student_auth', studentSession.studentKey, 'gate', submitDeviceFp), { proof: pinProof, at: serverTimestamp() });
+                        update.deviceFp = submitDeviceFp;
+                    }
                     transaction.set(responseRef, update, { merge: true });
                     if (!existing.exists()) {
                         const roomUpdate = { responseCount: (Number(latestRoom.responseCount) || 0) + 1 };
