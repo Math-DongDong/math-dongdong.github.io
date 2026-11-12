@@ -4252,11 +4252,20 @@
             let responseExists = false;
             let existingAnswers = {};
             // ★ 마감 후에는 제출한 응답을 읽지 않습니다 (Firestore 규칙도 마감 후 학생 읽기를 막습니다)
-            const hideClosedResponse = !isQuick && roomData.status === 'closed';
+            let hideClosedResponse = !isQuick && roomData.status === 'closed';
             if (!isQuick && !hideClosedResponse) {
-                const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', effectiveStudentId));
-                responseExists = responseSnapshot.exists();
-                existingAnswers = responseExists ? responseSnapshot.data().answers || {} : {};
+                try {
+                    const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', effectiveStudentId));
+                    responseExists = responseSnapshot.exists();
+                    existingAnswers = responseExists ? responseSnapshot.data().answers || {} : {};
+                } catch (error) {
+                    // 기기 시계가 서버보다 늦으면 화면은 '진행 중'으로 보지만, 서버 기준으로는 마감 시각이 지나
+                    // 규칙이 읽기를 막습니다 → '보안 규칙 문제' 대신 마감 화면을 보여 줍니다.
+                    if (error?.code !== 'permission-denied') throw error;
+                    roomData.status = 'closed';
+                    clearTimeout(studentCloseTimer);
+                    hideClosedResponse = true;
+                }
             }
 
             clearStudentFileDrafts();
@@ -4295,13 +4304,18 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        /** 지금 이 설문이 마감 상태인지 다시 확인합니다 (제출이 거부됐을 때 이유 구분용) */
+        /**
+         * 지금 이 설문이 마감 상태인지 다시 확인합니다 (제출이 거부됐을 때 이유 구분용)
+         * 기기 시계가 서버보다 조금 늦을 수 있어, 마감 시각 5분 전부터는 '마감'으로 봅니다.
+         * (규칙은 서버 시각으로 판단하므로, 그 사이에 거부됐다면 마감 때문일 가능성이 큽니다)
+         */
+        const CLOCK_SKEW_MS = 5 * 60 * 1000;
         async function isStudentRoomClosedNow() {
             const snapshot = await getDoc(doc(db, 'custom_forms', studentSession.roomCode));
             if (!snapshot.exists()) return true;
             const room = snapshot.data();
             const closeAt = timestampMillis(room.scheduledCloseAt);
-            return room.status !== 'active' || Boolean(closeAt && closeAt <= Date.now());
+            return room.status !== 'active' || Boolean(closeAt && closeAt <= Date.now() + CLOCK_SKEW_MS);
         }
 
         function createAnonymousResponseId() {
@@ -4546,7 +4560,12 @@
                 }
                 button.textContent = buttonLabel;
                 const isStorageDenied = error?.code === 'storage/unauthorized';
-                showNotice(`응답을 저장하지 못했습니다: ${isStorageDenied ? '파일 업로드 권한이 없습니다. 설문이 마감되었거나 용량·개수 제한을 넘었는지 확인해주세요.' : (error.message || '네트워크와 설문 권한을 확인해주세요.')}`, true);
+                const isRuleDenied = error?.code === 'permission-denied';
+                showNotice(`응답을 저장하지 못했습니다: ${isStorageDenied
+                    ? '파일 업로드 권한이 없습니다. 설문이 마감되었거나 용량·개수 제한을 넘었는지 확인해주세요.'
+                    : isRuleDenied
+                        ? '저장 권한이 없습니다. 설문이 마감되었거나 PIN 확인이 풀렸을 수 있습니다. 새로고침한 뒤 다시 시도해주세요.'
+                        : (error.message || '네트워크와 설문 권한을 확인해주세요.')}`, true);
             } finally {
                 button.disabled = false;
             }

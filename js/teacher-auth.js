@@ -11,7 +11,7 @@
  *    (표시하는 쪽도 account_manager.html에서 이스케이프합니다 — 이중 방어)
  */
 import { auth, googleProvider, db } from './firebase-config.js';
-import { signInWithPopup, signOut, onAuthStateChanged, deleteUser } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+import { signInWithPopup, signOut, onAuthStateChanged, deleteUser, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
 // 화면 표시용입니다. 실제 권한은 firestore.rules의 isAdmin() uid 비교가 결정합니다.
@@ -339,6 +339,197 @@ function confirmRoomPurge(registry, rooms, prevSchool, school) {
     });
 }
 
+// ── 회원 탈퇴 모달 ────────────────────────────────────────────────
+function ensureWithdrawModalDOM() {
+    if (document.getElementById('withdrawModal')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal fade" id="withdrawModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="withdrawTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-danger" id="withdrawTitle"><i class="bi bi-exclamation-triangle-fill me-2"></i>회원 탈퇴</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2" id="withdrawIntro"></p>
+                    <ul class="list-group small mb-2" id="withdrawTargets">
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <span>내가 만든 방 삭제 <span class="text-muted">(기록 포함)</span></span>
+                            <b class="text-danger text-nowrap" id="withdrawRoomCount"></b>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <span>학생 정보 삭제 <span class="text-muted">(담당 교사가 나뿐)</span></span>
+                            <b class="text-danger text-nowrap" id="withdrawStudentCount"></b>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <span>담당 교사에서만 제외 <span class="text-muted">(다른 담당 교사 있음)</span></span>
+                            <b class="text-nowrap" id="withdrawDetachCount"></b>
+                        </li>
+                    </ul>
+                    <div class="alert alert-warning small py-2 mb-2 d-none" id="withdrawNameConflict"></div>
+                    <small class="text-muted"><i class="bi bi-info-circle me-1"></i>삭제한 데이터는 되돌릴 수 없습니다. 본인 확인을 위해 구글 로그인 창이 한 번 뜹니다.</small>
+                    <div class="mt-3 d-none" id="withdrawProgressWrap">
+                        <div class="progress" role="progressbar" aria-label="탈퇴 정리 진행률" style="height: 10px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-danger" id="withdrawProgressBar" style="width: 0%;"></div>
+                        </div>
+                        <div class="small text-muted text-center mt-1" id="withdrawProgressText"></div>
+                    </div>
+                    <div class="alert alert-danger small py-2 mt-3 mb-0 d-none" id="withdrawError" style="white-space: pre-line;"></div>
+                </div>
+                <div class="modal-footer border-0 pt-0 flex-wrap">
+                    <button type="button" class="btn btn-secondary rounded-3" id="btnWithdrawCancel">취소</button>
+                    <button type="button" class="btn btn-outline-danger rounded-3 d-none" id="btnWithdrawForce">실패 항목은 두고 탈퇴</button>
+                    <button type="button" class="btn btn-danger rounded-3" id="btnWithdrawConfirm"></button>
+                </div>
+            </div>
+        </div>
+    </div>`);
+}
+
+/**
+ * 회원 탈퇴 — 내가 만든 방 · 담당 학생을 정리한 뒤 교사 정보와 로그인 연결을 지웁니다.
+ * 관리자 계정 삭제(account_manager.html)와 같은 정리 로직(js/teacher-cleanup.js)을 씁니다.
+ *
+ * ★ 로그인 연결 해제(deleteUser)는 최근 로그인이 필요해서, [탈퇴]를 누를 때 구글 로그인을 먼저 다시 확인합니다.
+ *   팝업은 버튼을 누른 그 순간에 열어야 브라우저가 막지 않으므로 await보다 먼저 엽니다.
+ * ★ 순서: 방 · 학생 정리 → 교사 정보 → 로그인 연결. 로그인 연결을 먼저 끊으면 교사 정보를 지울 권한이 사라집니다.
+ * ★ 실시간 게임 권한(RTDB teacher_uids)은 관리자만 지울 수 있어 남지만, 로그인 연결을 지우면 그 uid로는 다시 로그인할 수 없습니다.
+ *
+ * @param {object|null} initialPlan  collectTeacherCleanupPlan 결과 (승인 전 교사는 null — 정리할 것이 없음)
+ * @param {object|null} cleanup      teacher-cleanup.js 모듈
+ * @returns {Promise<boolean>} 탈퇴를 마쳤으면 true, 취소하면 false (모달이 완전히 닫힌 뒤)
+ */
+function openWithdrawModal(user, initialPlan, cleanup) {
+    ensureWithdrawModalDOM();
+    const el = document.getElementById('withdrawModal');
+    const $w = (id) => document.getElementById(id);
+    const btnCancel = $w('btnWithdrawCancel');
+    const btnForce = $w('btnWithdrawForce');
+    const btnConfirm = $w('btnWithdrawConfirm');
+    const errEl = $w('withdrawError');
+    const confirmLabel = '<i class="bi bi-person-x me-1"></i>탈퇴';
+
+    let plan = initialPlan;
+    let failures = [];
+    let accountRecordDeleted = false;   // 교사 정보까지 지웠으면 되돌아갈 곳이 없으므로 취소를 숨깁니다
+
+    function renderPlan() {
+        $w('withdrawTargets').classList.toggle('d-none', !plan);
+        $w('withdrawIntro').textContent = plan
+            ? '내가 만든 방과 담당 학생 정보를 정리한 뒤 탈퇴합니다.'
+            : '교사 정보를 지우고 탈퇴합니다.';
+        if (plan) {
+            $w('withdrawRoomCount').textContent = `${plan.rooms.length}개`;
+            $w('withdrawStudentCount').textContent = `${plan.studentsToDelete.length}명`;
+            $w('withdrawDetachCount').textContent = `${plan.studentsToDetach.length}명`;
+        }
+        const conflictEl = $w('withdrawNameConflict');
+        const conflict = !!(plan && plan.nameConflict);
+        conflictEl.classList.toggle('d-none', !conflict);
+        conflictEl.textContent = conflict
+            ? `같은 학교에 '${plan.name}' 이름의 다른 선생님이 있어, 그 선생님의 학생을 지우지 않도록 학생 정보는 정리하지 않습니다.`
+            : '';
+    }
+    const setBusy = (busy) => { [btnCancel, btnForce, btnConfirm].forEach(b => { b.disabled = busy; }); };
+    const showError = (message) => { errEl.textContent = message; errEl.classList.remove('d-none'); };
+    function setProgress(done, total) {
+        $w('withdrawProgressBar').style.width = `${total ? Math.round(done / total * 100) : 100}%`;
+        $w('withdrawProgressText').textContent = total ? `${done} / ${total} 정리 중...` : '정리할 방·학생이 없습니다.';
+    }
+
+    // 초기 상태
+    renderPlan();
+    errEl.classList.add('d-none');
+    $w('withdrawProgressWrap').classList.add('d-none');
+    btnForce.classList.add('d-none');
+    btnCancel.classList.remove('d-none');
+    btnCancel.textContent = '취소';
+    btnConfirm.innerHTML = confirmLabel;
+    setBusy(false);
+
+    return new Promise(resolve => {
+        let result = false;
+        const close = (value) => { result = value; hideModalAsync(el).then(() => resolve(result)); };
+
+        /** 교사 정보 → 로그인 연결 순서로 지웁니다 */
+        async function finishAccount() {
+            try {
+                await deleteDoc(doc(db, "teacher_directory", user.uid)).catch(() => { });
+                await deleteDoc(doc(db, "teachers", user.uid));
+                accountRecordDeleted = true;
+                await deleteUser(user);
+                close(true);
+            } catch (e) {
+                console.error(e);
+                if (!accountRecordDeleted) {
+                    showError('교사 정보를 지우지 못해 아직 탈퇴하지 않았습니다. 잠시 후 다시 시도해 주세요.');
+                    setBusy(false);
+                    return;
+                }
+                // 교사 정보는 이미 지웠고 로그인 연결만 남은 상태 — 다시 로그인을 확인해 마칩니다
+                showError(String(e?.code || '') === 'auth/requires-recent-login'
+                    ? '방·학생 정리와 교사 정보 삭제는 끝났습니다.\n로그인 연결을 끊으려면 [다시 로그인하고 마치기]를 눌러 주세요.'
+                    : '탈퇴를 마치지 못했습니다. [다시 로그인하고 마치기]를 눌러 다시 시도해 주세요.');
+                btnConfirm.innerHTML = '<i class="bi bi-box-arrow-in-right me-1"></i>다시 로그인하고 마치기';
+                btnForce.classList.add('d-none');
+                btnCancel.classList.add('d-none');
+                setBusy(false);
+            }
+        }
+
+        /** 방 · 학생 정리 → (모두 지웠으면) 계정 삭제. 실패 항목이 있으면 계정은 남겨 둡니다 */
+        async function cleanupThenFinish() {
+            if (plan && cleanup) {
+                $w('withdrawProgressWrap').classList.remove('d-none');
+                try {
+                    // 다시 시도할 때는 남은 항목만 다시 모읍니다 (지운 방 · 학생은 목록에서 빠져 있음)
+                    if (failures.length) { plan = await cleanup.collectTeacherCleanupPlan(user.uid); renderPlan(); }
+                    setProgress(0, cleanup.countCleanupTargets(plan));
+                    failures = await cleanup.runTeacherCleanup(plan, setProgress);
+                } catch (e) {
+                    console.error(e);
+                    failures = ['정리할 목록 불러오기'];
+                }
+                if (failures.length) {
+                    showError(`다음 항목을 지우지 못했습니다. 아직 탈퇴하지 않았습니다.\n${cleanup.formatCleanupFailures(failures)}`);
+                    btnConfirm.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>다시 시도';
+                    btnForce.classList.remove('d-none');
+                    btnCancel.textContent = '닫기';
+                    setBusy(false);
+                    return;
+                }
+            }
+            await finishAccount();
+        }
+
+        btnConfirm.onclick = () => {
+            setBusy(true);
+            errEl.classList.add('d-none');
+            const reauth = reauthenticateWithPopup(user, googleProvider);   // ★ 클릭 직후 바로 (팝업 차단 방지)
+            reauth.then(
+                () => (accountRecordDeleted ? finishAccount() : cleanupThenFinish()),
+                (e) => {
+                    const code = String(e?.code || '');
+                    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+                        showError('본인 확인(구글 로그인)이 취소되어 탈퇴하지 않았습니다.');
+                    } else if (code === 'auth/user-mismatch') {
+                        showError('지금 로그인한 계정과 다른 구글 계정을 골랐습니다. 같은 계정으로 다시 시도해 주세요.');
+                    } else if (code === 'auth/popup-blocked') {
+                        showError('팝업이 차단되었습니다. 브라우저의 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
+                    } else {
+                        console.error(e);
+                        showError('본인 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+                    }
+                    setBusy(false);
+                }
+            );
+        };
+        btnForce.onclick = () => { setBusy(true); finishAccount(); };
+        btnCancel.onclick = () => close(false);
+
+        modalFor(el).show();
+    });
+}
+
 async function showRegistrationModal(user) {
     ensureTeacherModalDOM();
     const modalEl = document.getElementById('teacherRegModal');
@@ -492,19 +683,27 @@ async function showTeacherInfoModal(user, docData) {
     document.getElementById('btnDeleteAccount').onclick = async () => {
         // 모달 두 개가 겹치면 배경이 남으므로 정보수정 모달을 먼저 닫습니다
         await hideModalAsync(modalEl);
-        const confirmed = await showAuthDialog("회원 탈퇴",
-            "정말 탈퇴하시겠습니까?\n(이 작업은 되돌릴 수 없습니다)",
-            { isConfirm: true, confirmText: '탈퇴', type: 'danger' });
-        if (!confirmed) { bsModal.show(); return; }
-        try {
-            await deleteDoc(doc(db, "teacher_directory", user.uid)).catch(() => { });
-            await deleteDoc(doc(db, "teachers", user.uid));
-            await deleteUser(user);
-            await showAuthDialog("탈퇴 완료", "탈퇴가 완료되었습니다.", { type: 'success' });
-        } catch (e) {
-            console.error(e);
-            await showAuthDialog("탈퇴 실패", "탈퇴 중 오류가 발생했습니다.\n(다시 로그인한 후 시도해주세요)", { type: 'danger' });
+
+        // 방 · 담당 학생은 승인된 교사(또는 관리자)에게만 있습니다. 승인 전에는 목록을 읽을 권한도 없습니다.
+        // 정리 로직은 관리자 계정 삭제와 같은 teacher-cleanup.js를 탈퇴할 때만 불러옵니다.
+        let cleanup = null;
+        let plan = null;
+        if (docData.status === 'approved' || isAdminUser) {
+            try {
+                cleanup = await import('./teacher-cleanup.js');
+                plan = await cleanup.collectTeacherCleanupPlan(user.uid);
+            } catch (e) {
+                console.error(e);
+                await showAuthDialog("탈퇴 준비 실패", "정리할 방·학생 목록을 불러오지 못했습니다.\n잠시 후 다시 시도해 주세요.", { type: 'danger' });
+                bsModal.show();
+                return;
+            }
         }
+
+        const withdrawn = await openWithdrawModal(user, plan, cleanup);
+        if (!withdrawn) { bsModal.show(); return; }
+        await showAuthDialog("탈퇴 완료", "탈퇴가 완료되었습니다.", { type: 'success' });
+        location.reload();
     };
 
     bsModal.show();

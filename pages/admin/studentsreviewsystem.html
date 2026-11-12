@@ -1259,10 +1259,14 @@
         import { onAuthStateChanged, signOut as firebaseSignOut } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
         import {
             collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-            onSnapshot, serverTimestamp, query, where, orderBy
+            onSnapshot, serverTimestamp, query, where, orderBy, writeBatch
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
         import { firestoreRoom } from '../../js/game-kit.js?v=4.4';
-        import { renderRoomEntrance, resolveRoomOwner, makeStudentKey, resetStudentPin, STUDENT_ID_PATTERN } from '../../js/room-auth.js?v=4.3';
+        import {
+            renderRoomEntrance, resolveRoomOwner, makeStudentKey, resetStudentPin, STUDENT_ID_PATTERN,
+            getPhoneOwnerAuth, getDeviceId, customPrompt as authPrompt   // PIN 입력은 입장 화면과 같은 비밀번호 칸
+        } from '../../js/room-auth.js?v=4.3';
+        import { derivePinProof, deriveDeviceFingerprint, verifyProofViaGate } from '../../js/student-crypto.js';
         import { openQrPanel, closeQrPanel } from '../../js/qr-modal.js';
 
         // ── 컬렉션 및 기본 상수 ──
@@ -1314,6 +1318,10 @@
         let activityList = [];               // 창체활동 목록 [{date, activity}]
         let promptList = [];                 // 프롬프트 보관함 [{name, type, text}]
         let currentStudentId = '';
+        let currentStudentKey = '';          // student_auth 키 (방 학교 + 학번) — PIN 게이트 경로
+        let currentIsGuest = false;
+        let sessionPinProof = null;          // { key, proof } — 게스트가 입장 때 · 제출 때 입력한 PIN의 증명값 (메모리에만)
+        let cachedDeviceFp = '';
         let selectedReviewIds = new Set();
         let currentFilter = 'all';
         let unsubRooms = null;
@@ -1826,7 +1834,13 @@
             }
 
             // 소감문 하위 컬렉션 실시간 구독
-            unsubReviews = onSnapshot(collection(db, COLLECTION_NAME, code, "records"), (snap) => {
+            //  ★ 학생은 자기 학번 기록만 구독합니다. 전체를 구독하면 반 전체의 학번 · 소감문 · 교사 피드백 ·
+            //    생기부 관찰기록(teacherView)이 학생 브라우저로 모두 내려옵니다. 교사는 전체를 봅니다.
+            const recordsRef = collection(db, COLLECTION_NAME, code, "records");
+            const reviewsSource = (currentStudentId && !isTeacherLocked)
+                ? query(recordsRef, where("studentId", "==", currentStudentId))
+                : recordsRef;
+            unsubReviews = onSnapshot(reviewsSource, (snap) => {
                 allReviews = [];
                 snap.forEach(d => {
                     const r = d.data();
@@ -1860,7 +1874,15 @@
             dashBtnText: "대시보드 열기",
             showGuestToggle: true,
             useNicknameMarkers: false,
-            authenticatedRoomKey: ({ studentId }) => studentId,
+            // 방 안의 이름으로 학번을 씁니다. 게스트는 이때 입력한 PIN으로 제출용 증명값을 만들어 메모리에만 둡니다.
+            authenticatedRoomKey: async (student) => {
+                sessionPinProof = null;
+                if (student?.isGuest && /^\d{4}$/.test(String(student.pin || ''))) {
+                    const key = makeStudentKey(student.school, student.studentId);
+                    sessionPinProof = { key, proof: await derivePinProof(student.pin, key) };
+                }
+                return student?.studentId;
+            },
             waitingDestination: "소감문 작성 화면",
             getRoomData: roomKit.getRoomData,
             studentsCollectionRef: roomKit.students,
@@ -1873,6 +1895,9 @@
                     await customAlert("오류", "학생 정보를 확인할 수 없습니다.");
                     return;
                 }
+                // room-auth가 입장 때 쓴 키와 같아야 합니다 (방을 만든 선생님의 학교 + 학번)
+                currentStudentKey = makeStudentKey(authInfo?.school || '', currentStudentId);
+                currentIsGuest = !!authInfo?.isGuest;
 
                 await selectRoom(roomCode);
                 $('studentRoomEntryBox').classList.add('d-none');
@@ -1886,7 +1911,14 @@
             const ok = await customConfirm("로그아웃", "소감문 작성을 종료하고 로그아웃 하시겠습니까?");
             if (!ok) return;
             currentStudentId = '';
+            currentStudentKey = '';
+            currentIsGuest = false;
+            sessionPinProof = null;
             currentRoomCode = '';
+            // 이 학생의 기록 구독을 끊고 화면에 남은 기록을 비웁니다 (다음 학생이 같은 기기를 쓸 수 있음)
+            if (unsubReviews) { unsubReviews(); unsubReviews = null; }
+            if (unsubRoomDoc) { unsubRoomDoc(); unsubRoomDoc = null; }
+            allReviews = [];
             $('studentDashboardBox').classList.add('d-none');
             $('studentRoomEntryBox').classList.remove('d-none');
             resetStudentForm();
@@ -1934,6 +1966,55 @@
             $('charCountDisplay').textContent = `${e.target.value.length}자`;
         });
 
+        /* ── 학생 소감문 저장: PIN 증명 (v4.3) ──
+         *  소감문 저장 · 본인 확인 체크는 같은 batch에서 PIN 게이트(student_auth/{키}/gate/{기기})를 통과해야 합니다.
+         *  보안 규칙이 이것과 함께 '교사 칸(feedback · teacherView)은 학생이 바꿀 수 없음'을 확인합니다. */
+        async function getStudentDeviceFp() {
+            if (!cachedDeviceFp) cachedDeviceFp = await deriveDeviceFingerprint(getDeviceId());
+            return cachedDeviceFp;
+        }
+
+        /** 게이트에 증명값을 써서 PIN을 확인합니다. 기억한 값이 없거나 틀리면 PIN을 다시 받습니다 → proof | null(취소) */
+        async function ensureStudentPinProof() {
+            const key = currentStudentKey;
+            const deviceFp = await getStudentDeviceFp();
+            const gateDeps = { db, doc, setDoc, serverTimestamp };
+            let proof = null;
+            if (sessionPinProof?.key === key) proof = sessionPinProof.proof;
+            else {
+                const owner = getPhoneOwnerAuth();
+                if (!currentIsGuest && owner && makeStudentKey(owner.school, owner.studentId) === key) proof = owner.proof;
+            }
+            if (proof && await verifyProofViaGate(gateDeps, key, deviceFp, proof)) return proof;
+
+            for (let attempt = 0; attempt < 2; attempt++) {
+                const pin = await authPrompt('PIN 확인', attempt
+                    ? 'PIN이 일치하지 않습니다.<br>이 학번의 4자리 PIN을 다시 입력해주세요.'
+                    : '소감문을 저장하려면 이 학번의 4자리 PIN을 입력해주세요.', true);
+                if (pin === null) return null;
+                const typedPin = String(pin).trim();
+                if (!/^\d{4}$/.test(typedPin)) continue;
+                const typedProof = await derivePinProof(typedPin, key);
+                if (await verifyProofViaGate(gateDeps, key, deviceFp, typedProof)) {
+                    sessionPinProof = { key, proof: typedProof };
+                    return typedProof;
+                }
+            }
+            throw new Error('PIN이 일치하지 않아 저장할 수 없습니다. 로그아웃했다가 다시 입장해 PIN을 확인하거나, 잊었다면 선생님께 초기화를 요청하세요.');
+        }
+
+        /** 소감문 저장 — PIN 게이트와 한 batch로 씁니다. 취소하면 false */
+        async function saveRecordWithProof(recordId, data) {
+            const proof = await ensureStudentPinProof();
+            if (!proof) return false;
+            const deviceFp = await getStudentDeviceFp();
+            const batch = writeBatch(db);
+            batch.set(doc(db, 'student_auth', currentStudentKey, 'gate', deviceFp), { proof, at: serverTimestamp() });
+            batch.set(doc(db, COLLECTION_NAME, currentRoomCode, "records", recordId), { ...data, deviceFp }, { merge: true });
+            await batch.commit();
+            return true;
+        }
+
         $('btnSubmitReflection').addEventListener('click', async () => {
             if (!currentRoomCode || !currentStudentId) return;
             const date = $('selectStudentActivity').value;
@@ -1944,7 +2025,6 @@
             if (!date || !content) return customAlert("알림", "활동을 선택하고 소감문 내용을 입력해주세요.");
 
             const recordId = editId || `${date}_${currentStudentId}`;
-            const targetDocRef = doc(db, COLLECTION_NAME, currentRoomCode, "records", recordId);
 
             const recordData = {
                 studentId: currentStudentId,
@@ -1962,13 +2042,13 @@
             }
 
             try {
-                await setDoc(targetDocRef, recordData, { merge: true });
+                if (!await saveRecordWithProof(recordId, recordData)) return;   // PIN 확인 취소
                 await customAlert("제출 완료", editId ? "소감문이 수정되었습니다." : "소감문이 성공적으로 제출되었습니다!");
                 resetStudentForm();
                 $('tabList-btn').click();
             } catch (err) {
                 console.error(err);
-                customAlert("오류", "소감문 저장에 실패했습니다.");
+                customAlert("오류", String(err?.message || '').startsWith('PIN') ? escapeHtml(err.message) : "소감문 저장에 실패했습니다.");
             }
         });
 
@@ -2062,7 +2142,12 @@
                     const rev = allReviews.find(x => x.id === btn.dataset.id);
                     if (!rev) return;
                     const newCheck = rev.check === 'O' ? '' : 'O';
-                    await updateDoc(doc(db, COLLECTION_NAME, currentRoomCode, "records", rev.id), { check: newCheck });
+                    try {
+                        await saveRecordWithProof(rev.id, { check: newCheck });   // PIN 게이트와 한 batch
+                    } catch (err) {
+                        console.error(err);
+                        customAlert("오류", String(err?.message || '').startsWith('PIN') ? escapeHtml(err.message) : "본인 확인 체크를 저장하지 못했습니다.");
+                    }
                 });
             });
 
