@@ -36,9 +36,9 @@
             <b>①</b> Firestore의 교사 상태를 <code>approved</code>로 바꾸고,
             <b>②</b> 정보 최소화를 위해 승인 교사 공개 목록(<code>teacher_directory</code>)에 학교·이름만 등록하고,
             <b>③</b> 연동된 실시간 데이터베이스의 교사 권한 목록에 uid를 추가합니다.
-            <b>반려</b>(승인 대기)·<b>삭제</b>(승인 완료) 시에는 ②, ③이 함께 회수되고,
-            그 교사가 만든 방(기록 포함)도 모두 지웁니다. 학생 정보는 담당 교사가 그 교사뿐이면 삭제·
-            다른 담당 교사가 있으면 담당 교사 목록에서 이름만 뺍니다.
+            <b>반려</b>(승인 대기)는 가입 신청만 지웁니다.
+            <b>삭제</b>(승인 완료)는 ②, ③을 회수하고 그 교사가 만든 방(기록 포함)도 모두 지웁니다.
+            학생 정보는 담당 교사가 그 교사뿐이면 삭제·다른 담당 교사가 있으면 담당 교사 목록에서 이름만 뺍니다.
         </div>
 
         <div class="card mb-4">
@@ -104,7 +104,7 @@
                     <h5 class="modal-title fw-bold text-danger" id="deleteTeacherTitle"><i class="bi bi-exclamation-triangle-fill me-2"></i>교사 삭제</h5>
                 </div>
                 <div class="modal-body pb-3">
-                    <p class="mb-2"><b id="deleteTeacherLabel"></b> <span id="deleteTeacherIntro"></span></p>
+                    <p class="mb-2"><b id="deleteTeacherLabel"></b> 선생님의 데이터를 삭제합니다.</p>
                     <ul class="list-group small mb-2">
                         <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                             <span>만든 방 삭제 <span class="text-muted">(기록 포함)</span></span>
@@ -382,7 +382,7 @@
          * 삭제 모달. 삭제가 끝나면 { plan, failures }, 취소하면 null 로 끝납니다 (모달이 완전히 닫힌 뒤).
          * 실패 항목이 있으면 교사 계정은 남기고 [다시 시도] / [실패 항목은 두고 계정만 삭제] 를 고르게 합니다.
          */
-        function openDeleteTeacherModal(uid, initialPlan, actionLabel) {
+        function openDeleteTeacherModal(uid, initialPlan) {
             const modalEl = document.getElementById('deleteTeacherModal');
             const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
             const $ = (id) => document.getElementById(id);
@@ -417,18 +417,13 @@
                 $('deleteProgressText').textContent = total ? `${done} / ${total} 처리 중...` : '정리할 방·학생이 없습니다.';
             }
 
-            // 초기 상태 — actionLabel: '반려'(승인 대기) | '삭제'(승인 완료)
-            $('deleteTeacherTitle').innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>교사 ${esc(actionLabel)}`;
-            $('deleteTeacherIntro').textContent = actionLabel === '반려'
-                ? '선생님의 가입 신청을 반려하고, 남아 있는 데이터를 정리합니다.'
-                : '선생님의 데이터를 삭제합니다.';
+            // 초기 상태
             renderPlan();
             errorEl.classList.add('d-none');
             progressWrap.classList.add('d-none');
             btnForce.classList.add('d-none');
-            btnForce.textContent = `실패 항목은 두고 계정만 ${actionLabel}`;
             btnCancel.textContent = '취소';
-            btnConfirm.innerHTML = `<i class="bi bi-trash3 me-1"></i>${esc(actionLabel)}`;
+            btnConfirm.innerHTML = '<i class="bi bi-trash3 me-1"></i>삭제';
             setBusy(false);
 
             return new Promise((resolve) => {
@@ -478,17 +473,18 @@
             });
         }
 
-        async function removeTeacherAccount(uid, actionLabel = '삭제') {
+        /** 승인 완료 교사 삭제 — 방·학생 정리 후 계정 삭제 */
+        async function removeTeacherAccount(uid) {
             let plan;
             try {
                 plan = await collectTeacherData(uid);
             } catch (e) {
                 console.error(e);
-                showMessageModal(`${actionLabel} 준비 실패`, "정리할 방·학생 목록을 불러오지 못했습니다.\n새로고침 후 다시 시도해 주세요.", 'danger');
+                showMessageModal("삭제 준비 실패", "정리할 방·학생 목록을 불러오지 못했습니다.\n새로고침 후 다시 시도해 주세요.", 'danger');
                 return;
             }
 
-            const result = await openDeleteTeacherModal(uid, plan, actionLabel);
+            const result = await openDeleteTeacherModal(uid, plan);
             loadTeachers();
             if (!result) return;
 
@@ -496,12 +492,28 @@
                 + `${plan.studentsToDetach.length}명 담당 교사에서 제외`;
             if (result.failures.length) {
                 showMessageModal("일부 항목 남음",
-                    `교사 계정은 ${actionLabel}했지만 다음 항목은 지우지 못했습니다.\n${formatFailures(result.failures)}`, 'warning');
+                    `교사 계정은 삭제했지만 다음 항목은 지우지 못했습니다.\n${formatFailures(result.failures)}`, 'warning');
             } else {
-                showMessageModal(`${actionLabel} 완료`,
-                    `${plan.name || '교사'} 선생님을 ${actionLabel}했습니다.\n${summary}`
+                showMessageModal("삭제 완료",
+                    `${plan.name || '교사'} 선생님의 데이터를 삭제했습니다.\n${summary}`
                     + (plan.nameConflict ? '\n(같은 이름의 교사가 있어 학생 정보는 정리하지 않았습니다)' : ''), 'success');
             }
+        }
+
+        /** 승인 대기 교사 반려 — 승인 전에는 방을 만들 수 없으므로 가입 신청만 지웁니다 */
+        async function rejectTeacher(uid) {
+            const confirmed = await showConfirmModal("가입 반려",
+                "이 교사의 가입 신청을 반려하시겠습니까?\n(구글 계정 로그인 자체는 남으며, 다시 가입 신청할 수 있습니다)",
+                "반려", 'danger');
+            if (!confirmed) return;
+            try {
+                await deleteTeacherRecord(uid);
+                showMessageModal("반려 완료", "가입 신청을 반려했습니다.", 'success');
+            } catch (e) {
+                console.error(e);
+                showMessageModal("반려 실패", "반려 처리 중 오류가 발생했습니다.", 'danger');
+            }
+            loadTeachers();
         }
 
         // ── 목록 렌더링 ────────────────────────────────────────────────
@@ -559,8 +571,8 @@
             const uid = btn.dataset.uid;
             const act = btn.dataset.act;
             if (act === 'approve') approve(uid);
-            else if (act === 'reject') removeTeacherAccount(uid, '반려');
-            else if (act === 'delete') removeTeacherAccount(uid, '삭제');
+            else if (act === 'reject') rejectTeacher(uid);
+            else if (act === 'delete') removeTeacherAccount(uid);
         });
         document.getElementById('btnReload').addEventListener('click', loadTeachers);
 
