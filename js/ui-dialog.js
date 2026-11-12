@@ -34,7 +34,18 @@
 let queue = Promise.resolve();   // 모달을 하나씩 순서대로 띄웁니다
 
 function ensureDom() {
-    if (document.getElementById('customModal')) return;
+    // 예전부터 모달 틀을 HTML에 직접 넣어 둔 페이지(게임 · 설문 템플릿)는 그 틀을 그대로 씁니다 (id 구성이 같음)
+    if (!document.getElementById('customModal')) insertDom();
+    const modalEl = document.getElementById('customModal');
+    if (modalEl.dataset.uiDialogReady) return;
+    modalEl.dataset.uiDialogReady = '1';
+    // 닫힐 때 모달 안에 포커스가 남아 있으면 접근성 경고가 나므로 먼저 놓습니다 (X · Esc · 바깥 클릭 포함)
+    modalEl.addEventListener('hide.bs.modal', function () {
+        if (document.activeElement && this.contains(document.activeElement)) document.activeElement.blur();
+    });
+}
+
+function insertDom() {
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal fade" id="customModal" tabindex="-1" aria-labelledby="customModalTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -51,11 +62,6 @@ function ensureDom() {
             </div>
         </div>
     </div>`);
-
-    // 닫힐 때 모달 안에 포커스가 남아 있으면 접근성 경고가 나므로 먼저 놓습니다
-    document.getElementById('customModal').addEventListener('hide.bs.modal', function () {
-        if (document.activeElement && this.contains(document.activeElement)) document.activeElement.blur();
-    });
 }
 
 function toPlain(text) {
@@ -113,7 +119,9 @@ function open(mode, title, message, opts = {}) {
 
         // 버튼
         btnCancel.textContent = cancelText;
-        btnCancel.classList.toggle('d-none', !(isPrompt || isConfirm));
+        const showCancel = isPrompt || isConfirm;
+        btnCancel.classList.toggle('d-none', !showCancel);
+        btnCancel.style.display = showCancel ? '' : 'none';   // Bootstrap CSS가 없는 페이지(설문 등)에서도 확실히 숨깁니다
         btnConfirm.textContent = confirmText;
         btnConfirm.className = `btn btn-${type || 'primary'} rounded-3 px-4`;
 

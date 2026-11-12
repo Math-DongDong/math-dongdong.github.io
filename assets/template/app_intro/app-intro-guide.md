@@ -96,6 +96,7 @@ AI 에이전트에게 작업을 맡길 때도 이 문서와 템플릿 파일을 
   - 예: `<pre class="code-box-pre"><code id="codeGsContent" data-src="../../../assets/gas/reviewmanagement/Code.gs"></code></pre>`
 - [코드 보기]를 처음 펼칠 때 `loadSourceCodes()`가 `data-src` 파일을 모두 `fetch`로 불러와 `textContent`로 넣습니다. 캐시를 쓰지 않으므로 파일만 고치면 바로 반영됩니다.
 - 각 탭 헤더에 있는 [코드 복사] 버튼은 `copySourceCode(elementId, btn)` 함수를 호출합니다. 코드를 다 불러온 뒤 클립보드에 복사하고 2초간 `복사 완료!` 피드백을 표시합니다.
+- 불러오기 · 복사 실패 안내는 브라우저 기본 `alert()` 대신 템플릿의 `showNoticeModal(message)`를 씁니다. 사이트 공용 모달(`js/ui-dialog.js`)로 그리고, 불러오지 못하면 기본 알림창으로 대신합니다.
 - 앱 코드를 고치면 `assets/gas/{앱이름}/`의 해당 파일만 바꿉니다. 소개 페이지 HTML은 고치지 않아도 됩니다.
 - 페이지를 더블클릭(`file://`)으로 열면 `fetch`가 막혀 코드가 보이지 않습니다. 로컬에서 확인할 때는 VS Code Live Server 같은 로컬 서버로 엽니다. GitHub Pages에서는 정상 작동합니다.
 
