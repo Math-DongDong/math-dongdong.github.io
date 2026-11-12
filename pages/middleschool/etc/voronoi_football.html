@@ -135,6 +135,14 @@
                     </div>
                 </div>
 
+                <!-- 상대(레드) 포메이션 -->
+                <div class="d-flex flex-wrap align-items-center gap-2 small mb-2">
+                    <span class="badge text-bg-danger">레드</span>
+                    <label for="redFormation" class="fw-bold text-secondary">상대 포메이션</label>
+                    <select class="form-select form-select-sm w-auto" id="redFormation" aria-label="레드 팀 포메이션"></select>
+                    <span id="redFormationDesc" class="text-secondary"></span>
+                </div>
+
                 <!-- 경기 도구 -->
                 <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                     <button class="btn btn-sm btn-primary" id="btnPlay" type="button" style="min-width: 7rem;"><i class="bi bi-play-fill"></i> 시작</button>
@@ -152,7 +160,7 @@
                         <span id="luckVal" class="stat-num fw-bold" style="min-width: 1.6rem;">0.5</span>
                     </div>
                     <button class="btn btn-sm btn-outline-danger" id="btnRestart" type="button" title="내가 만든 배치로 돌아가 경기를 다시 준비"><i class="bi bi-arrow-repeat"></i> 경기 초기화</button>
-                    <button class="btn btn-sm btn-outline-secondary" id="btnAlign" type="button" title="처음 대형(블루 4-3-3, 레드 4-4-2)으로"><i class="bi bi-grid-3x3-gap"></i> 기본 대형으로</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="btnAlign" type="button" title="블루를 처음 대형(4-3-3)으로 되돌리기 (레드는 선택한 포메이션 유지)"><i class="bi bi-grid-3x3-gap"></i> 기본 대형으로</button>
                     <div class="ms-sm-auto d-flex align-items-center gap-2 fw-bold">
                         <span class="badge text-bg-primary">블루</span>
                         <span id="scoreText" class="fs-5 stat-num">0 : 0</span>
@@ -266,6 +274,15 @@
         const FONT = "'Pretendard Variable', Pretendard, 'Malgun Gothic', sans-serif";
         const TAU = Math.PI * 2;
         const DEFAULT_FORMATION = { blue: '4-3-3', red: '4-4-2' };
+        // 레드(상대) 포메이션 설명
+        const FORMATION_DESC = {
+            '4-4-2': '수비 4 · 미드 4 · 공격 2. 가장 기본적인 균형형 대형이에요.',
+            '4-3-3': '공격수 3명이 넓게 서서 측면을 노리는 공격형 대형이에요.',
+            '4-2-3-1': '수비형 미드 2명이 중원을 지키고 공격형 미드 3명이 공격을 돕는 대형이에요.',
+            '3-5-2': '미드필더 5명으로 중원을 장악하는 대형이에요.',
+            '3-4-3': '수비를 3명으로 줄이고 공격수를 늘린 공격적인 대형이에요.',
+            '5-3-2': '수비수 5명으로 골문을 단단히 지키는 수비형 대형이에요.'
+        };
         const UI_INTERVAL_MS = 200;
         const WALLS = new Set(['top', 'right', 'bottom', 'left']);
 
@@ -1065,6 +1082,7 @@
             state.match = createMatch(readLuck());
             state.ball = createBall();
             resetPositionsToAnchors();
+            updateControlsState();     // 경기 준비 상태로 돌아왔으니 잠금 해제
             requestRender();
             requestUiUpdate(true);
         }
@@ -1686,6 +1704,7 @@
             btn.classList.toggle('btn-warning', !!rafId);
             btn.classList.toggle('btn-primary', !rafId);
             $('luckInput').disabled = live;
+            $('redFormation').disabled = live;
             updateHint();
         }
 
@@ -1850,18 +1869,31 @@
             if (window.bootstrap) bootstrap.Modal.getOrCreateInstance($('resultModal')).show();
         }
 
+        // 레드 포메이션 변경: 레드만 새 대형으로 재배치 (블루 배치는 그대로)
+        function setRedFormation(name) {
+            state.teams.red.formation = name;
+            buildTeam('red');
+            alignTeam('red', true);
+            $('redFormation').value = name;
+            $('redFormationDesc').textContent = FORMATION_DESC[name];
+            requestRender();
+            requestUiUpdate(true);
+        }
+
+        // 기본 대형으로: 블루만 처음 대형으로, 레드는 선택한 포메이션 유지
         function resetAll() {
             pause();
+            state.teams.blue = { formation: DEFAULT_FORMATION.blue };
             for (const team of TEAMS) {
-                state.teams[team] = { formation: DEFAULT_FORMATION[team] };
                 buildTeam(team);
                 alignTeam(team, true);
             }
             state.ball = createBall();
             state.match = createMatch(readLuck());
+            updateControlsState();
             requestRender();
             requestUiUpdate(true);
-            showToast('기본 대형(블루 4-3-3, 레드 4-4-2)으로 되돌렸어요.');
+            showToast(`블루를 기본 대형(4-3-3)으로 되돌렸어요. 레드는 ${state.teams.red.formation} 그대로예요.`);
         }
 
         function bindControls() {
@@ -1888,6 +1920,10 @@
             document.querySelectorAll('input[name=simSpeed]').forEach(radio => {
                 radio.addEventListener('change', () => { state.simSpeed = Number(radio.value); });
             });
+            $('redFormation').innerHTML = Object.keys(FORMATIONS).map(f => `<option value="${f}">${f}</option>`).join('');
+            $('redFormation').value = state.teams.red.formation;
+            $('redFormationDesc').textContent = FORMATION_DESC[state.teams.red.formation];
+            $('redFormation').addEventListener('change', e => setRedFormation(e.target.value));
             $('luckInput').addEventListener('input', e => {
                 $('luckVal').textContent = Number(e.target.value).toFixed(1);
             });
