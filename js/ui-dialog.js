@@ -4,7 +4,7 @@
  *
  * 쓰는 곳
  *   · room-auth.js 의 customAlert · customConfirm · customPrompt (모든 게임 · 설문 · 관계지도 · 소감문 입장 화면)
- *   · teacher-auth.js (교사 로그인 · 정보수정 · 회원 탈퇴), 계정 관리, aimath · 아하! 수학 페이지
+ *   · teacher-auth.js (교사 로그인 · 정보수정 · 회원 탈퇴), 계정 관리, aimath · 아하! 수학 · 작도 페이지, 교사 업무 도구
  *   한 곳만 고치면 사이트 전체 모달의 모양 · 동작이 함께 바뀝니다.
  *
  * 사용법
@@ -24,6 +24,8 @@
  *                 false(기본)면 글자 그대로 넣고 줄바꿈(\n)을 살립니다.
  *     password    (uiPrompt) 비밀번호 칸
  *     defaultValue (uiPrompt) 처음 값
+ *     inputFilter (uiPrompt) 입력값을 실시간으로 바꾸는 함수 (예: 영어 대문자만). 한글 조합 중에는 건드리지 않습니다.
+ *     inputAttrs  (uiPrompt) 입력칸에 붙일 속성 (예: { maxlength: 4, lang: 'en' })
  *
  * ★ DOM id(customModal · customModalTitle · customModalBody · customModalInput · customModalCancel · customModalConfirm)는
  *   예전 room-auth.js 모달과 같습니다. 설문 · 관계지도 · 소감문 관리 페이지가 이 id로 자기 디자인 CSS를 입힙니다.
@@ -63,7 +65,8 @@ function toPlain(text) {
 function open(mode, title, message, opts = {}) {
     const {
         type = '', confirmText = '확인', cancelText = '취소',
-        html = false, password = false, defaultValue = ''
+        html = false, password = false, defaultValue = '',
+        inputFilter = null, inputAttrs = null
     } = opts;
     const isPrompt = mode === 'prompt';
     const isConfirm = mode === 'confirm';
@@ -103,7 +106,8 @@ function open(mode, title, message, opts = {}) {
             input.className = 'form-control form-control-lg mt-3 text-center fw-bold';
             input.id = 'customModalInput';
             input.autocomplete = 'off';
-            input.value = defaultValue;
+            Object.entries(inputAttrs || {}).forEach(([name, value]) => input.setAttribute(name, value));
+            input.value = inputFilter ? inputFilter(String(defaultValue)) : defaultValue;
             bodyEl.appendChild(input);
         }
 
@@ -115,21 +119,37 @@ function open(mode, title, message, opts = {}) {
 
         let result = isPrompt ? null : (isConfirm ? false : true);
         let settled = false;
+        // 열리는 애니메이션 중에는 Bootstrap이 hide()를 무시하므로, 다 열린 뒤에 닫습니다
+        let isShown = false, hidePending = false;
         const finish = (value) => {
             if (settled) return;
             settled = true;
             result = value;
             if (document.activeElement && modalEl.contains(document.activeElement)) document.activeElement.blur();
-            instance.hide();
+            if (isShown) instance.hide(); else hidePending = true;
         };
         const onConfirm = () => finish(isPrompt ? (input?.value ?? '') : true);
         const onCancel = () => finish(isPrompt ? null : (isConfirm ? false : true));
-        const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); onConfirm(); } };
-        const onShown = () => { if (input) input.focus(); else btnConfirm.focus(); };
+        // 한글 조합을 끝내는 Enter는 확인으로 치지 않습니다
+        const onKey = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onConfirm(); } };
+        const onFilter = (e) => {
+            if (!inputFilter || e.isComposing) return;
+            const filtered = inputFilter(input.value);
+            if (filtered !== input.value) input.value = filtered;
+        };
+        const onShown = () => {
+            isShown = true;
+            if (hidePending) { instance.hide(); return; }
+            if (input) { input.focus(); input.select(); } else btnConfirm.focus();
+        };
         const onHidden = () => {
             btnConfirm.removeEventListener('click', onConfirm);
             btnCancel.removeEventListener('click', onCancel);
-            if (input) input.removeEventListener('keydown', onKey);
+            if (input) {
+                input.removeEventListener('keydown', onKey);
+                input.removeEventListener('input', onFilter);
+                input.removeEventListener('compositionend', onFilter);
+            }
             modalEl.removeEventListener('shown.bs.modal', onShown);
             modalEl.removeEventListener('hidden.bs.modal', onHidden);
             setTimeout(() => resolve(result), 0);
@@ -137,7 +157,11 @@ function open(mode, title, message, opts = {}) {
 
         btnConfirm.addEventListener('click', onConfirm);
         btnCancel.addEventListener('click', onCancel);
-        if (input) input.addEventListener('keydown', onKey);
+        if (input) {
+            input.addEventListener('keydown', onKey);
+            input.addEventListener('input', onFilter);
+            input.addEventListener('compositionend', onFilter);
+        }
         modalEl.addEventListener('shown.bs.modal', onShown);
         modalEl.addEventListener('hidden.bs.modal', onHidden);
         instance.show();

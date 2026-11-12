@@ -167,28 +167,6 @@
 </head>
 
 <body>
-    <!-- 공통 모달 (알림 / 확인 / 입력) -->
-    <div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content rounded-4 border-0 shadow">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-bold" id="customModalTitle">알림</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body pb-0">
-                    <p class="mb-0 fs-5" id="customModalMessage"></p>
-                    <input type="text" class="form-control form-control-lg mt-3 text-center fw-bold d-none"
-                        id="customModalInput" maxlength="4" autocomplete="off" autocapitalize="characters" lang="en">
-                </div>
-                <div class="modal-footer border-0 pt-3">
-                    <button type="button" class="btn btn-secondary rounded-3 px-4 d-none"
-                        id="customModalCancel">취소</button>
-                    <button type="button" class="btn btn-primary rounded-3 px-4" id="customModalConfirm">확인</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- 정답 보기 모달 (정답 작도를 흔적과 함께 표시) -->
     <div class="modal fade" id="answerModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-xl">
@@ -1721,80 +1699,22 @@
             bootstrap.Toast.getOrCreateInstance(checkToast).show();
         }
 
-        // ===== 커스텀 모달 (alert / confirm / prompt 대체) =====
-        const customModalElement = document.getElementById('customModal');
-        let modalQueue = Promise.resolve();
-
-        customModalElement.addEventListener('hide.bs.modal', () => {
-            if (customModalElement.contains(document.activeElement)) document.activeElement.blur();
-        });
-
+        // ===== 알림 · 확인 · 입력 모달 — 사이트 공용 모달(js/ui-dialog.js) =====
         // type: 'alert' → true, 'confirm' → true/false, 'prompt' → 입력값/null
-        // inputFilter: 입력값을 실시간으로 바꾸는 함수 (prompt 전용)
-        function openCustomModal(title, message, { type = 'alert', defaultValue = '', inputFilter = null } = {}) {
-            return new Promise(resolve => {
-                const modal = bootstrap.Modal.getOrCreateInstance(customModalElement);
-                const input = document.getElementById('customModalInput');
-                const confirmButton = document.getElementById('customModalConfirm');
-                const cancelButton = document.getElementById('customModalCancel');
-                const isPrompt = type === 'prompt';
-
-                document.getElementById('customModalTitle').textContent = title;
-                document.getElementById('customModalMessage').textContent = message;
-                input.classList.toggle('d-none', !isPrompt);
-                input.value = inputFilter ? inputFilter(defaultValue) : defaultValue;
-                cancelButton.classList.toggle('d-none', type === 'alert');
-
-                // X 버튼·바깥 클릭·Esc로 닫으면 취소로 처리
-                let result = isPrompt ? null : type === 'alert';
-                // 열리는 애니메이션 중에는 Bootstrap이 hide()를 무시하므로, 다 열린 뒤 닫기
-                let isFullyShown = false, isClosePending = false;
-                const close = value => {
-                    result = value;
-                    if (isFullyShown) modal.hide(); else isClosePending = true;
-                };
-                const handleConfirm = () => close(isPrompt ? input.value : true);
-                const handleCancel = () => close(isPrompt ? null : false);
-                const handleEnter = event => { if (event.key === 'Enter' && !event.isComposing) handleConfirm(); };
-                // 한글 조합 중에는 건드리지 않고, 조합이 끝나면 걸러냄
-                const handleFilter = event => {
-                    if (!inputFilter || event.isComposing) return;
-                    const filtered = inputFilter(input.value);
-                    if (filtered !== input.value) input.value = filtered;
-                };
-                const handleShown = () => {
-                    isFullyShown = true;
-                    if (isClosePending) { modal.hide(); return; }
-                    if (isPrompt) { input.focus(); input.select(); } else confirmButton.focus();
-                };
-                const handleHidden = () => {
-                    confirmButton.removeEventListener('click', handleConfirm);
-                    cancelButton.removeEventListener('click', handleCancel);
-                    input.removeEventListener('keydown', handleEnter);
-                    input.removeEventListener('input', handleFilter);
-                    input.removeEventListener('compositionend', handleFilter);
-                    customModalElement.removeEventListener('shown.bs.modal', handleShown);
-                    customModalElement.removeEventListener('hidden.bs.modal', handleHidden);
-                    resolve(result);
-                };
-
-                confirmButton.addEventListener('click', handleConfirm);
-                cancelButton.addEventListener('click', handleCancel);
-                input.addEventListener('keydown', handleEnter);
-                input.addEventListener('input', handleFilter);
-                input.addEventListener('compositionend', handleFilter);
-                customModalElement.addEventListener('shown.bs.modal', handleShown);
-                customModalElement.addEventListener('hidden.bs.modal', handleHidden);
-                modal.show();
+        // inputFilter: 입력값을 실시간으로 바꾸는 함수 (prompt 전용, 점 이름은 영어 대문자 4자까지)
+        function showCustomModal(title, message, { type = 'alert', defaultValue = '', inputFilter = null } = {}) {
+            return import('../../../js/ui-dialog.js').then(m => {
+                if (type === 'prompt') {
+                    return m.uiPrompt(title, message, {
+                        defaultValue, inputFilter,
+                        inputAttrs: { maxlength: 4, autocapitalize: 'characters', lang: 'en' }
+                    });
+                }
+                return type === 'confirm' ? m.uiConfirm(title, message) : m.uiAlert(title, message);
+            }).catch(() => {
+                if (type === 'prompt') return window.prompt(message, defaultValue);
+                return type === 'confirm' ? window.confirm(message) : (window.alert(message), true);
             });
-        }
-
-        // 모달을 하나씩 순서대로 띄우기
-        function showCustomModal(title, message, options) {
-            const run = () => openCustomModal(title, message, options);
-            const result = modalQueue.then(run, run);
-            modalQueue = result.catch(() => { });
-            return result;
         }
 
         // 아직 쓰지 않은 [길이 재기 / 길이 유지]: 다른 도구로 교점을 찍거나 시연을 보고 와도 이어서 쓸 수 있게 보관
@@ -2386,7 +2306,7 @@
 
         document.addEventListener('keydown', event => {
             if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
-            if ([customModalElement, answerModalElement, demoModeModalElement].some(element => element.classList.contains('show'))) return;
+            if ([document.getElementById('customModal'), answerModalElement, demoModeModalElement].some(element => element?.classList.contains('show'))) return;
             if (demoState.active) {
                 if (event.key === 'Escape') closeDemo();
                 return;

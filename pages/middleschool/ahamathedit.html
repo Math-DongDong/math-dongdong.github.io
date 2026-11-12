@@ -361,6 +361,14 @@
     <script src="../../js/navbar.js" data-type="middleschool"></script>
 
     <script>
+        // 안내 · 확인 모달 — 사이트 공용 모달(js/ui-dialog.js). 불러오지 못하면 브라우저 기본창으로 대신합니다
+        function showNoticeModal(message, title = '알림') {
+            return import('../../js/ui-dialog.js').then(m => m.uiAlert(title, message)).catch(() => window.alert(message));
+        }
+        function showConfirmModal(message, { title = '확인', confirmText = '확인', type = 'primary' } = {}) {
+            return import('../../js/ui-dialog.js').then(m => m.uiConfirm(title, message, { confirmText, type })).catch(() => window.confirm(message));
+        }
+
         // ===== 상수 =====
         const UI_ATTR = 'data-hte-ui';
         const SCRIPT_TYPE_ATTR = 'data-hte-script-type';
@@ -491,7 +499,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
 
         async function openServerFile(path) {
             if (!path) {
-                alert('열 파일을 선택하거나 입력해 주세요.');
+                showNoticeModal('열 파일을 선택하거나 입력해 주세요.');
                 return;
             }
             const fileUrl = new URL('./' + path, location.href);
@@ -501,7 +509,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
                 loadHtmlIntoEditor(await response.text(), fileUrl.pathname.split('/').pop(), new URL('.', fileUrl).href);
             } catch (error) {
                 byId('topicListError').classList.remove('d-none');
-                alert('파일을 불러오지 못했습니다.\n' + error.message);
+                showNoticeModal('파일을 불러오지 못했습니다.\n' + error.message);
             }
         }
 
@@ -803,7 +811,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
 
         function applyBold() {
             if (!state.editingEl || !state.savedRange || state.savedRange.collapsed) {
-                alert('글자를 고치는 중에 굵게 할 부분을 드래그한 뒤 눌러 주세요.');
+                showNoticeModal('글자를 고치는 중에 굵게 할 부분을 드래그한 뒤 눌러 주세요.');
                 return;
             }
             restoreTextSelection();
@@ -1197,7 +1205,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
             } catch (error) {
                 console.warn(error);
             }
-            alert('원본 코드 모양을 그대로 살려 저장하지 못해 전체 코드를 새로 정리해서 저장합니다.\n(git에서 바뀐 줄이 많아 보일 수 있어요)');
+            showNoticeModal('원본 코드 모양을 그대로 살려 저장하지 못해 전체 코드를 새로 정리해서 저장합니다.\n(git에서 바뀐 줄이 많아 보일 수 있어요)');
             return matchOriginalFormatting(doctypePrefix + stripSourceIds(clone.outerHTML));
         }
 
@@ -1471,7 +1479,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
             try {
                 source = locateQuestionSource();
             } catch (error) {
-                alert('미션 문항을 읽을 수 없습니다.\n' + error.message);
+                showNoticeModal('미션 문항을 읽을 수 없습니다.\n' + error.message);
                 return;
             }
             const recordVersion = source.versionEntry ? parseNumber(source.text.slice(source.versionEntry.valueStart, source.versionEntry.valueEnd)) : null;
@@ -1635,7 +1643,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
         function removeChoice(choiceIndex) {
             const choices = findField(getActiveFields(), 'choices').choices;
             if (choices.length <= 2) {
-                alert('보기는 2개 이상이어야 합니다.');
+                showNoticeModal('보기는 2개 이상이어야 합니다.');
                 return;
             }
             choices.splice(choiceIndex, 1);
@@ -1670,11 +1678,14 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
             renderQuestionForm();
         }
 
-        function deleteActiveQuestion() {
+        async function deleteActiveQuestion() {
             const item = state.questionDraft.items[state.activeQuestionIndex];
-            if (!item || !confirm(`${item.key} 문항을 삭제할까요?`)) return;
-            state.questionDraft.items.splice(state.activeQuestionIndex, 1);
-            state.activeQuestionIndex = Math.max(0, state.activeQuestionIndex - 1);
+            if (!item) return;
+            if (!await showConfirmModal(`${item.key} 문항을 삭제할까요?`, { title: '문항 삭제', confirmText: '삭제', type: 'danger' })) return;
+            const index = state.questionDraft.items.indexOf(item);   // 모달이 떠 있는 사이 목록이 바뀌었을 수 있어 다시 찾습니다
+            if (index < 0) return;
+            state.questionDraft.items.splice(index, 1);
+            state.activeQuestionIndex = Math.max(0, index - 1);
             renderQuestionList();
             renderQuestionForm();
         }
@@ -1698,13 +1709,14 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
             return warnings;
         }
 
-        function applyQuestionChanges() {
+        async function applyQuestionChanges() {
             const draft = state.questionDraft;
             const versionInput = byId('recordVersionInput');
             if (!versionInput.disabled) draft.recordVersion = parseNumber(versionInput.value) || draft.originalRecordVersion;
 
             const warnings = collectQuestionWarnings(draft);
-            if (warnings.length && !confirm('확인해 주세요.\n\n- ' + warnings.join('\n- ') + '\n\n그래도 적용할까요?')) return;
+            if (warnings.length && !await showConfirmModal('- ' + warnings.join('\n- ') + '\n\n그래도 적용할까요?',
+                { title: '확인해 주세요', confirmText: '적용' })) return;
 
             const newScript = buildQuestionScript(state.questionSource, draft);
             try {
@@ -1713,7 +1725,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
                 const questionsEntry = scanObjectEntries(newScript, configOpen).entries.find(entry => entry.key === 'questions');
                 if (scanObjectEntries(newScript, questionsEntry.valueStart).entries.length !== draft.items.length) throw new Error('문항 수가 맞지 않습니다.');
             } catch (error) {
-                alert('문항 코드에 문제가 있어 적용하지 않았습니다. 코드 칸의 따옴표·괄호를 확인해 주세요.\n\n' + error.message);
+                showNoticeModal('문항 코드에 문제가 있어 적용하지 않았습니다. 코드 칸의 따옴표·괄호를 확인해 주세요.\n\n' + error.message);
                 return;
             }
             state.questionSource.script.textContent = newScript;
@@ -1788,7 +1800,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
         async function openAttachedFile(file) {
             if (!file) return;
             if (!/\.html?$/i.test(file.name) && file.type !== 'text/html') {
-                alert('HTML 파일(.html, .htm)만 불러올 수 있습니다.');
+                showNoticeModal('HTML 파일(.html, .htm)만 불러올 수 있습니다.');
                 return;
             }
             const grade = document.querySelector('input[name="attachGrade"]:checked').value;
@@ -1884,7 +1896,7 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
         renderSymbolPalette(byId('questionSymbolPalette'), symbol => {
             const field = state.lastFocusedField;
             if (field && field.isConnected) insertSymbolIntoField(field, symbol);
-            else alert('기호를 넣을 입력칸을 먼저 클릭하세요.');
+            else showNoticeModal('기호를 넣을 입력칸을 먼저 클릭하세요.');
         });
 
         // 저장 · 코드 · 미리보기
@@ -1910,8 +1922,9 @@ html[data-hte-reveal] .solve-item{opacity:1!important;transform:none!important;t
             codeModal.hide();
             loadHtmlIntoEditor(byId('exportCode').value, state.fileName, state.baseUrl);
         });
-        byId('newFileButton').addEventListener('click', () => {
-            if (state.isDirty && !confirm('저장하지 않은 변경 사항이 사라집니다. 다른 파일을 여시겠습니까?')) return;
+        byId('newFileButton').addEventListener('click', async () => {
+            if (state.isDirty && !await showConfirmModal('저장하지 않은 변경 사항이 사라집니다. 다른 파일을 여시겠습니까?',
+                { title: '다른 파일 열기', confirmText: '열기', type: 'danger' })) return;
             editorSection.classList.add('d-none');
             loadSection.classList.remove('d-none');
             editorFrame.onload = null;
