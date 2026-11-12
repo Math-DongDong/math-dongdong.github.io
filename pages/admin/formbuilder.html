@@ -823,7 +823,7 @@
                     <p id="existingResponseNotice" class="mt-3 text-sm font-bold text-board" hidden>기존 응답을 불러왔습니다. 수정한 뒤
                         저장할 수 있습니다.</p>
                     <p id="closedNotice" class="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-800"
-                        hidden>마감된 설문입니다. 응답을 조회할 수 있지만 수정할 수 없습니다.</p>
+                        hidden>마감된 설문입니다. 더 이상 응답하거나 수정할 수 없습니다.</p>
                 </div>
                 <form id="dynamicForm">
                     <div id="dynamicQuestions" class="space-y-6"></div>
@@ -1720,7 +1720,7 @@
             studentRoomData.status = 'closed';
             $('studentFormTitle').innerHTML = formatRichText(studentRoomData.memo || '설문');
             $('studentFormMemo').innerHTML = formatRichText(studentRoomData.description || '');
-            $('studentRoomStatus').textContent = '마감됨 · 조회 전용';
+            $('studentRoomStatus').textContent = '마감됨';
             $('studentRoomStatus').className = 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800';
             $('closedNotice').hidden = false;
             $('submitResponseButton').hidden = true;
@@ -4251,7 +4251,9 @@
 
             let responseExists = false;
             let existingAnswers = {};
-            if (!isQuick) {
+            // ★ 마감 후에는 제출한 응답을 읽지 않습니다 (Firestore 규칙도 마감 후 학생 읽기를 막습니다)
+            const hideClosedResponse = !isQuick && roomData.status === 'closed';
+            if (!isQuick && !hideClosedResponse) {
                 const responseSnapshot = await getDoc(doc(db, 'custom_forms', roomCode, 'responses', effectiveStudentId));
                 responseExists = responseSnapshot.exists();
                 existingAnswers = responseExists ? responseSnapshot.data().answers || {} : {};
@@ -4275,11 +4277,15 @@
             window.studentResponseExists = studentResponseExists;
             $('studentFormTitle').innerHTML = formatRichText(roomData.memo || '설문');
             $('studentFormMemo').innerHTML = formatRichText(roomData.description || '');
-            $('studentRoomStatus').textContent = roomData.status === 'closed' ? '마감됨 · 조회 전용' : '응답 가능';
+            $('studentRoomStatus').textContent = roomData.status === 'closed' ? '마감됨' : '응답 가능';
             $('studentRoomStatus').className = `rounded-full px-3 py-1 text-xs font-bold ${roomData.status === 'closed' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`;
             $('existingResponseNotice').hidden = !studentResponseExists;
+            $('closedNotice').textContent = hideClosedResponse
+                ? '마감된 설문입니다. 마감 후에는 제출한 응답을 볼 수 없습니다.'
+                : '마감된 설문입니다. 더 이상 응답하거나 수정할 수 없습니다.';
             $('closedNotice').hidden = roomData.status !== 'closed';
-            renderStudentQuestions(Array.isArray(roomData.formSchema) ? roomData.formSchema : [], existingAnswers, roomData.status === 'closed');
+            if (hideClosedResponse) $('dynamicQuestions').innerHTML = '';
+            else renderStudentQuestions(Array.isArray(roomData.formSchema) ? roomData.formSchema : [], existingAnswers, roomData.status === 'closed');
             $('submitResponseButton').hidden = roomData.status === 'closed';
             $('submitResponseButton').textContent = studentResponseExists ? '수정 내용 저장' : '응답 제출';
             $('studentRoomEntryBox').hidden = true;
@@ -4287,6 +4293,15 @@
             if ($('studentInfoBadge')) $('studentInfoBadge').textContent = isQuick ? '익명 응답' : effectiveStudentId;
             clearDirty();
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        /** 지금 이 설문이 마감 상태인지 다시 확인합니다 (제출이 거부됐을 때 이유 구분용) */
+        async function isStudentRoomClosedNow() {
+            const snapshot = await getDoc(doc(db, 'custom_forms', studentSession.roomCode));
+            if (!snapshot.exists()) return true;
+            const room = snapshot.data();
+            const closeAt = timestampMillis(room.scheduledCloseAt);
+            return room.status !== 'active' || Boolean(closeAt && closeAt <= Date.now());
         }
 
         function createAnonymousResponseId() {
@@ -4518,7 +4533,17 @@
                 }
             } catch (error) {
                 console.error('응답 저장 실패:', error);
-                if (String(error.message || '').includes('마감')) markStudentFormClosed();
+                // 권한 거부는 제출 직전에 마감된 경우일 수 있습니다 (마감 후에는 응답 읽기·쓰기 모두 막힘)
+                let closedNow = String(error.message || '').includes('마감');
+                if (!closedNow && ['permission-denied', 'storage/unauthorized'].includes(error?.code)) {
+                    closedNow = await isStudentRoomClosedNow().catch(() => false);
+                }
+                if (closedNow) {
+                    markStudentFormClosed();
+                    button.textContent = buttonLabel;
+                    showNotice('설문이 마감되어 응답을 저장할 수 없습니다.', true);
+                    return;
+                }
                 button.textContent = buttonLabel;
                 const isStorageDenied = error?.code === 'storage/unauthorized';
                 showNotice(`응답을 저장하지 못했습니다: ${isStorageDenied ? '파일 업로드 권한이 없습니다. 설문이 마감되었거나 용량·개수 제한을 넘었는지 확인해주세요.' : (error.message || '네트워크와 설문 권한을 확인해주세요.')}`, true);
