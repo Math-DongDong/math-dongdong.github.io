@@ -17,7 +17,7 @@
  *  새 게임을 만들 때는 이 파일을 가져다 쓰세요.
  *
  *  ※ v4: 게임 7개가 모두 이 파일을 씁니다.
- *    페이지와 이 파일 모두 room-auth.js?v=4.1 으로 불러야 합니다 (주소가 다르면 모듈이 둘로 갈라집니다).
+ *    페이지와 이 파일 모두 room-auth.js?v=4.3 으로 불러야 합니다 (주소가 다르면 모듈이 둘로 갈라집니다).
  * ─────────────────────────────────────────────────────────────────────
  */
 import { db as fsdb } from "./firebase-config.js";
@@ -30,7 +30,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 import {
     escapeHtml, safeNumber, customAlert, customConfirm, customPrompt, promptRoomMode
-} from "./room-auth.js?v=4.1";
+} from "./room-auth.js?v=4.3";
 import { GAME_SUBS, rtdbUrl, registerRoom, unregisterRoom } from "./room-registry.js";
 
 // =====================================================================

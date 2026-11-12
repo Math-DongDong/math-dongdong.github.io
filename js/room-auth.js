@@ -1,6 +1,9 @@
 /**
- * room-auth.js  (v4.1)
+ * room-auth.js  (v4.3)
  * 방 입장 카드 UI, 공통 모달, 학생/교사 인증 공통 모듈
+ *
+ *  v4.3 — 학생 문서의 담당 선생님·기기·PIN 설정 칸은 PIN 증명과 한 batch로만 씁니다.
+ *         (writePinProof · createStudentWithPin · updateStudentWithProof — firestore.rules의 student_auth와 짝)
  *
  * ═══════════════════════════════════════════════════════════════════
  *  v4.1 — 학교는 방이 정하고, 학생은 학번 + PIN으로 기기를 등록합니다
@@ -341,12 +344,42 @@ if (typeof window !== 'undefined') {
     window.releaseStudentPresence = releasePresence;
 }
 
-/** 새 PIN 증명값을 기록합니다 (최초 등록 · 교사 초기화 후 재설정) */
+// ─────────────────────────────────────────────────────────────────────
+//  ★ v4.3 — 학생 문서의 담당 선생님·기기·PIN 설정 칸은 'PIN 증명과 한 batch'로만 고칩니다.
+//    학생은 로그인하지 않으므로 규칙은 누가 쓰는지 모릅니다. 그래서 같은 batch 안에서
+//    ① 이 기기의 PIN 게이트를 통과했는지(authDevice 칸이 가리키는 gate 문서) 또는
+//    ② PIN을 새로 등록했는지(private/auth.updatedAt)를 규칙이 확인합니다.
+//    접속 신호(presence·lastActive)만 바꾸는 쓰기는 지금처럼 PIN 없이 허용됩니다.
+// ─────────────────────────────────────────────────────────────────────
+
+/** 새 PIN 증명값을 기록합니다 (교사 초기화 후 재설정 · 해시가 없던 학번) */
 async function writePinProof(studentKey, proof) {
-    await setDoc(doc(db, "student_auth", studentKey, "private", "auth"),
+    const studentRef = doc(db, "student_auth", studentKey);
+    const batch = writeBatch(db);
+    batch.set(doc(studentRef, "private", "auth"),
         { ...buildPinRecordFromProof(proof), updatedAt: serverTimestamp() }, { merge: true });
     // 대시보드에서 'PIN 설정됨'을 표시하기 위한 플래그 (해시가 아니라 상태만)
-    await updateDoc(doc(db, "student_auth", studentKey), { pinSetAt: serverTimestamp() });
+    batch.update(studentRef, { pinSetAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    await batch.commit();
+}
+
+/** 새 학생 등록 — 학생 문서와 PIN 해시를 한 batch로 만듭니다 */
+async function createStudentWithPin(studentKey, data, proof) {
+    const studentRef = doc(db, "student_auth", studentKey);
+    const batch = writeBatch(db);
+    batch.set(studentRef, { ...data, pinSetAt: serverTimestamp() });
+    batch.set(doc(studentRef, "private", "auth"),
+        { ...buildPinRecordFromProof(proof), updatedAt: serverTimestamp() }, { merge: true });
+    await batch.commit();
+}
+
+/** 기존 학생 문서 수정 — 이 기기의 PIN 게이트 통과를 같은 batch에 담습니다 */
+async function updateStudentWithProof(studentKey, deviceFp, proof, patch) {
+    const studentRef = doc(db, "student_auth", studentKey);
+    const batch = writeBatch(db);
+    batch.set(doc(studentRef, "gate", String(deviceFp)), { proof, at: serverTimestamp() });
+    batch.update(studentRef, { ...patch, authDevice: String(deviceFp), updatedAt: serverTimestamp() });
+    await batch.commit();
 }
 
 /** 학번 형식: 숫자 4~5자리 (예: 1230 = 1학년 2반 30번, 11205 = 1학년 12반 5번) */
@@ -1645,11 +1678,12 @@ export async function resetStudentPin(studentKey) {
 export async function purgeStudent(studentKey) {
     const studentRef = doc(db, "student_auth", studentKey);
     const studentSnapshot = await getDoc(studentRef);
-    const deviceIds = studentSnapshot.exists()
-        ? [...new Set((studentSnapshot.data()?.devices || [])
-            .map(device => String(device?.id || '').trim())
-            .filter(Boolean))]
-        : [];
+    const studentData = studentSnapshot.exists() ? (studentSnapshot.data() || {}) : {};
+    // 등록 기기 + 마지막으로 인증한 기기(게스트로 쓴 공용 기기 포함)의 게이트 문서를 지웁니다
+    const deviceIds = [...new Set([
+        ...(Array.isArray(studentData.devices) ? studentData.devices : []).map(device => String(device?.id || '').trim()),
+        String(studentData.authDevice || '').trim()
+    ].filter(Boolean))];
 
     for (let start = 0; start < deviceIds.length; start += 500) {
         const batch = writeBatch(db);
@@ -1967,7 +2001,7 @@ export function renderRoomEntrance(container, options = {}) {
                 });
                 if (!guestInput) return;
 
-                const { key: guestKey, ref: sDocRef, data: sData } = await loadStudent(guestInput.studentId);
+                const { key: guestKey, data: sData } = await loadStudent(guestInput.studentId);
 
                 // (1) 이미 접속 중인 학번이면 입장 불가
                 if (isAccountOnline(sData)) {
@@ -1993,9 +2027,9 @@ export function renderRoomEntrance(container, options = {}) {
                             '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
                         return;
                     }
-                    await updateDoc(sDocRef, { teachers: guestInput.teachers, updatedAt: serverTimestamp() });
+                    await updateStudentWithProof(guestKey, deviceFp, guestProof, { teachers: guestInput.teachers });
                 } else {
-                    await setDoc(sDocRef, {
+                    await createStudentWithPin(guestKey, {
                         school: roomSchool,
                         studentId: guestInput.studentId,
                         teachers: guestInput.teachers,
@@ -2004,8 +2038,7 @@ export function renderRoomEntrance(container, options = {}) {
                         createdAt: serverTimestamp(),
                         updatedAt: serverTimestamp(),
                         lastActive: serverTimestamp()
-                    });
-                    await writePinProof(guestKey, guestProof);
+                    }, guestProof);
                 }
 
                 // (3) 이 방에서 쓸 새 이름 선점 (기기 기억 무시)
@@ -2115,12 +2148,11 @@ export function renderRoomEntrance(container, options = {}) {
             let studentId = savedKey ? saved.studentId
                 : (identity && identity.school === roomSchool ? identity.studentId : '');
             let proof = savedKey ? saved.proof : '';
-            let sDocRef = null;
             let sData = null;
             let needInput = !savedKey;
 
             if (savedKey) {
-                ({ ref: sDocRef, data: sData } = await loadStudent(studentId));
+                ({ data: sData } = await loadStudent(studentId));
                 if (!sData) {
                     needInput = true;                       // 선생님이 학생을 삭제 → 다시 등록
                 } else {
@@ -2174,7 +2206,6 @@ export function renderRoomEntrance(container, options = {}) {
 
                 studentId = input.studentId;
                 proof = nextProof;
-                sDocRef = next.ref;
                 sData = next.data;
                 needInput = false;
             }
@@ -2205,14 +2236,13 @@ export function renderRoomEntrance(container, options = {}) {
                     devices: devCheck.list,
                     teachers: teachersToSave,
                     presence: 'online',
-                    lastActive: serverTimestamp(),
-                    updatedAt: serverTimestamp()
+                    lastActive: serverTimestamp()
                 };
                 if (!sData.school) patch.school = school;
                 if (!sData.studentId) patch.studentId = studentId;
-                await updateDoc(sDocRef, patch);
+                await updateStudentWithProof(ownerKey, deviceFp, proof, patch);
             } else {
-                await setDoc(sDocRef, {
+                await createStudentWithPin(ownerKey, {
                     school, studentId,
                     teachers: teachersToSave,
                     devices: devCheck.list,
@@ -2220,8 +2250,7 @@ export function renderRoomEntrance(container, options = {}) {
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                     lastActive: serverTimestamp()
-                });
-                await writePinProof(ownerKey, proof);
+                }, proof);
             }
 
             savePhoneOwnerAuth(school, studentId, proof);   // ★ PIN 평문이 아니라 증명값
