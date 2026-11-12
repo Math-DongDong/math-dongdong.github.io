@@ -59,19 +59,6 @@
             -webkit-user-select: none;
         }
 
-        /* 팀 패널 */
-        .team-panel {
-            border-top: 4px solid var(--team-color) !important;
-        }
-
-        .team-blue {
-            --team-color: #0d6efd;
-        }
-
-        .team-red {
-            --team-color: #dc3545;
-        }
-
         .layer-toggles .form-check-input,
         .layer-toggles .form-check-label {
             cursor: pointer;
@@ -143,27 +130,6 @@
             </div>
         </header>
 
-        <!-- 팀 설정 -->
-        <section class="mb-3" aria-labelledby="teamSettingsHeading">
-            <div class="accordion">
-                <div class="accordion-item">
-                    <h2 class="accordion-header" id="teamSettingsHeading">
-                        <button class="accordion-button py-2 fw-bold" id="teamSettingsToggle" type="button" data-bs-toggle="collapse" data-bs-target="#teamSettings" aria-expanded="true" aria-controls="teamSettings">
-                            <i class="bi bi-people-fill me-2"></i>팀 설정 · 포메이션
-                        </button>
-                    </h2>
-                    <div id="teamSettings" class="accordion-collapse collapse show" aria-labelledby="teamSettingsHeading">
-                        <div class="accordion-body p-2 p-md-3">
-                            <div class="row g-3">
-                                <div class="col-md-6" id="bluePanel"></div>
-                                <div class="col-md-6" id="redPanel"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
         <!-- 경기장 -->
         <section class="card shadow-sm mb-3" aria-label="경기장과 보로노이 다이어그램">
             <div class="card-body p-2 p-md-3">
@@ -186,7 +152,7 @@
 
                 <!-- 전술판 도구 -->
                 <div id="tacticsToolbar" class="d-flex flex-wrap gap-2 mb-2">
-                    <button class="btn btn-sm btn-outline-primary" id="btnAlign" type="button"><i class="bi bi-grid-3x3-gap"></i> 포메이션 정렬</button>
+                    <button class="btn btn-sm btn-outline-primary" id="btnAlign" type="button"><i class="bi bi-grid-3x3-gap"></i> 기본 대형으로</button>
                     <button class="btn btn-sm btn-outline-danger ms-sm-auto" id="btnReset" type="button"><i class="bi bi-arrow-counterclockwise"></i> 초기화</button>
                 </div>
 
@@ -642,7 +608,7 @@
             });
         }
 
-        // "포메이션 정렬": anchor = 프리셋 위치 (movePos면 pos도 함께)
+        // "기본 대형으로": anchor = 프리셋 위치 (movePos면 pos도 함께)
         function alignTeam(team, movePos) {
             for (const p of teamPlayers[team]) {
                 p.anchor = slotToWorld(p.slot, team);
@@ -1207,7 +1173,7 @@
         function startMatch(seed = readSeed()) {
             state.match = createMatch(seed);
             state.ball = createBall();
-            logEvent(`킥오프! (시드 ${seed} · 블루 ${state.teams.blue.formation} vs 레드 ${state.teams.red.formation})`);
+            logEvent(`킥오프! (시드 ${seed})`);
             startKickoff('blue');
         }
 
@@ -1816,33 +1782,6 @@
             return seed;
         }
 
-        function teamPanelHtml(team) {
-            const info = TEAM_INFO[team];
-            const options = Object.keys(FORMATIONS).map(f => `<option value="${f}">${f}</option>`).join('');
-            return `
-                <div class="border rounded-3 p-3 h-100 team-panel team-${team}">
-                    <div class="d-flex align-items-center flex-wrap gap-2">
-                        <span class="badge ${team === 'blue' ? 'text-bg-primary' : 'text-bg-danger'} fs-6">${info.name}</span>
-                        <span class="small text-secondary">${team === 'blue' ? '오른쪽(→)으로 공격' : '왼쪽(←)으로 공격'}</span>
-                        <select class="form-select form-select-sm ms-auto w-auto" id="${team}-formation" data-team="${team}" aria-label="${info.name} 포메이션">${options}</select>
-                    </div>
-                </div>`;
-        }
-
-        function syncTeamControls() {
-            for (const team of TEAMS) {
-                $(`${team}-formation`).value = state.teams[team].formation;
-            }
-        }
-
-        function setFormation(team, formation) {
-            state.teams[team].formation = formation;
-            buildTeam(team);
-            alignTeam(team, shouldMovePositions());
-            requestRender();
-            requestUiUpdate(true);
-        }
-
         function setMode(mode) {
             if (state.mode === mode) return;
             if (mode === 'tactics') pause();
@@ -1877,8 +1816,8 @@
             let text;
             if (state.mode === 'match' && rafId) text = '경기 중에는 선수와 공을 옮길 수 없어요. 일시정지하면 끌어서 장면을 바꿀 수 있습니다.';
             else if (state.mode === 'match' && isMatchLive()) text = '일시정지 중: 선수를 끌어 옮기면 영역이 어떻게 바뀌는지 볼 수 있어요. ‘전술판’으로 가면 이 장면을 그대로 분석합니다.';
-            else if (state.mode === 'match') text = '▶ 시작을 누르면 전술판의 기준 대형으로 킥오프합니다. 같은 시드 + 같은 전술이면 같은 경기가 재현돼요.';
-            else text = '선수와 공을 끌어 옮겨 보세요(공을 선수 가까이에 놓으면 그 선수가 공을 가져요).';
+            else if (state.mode === 'match') text = '▶ 시작을 누르면 전술판에서 만든 배치로 킥오프합니다. 같은 시드 + 같은 배치면 같은 경기가 재현돼요.';
+            else text = '블루는 오른쪽(→), 레드는 왼쪽(←)으로 공격해요. 선수와 공을 끌어 나만의 포메이션을 만들어 보세요(공을 선수 가까이에 놓으면 그 선수가 공을 가져요).';
             setText($('canvasHint'), text);
             $('laneLegend').classList.toggle('d-none', !state.layers.delaunay);
             $('btnRoleGuide').classList.toggle('d-none', !state.layers.roles);
@@ -2060,7 +1999,7 @@
                 </tr>`;
             }).join('');
             $('roleGuideBody').innerHTML = `
-                <p class="small text-secondary">블루 ${state.teams.blue.formation} · 레드 ${state.teams.red.formation} 대형에 있는 역할만 보여 줍니다.</p>
+                <p class="small text-secondary">현재 경기장에 있는 선수들의 역할만 보여 줍니다. 역할은 처음 배치 기준이고, 선수를 옮겨도 그대로예요.</p>
                 <div class="table-responsive"><table class="table table-sm align-middle small">
                     <thead><tr><th>역할</th><th>설명 · 해당 선수</th></tr></thead>
                     <tbody>${rows}</tbody>
@@ -2083,7 +2022,7 @@
                 <p class="text-center fs-3 fw-bold mb-1 stat-num"><span class="text-primary">블루 ${m.score.blue}</span> : <span class="text-danger">${m.score.red} 레드</span></p>
                 <p class="text-center fw-bold mb-3">${winner}</p>
                 <table class="table table-sm text-center align-middle stat-num mb-2"><tbody>${rows}</tbody></table>
-                <p class="small text-secondary mb-0">시드 ${m.seed} · 블루 ${state.teams.blue.formation} vs 레드 ${state.teams.red.formation}. 전술만 바꿔 같은 시드로 여러 번 실행하고 골·패스 성공률의 상대도수를 비교해 보세요.</p>`;
+                <p class="small text-secondary mb-0">시드 ${m.seed}. 배치만 바꿔 같은 시드로 여러 번 실행하고 골·패스 성공률의 상대도수를 비교해 보세요.</p>`;
             if (window.bootstrap) bootstrap.Modal.getOrCreateInstance($('resultModal')).show();
         }
 
@@ -2129,7 +2068,6 @@
             const owner = ball.ownerId ? playerById.get(ball.ownerId) : null;
             if (owner) placeBall(owner.pos, owner);
             else placeBall({ x: Number(ball.x) || FIELD.L / 2, y: Number(ball.y) || FIELD.W / 2 }, null);
-            syncTeamControls();
             requestRender();
             requestUiUpdate(true);
         }
@@ -2137,7 +2075,7 @@
         function saveSnapshot(slot) {
             const a = state.analysis;
             state.snapshots[slot] = {
-                label: `${state.teams.blue.formation} vs ${state.teams.red.formation}`,
+                label: `${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}에 담음`,
                 scene: serializeScene(),
                 zones: computeZoneStats(a.view).map(s => s.blue / (s.total || 1)),
                 total: a.teamArea.blue / a.totalArea
@@ -2184,21 +2122,12 @@
             }
             state.ball = createBall();
             state.match = createMatch(readSeed());
-            syncTeamControls();
             requestRender();
             requestUiUpdate(true);
             showToast('처음 상태로 되돌렸어요.');
         }
 
         function bindControls() {
-            $('bluePanel').innerHTML = teamPanelHtml('blue');
-            $('redPanel').innerHTML = teamPanelHtml('red');
-            syncTeamControls();
-
-            document.querySelectorAll('select[data-team]').forEach(select => {
-                select.addEventListener('change', () => setFormation(select.dataset.team, select.value));
-            });
-
             $('modeTactics').addEventListener('click', () => setMode('tactics'));
             $('modeMatch').addEventListener('click', () => setMode('match'));
 
@@ -2256,11 +2185,6 @@
         function init() {
             TEAMS.forEach(team => { buildTeam(team); alignTeam(team, true); });
             bindControls();
-            if (window.innerWidth < 768) {                 // 모바일: 팀 설정 접기
-                $('teamSettings').classList.remove('show');
-                $('teamSettingsToggle').classList.add('collapsed');
-                $('teamSettingsToggle').setAttribute('aria-expanded', 'false');
-            }
             resizeCanvas();
             render();
             updateControlsState();
