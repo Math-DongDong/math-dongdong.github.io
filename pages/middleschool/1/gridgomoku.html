@@ -454,6 +454,27 @@
         function waitingCollRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}/waiting`); }
         function matchLockRef(roomCode) { return ref(db, `gomoku_rooms/${roomCode}/matchLock`); }
         function roomIndexRef() { return ref(db, 'gomoku_room_index'); }
+
+        /**
+         * 방별 기기 표시값 — 참가자 칸에 기기 원본 ID 대신 저장합니다.
+         * 원본 ID는 학번 인증용 기기 지문(student_auth)과 이어 붙일 수 있어 누구나 읽는 칸에 두지 않습니다.
+         * 같은 기기 · 같은 방이면 늘 같은 값이라 '내 기기로 재접속' 판정은 그대로 됩니다.
+         */
+        async function getRoomDeviceTag(code) {
+            const source = `mathdongdong|room-device|v1|${code}|${getDeviceId()}`;
+            try {
+                const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+                return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+            } catch (e) {
+                // https가 아닌 환경(파일 직접 열기 등) — 원본이 드러나지 않는 간단한 해시로 대신합니다
+                let h1 = 0x811c9dc5, h2 = 0x01000193;
+                for (let i = 0; i < source.length; i++) {
+                    h1 = Math.imul(h1 ^ source.charCodeAt(i), 16777619) >>> 0;
+                    h2 = Math.imul(h2 + source.charCodeAt(i), 2246822519) >>> 0;
+                }
+                return 'h' + h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+            }
+        }
         const roomKit = rtdbRoom(db, {
             roomsPath: 'gomoku_rooms', indexPath: 'gomoku_room_index',
             linked: [{ fs: 'gomoku_records', subs: ['nicknames'] }]   // 방 목록(room_registry)에 함께 적힐 이름표
@@ -595,7 +616,8 @@
                     //  Firestore 이름표가 방 안 유일성을 이미 보장하므로 이 경로는
                     //  거의 타지 않습니다. 안전망으로 남겨 둡니다.
                     // ─────────────────────────────────────────────────────
-                    const myDeviceId = getDeviceId();
+                    const myDeviceId = await getRoomDeviceTag(code);
+                    const legacyDeviceId = getDeviceId();   // 예전 버전이 저장한 원본 ID — 재접속 판정에만 쓰고 다시 저장하지 않습니다
                     let joined = false;
 
                     for (let attempt = 0; attempt < 5 && !joined; attempt++) {
@@ -606,7 +628,7 @@
                             const lastBeat = typeof pData.lastHeartbeat === 'number' ? pData.lastHeartbeat : 0;
                             const diff = getServerTime() - lastBeat;
                             const looksOnline = (diff <= OFFLINE_MS && pData.status === 'online');
-                            const isMyDevice = !!pData.deviceId && pData.deviceId === myDeviceId;
+                            const isMyDevice = !!pData.deviceId && (pData.deviceId === myDeviceId || pData.deviceId === legacyDeviceId);
 
                             if (!isMyDevice) {
                                 if (looksOnline) {
