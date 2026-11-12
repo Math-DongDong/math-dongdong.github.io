@@ -85,10 +85,6 @@
             cursor: pointer;
         }
 
-        .player-table tbody tr {
-            cursor: pointer;
-        }
-
         .legend-dot {
             display: inline-block;
             width: 0.75rem;
@@ -189,15 +185,10 @@
                 <div class="collapse d-md-block" id="layerCollapse">
                     <div class="layer-toggles d-flex flex-wrap align-items-center column-gap-1 row-gap-1 small mb-2">
                         <span class="fw-bold text-secondary me-1"><i class="bi bi-layers"></i> 레이어</span>
-                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerCells" data-layer="cells" checked><label class="form-check-label" for="layerCells">영역</label></div>
                         <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerAreas" data-layer="areas" checked><label class="form-check-label" for="layerAreas">넓이</label></div>
                         <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerDelaunay" data-layer="delaunay"><label class="form-check-label" for="layerDelaunay">델로네</label></div>
                         <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerPassLanes" data-layer="passLanes"><label class="form-check-label" for="layerPassLanes">패스길</label></div>
-                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerBisector" data-layer="bisector"><label class="form-check-label" for="layerBisector">수직이등분선</label></div>
-                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerThirds" data-layer="thirds"><label class="form-check-label" for="layerThirds">3분할</label></div>
-                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerVertices" data-layer="vertices"><label class="form-check-label" for="layerVertices">꼭짓점 좌표</label></div>
                         <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerRoles" data-layer="roles"><label class="form-check-label" for="layerRoles">역할</label></div>
-                        <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="layerExcludeGK" data-layer="excludeGK"><label class="form-check-label" for="layerExcludeGK">GK 제외</label></div>
                         <div class="d-flex align-items-center gap-2 ms-md-auto">
                             <label for="cellOpacity" class="text-secondary"><i class="bi bi-circle-half"></i> 투명도</label>
                             <input type="range" class="form-range" id="cellOpacity" min="10" max="90" step="5" value="60" style="width: 110px;">
@@ -330,26 +321,6 @@
                 <div class="card shadow-sm">
                     <div class="card-header bg-white fw-bold"><i class="bi bi-person-bounding-box"></i> 선택한 선수</div>
                     <div class="card-body" id="selectedInfo"></div>
-                </div>
-                <div class="card shadow-sm">
-                    <div class="card-header bg-white fw-bold"><i class="bi bi-table"></i> 선수별 담당 넓이 (㎡)</div>
-                    <div class="card-body">
-                        <div class="row g-2">
-                            <div class="col-sm-6">
-                                <table class="table table-sm table-hover player-table mb-0">
-                                    <thead><tr class="table-primary"><th>#</th><th>역할</th><th class="text-end">넓이</th><th class="text-end">비율</th></tr></thead>
-                                    <tbody id="playerTableBlue" class="stat-num"></tbody>
-                                </table>
-                            </div>
-                            <div class="col-sm-6">
-                                <table class="table table-sm table-hover player-table mb-0">
-                                    <thead><tr class="table-danger"><th>#</th><th>역할</th><th class="text-end">넓이</th><th class="text-end">비율</th></tr></thead>
-                                    <tbody id="playerTableRed" class="stat-num"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <p class="small text-secondary mt-2 mb-0">행을 클릭하면 그 선수가 선택됩니다. 팀에서 가장 넓은 영역은 굵게 표시돼요.</p>
-                    </div>
                 </div>
             </div>
         </section>
@@ -584,7 +555,7 @@
                 blue: { formation: DEFAULT_FORMATION.blue, tactic: { ...DEFAULT_TACTIC } },
                 red: { formation: DEFAULT_FORMATION.red, tactic: { ...DEFAULT_TACTIC } }
             },
-            layers: { cells: true, areas: true, delaunay: false, passLanes: false, bisector: false, thirds: false, vertices: false, roles: false, excludeGK: false },
+            layers: { areas: true, delaunay: false, passLanes: false, roles: false },
             cellOpacity: 0.6,
             selection: [],
             placingBall: false,
@@ -811,9 +782,7 @@
         // =====================================================================
         function computeAnalysis() {
             const full = computeVoronoiCells(state.players);           // AI는 항상 22명 기준
-            const view = state.layers.excludeGK
-                ? computeVoronoiCells(state.players.filter(p => p.role !== 'GK'))
-                : full;
+            const view = full;
             const teamArea = { blue: 0, red: 0 };
             let totalArea = 0;
             for (const c of view) {
@@ -928,14 +897,11 @@
             const a = state.analysis = computeAnalysis();   // 계산은 항상, 체크박스는 그리기만 (M5)
             ctx.clearRect(0, 0, viewW, viewH);
             drawPitch();
-            if (state.layers.cells) drawCells(a.view);
-            if (state.layers.thirds) drawThirds();
+            drawCells(a.view);
             if (state.layers.delaunay) drawDelaunay(a.delaunay);
             if (state.layers.passLanes) drawPassLanes(a);
             drawSelectionCells(a);
             if (state.layers.areas) drawAreaLabels(a.view);
-            if (state.layers.bisector) drawBisectorTool();
-            if (state.layers.vertices) drawVertexLabels(a);
             drawBallPath();
             drawPlayers();
             drawBall();
@@ -1069,21 +1035,6 @@
             }
         }
 
-        function drawThirds() {
-            ctx.save();
-            ctx.setLineDash([8, 6]);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-            ctx.lineWidth = 2;
-            lineM(35, 0, 35, FIELD.W);
-            lineM(70, 0, 70, FIELD.W);
-            ctx.restore();
-            const size = clamp(Math.round(scale * 1.25), 10, 14);
-            [['블루 진영 ⅓', 17.5], ['중원 ⅓', 52.5], ['레드 진영 ⅓', 87.5]].forEach(([label, x]) => {
-                const s = toScreen(x, FIELD.W - 2.2);   // 아래쪽: 경기 모드 점수판과 겹치지 않게
-                drawTextOutlined(label, s.x, s.y, { size });
-            });
-        }
-
         function drawDelaunay(edges) {
             ctx.strokeStyle = 'rgba(15, 23, 42, 0.8)';
             ctx.lineWidth = 1.4;
@@ -1154,99 +1105,7 @@
             }
         }
 
-        function drawBisectorTool() {
-            if (state.selection.length < 2) return;
-            const p = playerById.get(state.selection[0]).pos, q = playerById.get(state.selection[1]).pos;
-            if (dist(p, q) < 0.01) return;
-            const P = toScreen(p.x, p.y), Q = toScreen(q.x, q.y);
-            const M = { x: (P.x + Q.x) / 2, y: (P.y + Q.y) / 2 };
-            const len = Math.hypot(Q.x - P.x, Q.y - P.y);
-            const ux = (Q.x - P.x) / len, uy = (Q.y - P.y) / len;
-            const vx = -uy, vy = ux;
-            const far = (FIELD.L + FIELD.W) * scale;
-            const field = toScreen(0, 0);
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(field.x, field.y, FIELD.L * scale, FIELD.W * scale);
-            ctx.clip();
-            ctx.lineCap = 'round';
-            [['rgba(0, 0, 0, 0.55)', 5.5], ['#fde047', 2.5]].forEach(([color, width]) => {
-                ctx.strokeStyle = color;
-                ctx.lineWidth = width;
-                ctx.beginPath();
-                ctx.moveTo(M.x - vx * far, M.y - vy * far);
-                ctx.lineTo(M.x + vx * far, M.y + vy * far);
-                ctx.stroke();
-            });
-            ctx.restore();
-
-            // 선분 PQ
-            ctx.save();
-            ctx.setLineDash([7, 5]);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(Q.x, Q.y); ctx.stroke();
-            ctx.restore();
-
-            // 같은 길이 표시(PM = MQ)
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            [[P, M], [M, Q]].forEach(([A, B]) => {
-                const cx = (A.x + B.x) / 2, cy = (A.y + B.y) / 2;
-                ctx.beginPath();
-                ctx.moveTo(cx - vx * 6, cy - vy * 6);
-                ctx.lineTo(cx + vx * 6, cy + vy * 6);
-                ctx.stroke();
-            });
-
-            // 직각 기호
-            const s = Math.max(8, 1.1 * scale);
-            ctx.strokeStyle = '#fde047';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(M.x + ux * s, M.y + uy * s);
-            ctx.lineTo(M.x + ux * s + vx * s, M.y + uy * s + vy * s);
-            ctx.lineTo(M.x + vx * s, M.y + vy * s);
-            ctx.stroke();
-
-            // 중점
-            ctx.fillStyle = '#fde047';
-            ctx.strokeStyle = '#0f172a';
-            ctx.beginPath(); ctx.arc(M.x, M.y, 4.5, 0, TAU); ctx.fill(); ctx.stroke();
-            const size = clamp(Math.round(scale * 1.2), 10, 13);
-            drawTextOutlined('M', M.x - ux * 12 - vx * 10, M.y - uy * 12 - vy * 10, { size, color: '#fde047' });
-
-            // 라벨: 수직이등분선 위, 경기장 안쪽 지점
-            let labelPoint = null;
-            for (const k of [14, -14, 8, -8, 4, -4]) {
-                const w = toWorld(M.x + vx * k * scale, M.y + vy * k * scale);
-                if (w.x > 4 && w.x < FIELD.L - 4 && w.y > 3 && w.y < FIELD.W - 3) { labelPoint = toScreen(w.x, w.y); break; }
-            }
-            if (labelPoint) drawTextOutlined('수직이등분선', labelPoint.x, labelPoint.y, { size, color: '#fde047' });
-        }
-
         const fmtCoord = v => `(${v.x.toFixed(1)}, ${(FIELD.W - v.y).toFixed(1)})`;   // 원점: 왼쪽 아래 모서리
-
-        function drawVertexLabels(a) {
-            if (!state.selection.length) return;
-            const cell = a.viewById.get(state.selection[0]);
-            if (!cell) return;
-            const size = clamp(Math.round(scale * 1.05), 9, 12);
-            const c = toScreen(cell.centroid.x, cell.centroid.y);
-            for (const v of cell.poly) {
-                const s = toScreen(v.x, v.y);
-                ctx.fillStyle = '#fde047';
-                ctx.strokeStyle = '#0f172a';
-                ctx.lineWidth = 1.5;
-                ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, TAU); ctx.fill(); ctx.stroke();
-                const dx = s.x - c.x, dy = s.y - c.y, d = Math.hypot(dx, dy) || 1;
-                let lx = s.x + dx / d * 10, ly = s.y + dy / d * 10;
-                lx = clamp(lx, 40, viewW - 40);
-                ly = clamp(ly, 8, viewH - 8);
-                drawTextOutlined(fmtCoord(v), lx, ly, { size, align: dx >= 0 ? 'left' : 'right', color: '#fef9c3' });
-            }
-        }
 
         function drawBallPath() {
             const b = state.ball;
@@ -2105,7 +1964,6 @@
             let text;
             if (state.placingBall) text = '⚽ 공을 줄 선수를 클릭하거나, 공을 놓을 빈 곳을 클릭하세요.';
             else if (state.mode === 'match' && rafId) text = '경기 중에는 선수를 클릭해 선택만 할 수 있어요. 일시정지하면 선수를 끌어 장면을 바꿀 수 있습니다.';
-            else if (state.layers.bisector && state.selection.length < 2) text = '수직이등분선 도구: 선수 2명을 차례로 클릭하세요. 두 영역의 경계와 겹치는지 확인해 보세요!';
             else if (state.mode === 'match' && isMatchLive()) text = '일시정지 중: 선수를 끌어 옮기면 영역이 어떻게 바뀌는지 볼 수 있어요. ‘전술판’으로 가면 이 장면을 그대로 분석합니다.';
             else if (state.mode === 'match') text = '▶ 시작을 누르면 전술판의 기준 대형으로 킥오프합니다. 같은 시드 + 같은 전술이면 같은 경기가 재현돼요.';
             else text = '선수를 끌어 옮기고, 클릭해 선택하세요(최대 2명). 좌표 원점은 경기장 왼쪽 아래 모서리, 단위는 m입니다.';
@@ -2135,7 +1993,6 @@
             if (!a) return;
             updateDominanceBar(a);
             updateZoneTable(a);
-            updatePlayerTables(a);
             updateSelectedCard(a);
             updateHint();
             if (state.mode === 'match') updateMatchPanel();
@@ -2179,27 +2036,7 @@
             const n = a.view.length;
             const ok = Math.abs(a.totalArea - FIELD_AREA) < 0.1;
             setText($('invariantText'),
-                `✔ 검증: 셀 ${n}개 넓이의 합 = ${fmtNum(a.totalArea, 1)}㎡ ${ok ? '= 105 × 68 ✓' : '(오차 발생!)'} · 델로네 변 ${a.delaunay.length}개 (최대 3n − 6 = ${3 * n - 6}개)` +
-                (state.layers.excludeGK ? ' · GK 제외 모드' : ''));
-        }
-
-        function updatePlayerTables(a) {
-            for (const team of TEAMS) {
-                const rows = teamPlayers[team];
-                const areas = rows.map(p => (a.viewById.get(p.id) || { area: null }).area);
-                const maxArea = Math.max(...areas.filter(v => v !== null));
-                const html = rows.map((p, i) => {
-                    const area = areas[i];
-                    const selected = state.selection.includes(p.id) ? 'table-warning' : '';
-                    const bold = area !== null && area === maxArea ? 'fw-bold' : '';
-                    return `<tr data-player="${p.id}" class="${selected} ${bold}">
-                        <td>${p.number}</td><td>${p.role}</td>
-                        <td class="text-end">${area === null ? '–' : fmtNum(area, 1)}</td>
-                        <td class="text-end">${area === null ? '–' : pct(area / a.totalArea)}</td>
-                    </tr>`;
-                }).join('');
-                setHtml($(team === 'blue' ? 'playerTableBlue' : 'playerTableRed'), html);
-            }
+                `✔ 검증: 셀 ${n}개 넓이의 합 = ${fmtNum(a.totalArea, 1)}㎡ ${ok ? '= 105 × 68 ✓' : '(오차 발생!)'} · 델로네 변 ${a.delaunay.length}개 (최대 3n − 6 = ${3 * n - 6}개)`);
         }
 
         let vertexListOpen = false;
@@ -2214,11 +2051,8 @@
                 <span class="legend-dot" style="background:${SELECT_COLORS[index]}"></span>
                 <span class="badge" style="background:${info.color}">${playerName(p)}</span>
                 <strong>${p.role}</strong>
-                <span class="ms-auto fw-bold stat-num">${cell ? fmtNum(cell.area, 1) + '㎡' : '영역 없음'}</span>
+                <span class="ms-auto fw-bold stat-num">${fmtNum(cell.area, 1)}㎡</span>
             </div>`;
-            if (!cell) {
-                return `<div class="mb-3">${header}<div class="small text-secondary">GK 제외 모드라서 영역 계산에서 빠졌어요.</div></div>`;
-            }
             const neighbors = [...cell.neighbors]
                 .map(id => playerById.get(id))
                 .sort((x, y) => (x.team === p.team ? 0 : 1) - (y.team === p.team ? 0 : 1) || x.number - y.number)
@@ -2247,7 +2081,6 @@
             return `<div class="alert alert-light border small mb-0">
                 <div class="fw-bold mb-1"><i class="bi bi-rulers"></i> 두 선수 사이</div>
                 거리 ${d.toFixed(2)}m · 중점 M ${fmtCoord(mid)}<br>${message}
-                ${state.layers.bisector ? '' : '<div class="text-secondary mt-1">레이어에서 ‘수직이등분선’을 켜면 직접 확인할 수 있어요.</div>'}
             </div>`;
         }
 
@@ -2479,8 +2312,7 @@
                 label: `${state.teams.blue.formation} vs ${state.teams.red.formation}`,
                 scene: serializeScene(),
                 zones: computeZoneStats(a.view).map(s => s.blue / (s.total || 1)),
-                total: a.teamArea.blue / a.totalArea,
-                excludeGK: state.layers.excludeGK
+                total: a.teamArea.blue / a.totalArea
             };
             $('btnLoad' + slot).disabled = false;
             renderCompare();
@@ -2506,7 +2338,7 @@
                 const idx = i < ZONES.length ? i : null;
                 return `<tr><th scope="row" class="fw-semibold">${name}</th>${cell(A, idx)}${cell(B, idx)}${diff(idx)}</tr>`;
             }).join('');
-            const head = s => (s ? `${s.label}${s.excludeGK ? ' (GK 제외)' : ''}` : '비어 있음');
+            const head = s => (s ? s.label : '비어 있음');
             $('compareArea').innerHTML = `
                 <div class="table-responsive"><table class="table table-sm align-middle stat-num mb-1">
                     <thead><tr><th>구역</th><th class="text-end">A <span class="fw-normal small text-secondary d-block">${head(A)}</span></th><th class="text-end">B <span class="fw-normal small text-secondary d-block">${head(B)}</span></th><th class="text-end">블루 변화<span class="fw-normal small text-secondary d-block">B − A</span></th></tr></thead>
@@ -2606,12 +2438,6 @@
                 });
             });
 
-            ['playerTableBlue', 'playerTableRed'].forEach(id => {
-                $(id).addEventListener('click', e => {
-                    const row = e.target.closest('tr[data-player]');
-                    if (row) toggleSelection(row.dataset.player);
-                });
-            });
             $('selectedInfo').addEventListener('toggle', e => {
                 if (e.target.tagName === 'DETAILS') vertexListOpen = e.target.open;
             }, true);
