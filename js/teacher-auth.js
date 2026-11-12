@@ -93,11 +93,23 @@ function ensureTeacherModalDOM() {
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="teacherSchoolInput">학교명</label>
-                        <input type="text" class="form-control" id="teacherSchoolInput" placeholder="예: 동동중학교" maxlength="30">
+                        <input type="text" class="form-control" id="teacherSchoolInput" placeholder="예: 동동중학교" maxlength="30" aria-describedby="teacherSchoolHelp">
+                        <div class="form-text" id="teacherSchoolHelp">내가 만든 방의 학교가 되며, 학생 계정은 이 학교 + 학번으로 구분됩니다.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="teacherNameInput">이름</label>
-                        <input type="text" class="form-control" id="teacherNameInput" placeholder="예: 홍길동" maxlength="20">
+                        <input type="text" class="form-control" id="teacherNameInput" placeholder="예: 홍길동" maxlength="20" aria-describedby="teacherNameHelp">
+                        <div class="form-text" id="teacherNameHelp">학생이 방에 들어올 때 '담당 선생님'으로 표시됩니다.</div>
+                    </div>
+                    <div class="alert alert-light border small mb-3">
+                        <div class="fw-bold mb-1"><i class="bi bi-info-circle me-1"></i>입력한 정보는 이렇게 쓰여요</div>
+                        <ul class="mb-0 ps-3">
+                            <li><b>가입 승인</b>: 관리자가 학교명·이름·이메일을 보고 교사인지 확인합니다.</li>
+                            <li><b>학생 화면</b>: 학생이 방에 입장할 때 학교명과 담당 선생님 이름이 보입니다.</li>
+                            <li><b>학생 관리</b>: 내 방에 들어온 학생이 학생 관리 목록에 모입니다.</li>
+                            <li><b>공개 범위</b>: 학생에게는 학교명·이름만 보이고 <b>이메일은 공개되지 않습니다</b>.</li>
+                            <li><b>학교 변경</b>: 나중에 정보수정에서 학교를 바꾸면 이전 학교로 만든 방은 삭제됩니다.</li>
+                        </ul>
                     </div>
                     <div class="text-danger small fw-bold" id="teacherRegError" style="display:none;"></div>
                 </div>
