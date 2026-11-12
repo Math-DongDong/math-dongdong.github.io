@@ -2513,30 +2513,31 @@
                             <td class="td">
                                 <div class="mb-2 whitespace-pre-wrap leading-relaxed text-ink text-sm">${escapeHtml(r.content)}</div>
                             </td>
-                            <td class="td">
-
-                                <div class="p-2.5 mb-2 rounded-lg bg-board-soft/70 border border-board/20 flex justify-between items-start gap-2">
+                            <td class="td"><div class="flex flex-col items-stretch gap-2">
+                                ${r.feedback ? `
+                                <div class="p-2.5 rounded-lg bg-board-soft/70 border border-board/20 flex justify-between items-start gap-2">
                                     <div class="text-xs">
                                         <strong class="text-board"><i class="bi bi-chat-quote"></i> 피드백:</strong>
-                                        <span class="text-ink-muted ml-1">${r.feedback ? escapeHtml(r.feedback) : '(작성된 피드백 없음)'}</span>
+                                        <span class="text-ink-muted ml-1">${escapeHtml(r.feedback)}</span>
                                     </div>
-                                    <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 btn-edit-fb" data-id="${r.id}">
-                                        ${r.feedback ? '수정' : '작성'}
-                                    </button>
-                                    ${r.feedback ? `<button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 text-stamp btn-remove-fb" data-id="${r.id}"><i class="bi bi-trash3" aria-hidden="true"></i> 제거</button>` : ''}
-                                </div>
-
+                                    <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 btn-edit-fb" data-id="${r.id}">수정</button>
+                                    <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 text-stamp btn-remove-fb" data-id="${r.id}"><i class="bi bi-trash3" aria-hidden="true"></i> 제거</button>
+                                </div>` : ''}
+                                ${r.teacherView ? `
                                 <div class="p-2.5 rounded-lg bg-page/70 border border-line flex justify-between items-start gap-2">
                                     <div class="text-xs">
                                         <strong class="text-ink"><i class="bi bi-journal-text"></i> 교사 시점 (관찰):</strong>
-                                        <span class="text-ink-muted ml-1">${r.teacherView ? escapeHtml(r.teacherView) : '(변환된 교사 시점 글 없음)'}</span>
+                                        <span class="text-ink-muted ml-1">${escapeHtml(r.teacherView)}</span>
                                     </div>
-                                    <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 btn-edit-tv" data-id="${r.id}">
-                                        ${r.teacherView ? '수정' : '작성'}
-                                    </button>
-                                    ${r.teacherView ? `<button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 text-stamp btn-remove-tv" data-id="${r.id}"><i class="bi bi-trash3" aria-hidden="true"></i> 제거</button>` : ''}
-                                </div>
-                            </td>
+                                    <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 btn-edit-tv" data-id="${r.id}">수정</button>
+                                    <button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs shrink-0 text-stamp btn-remove-tv" data-id="${r.id}"><i class="bi bi-trash3" aria-hidden="true"></i> 제거</button>
+                                </div>` : ''}
+                                ${(!r.feedback || !r.teacherView) ? `
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${!r.feedback ? `<button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs text-board btn-edit-fb" data-id="${r.id}"><i class="bi bi-chat-quote" aria-hidden="true"></i> 피드백 작성</button>` : ''}
+                                    ${!r.teacherView ? `<button type="button" class="btn btn-ghost btn-sm py-0.5 px-2 text-xs btn-edit-tv" data-id="${r.id}"><i class="bi bi-journal-text" aria-hidden="true"></i> 교사시점 변환</button>` : ''}
+                                </div>` : ''}
+                            </div></td>
                             <td class="td text-center whitespace-nowrap">
                                 <div class="font-bold text-board">${r.check === 'O' ? '✓' : '-'}</div>
                                 <button type="button" class="btn btn-ghost btn-sm mt-1 py-0.5 px-2 text-xs text-stamp btn-delete-rev" data-id="${r.id}">
@@ -2649,21 +2650,36 @@
             if (!r) return;
 
             const isFeedback = field === 'feedback';
-            $('editTextModalTitle').textContent = isFeedback ? "피드백 작성 및 수정" : "교사 시점(관찰 기록) 작성 및 수정";
+            const isNew = !String(r[field] || '').trim();
+            $('editTextModalTitle').textContent = isFeedback
+                ? (isNew ? "피드백 작성" : "피드백 수정")
+                : (isNew ? "교사 시점 변환 (관찰 기록)" : "교사 시점 수정 (관찰 기록)");
             $('modalTextLabel').textContent = isFeedback ? "학생에게 보여줄 피드백" : "생활기록부용 교사 시점 관찰기록";
             $('modalMetaDateActivity').textContent = `${r.date} ${r.activity}`;
             $('modalMetaStudentId').textContent = `학번: ${r.studentId}`;
             $('modalMetaContent').textContent = r.content;
             $('modalTextInput').value = r[field] || '';
 
-            const modal = new bootstrap.Modal($('editTextModal'));
-            $('btnSaveTextModal').onclick = async () => {
+            // 같은 모달을 다시 쓰도록 getOrCreateInstance (열 때마다 new 하면 인스턴스가 쌓입니다)
+            const modal = bootstrap.Modal.getOrCreateInstance($('editTextModal'));
+            const saveBtn = $('btnSaveTextModal');
+            saveBtn.onclick = async () => {
                 const val = $('modalTextInput').value.trim();
-                await saveReviewField(reviewId, field, val);   // 관찰기록은 teacher_notes, 피드백은 기록
-                modal.hide();
-                renderAll();
+                saveBtn.disabled = true;
+                try {
+                    await saveReviewField(reviewId, field, val);   // 관찰기록은 teacher_notes, 피드백은 기록
+                    r[field] = val;
+                    modal.hide();
+                    renderAll();
+                } catch (err) {
+                    console.error('피드백 · 교사 시점 저장 오류:', err);
+                    await customAlert('저장 실패', '저장하지 못했습니다. 교사 로그인 상태와 네트워크를 확인해주세요.');
+                } finally {
+                    saveBtn.disabled = false;
+                }
             };
             modal.show();
+            $('editTextModal').addEventListener('shown.bs.modal', () => $('modalTextInput').focus(), { once: true });
         }
 
         async function removeReviewText(reviewId, field) {
