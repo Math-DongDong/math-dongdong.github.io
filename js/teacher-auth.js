@@ -218,6 +218,54 @@ function hideModalAsync(el) {
     });
 }
 
+function ensureAuthDialogModalDOM() {
+    if (document.getElementById('authDialogModal')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal fade" id="authDialogModal" tabindex="-1" aria-labelledby="authDialogTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="authDialogTitle"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-3">
+                    <p class="mb-0" id="authDialogBody" style="white-space: pre-line;"></p>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal" id="authDialogCancel">취소</button>
+                    <button type="button" class="btn rounded-3" id="authDialogOk"></button>
+                </div>
+            </div>
+        </div>
+    </div>`);
+}
+
+/**
+ * 안내·확인 모달 (alert/confirm 대체).
+ * isConfirm=true 이면 취소 버튼을 보이고, 확인 버튼을 눌렀을 때만 true로 끝납니다.
+ * type은 Bootstrap 색상 이름(primary, success, danger, warning…)입니다.
+ */
+function showAuthDialog(title, message, { isConfirm = false, confirmText = '확인', type = 'primary' } = {}) {
+    ensureAuthDialogModalDOM();
+    const modalEl = document.getElementById('authDialogModal');
+    const okBtn = document.getElementById('authDialogOk');
+    const titleEl = document.getElementById('authDialogTitle');
+
+    titleEl.textContent = title;
+    titleEl.className = `modal-title fw-bold text-${type}`;
+    document.getElementById('authDialogBody').textContent = message;
+    document.getElementById('authDialogCancel').classList.toggle('d-none', !isConfirm);
+    okBtn.textContent = confirmText;
+    okBtn.className = `btn btn-${type} rounded-3`;
+
+    return new Promise(resolve => {
+        let confirmed = false;
+        okBtn.onclick = () => { confirmed = true; modalFor(modalEl).hide(); };
+        modalEl.addEventListener('hidden.bs.modal', () => resolve(confirmed), { once: true });
+        modalFor(modalEl).show();
+    });
+}
+
 /**
  * 학교 변경 전 '이전 학교 방 삭제' 확인 모달.
  * 확인하면 모달 안에서 진행률을 보이며 지우고, 모두 지워야 true로 끝납니다.
@@ -430,16 +478,20 @@ async function showTeacherInfoModal(user, docData) {
     };
 
     document.getElementById('btnDeleteAccount').onclick = async () => {
-        if (!confirm("정말 탈퇴하시겠습니까? (이 작업은 되돌릴 수 없습니다)")) return;
+        // 모달 두 개가 겹치면 배경이 남으므로 정보수정 모달을 먼저 닫습니다
+        await hideModalAsync(modalEl);
+        const confirmed = await showAuthDialog("회원 탈퇴",
+            "정말 탈퇴하시겠습니까?\n(이 작업은 되돌릴 수 없습니다)",
+            { isConfirm: true, confirmText: '탈퇴', type: 'danger' });
+        if (!confirmed) { bsModal.show(); return; }
         try {
             await deleteDoc(doc(db, "teacher_directory", user.uid)).catch(() => { });
             await deleteDoc(doc(db, "teachers", user.uid));
             await deleteUser(user);
-            alert("탈퇴가 완료되었습니다.");
-            bsModal.hide();
+            await showAuthDialog("탈퇴 완료", "탈퇴가 완료되었습니다.", { type: 'success' });
         } catch (e) {
             console.error(e);
-            alert("탈퇴 중 오류가 발생했습니다. (다시 로그인한 후 시도해주세요)");
+            await showAuthDialog("탈퇴 실패", "탈퇴 중 오류가 발생했습니다.\n(다시 로그인한 후 시도해주세요)", { type: 'danger' });
         }
     };
 
@@ -538,15 +590,15 @@ function renderNavbarAuth(retryCount = 0) {
             signInWithPopup(auth, googleProvider).catch(err => {
                 const code = err.code || '';
                 if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+                let message = `로그인에 실패했습니다.\n오류 코드: ${code}`;
                 if (code === 'auth/popup-blocked') {
-                    alert("팝업이 차단되었습니다. 브라우저의 팝업 차단 설정을 해제한 뒤 다시 시도해주세요.");
+                    message = "팝업이 차단되었습니다. 브라우저의 팝업 차단 설정을 해제한 뒤 다시 시도해주세요.";
                 } else if (code === 'auth/unauthorized-domain') {
-                    alert("이 도메인은 Firebase에 등록되지 않았습니다.\n\nFirebase Console → Authentication → Settings → 승인된 도메인에 현재 도메인을 추가해주세요.");
+                    message = "이 도메인은 Firebase에 등록되지 않았습니다.\n\nFirebase Console → Authentication → Settings → 승인된 도메인에 현재 도메인을 추가해주세요.";
                 } else if (code === 'auth/operation-not-allowed') {
-                    alert("Google 로그인이 비활성화 상태입니다.");
-                } else {
-                    alert(`로그인에 실패했습니다.\n오류 코드: ${code}`);
+                    message = "Google 로그인이 비활성화 상태입니다.";
                 }
+                showAuthDialog("로그인 실패", message, { type: 'danger' });
             });
         };
         return;

@@ -25,6 +25,42 @@
 (function (global) {
     'use strict';
 
+    /**
+     * 확인 모달 (window.confirm 대체). 확인 버튼을 눌렀을 때만 true로 끝납니다.
+     * Bootstrap이 없는 환경이면 기본 확인창으로 대신합니다.
+     */
+    function confirmDialog(title, message, okText) {
+        if (!global.bootstrap || !global.bootstrap.Modal) {
+            return Promise.resolve(global.confirm(message));
+        }
+        let modalEl = document.getElementById('ahaConfirmModal');
+        if (!modalEl) {
+            document.body.insertAdjacentHTML('beforeend',
+                '<div class="modal fade" id="ahaConfirmModal" tabindex="-1" aria-labelledby="ahaConfirmTitle" aria-hidden="true">' +
+                '<div class="modal-dialog modal-dialog-centered"><div class="modal-content rounded-4 border-0 shadow">' +
+                '<div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold text-danger" id="ahaConfirmTitle"></h5>' +
+                '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div>' +
+                '<div class="modal-body pb-3"><p class="mb-0" id="ahaConfirmBody" style="white-space: pre-line;"></p></div>' +
+                '<div class="modal-footer border-0 pt-0">' +
+                '<button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">취소</button>' +
+                '<button type="button" class="btn btn-danger rounded-3" id="ahaConfirmOk"></button>' +
+                '</div></div></div></div>');
+            modalEl = document.getElementById('ahaConfirmModal');
+        }
+        document.getElementById('ahaConfirmTitle').textContent = title;
+        document.getElementById('ahaConfirmBody').textContent = message;
+        const okBtn = document.getElementById('ahaConfirmOk');
+        okBtn.textContent = okText || '확인';
+
+        const bsModal = global.bootstrap.Modal.getOrCreateInstance(modalEl);
+        return new Promise(function (resolve) {
+            let confirmed = false;
+            okBtn.onclick = function () { confirmed = true; bsModal.hide(); };
+            modalEl.addEventListener('hidden.bs.modal', function () { resolve(confirmed); }, { once: true });
+            bsModal.show();
+        });
+    }
+
     const CHART_H = 150;
     const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const RANK = { missed: 0, solved: 1, firstTry: 2 };
@@ -885,9 +921,12 @@
         if (missionBackBtn) { missionBackBtn.addEventListener('click', goBack); }
 
         document.getElementById('resetBtn').addEventListener('click', function () {
-            if (!window.confirm('이 주제의 학습 기록을 모두 지울까요?')) { return; }
-            Store.remove(STORAGE_KEY);
-            window.location.reload();
+            confirmDialog('학습 기록 지우기', '이 주제의 학습 기록을 모두 지울까요?\n지운 기록은 되돌릴 수 없어요.', '지우기')
+                .then(function (confirmed) {
+                    if (!confirmed) { return; }
+                    Store.remove(STORAGE_KEY);
+                    window.location.reload();
+                });
         });
 
         const toTop = document.getElementById('toTop');
