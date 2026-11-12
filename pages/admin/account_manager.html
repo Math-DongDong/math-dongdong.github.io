@@ -75,6 +75,43 @@
         </div>
     </div>
 
+    <!-- 안내 메시지 모달 -->
+    <div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="messageModalTitle"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-3">
+                    <p class="mb-0" id="messageModalBody" style="white-space: pre-line;"></p>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-primary rounded-3" data-bs-dismiss="modal">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 확인 모달 -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="confirmModalTitle"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pb-3">
+                    <p class="mb-0" id="confirmModalBody" style="white-space: pre-line;"></p>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn rounded-3" id="confirmModalOk"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="container text-center mt-5" id="loadingContent">
         <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
         <p class="mt-3 text-muted">권한을 확인하는 중입니다...</p>
@@ -124,6 +161,39 @@
             return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
+        // 안내 모달 (type: 'success' | 'danger' 등 Bootstrap 색상) — 모달이 닫히면 resolve
+        function showMessageModal(title, message, type = 'primary') {
+            const modalEl = document.getElementById('messageModal');
+            const titleEl = document.getElementById('messageModalTitle');
+            titleEl.textContent = title;
+            titleEl.className = `modal-title fw-bold text-${type}`;
+            document.getElementById('messageModalBody').textContent = message;
+            return new Promise((resolve) => {
+                modalEl.addEventListener('hidden.bs.modal', () => resolve(), { once: true });
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            });
+        }
+
+        // 확인 모달 — 확인 버튼을 누르면 true, 그 외(취소·X·바깥 클릭·Esc)는 false
+        function showConfirmModal(title, message, confirmText = '확인', type = 'primary') {
+            const modalEl = document.getElementById('confirmModal');
+            const okBtn = document.getElementById('confirmModalOk');
+            const titleEl = document.getElementById('confirmModalTitle');
+            titleEl.textContent = title;
+            titleEl.className = `modal-title fw-bold text-${type}`;
+            document.getElementById('confirmModalBody').textContent = message;
+            okBtn.textContent = confirmText;
+            okBtn.className = `btn btn-${type} rounded-3`;
+
+            const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            return new Promise((resolve) => {
+                let confirmed = false;
+                okBtn.onclick = () => { confirmed = true; bsModal.hide(); };
+                modalEl.addEventListener('hidden.bs.modal', () => resolve(confirmed), { once: true });
+                bsModal.show();
+            });
+        }
+
         // ── 권한 동기화 ────────────────────────────────────────────────
         async function grantTeacher(uid, data) {
             // ① 공개 교사 목록 (학교·이름만 — 이메일은 절대 넣지 않습니다)
@@ -153,49 +223,60 @@
 
         // ── 동작 ───────────────────────────────────────────────────────
         async function approve(uid) {
-            if (!confirm("이 교사를 승인하시겠습니까?")) return;
+            if (!await showConfirmModal("교사 승인", "이 교사를 승인하시겠습니까?", "승인", 'success')) return;
             try {
                 const snap = await getDoc(doc(db, "teachers", uid));
-                if (!snap.exists()) { alert("해당 교사 정보를 찾을 수 없습니다."); return; }
+                if (!snap.exists()) { showMessageModal("승인 실패", "해당 교사 정보를 찾을 수 없습니다.", 'danger'); return; }
 
                 await updateDoc(doc(db, "teachers", uid), { status: 'approved' });
                 const failed = await grantTeacher(uid, snap.data() || {});
 
-                alert(failed.length
-                    ? `승인은 되었지만 다음 게임의 권한 등록에 실패했습니다: ${failed.join(', ')}\n새로고침 후 다시 승인해 주세요.`
-                    : "승인되었습니다.");
+                if (failed.length) {
+                    showMessageModal("일부 권한 등록 실패",
+                        `승인은 되었지만 다음 게임의 권한 등록에 실패했습니다: ${failed.join(', ')}\n새로고침 후 다시 승인해 주세요.`, 'warning');
+                } else {
+                    showMessageModal("승인 완료", "승인되었습니다.", 'success');
+                }
                 loadTeachers();
             } catch (e) {
                 console.error(e);
-                alert("승인 처리 중 오류가 발생했습니다.");
+                showMessageModal("승인 실패", "승인 처리 중 오류가 발생했습니다.", 'danger');
             }
         }
 
         async function revoke(uid) {
-            if (!confirm("승인을 취소하시겠습니까? (대기 상태로 돌아가고, 방 관리 권한이 회수됩니다)")) return;
+            if (!await showConfirmModal("승인 취소",
+                "승인을 취소하시겠습니까?\n(대기 상태로 돌아가고, 방 관리 권한이 회수됩니다)", "승인 취소", 'warning')) return;
             try {
                 await updateDoc(doc(db, "teachers", uid), { status: 'pending' });
                 const failed = await revokeTeacher(uid);
-                alert(failed.length
-                    ? `승인은 취소되었지만 다음 게임의 권한 회수에 실패했습니다: ${failed.join(', ')}`
-                    : "승인이 취소되었습니다.");
+                if (failed.length) {
+                    showMessageModal("일부 권한 회수 실패",
+                        `승인은 취소되었지만 다음 게임의 권한 회수에 실패했습니다: ${failed.join(', ')}`, 'warning');
+                } else {
+                    showMessageModal("승인 취소 완료", "승인이 취소되었습니다.", 'success');
+                }
                 loadTeachers();
             } catch (e) {
                 console.error(e);
-                alert("처리 중 오류가 발생했습니다.");
+                showMessageModal("처리 실패", "처리 중 오류가 발생했습니다.", 'danger');
             }
         }
 
         async function removeTeacherAccount(uid) {
-            if (!confirm("이 교사 데이터를 삭제하시겠습니까?\n(계정 로그인 자체는 남으며, 다시 가입 신청할 수 있습니다)")) return;
+            const confirmed = await showConfirmModal(
+                "교사 데이터 삭제",
+                "이 교사 데이터를 삭제하시겠습니까?\n(계정 로그인 자체는 남으며, 다시 가입 신청할 수 있습니다)",
+                "삭제", 'danger');
+            if (!confirmed) return;
             try {
                 await revokeTeacher(uid);
                 await deleteDoc(doc(db, "teachers", uid));
-                alert("삭제되었습니다.\n이 선생님이 만든 방과 기록은 그대로 남아 있으니, 필요하면 각 게임 대시보드에서 정리해 주세요.");
+                showMessageModal("삭제 완료", "삭제되었습니다.\n이 선생님이 만든 방과 기록은 그대로 남아 있으니, 필요하면 각 게임 대시보드에서 정리해 주세요.", 'success');
                 loadTeachers();
             } catch (e) {
                 console.error(e);
-                alert("삭제 중 오류가 발생했습니다.");
+                showMessageModal("삭제 실패", "삭제 중 오류가 발생했습니다.", 'danger');
             }
         }
 
@@ -265,8 +346,9 @@
                 document.getElementById('adminContent').style.display = 'block';
                 loadTeachers();
             } else {
-                alert("관리자 권한이 없습니다.");
-                window.location.href = '../../index.html';
+                document.getElementById('loadingContent').style.display = 'none';
+                showMessageModal("접근 불가", "관리자 권한이 없습니다.\n메인 페이지로 이동합니다.", 'danger')
+                    .then(() => { window.location.href = '../../index.html'; });
             }
         });
     </script>
