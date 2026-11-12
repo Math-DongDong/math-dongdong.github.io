@@ -135,7 +135,7 @@
               <button id="scatterButton" class="btn btn-outline-secondary"><i class="bi bi-arrows-angle-expand"></i> 흩어 놓기</button>
             </div>
           </div>
-          <p class="small text-secondary mb-2">외각을 <b>평행이동</b>하여 한 점에 모아 봅니다.</p>
+          <p class="small text-secondary mb-2">외각을 드래그하여 <b>평행이동</b>으로 가운데 점에 모아 봅니다.</p>
 
           <canvas id="collectCanvas" class="board-canvas"></canvas>
 
@@ -178,6 +178,11 @@
     const LOGICAL_HEIGHT = 480;
     const MAX_VERTICES = 12;
     const MIN_TURN = Math.PI / 180; // 1° 이하의 외각(거의 일직선)은 허용하지 않음
+    const COLLECTED_RADIUS = 150;   // 중심에 모였을 때 부채꼴 반지름
+    const SCATTERED_RADIUS = 34;    // 꼭짓점에 있을 때 부채꼴 반지름
+    const SNAP_DISTANCE = 36;       // 이 거리 안에 놓으면 중심/꼭짓점에 붙음
+    const ANIMATION_DURATION = 650;
+    const COLLECT_CENTER = { x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2 };
     const VERTEX_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899',
       '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#a16207'];
     const VERTEX_NAMES = 'ABCDEFGHIJKL';
@@ -198,8 +203,8 @@
       showLabels: true,
       warningUntil: 0,
       warningTimer: null,
-      progress: [],   // 각 외각의 모임 진행도(0~1)
-      target: []      // 목표 진행도(0 또는 1)
+      wedges: [],     // 오른쪽 외각 조각: { anchor: 'vertex' | 'center' | 'free', freePoint, animation }
+      wedgeDrag: null
     };
     const records = {};
     let animationId = null;
@@ -435,6 +440,10 @@
       return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     }
 
+    function getDistance(pointA, pointB) {
+      return Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
+    }
+
     function getFitMapping(points) {
       const xs = points.map(point => point.x);
       const ys = points.map(point => point.y);
@@ -447,6 +456,56 @@
       return point => ({ x: point.x * scale + offsetX, y: point.y * scale + offsetY });
     }
 
+    function getCollectLayout() {
+      const { exteriorAngles, degrees } = analyzePolygon();
+      const mappedPoints = state.points.map(getFitMapping(state.points));
+      return { exteriorAngles, degrees, mappedPoints };
+    }
+
+    function getAnchorPoint(index, mappedPoints) {
+      const wedge = state.wedges[index];
+      if (wedge.anchor === 'center') return COLLECT_CENTER;
+      if (wedge.anchor === 'free') return wedge.freePoint;
+      return mappedPoints[index];
+    }
+
+    function getWedgePosition(index, mappedPoints, now) {
+      const anchorPoint = getAnchorPoint(index, mappedPoints);
+      const animation = state.wedges[index].animation;
+      if (!animation) return anchorPoint;
+      const progress = easeInOut(clamp((now - animation.startTime) / ANIMATION_DURATION, 0, 1));
+      return {
+        x: animation.from.x + (anchorPoint.x - animation.from.x) * progress,
+        y: animation.from.y + (anchorPoint.y - animation.from.y) * progress
+      };
+    }
+
+    // 조각의 위치에 따라 크기 결정 (꼭짓점 근처: 작게, 중심: 크게)
+    function getWedgeShapes(mappedPoints, now = performance.now()) {
+      return state.wedges.map((_, index) => {
+        const position = getWedgePosition(index, mappedPoints, now);
+        const referenceDistance = Math.max(getDistance(mappedPoints[index], COLLECT_CENTER), 120);
+        const closeness = clamp(1 - getDistance(position, COLLECT_CENTER) / referenceDistance, 0, 1);
+        const radius = SCATTERED_RADIUS + (COLLECTED_RADIUS - SCATTERED_RADIUS) * easeInOut(closeness);
+        return { position, radius, closeness };
+      });
+    }
+
+    function isWedgeCollected(index) {
+      const wedge = state.wedges[index];
+      return wedge.anchor === 'center' && !wedge.animation;
+    }
+
+    // 드래그 중인 조각을 맨 위에 그림
+    function getDrawOrder() {
+      const order = state.wedges.map((_, index) => index);
+      if (state.wedgeDrag) {
+        order.splice(state.wedgeDrag.index, 1);
+        order.push(state.wedgeDrag.index);
+      }
+      return order;
+    }
+
     function drawCollectBoard() {
       const context = collectContext;
       drawGrid(context);
@@ -456,14 +515,13 @@
         return;
       }
 
-      const { exteriorAngles, degrees } = analyzePolygon();
-      const mapPoint = getFitMapping(state.points);
-      const mappedPoints = state.points.map(mapPoint);
-      const center = { x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2 };
-      const averageProgress = state.progress.reduce((sum, value) => sum + value, 0) / state.progress.length;
+      const { exteriorAngles, degrees, mappedPoints } = getCollectLayout();
+      const shapes = getWedgeShapes(mappedPoints);
+      const center = COLLECT_CENTER;
+      const averageCloseness = shapes.reduce((sum, shape) => sum + shape.closeness, 0) / shapes.length;
 
       // 흐린 다각형
-      context.globalAlpha = 1 - 0.75 * averageProgress;
+      context.globalAlpha = 1 - 0.75 * averageCloseness;
       tracePolygon(context, mappedPoints, true);
       context.fillStyle = 'rgba(37, 99, 235, 0.05)';
       context.fill();
@@ -475,47 +533,75 @@
       context.globalAlpha = 1;
 
       // 원 안내선
-      const collectedRadius = 150;
       context.setLineDash([4, 6]);
       context.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       context.lineWidth = 1;
       context.beginPath();
-      context.arc(center.x, center.y, collectedRadius, 0, Math.PI * 2);
+      context.arc(center.x, center.y, COLLECTED_RADIUS, 0, Math.PI * 2);
       context.stroke();
       context.setLineDash([]);
 
-      exteriorAngles.forEach((angle, index) => {
-        const progress = easeInOut(state.progress[index]);
-        const startPoint = mappedPoints[index];
-        const position = {
-          x: startPoint.x + (center.x - startPoint.x) * progress,
-          y: startPoint.y + (center.y - startPoint.y) * progress
-        };
-        const radius = 34 + (collectedRadius - 34) * progress;
+      // 드래그 중: 중심에 붙는 영역 강조
+      if (state.wedgeDrag) {
+        const isNearCenter = getDistance(shapes[state.wedgeDrag.index].position, center) <= SNAP_DISTANCE;
+        context.beginPath();
+        context.arc(center.x, center.y, SNAP_DISTANCE, 0, Math.PI * 2);
+        context.fillStyle = isNearCenter ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.12)';
+        context.fill();
+      }
+
+      getDrawOrder().forEach(index => {
+        const angle = exteriorAngles[index];
+        const { position, radius, closeness } = shapes[index];
         const color = VERTEX_COLORS[index];
-        drawWedge(context, position, radius, angle.incomingDirection, angle.turn, color, 0.35 + 0.3 * progress);
+        drawWedge(context, position, radius, angle.incomingDirection, angle.turn, color, 0.35 + 0.3 * closeness);
+
+        if (state.wedgeDrag?.index === index) {
+          context.beginPath();
+          context.arc(position.x, position.y, 5, 0, Math.PI * 2);
+          context.fillStyle = color;
+          context.fill();
+        }
 
         if (state.showLabels) {
           const labelAngle = angle.incomingDirection + angle.turn / 2;
-          const labelRadius = progress > 0.5 ? radius * 0.68 : radius + 14;
+          const labelRadius = closeness > 0.5 ? radius * 0.68 : radius + 14;
           drawText(context, `${degrees[index]}°`, position.x + labelRadius * Math.cos(labelAngle), position.y + labelRadius * Math.sin(labelAngle),
             color, '700 15px Pretendard Variable, sans-serif');
         }
       });
 
       // 완성
-      if (state.progress.every(value => value >= 1)) {
+      if (state.wedges.every((_, index) => isWedgeCollected(index))) {
         context.strokeStyle = '#111827';
         context.lineWidth = 2.5;
         context.beginPath();
-        context.arc(center.x, center.y, collectedRadius, 0, Math.PI * 2);
+        context.arc(center.x, center.y, COLLECTED_RADIUS, 0, Math.PI * 2);
         context.stroke();
-        drawText(context, '한 바퀴 = 360°', center.x, center.y + collectedRadius + 24, '#111827', '800 18px Pretendard Variable, sans-serif');
+        drawText(context, '한 바퀴 = 360°', center.x, center.y + COLLECTED_RADIUS + 24, '#111827', '800 18px Pretendard Variable, sans-serif');
       }
       context.beginPath();
       context.arc(center.x, center.y, 4, 0, Math.PI * 2);
       context.fillStyle = '#111827';
       context.fill();
+    }
+
+    // 부채꼴 내부 → 꼭짓점 근처 순으로 조각 찾기 (위에 그려진 조각 우선)
+    function findWedgeIndex(point) {
+      const { exteriorAngles, mappedPoints } = getCollectLayout();
+      const shapes = getWedgeShapes(mappedPoints);
+      const order = getDrawOrder().reverse();
+      const insideIndex = order.find(index => {
+        const { position, radius } = shapes[index];
+        if (getDistance(point, position) > radius + 4) return false;
+        const { incomingDirection, turn } = exteriorAngles[index];
+        const relativeAngle = normalizeAngle(Math.atan2(point.y - position.y, point.x - position.x) - incomingDirection);
+        return turn > 0 ? relativeAngle >= 0 && relativeAngle <= turn : relativeAngle <= 0 && relativeAngle >= turn;
+      });
+      if (insideIndex !== undefined) return insideIndex;
+      const hitRadius = getHitRadius(collectCanvas);
+      const apexIndex = order.find(index => getDistance(point, shapes[index].position) <= hitRadius);
+      return apexIndex === undefined ? -1 : apexIndex;
     }
 
     /* ---------- 정보 패널 ---------- */
@@ -552,17 +638,17 @@
       setCollectButtonsDisabled(false);
 
       badgeContainer.innerHTML = degrees.map((degree, index) => `
-        <span class="angle-badge ${state.target[index] ? '' : 'pending'}">
+        <span class="angle-badge ${isWedgeCollected(index) ? '' : 'pending'}">
           <span class="dot" style="background:${VERTEX_COLORS[index]}"></span>∠${VERTEX_NAMES[index]}의 외각 <b>${degree}°</b>
         </span>`).join('');
 
-      const collectedDegrees = degrees.filter((degree, index) => state.progress[index] >= 1);
+      const collectedDegrees = degrees.filter((degree, index) => isWedgeCollected(index));
       const isComplete = collectedDegrees.length === count;
       const collectedSum = collectedDegrees.reduce((sum, degree) => sum + degree, 0);
 
       if (collectedDegrees.length === 0) {
         sumText.className = 'alert alert-light border mt-3 mb-0 py-2 small';
-        sumText.innerHTML = '<b>하나씩</b> 또는 <b>모두 모으기</b>를 눌러 외각을 한 점에 모아 보세요.';
+        sumText.innerHTML = '외각을 <b>드래그</b>해서 가운데 점으로 옮기거나, 버튼을 눌러 한 점에 모아 보세요.';
       } else if (!isComplete) {
         sumText.className = 'alert alert-light border mt-3 mb-0 py-2 small';
         sumText.innerHTML = `지금까지 모은 외각의 합: ${collectedDegrees.join('° + ')}° = <b>${collectedSum}°</b>`;
@@ -599,26 +685,29 @@
     function startAnimation() {
       if (animationId) return;
       const step = () => {
-        let isMoving = false;
-        state.progress.forEach((value, index) => {
-          const target = state.target[index];
-          if (value === target) return;
-          // 모을 때는 앞의 외각이 어느 정도 이동한 뒤 차례로 출발
-          const canStart = target === 0 || index === 0 || state.target[index - 1] === 0 || state.progress[index - 1] > 0.35;
-          if (canStart) {
-            state.progress[index] = target > value ? Math.min(1, value + 0.03) : Math.max(0, value - 0.05);
-          }
-          isMoving = true;
+        const now = performance.now();
+        state.wedges.forEach(wedge => {
+          if (wedge.animation && now >= wedge.animation.startTime + ANIMATION_DURATION) wedge.animation = null;
         });
         renderAll();
-        animationId = isMoving ? requestAnimationFrame(step) : null;
+        animationId = state.wedges.some(wedge => wedge.animation) ? requestAnimationFrame(step) : null;
       };
       animationId = requestAnimationFrame(step);
     }
 
+    // 조각을 현재 위치에서 새 자리(anchor)로 이동
+    function moveWedge(index, anchor, delay = 0) {
+      const { mappedPoints } = getCollectLayout();
+      const now = performance.now();
+      const from = getWedgePosition(index, mappedPoints, now);
+      const wedge = state.wedges[index];
+      wedge.anchor = anchor;
+      wedge.animation = getDistance(from, getAnchorPoint(index, mappedPoints)) < 0.5 ? null : { from, startTime: now + delay };
+    }
+
     function resetCollection() {
-      state.progress = state.points.map(() => 0);
-      state.target = state.points.map(() => 0);
+      state.wedges = state.points.map(() => ({ anchor: 'vertex', freePoint: null, animation: null }));
+      state.wedgeDrag = null;
     }
 
     /* ---------- 왼쪽 캔버스 조작 ---------- */
@@ -730,19 +819,70 @@
       renderAll();
     });
 
+    /* ---------- 오른쪽 캔버스 조작 (외각 드래그) ---------- */
+    collectCanvas.addEventListener('pointerdown', event => {
+      if (!state.isClosed) return;
+      const point = toLogicalPoint(event, collectCanvas);
+      const index = findWedgeIndex(point);
+      if (index < 0) return;
+      const { mappedPoints } = getCollectLayout();
+      const position = getWedgePosition(index, mappedPoints, performance.now());
+      Object.assign(state.wedges[index], { anchor: 'free', freePoint: position, animation: null });
+      state.wedgeDrag = { index, offsetX: position.x - point.x, offsetY: position.y - point.y };
+      collectCanvas.setPointerCapture(event.pointerId);
+      collectCanvas.style.cursor = 'grabbing';
+      renderAll();
+    });
+
+    collectCanvas.addEventListener('pointermove', event => {
+      if (!state.isClosed) return;
+      const point = toLogicalPoint(event, collectCanvas);
+      if (state.wedgeDrag) {
+        state.wedges[state.wedgeDrag.index].freePoint = {
+          x: clamp(point.x + state.wedgeDrag.offsetX, 0, LOGICAL_WIDTH),
+          y: clamp(point.y + state.wedgeDrag.offsetY, 0, LOGICAL_HEIGHT)
+        };
+        renderAll();
+      } else {
+        collectCanvas.style.cursor = findWedgeIndex(point) >= 0 ? 'grab' : 'default';
+      }
+    });
+
+    // 놓은 위치가 중심(또는 원래 꼭짓점) 근처면 그 자리에 붙임
+    function finishWedgeDrag() {
+      if (!state.wedgeDrag) return;
+      const index = state.wedgeDrag.index;
+      const freePoint = state.wedges[index].freePoint;
+      const { mappedPoints } = getCollectLayout();
+      state.wedgeDrag = null;
+      if (getDistance(freePoint, COLLECT_CENTER) <= SNAP_DISTANCE) moveWedge(index, 'center');
+      else if (getDistance(freePoint, mappedPoints[index]) <= SNAP_DISTANCE) moveWedge(index, 'vertex');
+      collectCanvas.style.cursor = 'grab';
+      startAnimation();
+      renderAll();
+    }
+
+    collectCanvas.addEventListener('pointerup', finishWedgeDrag);
+    collectCanvas.addEventListener('pointercancel', finishWedgeDrag);
+
     document.getElementById('stepButton').addEventListener('click', () => {
-      const nextIndex = state.target.findIndex(value => value === 0);
-      if (nextIndex >= 0) state.target[nextIndex] = 1;
+      const nextIndex = state.wedges.findIndex(wedge => wedge.anchor !== 'center');
+      if (nextIndex >= 0) moveWedge(nextIndex, 'center');
       startAnimation();
     });
 
     document.getElementById('collectAllButton').addEventListener('click', () => {
-      state.target = state.target.map(() => 1);
+      let order = 0;
+      state.wedges.forEach((wedge, index) => {
+        if (wedge.anchor !== 'center') moveWedge(index, 'center', 180 * order++);
+      });
       startAnimation();
     });
 
     document.getElementById('scatterButton').addEventListener('click', () => {
-      state.target = state.target.map(() => 0);
+      state.wedges.forEach((wedge, index) => {
+        if (wedge.anchor !== 'vertex') moveWedge(index, 'vertex');
+      });
       startAnimation();
     });
 
