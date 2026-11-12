@@ -72,14 +72,6 @@
             --team-color: #dc3545;
         }
 
-        .team-red .form-range::-webkit-slider-thumb {
-            background-color: #dc3545;
-        }
-
-        .team-red .form-range::-moz-range-thumb {
-            background-color: #dc3545;
-        }
-
         .layer-toggles .form-check-input,
         .layer-toggles .form-check-label {
             cursor: pointer;
@@ -157,7 +149,7 @@
                 <div class="accordion-item">
                     <h2 class="accordion-header" id="teamSettingsHeading">
                         <button class="accordion-button py-2 fw-bold" id="teamSettingsToggle" type="button" data-bs-toggle="collapse" data-bs-target="#teamSettings" aria-expanded="true" aria-controls="teamSettings">
-                            <i class="bi bi-people-fill me-2"></i>팀 설정 · 포메이션, 라인 높이, 폭, 간격
+                            <i class="bi bi-people-fill me-2"></i>팀 설정 · 포메이션
                         </button>
                     </h2>
                     <div id="teamSettings" class="accordion-collapse collapse show" aria-labelledby="teamSettingsHeading">
@@ -385,7 +377,6 @@
         const FONT = "'Pretendard Variable', Pretendard, 'Malgun Gothic', sans-serif";
         const TAU = Math.PI * 2;
         const DEFAULT_FORMATION = { blue: '4-3-3', red: '4-4-2' };
-        const DEFAULT_TACTIC = { lineHeight: 0, width: 1, compact: 1 };
         const UI_INTERVAL_MS = 200;
         const WALLS = new Set(['top', 'right', 'bottom', 'left']);
 
@@ -575,8 +566,8 @@
             players: [],
             ball: createBall(),
             teams: {
-                blue: { formation: DEFAULT_FORMATION.blue, tactic: { ...DEFAULT_TACTIC } },
-                red: { formation: DEFAULT_FORMATION.red, tactic: { ...DEFAULT_TACTIC } }
+                blue: { formation: DEFAULT_FORMATION.blue },
+                red: { formation: DEFAULT_FORMATION.red }
             },
             layers: { delaunay: false, roles: false },
             cellOpacity: 0.6,
@@ -632,14 +623,9 @@
         const ownGoal = team => ({ x: team === 'blue' ? 0 : FIELD.L, y: FIELD.W / 2 });
 
         // 프리셋 슬롯 → 경기장 좌표 (레드는 180° 회전)
-        function slotToWorld(slot, team, tactic) {
-            let x = slot.fx * FIELD.L;
-            let y = FIELD.W / 2 + (slot.fy - 0.5) * FIELD.W * tactic.width;
-            if (slot.role !== 'GK') {
-                x = 18 + (x - 18) * tactic.compact + tactic.lineHeight; // 18m 지점 기준 세로 압축
-            }
-            x = clamp(x, 1, FIELD.L - 1);
-            y = clamp(y, 1, FIELD.W - 1);
+        function slotToWorld(slot, team) {
+            const x = clamp(slot.fx * FIELD.L, 1, FIELD.L - 1);
+            const y = clamp(slot.fy * FIELD.W, 1, FIELD.W - 1);
             return team === 'blue' ? { x, y } : { x: FIELD.L - x, y: FIELD.W - y };
         }
 
@@ -663,9 +649,8 @@
 
         // "포메이션 정렬": anchor = 프리셋 위치 (movePos면 pos도 함께)
         function alignTeam(team, movePos) {
-            const tactic = state.teams[team].tactic;
             for (const p of teamPlayers[team]) {
-                p.anchor = slotToWorld(p.slot, team, tactic);
+                p.anchor = slotToWorld(p.slot, team);
                 if (movePos) { p.pos = { ...p.anchor }; p.vel = { x: 0, y: 0 }; }
             }
         }
@@ -922,7 +907,6 @@
             drawCells(a.view);
             if (state.layers.delaunay) drawPassLanes(a);      // 델로네 = 팀 델로네 변(패스길)
             drawSelectionCells(a);
-            drawAreaLabels(a.view);
             drawBallPath();
             drawPlayers();
             drawBall();
@@ -1105,20 +1089,6 @@
             });
         }
 
-        function drawAreaLabels(cells) {
-            const size = clamp(Math.round(scale * 1.25), 9, 13);
-            for (const c of cells) {
-                if (c.area * scale * scale < 1800 || (scale < 5 && c.area < 300)) continue;   // 화면에서 너무 작은 셀은 생략
-                const p = playerById.get(c.playerId);
-                let at = c.centroid;
-                const gap = state.layers.roles ? 4.4 : 2.6;   // 역할 라벨이 켜지면 그 아래로
-                if (dist(at, p.pos) < gap) at = { x: p.pos.x, y: p.pos.y + gap };
-                const s = toScreen(at.x, at.y);
-                drawTextOutlined(`${Math.round(c.area)}㎡`, s.x, s.y, { size });
-            }
-        }
-
-
         function drawBallPath() {
             const b = state.ball;
             if ((b.state !== 'pass' && b.state !== 'shot') || !b.target) return;
@@ -1164,19 +1134,32 @@
             }
         }
 
+        // 공: 노란 후광 + 굵은 테두리 + 오각형 무늬로 잘 보이게
         function drawBall() {
             const b = state.ball;
             const s = toScreen(b.x, b.y);
-            const r = Math.max(0.6 * scale, 4.5);
+            const r = Math.max(0.95 * scale, 7);
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, r + Math.max(4, r * 0.55), 0, TAU);
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.45)';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#facc15';
+            ctx.stroke();
             ctx.beginPath();
             ctx.arc(s.x, s.y, r, 0, TAU);
             ctx.fillStyle = '#ffffff';
             ctx.fill();
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 2;
             ctx.strokeStyle = '#111827';
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(s.x, s.y, r * 0.4, 0, TAU);
+            for (let i = 0; i < 5; i++) {
+                const ang = -Math.PI / 2 + i * TAU / 5;
+                const px = s.x + Math.cos(ang) * r * 0.45, py = s.y + Math.sin(ang) * r * 0.45;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
             ctx.fillStyle = '#111827';
             ctx.fill();
         }
@@ -1886,40 +1869,19 @@
         function teamPanelHtml(team) {
             const info = TEAM_INFO[team];
             const options = Object.keys(FORMATIONS).map(f => `<option value="${f}">${f}</option>`).join('');
-            const slider = (key, label, min, max, step) => `
-                <div class="col-4">
-                    <label class="form-label small mb-0 d-flex flex-wrap justify-content-between column-gap-1" for="${team}-${key}">
-                        <span>${label}</span><span class="fw-bold stat-num" id="${team}-${key}-val"></span>
-                    </label>
-                    <input type="range" class="form-range" id="${team}-${key}" data-team="${team}" data-key="${key}" min="${min}" max="${max}" step="${step}">
-                </div>`;
             return `
                 <div class="border rounded-3 p-3 h-100 team-panel team-${team}">
-                    <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                    <div class="d-flex align-items-center flex-wrap gap-2">
                         <span class="badge ${team === 'blue' ? 'text-bg-primary' : 'text-bg-danger'} fs-6">${info.name}</span>
                         <span class="small text-secondary">${team === 'blue' ? '오른쪽(→)으로 공격' : '왼쪽(←)으로 공격'}</span>
                         <select class="form-select form-select-sm ms-auto w-auto" id="${team}-formation" data-team="${team}" aria-label="${info.name} 포메이션">${options}</select>
                     </div>
-                    <div class="row g-2">
-                        ${slider('lineHeight', '라인 높이', 0, 20, 1)}
-                        ${slider('width', '폭', 70, 120, 5)}
-                        ${slider('compact', '간격', 70, 110, 5)}
-                    </div>
                 </div>`;
-        }
-
-        function tacticLabel(key, value) {
-            return key === 'lineHeight' ? `${value}m` : `${Math.round(value * 100)}%`;
         }
 
         function syncTeamControls() {
             for (const team of TEAMS) {
-                const t = state.teams[team];
-                $(`${team}-formation`).value = t.formation;
-                for (const key of ['lineHeight', 'width', 'compact']) {
-                    $(`${team}-${key}`).value = key === 'lineHeight' ? t.tactic[key] : Math.round(t.tactic[key] * 100);
-                    $(`${team}-${key}-val`).textContent = tacticLabel(key, t.tactic[key]);
-                }
+                $(`${team}-formation`).value = state.teams[team].formation;
             }
         }
 
@@ -1929,21 +1891,6 @@
             alignTeam(team, shouldMovePositions());
             requestRender();
             requestUiUpdate(true);
-        }
-
-        // 슬라이더: 프리셋 위치 변화량만큼 anchor를 옮겨 드래그한 배치를 유지
-        function setTactic(team, key, value) {
-            const before = teamPlayers[team].map(p => slotToWorld(p.slot, team, state.teams[team].tactic));
-            state.teams[team].tactic[key] = value;
-            const movePos = shouldMovePositions();
-            teamPlayers[team].forEach((p, i) => {
-                const after = slotToWorld(p.slot, team, state.teams[team].tactic);
-                const dx = after.x - before[i].x, dy = after.y - before[i].y;
-                p.anchor = clampInField({ x: p.anchor.x + dx, y: p.anchor.y + dy }, 0.3);
-                if (movePos) p.pos = clampInField({ x: p.pos.x + dx, y: p.pos.y + dy }, 0.3);
-            });
-            $(`${team}-${key}-val`).textContent = tacticLabel(key, value);
-            requestRender();
         }
 
         function setMode(mode) {
@@ -2194,7 +2141,6 @@
         function serializeScene() {
             const team = t => ({
                 formation: state.teams[t].formation,
-                tactic: { ...state.teams[t].tactic },
                 anchors: teamPlayers[t].map(p => ({ id: p.id, x: p.anchor.x, y: p.anchor.y }))
             });
             const b = state.ball;
@@ -2215,15 +2161,8 @@
             }
             pause();
             for (const team of TEAMS) {
-                const t = scene[team], tactic = t.tactic || {};
-                state.teams[team] = {
-                    formation: t.formation,
-                    tactic: {
-                        lineHeight: clamp(Number(tactic.lineHeight) || 0, 0, 20),
-                        width: clamp(Number(tactic.width) || 1, 0.7, 1.2),
-                        compact: clamp(Number(tactic.compact) || 1, 0.7, 1.1)
-                    }
-                };
+                const t = scene[team];
+                state.teams[team] = { formation: t.formation };
                 buildTeam(team);
                 alignTeam(team, true);
                 for (const anchor of t.anchors) {
@@ -2314,7 +2253,7 @@
         function resetAll() {
             pause();
             for (const team of TEAMS) {
-                state.teams[team] = { formation: DEFAULT_FORMATION[team], tactic: { ...DEFAULT_TACTIC } };
+                state.teams[team] = { formation: DEFAULT_FORMATION[team] };
                 buildTeam(team);
                 alignTeam(team, true);
             }
@@ -2334,13 +2273,6 @@
 
             document.querySelectorAll('select[data-team]').forEach(select => {
                 select.addEventListener('change', () => setFormation(select.dataset.team, select.value));
-            });
-            document.querySelectorAll('input[type=range][data-team]').forEach(range => {
-                range.addEventListener('input', () => {
-                    const key = range.dataset.key;
-                    const value = key === 'lineHeight' ? Number(range.value) : Number(range.value) / 100;
-                    setTactic(range.dataset.team, key, value);
-                });
             });
 
             $('modeTactics').addEventListener('click', () => setMode('tactics'));
