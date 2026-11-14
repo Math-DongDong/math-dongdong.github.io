@@ -25,9 +25,11 @@ const rtdbBlotto = getDatabase(app, "https://blottogame.asia-southeast1.firebase
 const rtdbSentiment = getDatabase(app, "https://sentimentanalysis.asia-southeast1.firebasedatabase.app/");
 const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.firebasedatabase.app/");
 const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
+// 접속 상태 전용 — 진행에 RTDB를 쓰지 않는 게임(유형 A)의 접속중·다른화면·접속 끊김 (game-kit의 startRoomPresence)
+const rtdbPresence = getDatabase(app, "https://mathdongdong-default-rtdb.asia-southeast1.firebasedatabase.app/");
 
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, auth, googleProvider };
+export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbPresence, auth, googleProvider };
 

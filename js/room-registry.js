@@ -21,7 +21,7 @@
  *      + storage: '폴더'                                  (선택) Storage {폴더}/{코드} 아래 파일 — Firestore보다 먼저 지웁니다
  *    { rtdb: 'https://…', paths: ['rooms', 'room_index'] }  RTDB {경로}/{코드}
  */
-import { app, db, auth } from './firebase-config.js';
+import { app, db, auth, rtdbPresence } from './firebase-config.js';
 import {
     collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -31,6 +31,33 @@ export const REGISTRY_COLLECTION = 'room_registry';
 
 /** 유형 A 게임 방의 하위 컬렉션 (game-kit firestoreRoom 기본값) */
 export const GAME_SUBS = ['students', 'records', 'nicknames', 'guests'];
+
+/**
+ * 접속 상태 위치 — 접속 전용 RTDB의 presence/{Firestore 컬렉션}/{방 코드}/{닉네임}
+ * 진행에 RTDB를 쓰지 않는 게임(유형 A)이 씁니다 (game-kit의 startRoomPresence · watchRoomPresence).
+ */
+export function presenceRoomPath(collectionName, code) {
+    return `presence/${collectionName}/${code}`;
+}
+
+/**
+ * 방의 접속 상태 삭제. Firestore 방을 지울 때 함께 부릅니다.
+ * ★ 실패하거나 응답이 없어도(규칙 배포 전 · 네트워크) 방 삭제를 막지 않습니다 — 최대 5초만 기다립니다.
+ */
+export async function removeRoomPresence(collectionName, code) {
+    if (!collectionName || !code) return;
+    let timer = null;
+    try {
+        await Promise.race([
+            remove(ref(rtdbPresence, presenceRoomPath(collectionName, code))),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), 5000); })
+        ]);
+    } catch (e) {
+        console.warn('[room-registry] 접속 상태 정리 실패:', e);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 /** RTDB 인스턴스의 주소 — 목록에는 인스턴스 대신 이 문자열을 적습니다. */
 export function rtdbUrl(rtdb) {
@@ -101,6 +128,7 @@ export async function purgeRoomParts(code, parts) {
             }
             const roomRef = doc(db, part.fs, code);
             if ((await getDoc(roomRef)).exists()) await deleteDoc(roomRef);
+            await removeRoomPresence(part.fs, code);   // 접속 상태 (없으면 그냥 지나감, 실패해도 계속)
         } else if (part.rtdb) {
             const rtdb = getDatabase(app, part.rtdb);
             for (const path of part.paths || []) await remove(ref(rtdb, `${path}/${code}`));

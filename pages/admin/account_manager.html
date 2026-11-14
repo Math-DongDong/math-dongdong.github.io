@@ -27,7 +27,10 @@
     <div class="container admin-container" id="adminContent" style="display: none;">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <h2 class="fw-bold mb-0"><i class="bi bi-people-fill text-primary me-2"></i>교사 계정 관리</h2>
-            <button class="btn btn-outline-secondary" id="btnReload"><i class="bi bi-arrow-clockwise me-1"></i>새로고침</button>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary" id="btnSyncRtdb" title="승인된 모든 교사를 실시간 DB 권한 목록에 다시 등록"><i class="bi bi-arrow-repeat me-1"></i>권한 동기화</button>
+                <button class="btn btn-outline-secondary" id="btnReload"><i class="bi bi-arrow-clockwise me-1"></i>새로고침</button>
+            </div>
         </div>
 
         <div class="alert alert-light border small text-muted sync-note">
@@ -38,6 +41,7 @@
             <b>반려</b>(승인 대기)는 가입 신청만 지웁니다.
             <b>삭제</b>(승인 완료)는 ②, ③을 회수하고 그 교사가 만든 방(기록 포함)도 모두 지웁니다.
             학생 정보는 담당 교사가 그 교사뿐이면 삭제·다른 담당 교사가 있으면 담당 교사 목록에서만 뺍니다.
+            실시간 데이터베이스를 새로 추가했다면 <b>[권한 동기화]</b>를 한 번 눌러 이미 승인된 교사의 ③을 채워 주세요.
         </div>
 
         <div class="card mb-4">
@@ -126,7 +130,7 @@
 
     <script type="module">
         import {
-            auth, db, rtdbBlotto, rtdbGridGomoku, rtdbRelativeFrequency, rtdbSentiment
+            auth, db, rtdbBlotto, rtdbGridGomoku, rtdbRelativeFrequency, rtdbSentiment, rtdbPresence
         } from '../../js/firebase-config.js';
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
         import {
@@ -148,7 +152,8 @@
             { name: '블로토', db: rtdbBlotto },
             { name: '오목', db: rtdbGridGomoku },
             { name: '가위바위보', db: rtdbRelativeFrequency },
-            { name: '감성분석', db: rtdbSentiment }
+            { name: '감성분석', db: rtdbSentiment },
+            { name: '접속 상태', db: rtdbPresence }   // 유형 A 게임 대시보드의 접속중·다른화면·접속 끊김
         ];
 
         /**
@@ -191,12 +196,50 @@
             }, { merge: true });
 
             // ② 실시간 게임 교사 권한
+            return grantRtdb(uid);
+        }
+
+        /** 모든 실시간 DB의 교사 권한 목록에 uid 등록. 실패한 DB 이름 배열을 돌려줍니다. */
+        async function grantRtdb(uid) {
             const failed = [];
             for (const r of RTDBS) {
                 try { await set(ref(r.db, `teacher_uids/${uid}`), true); }
                 catch (e) { console.error(r.name, e); failed.push(r.name); }
             }
             return failed;
+        }
+
+        /** 권한 동기화 — 새 실시간 DB를 추가한 뒤, 이미 승인된 교사들의 권한을 한 번에 채웁니다 (이미 있으면 그대로) */
+        async function syncRtdbPermissions() {
+            const ok = await showConfirmModal("교사 권한 동기화",
+                "승인된 모든 교사를 실시간 데이터베이스 권한 목록에 다시 등록합니다.\n새 실시간 데이터베이스를 추가한 뒤 한 번 실행하세요. (이미 등록된 권한은 그대로 둡니다)",
+                "동기화");
+            if (!ok) return;
+
+            const btn = document.getElementById('btnSyncRtdb');
+            const label = btn.innerHTML;
+            btn.disabled = true;
+            try {
+                const snapshot = await getDocs(collection(db, "teachers"));
+                const approved = snapshot.docs.filter(d => d.id !== ADMIN_UID && (d.data() || {}).status === 'approved');
+                const failed = new Set();
+                for (let i = 0; i < approved.length; i++) {
+                    btn.textContent = `동기화 중... ${i + 1}/${approved.length}`;
+                    (await grantRtdb(approved[i].id)).forEach(name => failed.add(name));
+                }
+                if (failed.size) {
+                    showMessageModal("일부 동기화 실패",
+                        `승인된 교사 ${approved.length}명 중 다음 데이터베이스 등록에 실패했습니다: ${[...failed].join(', ')}\n해당 실시간 DB 규칙을 확인한 뒤 다시 실행해 주세요.`, 'warning');
+                } else {
+                    showMessageModal("동기화 완료", `승인된 교사 ${approved.length}명의 권한을 등록했습니다.`, 'success');
+                }
+            } catch (e) {
+                console.error(e);
+                showMessageModal("동기화 실패", "교사 목록을 불러오지 못했습니다.", 'danger');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = label;
+            }
         }
 
         async function revokeTeacher(uid) {
@@ -440,6 +483,7 @@
             else if (act === 'delete') removeTeacherAccount(uid);
         });
         document.getElementById('btnReload').addEventListener('click', loadTeachers);
+        document.getElementById('btnSyncRtdb').addEventListener('click', syncRtdbPermissions);
 
         onAuthStateChanged(auth, (user) => {
             if (user && user.uid === ADMIN_UID) {

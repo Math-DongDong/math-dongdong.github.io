@@ -20,18 +20,20 @@
  *    페이지와 이 파일 모두 room-auth.js?v=4.5 으로 불러야 합니다 (주소가 다르면 모듈이 둘로 갈라집니다).
  * ─────────────────────────────────────────────────────────────────────
  */
-import { db as fsdb } from "./firebase-config.js";
+import { db as fsdb, rtdbPresence } from "./firebase-config.js";
 import {
     collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
     onSnapshot, query, where, serverTimestamp as fsTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import {
-    ref, get, set, update, remove, serverTimestamp as rtTimestamp
+    ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp as rtTimestamp
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 import {
     escapeHtml, safeNumber, customAlert, customConfirm, customPrompt, promptRoomMode
 } from "./room-auth.js?v=4.5";
-import { GAME_SUBS, rtdbUrl, registerRoom, unregisterRoom } from "./room-registry.js";
+import {
+    GAME_SUBS, rtdbUrl, registerRoom, unregisterRoom, presenceRoomPath, removeRoomPresence
+} from "./room-registry.js";
 
 // =====================================================================
 // 1. 작은 도구들
@@ -202,6 +204,126 @@ export function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '
 }
 
 // =====================================================================
+// 1-1. 접속 상태  (유형 A — 접속 전용 RTDB)
+//
+//  진행에 RTDB를 쓰지 않는 게임은 접속 전용 RTDB에 접속 상태만 둡니다.
+//  (유형 B·C·D는 각 게임 RTDB의 players 노드를 그대로 씁니다)
+//
+//    presence/{Firestore 컬렉션}/{방}/{닉네임} = { status, lastHeartbeat }
+//      status         'online' | 'away'(다른화면) | 'offline'  — 오목·블로토 players 노드와 같은 이름
+//      lastHeartbeat  서버 시각(ms). offline이면 끊긴 시각 → 30분 계산의 기준
+//
+//  ★ 학번은 넣지 않습니다 (닉네임만 — 순위표 익명성).
+//  ★ 창을 닫거나 연결이 끊기면 서버가 offline을 씁니다 (onDisconnect).
+//    연결이 끊기면 예약도 사라지므로, 다시 연결될 때마다 예약을 새로 겁니다.
+//  ★ 대시보드는 Firestore를 다시 읽지 않고 상태 칸만 바꿉니다 (읽기 과금 없음).
+// =====================================================================
+export const PRESENCE_FRESH_MS = 120 * 1000;      // 이 안에 신호가 있으면 접속중·다른화면 (학생 관리와 같은 값)
+export const PRESENCE_DROP_MS = 30 * 60 * 1000;   // 끊긴 뒤 이 시간까지 '접속 끊김', 지나면 플레이 횟수
+const PRESENCE_BEAT_MS = 30 * 1000;               // 신호 주기 (끊김은 서버가 잡으므로 느슨하게)
+
+/**
+ * 학생: 방에 들어온 뒤 접속 신호를 시작합니다.
+ * @param {string} gameKey  Firestore 컬렉션 이름 (room.collectionName)
+ * @returns {Function} stop — 같은 페이지에서 방을 떠날 때 부르면 offline으로 내리고 예약을 지웁니다.
+ */
+export function startRoomPresence(gameKey, code, nickname) {
+    if (!gameKey || !code || !nickname) return () => { };
+    const nodeRef = ref(rtdbPresence, `${presenceRoomPath(gameKey, code)}/${nickname}`);
+    const offlineValue = () => ({ status: 'offline', lastHeartbeat: rtTimestamp() });
+    let active = true, connected = false, denied = false;
+
+    // 규칙 배포 전이면 한 번만 알리고 신호를 멈춥니다 (콘솔 도배 방지 · 게임은 그대로 진행)
+    const onError = (e) => {
+        if (String(e?.code || e?.message || '').toLowerCase().includes('permission')) {
+            if (!denied) console.warn('[presence] 접속 상태 쓰기 권한이 없습니다 — 접속 전용 RTDB 규칙을 확인하세요.', e);
+            denied = true;
+        } else {
+            console.warn('[presence] 접속 신호 실패:', e);
+        }
+    };
+
+    // 연결되어 있을 때만 보냅니다 (끊긴 동안 쌓아 두지 않고, 다시 연결되면 지금 상태를 보냄)
+    const send = () => {
+        if (!active || !connected || denied) return;
+        set(nodeRef, { status: document.hidden ? 'away' : 'online', lastHeartbeat: rtTimestamp() }).catch(onError);
+    };
+
+    // 처음 연결 + 다시 연결될 때마다: 끊김 예약 → 지금 상태 전송
+    const unsubConnected = onValue(ref(rtdbPresence, '.info/connected'), (snap) => {
+        connected = snap.val() === true;
+        if (!active || !connected || denied) return;
+        onDisconnect(nodeRef).set(offlineValue()).then(send).catch(onError);
+    });
+    const timer = setInterval(send, PRESENCE_BEAT_MS);
+    document.addEventListener('visibilitychange', send);
+
+    return function stop() {
+        if (!active) return;
+        active = false;
+        clearInterval(timer);
+        document.removeEventListener('visibilitychange', send);
+        unsubConnected();
+        if (denied) return;
+        onDisconnect(nodeRef).cancel().catch(() => { });
+        set(nodeRef, offlineValue()).catch(() => { });
+    };
+}
+
+let presenceOffset = null;
+/** 서버 시각(ms) — 선생님 PC 시계가 틀려도 판정이 맞도록 RTDB 보정값을 더합니다. */
+export function presenceNow() {
+    if (presenceOffset === null) {
+        presenceOffset = 0;
+        onValue(ref(rtdbPresence, '.info/serverTimeOffset'), (snap) => { presenceOffset = Number(snap.val()) || 0; });
+    }
+    return Date.now() + presenceOffset;
+}
+
+/**
+ * 선생님: 방의 접속 상태를 구독합니다.
+ * 권한이 없거나(규칙 배포 전 · 권한 동기화 전) 실패하면 빈 값을 넘겨 플레이 횟수만 보이게 합니다.
+ * @param {Function} onChange (presenceMap) => void   — { 닉네임: { status, lastHeartbeat } }
+ * @returns {Function} 구독 해제
+ */
+export function watchRoomPresence(gameKey, code, onChange) {
+    if (!gameKey || !code) return () => { };
+    presenceNow();   // 서버 시각 보정값 구독 시작
+    return onValue(ref(rtdbPresence, presenceRoomPath(gameKey, code)),
+        (snap) => onChange(snap.val() || {}),
+        (err) => {
+            console.warn('[presence] 접속 상태를 읽지 못했습니다 — 접속 전용 RTDB 규칙과 [권한 동기화]를 확인하세요.', err);
+            onChange({});
+        });
+}
+
+/**
+ * 접속 판정 (서버 시각 기준)
+ *   online   접속중     — online, 신호 2분 이내
+ *   away     다른화면   — away, 신호 2분 이내
+ *   offline  접속 끊김  — offline이 되었거나 신호가 멈춘 지 30분 이내
+ *   idle     표시 없음  — 30분 경과 또는 접속 기록 없음 → 플레이 횟수를 보여 줍니다
+ */
+export function presenceStatus(node, now = presenceNow()) {
+    const hb = typeof node?.lastHeartbeat === 'number' ? node.lastHeartbeat : 0;
+    const age = now - hb;
+    if (!hb || age >= PRESENCE_DROP_MS) return { key: 'idle', label: '', text: 'text-muted' };
+    if (node.status !== 'offline' && age < PRESENCE_FRESH_MS) {
+        return node.status === 'away'
+            ? { key: 'away', label: '다른화면', text: 'text-warning' }
+            : { key: 'online', label: '접속중', text: 'text-success' };
+    }
+    return { key: 'offline', label: '접속 끊김', text: 'text-danger' };
+}
+
+/** 플레이 열 HTML — 접속 중이면 상태(STATUS_DOT_CSS 필요), 끊긴 지 30분이 지나면 플레이 횟수 */
+export function playStatusCell(node, plays, now = presenceNow()) {
+    const st = presenceStatus(node, now);
+    if (st.key === 'idle') return `<span class="badge bg-secondary">${safeNumber(plays)}회</span>`;
+    return `<span class="text-nowrap"><span class="status-dot status-${st.key}"></span><span class="${st.text} small fw-bold">${st.label}</span></span>`;
+}
+
+// =====================================================================
 // 2. Firestore 방 도구  (유형 A: 개인 기록형)
 //
 //  컬렉션 이름은 반드시 '..._records' 로 끝나야 합니다.
@@ -297,6 +419,7 @@ export function firestoreRoom(collectionName, { subs = GAME_SUBS } = {}) {
                 await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
             }
             await deleteDoc(roomDoc(code));
+            await removeRoomPresence(collectionName, code);   // 접속 상태 RTDB (실패해도 계속)
             await unregisterRoom(code, parts);
         },
 
