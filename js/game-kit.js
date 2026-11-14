@@ -140,6 +140,15 @@ export function bindStudentIdToggle(checkbox, targets) {
 const adminRoomOptionRenderers = new WeakMap();
 
 /**
+ * 관리자 학교 필터의 기본값 — 정보수정에서 설정한 학교.
+ * 비었거나 '관리자'(학교 미설정 기본값)면 빈 값 → '전체 학교'.
+ */
+export function adminDefaultSchool() {
+    const school = String(window.currentTeacherSchool || '').trim();
+    return school && school !== '관리자' ? school : '';
+}
+
+/**
  * 방 드롭다운 그리기. 관리자에게는 dashboard-header의 학교 필터(전체 학교)를 함께 보여 줍니다.
  * firestoreRoom·rtdbRoom을 쓰지 않고 방 목록을 직접 읽는 페이지(블로토)도 이 함수로 그립니다.
  * @param {Array} rooms [{ code, data }] — 학교 필터는 data.creatorSchool 로 나눕니다
@@ -171,7 +180,14 @@ export function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '
             const label = school === unspecifiedSchool ? '학교 미지정' : school;
             return `<option value="${escapeHtml(school)}">${escapeHtml(label)}</option>`;
         }).join('');
-        schoolFilter.value = schools.includes(selectedSchool) ? selectedSchool : '';
+        // 관리자 기본 학교: 처음 그릴 때 한 번만 정보수정의 학교로 맞춥니다 (그 뒤 직접 고른 값 — 전체 학교 포함 — 은 유지)
+        let initialSchool = selectedSchool;
+        if (schoolFilter.dataset.defaultSchoolApplied !== 'true' && rooms.length) {
+            schoolFilter.dataset.defaultSchoolApplied = 'true';
+            const mySchool = adminDefaultSchool();
+            if (!selectedSchool && !previousCode && schools.includes(mySchool)) initialSchool = mySchool;
+        }
+        schoolFilter.value = schools.includes(initialSchool) ? initialSchool : '';
         const targetRoom = explicitTargetCode && rooms.find(room => room.code === explicitTargetCode);
         if (targetRoom) schoolFilter.value = getSchool(targetRoom);
 
