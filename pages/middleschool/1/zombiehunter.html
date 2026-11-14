@@ -631,6 +631,7 @@
             firestoreRoom, renderGuestApproval, bindDeleteRoomButton, buildSidMap,
             startRoomPresence, watchRoomPresence, presenceStatus, presenceNow, playStatusCell
         } from "../../../js/game-kit.js?v=4.7";
+        import { createPlayResume } from "../../../js/play-resume.js";
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot,
             query, where, serverTimestamp, deleteDoc
@@ -673,6 +674,7 @@
         const guestStatusCollRef = roomKit.guests;
         const nicknameCollRef = roomKit.nicknames;
         const recordsCollectionRef = roomKit.records;
+        const resume = createPlayResume(roomKit.collectionName, 1);   // 이어하기 (튕김·뒤로가기 복구)
 
         renderRoomEntrance('room-entrance-container', {
             getRoomData: async (code) => {
@@ -687,14 +689,18 @@
                 mySchool = authInfo?.school || '';
                 myStudentId = authInfo?.studentId || '';
 
-                currentStage = 1; currentProblem = 1; score = 0; lives = 5;
-                currentTotalShots = 0; currentHitShots = 0;
-                currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
-                checkpointRecordRef = null; checkpointSavePromise = null;
-                gameStartTime = Date.now();
+                // 끝나지 않은 판이 이 기기에 남아 있으면 이어서, 없으면 새 게임
+                const saved = resume.open(code, name);
+                if (!saved || !resumeGame(saved)) {
+                    currentStage = 1; currentProblem = 1; score = 0; lives = 5;
+                    currentTotalShots = 0; currentHitShots = 0;
+                    currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0 }; currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                    checkpointRecordRef = null; checkpointSavePromise = null;
+                    gameStartTime = Date.now();
 
-                generateProblem();
-                updateUI();
+                    generateProblem();
+                    updateUI();
+                }
                 showSection('game-section');
                 requestAnimationFrame(buildARouletteItems); // 화면 전환 직후 룰렛 실측 폭 확정
 
@@ -707,6 +713,56 @@
                 loadRooms();
             }
         });
+
+        // =====================================================================
+        // 이어하기 — 튕기거나 뒤로가기로 나갔던 판을 그대로 복원합니다 (js/play-resume.js)
+        // 새 문제가 나올 때와 발사 결과가 남을 때 저장하고, 하트가 0이 되거나 판이 끝나면 지웁니다.
+        // =====================================================================
+        function saveProgress() {
+            if (!currentRoomCode || lives <= 0) return;
+            resume.save({
+                currentStage, currentProblem, score, lives,
+                zombies: currentZombies, problemShots: currentProblemShots, laserLimit: currentLaserLimit,
+                totalShots: currentTotalShots, hitShots: currentHitShots,
+                stageHits: currentStageHits, stageFails: currentStageFails,
+                elapsedMs: Date.now() - gameStartTime,     // 다시 들어오기까지 걸린 시간은 플레이 시간에서 뺍니다
+                checkpointId: checkpointRecordRef ? checkpointRecordRef.id : ''
+            });
+        }
+
+        /** @returns {boolean} 복원에 성공했는지 (실패하면 새 게임) */
+        function resumeGame(saved) {
+            const zombies = Array.isArray(saved.zombies) ? saved.zombies : [];
+            if (!(saved.lives > 0) || !(saved.currentStage >= 1) || !zombies.some(z => z && z.active)) {
+                resume.clear();
+                return false;
+            }
+            currentStage = safeNumber(saved.currentStage, 1);
+            currentProblem = safeNumber(saved.currentProblem, 1);
+            score = safeNumber(saved.score);
+            lives = safeNumber(saved.lives, 5);
+            currentZombies = zombies.map(z => ({ x: safeNumber(z.x), y: safeNumber(z.y), active: Boolean(z.active) }));
+            currentProblemShots = safeNumber(saved.problemShots);
+            currentLaserLimit = safeNumber(saved.laserLimit);
+            currentTotalShots = safeNumber(saved.totalShots);
+            currentHitShots = safeNumber(saved.hitShots);
+            currentStageHits = { 1: 0, 2: 0, 3: 0, 4: 0, ...saved.stageHits };
+            currentStageFails = { 1: 0, 2: 0, 3: 0, 4: 0, ...saved.stageFails };
+            gameStartTime = Date.now() - Math.max(0, safeNumber(saved.elapsedMs));
+            // Stage 5 첫 클리어 때 만든 중간 기록 — 끝날 때 이 문서를 최종 기록으로 덮어씁니다
+            checkpointRecordRef = /^[A-Za-z0-9]{1,40}$/.test(String(saved.checkpointId || ''))
+                ? doc(recordsCollectionRef(currentRoomCode), saved.checkpointId) : null;
+            checkpointSavePromise = null;
+
+            setARouletteValue(1);
+            setFuncType('linear');
+            drawCanvas();
+            document.getElementById('feedbackText').innerText = '';
+            document.getElementById('fireBtn').disabled = false;
+            updateUI();
+            customAlert("이어하기", `이전에 하던 게임을 이어서 합니다.<br>Stage <b>${currentStage}</b> · 점수 <b>${score}점</b> · 하트 <b>${lives}개</b>`);
+            return true;
+        }
 
         document.getElementById('endPlayBtn').addEventListener('click', () => {
             const isClear = (currentStage >= 5 && currentProblem > 1);
@@ -791,6 +847,7 @@
             setFuncType('linear');
             drawCanvas();
             document.getElementById('feedbackText').innerText = '';
+            saveProgress();
         }
 
         document.querySelectorAll('.function-type-btn').forEach(btn => btn.addEventListener('click', (e) => setFuncType(e.currentTarget.dataset.type)));
@@ -1039,6 +1096,7 @@
                             document.getElementById('feedbackText').innerText = '레이저 소진! 좀비 무리가 재배치됩니다.';
                             triggerClawAnimation(); updateUI();
                             if (lives <= 0) {
+                                resume.clear();   // 하트 0 — 종료 화면 전에 새로고침해도 되살아나지 않게
                                 setTimeout(() => gameOver(false), 1000);
                                 return;
                             }
@@ -1050,6 +1108,7 @@
                         } else {
                             document.getElementById('feedbackText').innerText = hitCount === 0 ? '빗나갔습니다!' : '일부 명중!';
                             updateUI();
+                            saveProgress();
                         }
                         return;
                     }
@@ -1060,6 +1119,7 @@
                         document.getElementById('feedbackText').innerText = '빗나갔습니다!';
                         triggerClawAnimation(); updateUI();
                         if (lives <= 0) {
+                            resume.clear();   // 하트 0 — 종료 화면 전에 새로고침해도 되살아나지 않게
                             setTimeout(() => gameOver(false), 1000);
                             return;
                         }
@@ -1068,6 +1128,7 @@
                         else { score += 5; document.getElementById('feedbackText').innerText = '모두 명중! +5점'; }
                     }
                     updateUI();
+                    if (remaining > 0) saveProgress();   // 다 잡았으면 다음 문제(generateProblem)에서 저장
 
                     if (remaining === 0) {
                         setTimeout(() => {
@@ -1117,6 +1178,7 @@
         }
 
         async function gameOver(isClear) {
+            resume.clear();   // 끝난 판은 이어하기 대상에서 뺍니다
             showSection('gameover-section');
             document.getElementById('gameoverIcon').innerText = isClear ? "🏆" : "⚔️";
             document.getElementById('gameoverTitle').innerText = isClear ? "무한 챌린지 종료!" : "게임 종료!";
@@ -1144,7 +1206,9 @@
                 };
                 if (checkpointSavePromise) await checkpointSavePromise;
                 if (checkpointRecordRef) {
-                    await updateDoc(checkpointRecordRef, finalRecord);
+                    // 이어하기로 복원한 판은 중간 기록 저장이 끝나기 전에 튕겼을 수 있습니다 → 고칠 문서가 없으면 새로 씁니다
+                    await updateDoc(checkpointRecordRef, finalRecord)
+                        .catch(() => addDoc(recordsCollectionRef(currentRoomCode), finalRecord));
                 } else {
                     await addDoc(recordsCollectionRef(currentRoomCode), finalRecord);
                 }

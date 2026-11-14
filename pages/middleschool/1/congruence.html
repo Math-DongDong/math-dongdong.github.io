@@ -411,9 +411,11 @@
     import { db } from "../../../js/firebase-config.js";
     import { renderRoomEntrance, customAlert, showPinResetModal } from "../../../js/room-auth.js?v=4.5";
     import { firestoreRoom, renderGuestApproval, bindDeleteRoomButton, bindStudentIdToggle, buildSidMap, escapeHtml, safeNumber, startRoomPresence, watchRoomPresence, presenceStatus, presenceNow, playStatusCell } from "../../../js/game-kit.js?v=4.7";
+    import { createPlayResume } from "../../../js/play-resume.js";
     import { doc, setDoc, addDoc, getDocs, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
     const room = firestoreRoom("congruent_triangle_records");
+    const resume = createPlayResume(room.collectionName, 1);   // 이어하기 (튕김·뒤로가기 복구)
     let currentRoomCode = "", playerNickname = "", mySchool = "", myStudentId = "";
     const $ = id => document.getElementById(id);
     function showSection(id) { document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section')); $(id).classList.add('active-section'); }
@@ -590,6 +592,24 @@
     function updateUI() {
       $('score').textContent = G.score; $('lives-display').textContent = '❤️'.repeat(G.lives) + '🖤'.repeat(5 - G.lives);
       $('level-badge').textContent = G.round > 3 ? `♾️ 무한도전 ${G.round - 3}` : `Round ${G.round}`;
+      saveProgress();   // 점수·하트·카드가 바뀔 때마다 이 함수를 지나므로 여기서 저장합니다
+    }
+
+    // ---- 이어하기 — 튕기거나 뒤로가기로 나갔던 판을 그대로 복원합니다 (js/play-resume.js) ----
+    function saveProgress() {
+      if (!G || !currentRoomCode) return;
+      if (G.over || G.lives <= 0) { resume.clear(); return; }   // 하트 0 — 종료 화면 전에 새로고침해도 되살아나지 않게
+      const { sel, phase, over, ...state } = G;
+      resume.save(state);
+    }
+    /** @returns {boolean} 복원에 성공했는지 (실패하면 새 게임) */
+    function resumeGame(saved) {
+      if (!(saved.lives > 0) || !(saved.round >= 1) || !Array.isArray(saved.cards) || !saved.cards.length || !saved.st) { resume.clear(); return false; }
+      G = { ...saved, over: false, sel: [], phase: 'board' }; CN = null;
+      show('board-wrap', 1); msg('이전에 하던 게임을 이어서 합니다.', 'text-primary'); updateUI(); renderBoard();
+      if (G.cards.filter(c => c.pid != null && !c.gone).length === 0) endRound();   // 라운드를 다 풀고 넘어가기 전에 나갔던 경우
+      customAlert("이어하기", `이전에 하던 게임을 이어서 합니다.<br>${$('level-badge').textContent} · 점수 <b>${G.score}점</b> · 하트 <b>${G.lives}개</b>`);
+      return true;
     }
     function initGame() { G = { round: 1, lives: 5, score: 0, combo: 0, solved: 0, attempts: 0, wstreak: 0, lw: 0, st: newSt(), seed: Math.floor(Math.random() * 1e6), over: false, sel: [] }; startRound(); }
     function startRound() {
@@ -922,6 +942,7 @@
     // ======================= 기록 저장 =======================
     async function endGame() {
       if (!G || G.over) return; G.over = true;
+      resume.clear();   // 끝난 판은 이어하기 대상에서 뺍니다
       bootstrap.Modal.getInstance($('compareModal'))?.hide();
       bootstrap.Modal.getInstance($('connModal'))?.hide();
       const acc = G.attempts ? Math.round(G.solved / G.attempts * 100) : 0, S = G.st;
@@ -991,7 +1012,9 @@
       getRoomData: room.getRoomData, studentsCollectionRef: room.students,
       onJoin: async (roomCode, nickname, authInfo) => {
         currentRoomCode = roomCode; playerNickname = nickname; mySchool = authInfo?.school || ''; myStudentId = authInfo?.studentId || '';
-        showSection('game-section'); initGame();
+        showSection('game-section');
+        const saved = resume.open(roomCode, nickname);   // 끝나지 않은 판이 이 기기에 남아 있으면 이어서, 없으면 새 게임
+        if (!saved || !resumeGame(saved)) initGame();
         if (stopPresence) stopPresence();
         stopPresence = startRoomPresence(room.collectionName, roomCode, nickname);
       },

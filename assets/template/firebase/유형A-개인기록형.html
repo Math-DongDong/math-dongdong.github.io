@@ -19,6 +19,8 @@
     · 대시보드에 학급 요약 카드(평균 점수·평균 정답률)와 학생 상세 모달(판별 기록)이 들어 있습니다.
     · 대시보드 플레이 칸은 학생이 접속해 있으면 접속중 / 다른화면 / 접속 끊김을, 끊긴 지 30분이 지나면 플레이 횟수를 보여 줍니다.
       접속 상태는 접속 전용 RTDB(presence/{컬렉션}/{방}/{닉네임})에 따로 둡니다 — game-kit의 startRoomPresence · watchRoomPresence.
+    · 이어하기: 튕김·새로고침·뒤로가기 뒤 1분 안에 같은 기기로 같은 방에 들어오면 하던 판을 이어 갑니다 (js/play-resume.js).
+      진행 상태는 이 기기 localStorage에만 두고(서버 쓰기 없음), 하트 0·종료 버튼으로 판이 끝나면 지웁니다.
 
   ★ 새 게임을 만들 때 고칠 곳은 "★ 여기" 표시를 따라가면 됩니다.
   ★ 컬렉션 이름만 '..._records' 로 지으면 보안 규칙은 손댈 필요가 없습니다.
@@ -247,12 +249,15 @@
             buildSidMap, escapeHtml, safeNumber,
             startRoomPresence, watchRoomPresence, presenceStatus, presenceNow, playStatusCell
         } from "../../../js/game-kit.js?v=4.7";
+        import { createPlayResume } from "../../../js/play-resume.js";
         import {
             doc, setDoc, addDoc, getDocs, onSnapshot, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // ★ 여기: 컬렉션 이름. 반드시 '_records'로 끝나야 보안 규칙이 적용됩니다.
         const room = firestoreRoom("newgame_records");
+        // 이어하기 (튕김·뒤로가기 복구). ★ 저장하는 상태 모양을 바꾸면 두 번째 값(버전)을 올리세요.
+        const resume = createPlayResume(room.collectionName, 1);
 
         // =====================================================================
         // 전역 상태
@@ -288,7 +293,9 @@
                 myStudentId = authInfo?.studentId || '';
 
                 showSection('game-section');
-                initGame();
+                // 끝나지 않은 판이 이 기기에 남아 있으면 이어서, 없으면 새 게임
+                const saved = resume.open(roomCode, nickname);
+                if (!saved || !resumeGame(saved)) initGame();
 
                 // 접속 신호 (접속 전용 RTDB) — 대시보드 플레이 칸의 접속중·다른화면·접속 끊김. 지우지 마세요.
                 if (stopPresence) stopPresence();
@@ -307,7 +314,8 @@
             score = 0; lives = 5; solved = 0; attempts = 0;
             gameOver = false;
             updateUI();
-            // ★ 여기: 첫 문제 만들기
+            // ★ 여기: 첫 문제 만들기 (문제를 만든 뒤 saveProgress())
+            saveProgress();
         }
 
         function updateUI() {
@@ -317,6 +325,37 @@
 
         $('btn-end-play').addEventListener('click', () => endGame());
         $('btn-restart').addEventListener('click', () => { showSection('game-section'); initGame(); });
+
+        // =====================================================================
+        // 2-1. 이어하기 (js/play-resume.js)
+        //
+        //  ★ saveProgress()는 상태가 바뀌는 곳마다 부르세요 — 새 문제가 나온 직후, 오답으로 하트가 줄어든 직후.
+        //    현재 문제(정답·문제 화면)도 함께 저장해야 새로고침으로 어려운 문제를 건너뛰지 못합니다.
+        //  ★ 하트가 0이 되면 저장하지 않고, endGame()이 맨 앞에서 resume.clear()로 지웁니다.
+        //  ★ 정답 처리 후 setTimeout으로 다음 문제로 넘어가는 사이에는 저장하지 마세요.
+        //    (풀린 문제가 그대로 저장되면 복원했을 때 넘어갈 방법이 없습니다)
+        // =====================================================================
+        function saveProgress() {
+            if (!currentRoomCode || gameOver || lives <= 0) return;
+            resume.save({
+                score, lives, solved, attempts
+                // ★ 여기: 레벨·콤보·현재 문제(정답·문제 HTML) 등 이어하기에 필요한 값 (JSON으로 바꿀 수 있는 값만)
+            });
+        }
+
+        /** @returns {boolean} 복원에 성공했는지 (false면 새 게임) */
+        function resumeGame(saved) {
+            if (!(saved.lives > 0)) { resume.clear(); return false; }
+            score = safeNumber(saved.score);
+            lives = safeNumber(saved.lives, 5);
+            solved = safeNumber(saved.solved);
+            attempts = safeNumber(saved.attempts);
+            gameOver = false;
+            // ★ 여기: 나머지 상태와 현재 문제 화면 복원
+            updateUI();
+            customAlert("이어하기", `이전에 하던 게임을 이어서 합니다.<br>점수 <b>${score}점</b> · 하트 <b>${lives}개</b>`);
+            return true;
+        }
 
         // =====================================================================
         // 3. 기록 저장
@@ -339,6 +378,7 @@
         async function endGame() {
             if (gameOver) return;
             gameOver = true;
+            resume.clear();   // 끝난 판은 이어하기 대상에서 뺍니다
             document.querySelectorAll('.modal.show').forEach(m => bootstrap.Modal.getInstance(m)?.hide());
 
             const accuracy = attempts === 0 ? 0 : Math.round((solved / attempts) * 100);

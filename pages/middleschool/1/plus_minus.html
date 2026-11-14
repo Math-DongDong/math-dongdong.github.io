@@ -508,6 +508,7 @@
             firestoreRoom, renderGuestApproval, bindDeleteRoomButton, buildSidMap,
             startRoomPresence, watchRoomPresence, presenceStatus, presenceNow, playStatusCell
         } from "../../../js/game-kit.js?v=4.7";
+        import { createPlayResume } from "../../../js/play-resume.js";
         import {
             collection, doc, setDoc, addDoc, getDocs, getDoc, updateDoc, onSnapshot,
             query, where, serverTimestamp, deleteDoc
@@ -581,6 +582,7 @@
         const guestStatusCollRef = roomKit.guests;
         const nicknameCollRef = roomKit.nicknames;
         const recordsCollectionRef = roomKit.records;
+        const resume = createPlayResume(roomKit.collectionName, 1);   // 이어하기 (튕김·뒤로가기 복구)
 
         function showSection(id) {
             document.querySelectorAll('.section-container').forEach(s => s.classList.remove('active-section'));
@@ -615,7 +617,9 @@
                     myStudentId = authInfo?.studentId || '';
 
                     showSection('game-section');
-                    initGame();
+                    // 끝나지 않은 판이 이 기기에 남아 있으면 이어서, 없으면 새 게임
+                    const saved = resume.open(roomCode, nickname);
+                    if (!saved || !resumeGame(saved)) initGame();
 
                     // 접속 신호 (접속 전용 RTDB) — 대시보드 플레이 칸의 접속중·다른화면·접속 끊김
                     if (stopPresence) stopPresence();
@@ -645,6 +649,49 @@
         function restartGame() {
             showSection('game-section');
             initGame();
+        }
+
+        // =====================================================================
+        // 이어하기 — 튕기거나 뒤로가기로 나갔던 판을 그대로 복원합니다 (js/play-resume.js)
+        // 새 문제가 나올 때와 오답으로 하트가 줄 때 저장하고, 판이 끝나면(endGame) 지웁니다.
+        // =====================================================================
+        function saveProgress() {
+            if (!currentRoomCode || lives <= 0) return;
+            resume.save({
+                score, combo, maxCombo, level, lives, totalTimeMs, solvedCount, totalAttempts,
+                wrongCount, levelBreakdown, currentProblemLevel, expectedAnswer, currentHint, invertedAnswer,
+                questionHtml: questionBox.innerHTML
+            });
+        }
+
+        /** @returns {boolean} 복원에 성공했는지 (실패하면 새 게임) */
+        function resumeGame(saved) {
+            try {
+                if (!(saved.lives > 0) || !saved.expectedAnswer || !saved.questionHtml) throw new Error('잘못된 저장본');
+                ({
+                    score, combo, maxCombo, level, lives, totalTimeMs, solvedCount, totalAttempts,
+                    wrongCount, levelBreakdown, currentProblemLevel, expectedAnswer, currentHint, invertedAnswer
+                } = saved);
+            } catch (e) {
+                console.warn('이어하기 복원 실패 — 새 게임을 시작합니다.', e);
+                resume.clear();
+                return false;
+            }
+            isChecking = false;
+            currentInput = "";
+            inputBox.innerText = "";
+            inputBox.classList.remove('shake');
+            questionBox.innerHTML = saved.questionHtml;
+            hintMsg.innerText = "※ 분수는 1/2 형식의 기약분수로 입력하세요.";
+            hintMsg.classList.add('text-muted');
+            hintMsg.classList.remove('text-primary', 'fw-bold');
+            hintMsg.style.opacity = currentProblemLevel === 4 ? 1 : 0;
+            levelUpOverlay.classList.add('d-none');
+            updateUI();
+            questionStartTime = Date.now();
+            customAlert("이어하기", `이전에 하던 게임을 이어서 합니다.<br>점수 <b>${score}점</b> · 하트 <b>${lives}개</b>`)
+                .then(() => { questionStartTime = Date.now(); });
+            return true;
         }
 
         function inputKey(key) {
@@ -793,6 +840,7 @@
             qHtml += `<span class="ms-2 text-secondary">= ?</span>`;
             questionBox.innerHTML = qHtml;
             expectedAnswer = ansStr;
+            saveProgress();
 
             if (isLevelUp) {
                 showLevelUp();
@@ -847,6 +895,7 @@
                     isChecking = false;
                     return;
                 }
+                saveProgress();
 
                 inputBox.classList.remove('shake');
                 void inputBox.offsetWidth;
@@ -928,6 +977,7 @@
         //   학번은 students 문서에만 두고, 대시보드가 닉네임으로 이어 붙입니다.
         // =====================================================================
         async function endGame() {
+            resume.clear();   // 끝난 판은 이어하기 대상에서 뺍니다
             const avgSec = solvedCount === 0 ? 0 : parseFloat(((totalTimeMs / solvedCount) / 1000).toFixed(1));
             const accuracy = totalAttempts === 0 ? 0 : Math.round((solvedCount / totalAttempts) * 100);
 
