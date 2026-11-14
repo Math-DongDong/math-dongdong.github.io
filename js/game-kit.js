@@ -350,7 +350,7 @@ export function presenceNow() {
 
 /**
  * 선생님: 방의 접속 상태를 구독합니다.
- * 권한이 없거나(규칙 배포 전 · 교사 권한 teacher_uids 없음 · App Check 토큰 문제) 실패하면 빈 값을 넘겨 플레이 횟수만 보이게 하고,
+ * 권한이 없거나(규칙 배포 전 · 권한 동기화 전 · App Check 토큰 문제) 실패하면 빈 값을 넘겨 플레이 횟수만 보이게 하고,
  * 1분 뒤 다시 구독합니다 (구독이 한 번 거부되면 Firebase가 그 구독을 끝내 버리므로).
  * @param {Function} onChange (presenceMap) => void   — { 닉네임: { status, lastHeartbeat } }
  * @returns {Function} 구독 해제
@@ -366,7 +366,7 @@ export function watchRoomPresence(gameKey, code, onChange) {
             (err) => {
                 if (!warned) {
                     warned = true;
-                    console.warn('[presence] 접속 상태를 읽지 못했습니다 — 1분 뒤 다시 시도합니다 (접속 전용 RTDB 규칙 · 교사 권한 teacher_uids · App Check 확인).', err);
+                    console.warn('[presence] 접속 상태를 읽지 못했습니다 — 1분 뒤 다시 시도합니다 (접속 전용 RTDB 규칙 · [권한 동기화] · App Check 확인).', err);
                 }
                 if (stopped) return;
                 onChange({});
