@@ -48,6 +48,7 @@
         .status-online  { background-color:#198754; }
         .status-away    { background-color:#ffc107; }
         .status-offline { background-color:#dc3545; }
+        .status-idle    { background-color:#ced4da; }
 
         .waiting-spinner {
             width:60px; height:60px; border:5px solid #e9ecef; border-top:5px solid #0d6efd;
@@ -170,8 +171,8 @@
             isValidRtdbKey, rememberEntrance, getRoomDeviceTag, rerollRoomNickname
         } from "../../../js/room-auth.js?v=4.5";
         import {
-            rtdbRoom, bindDeleteRoomButton, statusBadge, escapeHtml, safeNumber
-        } from "../../../js/game-kit.js?v=4.6";
+            rtdbRoom, bindDeleteRoomButton, statusBadge, heartbeatStatus, escapeHtml, safeNumber
+        } from "../../../js/game-kit.js?v=4.7";
         import {
             ref, set, get, update, remove, onValue, serverTimestamp, increment,
             runTransaction, onDisconnect
@@ -184,7 +185,7 @@
         // 설정  ★ 여기: 수업 상황에 맞게 조절
         // =====================================================================
         const HEARTBEAT_MS = 10000;
-        const ONLINE_MS = 40000;
+        const ONLINE_MS = 40000;           // 입장 시 같은 이름이 지금 접속 중인지 판정 (대시보드 표시는 game-kit 공통 60초·30분)
         const WAITER_STALE_MS = 25000;     // 대기열 생존 신호 신선도 (하트비트의 2.5배)
         const MATCH_LOCK_MS = 3000;
         const NICK_RETRY = 5;
@@ -672,11 +673,10 @@
         });
 
         function renderAdmin() {
+            // 접속 판정은 game-kit 공통 (신호 60초 없으면 접속 끊김, 30분 지나면 미접속) — 뱃지와 인원수가 같은 기준
+            const now = serverNow();
             const list = Object.entries(adminPlayers);
-            const online = list.filter(([, p]) => {
-                const gap = serverNow() - (typeof p.lastHeartbeat === 'number' ? p.lastHeartbeat : 0);
-                return gap < ONLINE_MS && p.status === 'online';
-            }).length;
+            const online = list.filter(([, p]) => heartbeatStatus(p, { now }).key === 'online').length;
             $('admin-player-count').textContent = `${online}명 접속`;
 
             if (list.length === 0) {
@@ -688,8 +688,8 @@
                 .sort((a, b) => (a[1].joinedAt ?? Infinity) - (b[1].joinedAt ?? Infinity))
                 .map(([id, p]) => {
                     const nick = p.nickname || id;
-                    const badge = statusBadge(p, { now: serverNow(), offlineMs: ONLINE_MS });
-                    const isOnline = badge.includes('status-online');
+                    const badge = statusBadge(p, { now });
+                    const isOnline = heartbeatStatus(p, { now }).key === 'online';
                     const vs = p.currentOpponent
                         ? `<span class="text-primary fw-bold">vs ${escapeHtml(p.currentOpponent)}</span>`
                         : '<span class="text-muted">대기 중</span>';

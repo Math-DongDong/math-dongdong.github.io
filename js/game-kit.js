@@ -71,23 +71,39 @@ export function buildSidMap(students) {
 }
 
 /**
- * RTDB 하트비트 기반 접속 상태 뱃지 HTML.
+ * 대전 게임(10초 신호) 대시보드의 '접속 끊김' 기준 — 오목·가위바위보·블로토 공통.
+ * ★ 대시보드 표시용입니다. 게임 안의 중복 접속·장기 이탈 판정 기준은 각 게임 상수를 그대로 씁니다.
+ */
+export const RTDB_OFFLINE_MS = 60 * 1000;
+
+/**
+ * 대전 게임 players/{닉} 노드 접속 판정 (now는 서버 시각을 넘기세요)
+ *   online   접속중     — 신호 60초 이내
+ *   away     다른화면   — 신호 60초 이내, 탭 숨김
+ *   offline  접속 끊김  — offline이 되었거나 신호가 60초 넘게 없음
+ *   idle     미접속     — 마지막 신호 뒤 30분이 지남 (학생 관리 페이지와 같은 회색)
+ * order: 정렬용 0 접속중 → 1 다른화면 → 2 접속 끊김 → 3 미접속
+ */
+export function heartbeatStatus(node, { now = Date.now(), offlineMs = RTDB_OFFLINE_MS, idleMs = PRESENCE_DROP_MS } = {}) {
+    const hb = typeof node?.lastHeartbeat === 'number' ? node.lastHeartbeat : 0;
+    const age = now - hb;
+    if (!hb || age >= idleMs) return { key: 'idle', label: '미접속', text: 'text-muted', order: 3 };
+    if (node.status === 'offline' || age >= offlineMs) return { key: 'offline', label: '접속 끊김', text: 'text-danger', order: 2 };
+    if (node.status === 'away') return { key: 'away', label: '다른화면', text: 'text-warning', order: 1 };
+    return { key: 'online', label: '접속중', text: 'text-success', order: 0 };
+}
+
+/**
+ * RTDB 하트비트 기반 접속 상태 뱃지 HTML (heartbeatStatus 판정 + STATUS_DOT_CSS).
  * 문구와 색을 게임마다 맞추기 위해 여기 한 곳에 모았습니다.
  *
  * @param {object} node   players/{닉} 노드 값
- * @param {object} opts   { now, offlineMs, short }
+ * @param {object} opts   { now, offlineMs, idleMs, short }  short: '접속 끊김' 대신 '끊김' (열이 좁은 표)
  */
-export function statusBadge(node, { now = Date.now(), offlineMs = 40000, short = false } = {}) {
-    const hb = typeof node?.lastHeartbeat === 'number' ? node.lastHeartbeat : 0;
-    const fresh = (now - hb) < offlineMs;
-
-    if (!fresh || node?.status === 'offline') {
-        return `<span class="status-dot status-offline"></span><span class="text-danger small fw-bold">${short ? '끊김' : '접속 끊김'}</span>`;
-    }
-    if (node?.status === 'away') {
-        return '<span class="status-dot status-away"></span><span class="text-warning small fw-bold">다른화면</span>';
-    }
-    return '<span class="status-dot status-online"></span><span class="text-success small fw-bold">접속중</span>';
+export function statusBadge(node, { now = Date.now(), offlineMs = RTDB_OFFLINE_MS, idleMs = PRESENCE_DROP_MS, short = false } = {}) {
+    const st = heartbeatStatus(node, { now, offlineMs, idleMs });
+    const label = (short && st.key === 'offline') ? '끊김' : st.label;
+    return `<span class="status-dot status-${st.key}"></span><span class="${st.text} small fw-bold">${label}</span>`;
 }
 
 /** statusBadge와 짝을 이루는 CSS. <style> 안에 한 번 붙여 넣으세요. */
@@ -97,6 +113,7 @@ export const STATUS_DOT_CSS = `
 .status-online  { background-color:#198754; }
 .status-away    { background-color:#ffc107; }
 .status-offline { background-color:#dc3545; }
+.status-idle    { background-color:#ced4da; }
 `;
 
 /** 학번 열 숨김 토글용 CSS. 표를 다시 그려도 유지되도록 클래스로만 제어합니다. */

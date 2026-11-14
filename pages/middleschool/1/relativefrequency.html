@@ -112,6 +112,10 @@
             background-color: #dc3545;
         }
 
+        .status-idle {
+            background-color: #ced4da;
+        }
+
         /* 학번 열: 기본 숨김, 토글 시 표시 (교실 TV 투사 대비)
            ★ 표를 다시 그려도 유지되도록 JS가 아니라 CSS 클래스로 제어합니다. */
         .col-studentid {
@@ -372,7 +376,7 @@
             isValidRtdbKey, rememberEntrance, getDeviceId, getRoomDeviceTag, rerollRoomNickname,
             promptRoomMode, showPinResetModal
         } from "../../../js/room-auth.js?v=4.5";
-        import { rtdbRoom, statusBadge as kitStatusBadge, buildSidMap, renderGuestApproval } from "../../../js/game-kit.js?v=4.6";
+        import { rtdbRoom, statusBadge as kitStatusBadge, buildSidMap, renderGuestApproval } from "../../../js/game-kit.js?v=4.7";
         import { unregisterRoom } from "../../../js/room-registry.js";
 
         const db = rtdbRelativeFrequency;
@@ -384,7 +388,7 @@
         // =====================================================================
         const AWAY_GRACE_MS = 15000;        // 화면을 벗어난 뒤 무효 처리까지 주는 유예 시간
         const MATCH_TIMEOUT_MS = 30000;     // 이 시간이 지나면 "다시 매칭하기" 버튼 노출
-        const ONLINE_THRESHOLD_MS = 40000;  // 중복 접속 판정 + 장기 이탈 기준
+        const ONLINE_THRESHOLD_MS = 40000;  // 중복 접속 판정 + 장기 이탈 기준 (게임 로직) — 대시보드 표시는 game-kit 공통 60초
         const HEARTBEAT_MS = 10000;         // 하트비트 주기
         const WAITER_STALE_MS = 25000;      // 대기자 생존 신호 신선도 (하트비트의 2.5배)
         const MATCH_LOCK_MS = 3000;         // 매칭 잠금 유지 시간
@@ -1600,9 +1604,11 @@
             adminRoomLastData = null;
         }
 
-        // 오목 대시보드와 문구·색을 맞춤: 접속중(녹색)/다른화면(노랑)/접속 끊김(빨강)
+        // 오목·블로토와 같은 공통 판정: 접속중(녹색)/다른화면(노랑)/접속 끊김(빨강)/미접속(회색)
+        //  기준은 game-kit 공통: 신호 60초 없으면 접속 끊김, 30분 지나면 미접속
+        //  ★ ONLINE_THRESHOLD_MS(40초)는 중복 접속·장기 이탈 판정용이라 여기서는 쓰지 않습니다.
         function statusBadge(player) {
-            return kitStatusBadge(player, { now: serverNow(), offlineMs: ONLINE_THRESHOLD_MS });
+            return kitStatusBadge(player, { now: serverNow() });
         }
 
         // =====================================================================
@@ -1654,6 +1660,18 @@
         // 방 스냅샷을 기억해 두었다가, Firestore 학번이 늦게 도착해도 표를 다시 그립니다.
         let adminRoomLastData = null;
 
+        // 새 신호 없이 시간만 흘러 바뀌는 상태(신호 멈춤 → 접속 끊김, 30분 → 미접속)를 위해
+        // 상태 칸만 고칩니다 — 표 전체를 다시 그리지 않습니다.
+        function refreshStatusCells() {
+            const players = adminRoomLastData?.players;
+            if (!players) return;
+            document.querySelectorAll('#admin-players-tbody td[data-status-nick]').forEach(td => {
+                const html = statusBadge(players[td.dataset.statusNick]);
+                if (td.innerHTML !== html) td.innerHTML = html;
+            });
+        }
+        setInterval(refreshStatusCells, 15000);
+
         function renderPlayersTable(data) {
             const tbody = $('admin-players-tbody');
             tbody.innerHTML = '';
@@ -1682,7 +1700,7 @@
                         const sid = sidByNick[nickname] || '';
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td>${statusBadge(score)}</td>
+                            <td data-status-nick="${escapeHtml(nickname)}">${statusBadge(score)}</td>
                             <td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td>
                             <td class="fw-bold">${escapeHtml(nickname)}</td>
                             <td class="text-success fw-bold">${safeNumber(score.wins)}</td>

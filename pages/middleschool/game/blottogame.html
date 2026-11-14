@@ -129,6 +129,10 @@
             background-color: #dc3545;
         }
 
+        .status-idle {
+            background-color: #ced4da;
+        }
+
         .btn-remove-team {
             font-size: 0.72rem;
             text-decoration: none;
@@ -341,7 +345,7 @@
             rememberEntrance, saveGameNickname, generateRandomNickname,
             getDeviceId, getRoomDeviceTag, setRoomNickname
         } from "../../../js/room-auth.js?v=4.5";
-        import { rtdbRoom, statusBadge as kitStatusBadge, bindDeleteRoomButton, renderRoomOptions } from "../../../js/game-kit.js?v=4.6";
+        import { rtdbRoom, statusBadge as kitStatusBadge, bindDeleteRoomButton, renderRoomOptions } from "../../../js/game-kit.js?v=4.7";
         import { registerRoom, unregisterRoom } from "../../../js/room-registry.js";
         import {
             ref, set, get, onValue, update, remove, serverTimestamp,
@@ -355,7 +359,7 @@
         // 설정 상수
         // =====================================================================
         const HEARTBEAT_MS = 10000;          // 하트비트 주기
-        const ONLINE_THRESHOLD_MS = 40000;   // 접속 끊김 판정 기준
+        const ONLINE_THRESHOLD_MS = 40000;   // 재접속 판정 기준 (같은 이름이 지금 접속 중인지) — 대시보드 표시는 game-kit 공통 60초
         const AUTO_INTERVAL_MS = 2000;       // 자동 공개 간격
         const FORCE_INTERVAL_MS = 700;       // 강제 진행 시 공개 간격
         const REVEAL_ANIM_MS = 500;          // 카드 공개 연출 시간
@@ -919,10 +923,27 @@
             }
         });
 
-        // 접속 상태 표시 (접속중 / 다른화면 / 끊김)
+        // 접속 상태 표시 (접속중 / 다른화면 / 끊김 / 미접속)
+        //  기준은 game-kit 공통: 신호 60초 없으면 끊김, 30분 지나면 미접속 (오목·가위바위보와 같음)
+        //  ★ ONLINE_THRESHOLD_MS(40초)는 재접속 판정용이라 여기서는 쓰지 않습니다.
         function statusBadge(p) {
-            return kitStatusBadge(p, { now: serverNow(), offlineMs: ONLINE_THRESHOLD_MS, short: true });
+            return kitStatusBadge(p, { now: serverNow(), short: true });
         }
+
+        // 새 신호 없이 시간만 흘러 바뀌는 상태(신호 멈춤 → 끊김, 30분 → 미접속)를 위해
+        // 상태 칸만 고칩니다 — 표 전체를 다시 그리지 않아 버튼 클릭이 끊기지 않습니다.
+        function refreshStatusCells() {
+            if (isAnimating) return;
+            const cells = document.querySelectorAll('#admin-status-tbody td[data-status-nick]');
+            if (!cells.length) return;
+            const byNick = {};
+            Object.values(playersData).forEach(p => { if (p && p.nickname) byNick[p.nickname] = p; });
+            cells.forEach(td => {
+                const html = statusBadge(byNick[td.dataset.statusNick]);
+                if (td.innerHTML !== html) td.innerHTML = html;
+            });
+        }
+        setInterval(refreshStatusCells, 15000);
 
         /** 가입순으로 정렬된 참가자 목록 */
         function sortedPlayers() {
@@ -989,7 +1010,7 @@
 
             // (1) 접속 상태
             bodyHtml += '<tr><th>접속 상태</th>';
-            players.forEach(p => { bodyHtml += `<td>${statusBadge(p)}</td>`; });
+            players.forEach(p => { bodyHtml += `<td data-status-nick="${escapeHtml(p.nickname)}">${statusBadge(p)}</td>`; });
             bodyHtml += '</tr>';
 
             // (2) 진행 중인 라운드 — 제출했는지만 보여 줍니다 (값은 공개 때)

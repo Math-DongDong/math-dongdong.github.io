@@ -14,7 +14,7 @@
 - Gemini 초안 생성에 쓰는 API 키는 선택적으로 이 기기의 localStorage에 저장됩니다. 학생 답변을 Gemini API로 전송하는 데 동의하는 내용만 입력하세요.
 - 우리반 관계지도(`pages/admin/relationmap.html`)는 새 컬렉션 `relation_maps`를 씁니다. 가이드북 13장의 규칙 블록을 Firestore 규칙에 **추가**해야 동작합니다. `student_auth`의 `gate`는 v4.3에서 `{ proof, at }`만 받도록 좁혀졌으며, 관계지도의 게이트 쓰기는 이 형식을 그대로 따릅니다.
 
-공통 모듈 주소는 `room-auth.js?v=4.5`, `game-kit.js?v=4.6`, `dashboard-header.js?v=4.2`로 맞춥니다.
+공통 모듈 주소는 `room-auth.js?v=4.5`, `game-kit.js?v=4.7`, `dashboard-header.js?v=4.2`로 맞춥니다.
 순서가 바뀌면 예전 학생 관리 화면이 새 규칙에 막힙니다.
 
 ## 과거 최초 전환 안내 (v3 → v4.1)
@@ -64,7 +64,7 @@ assets/template/firebase/설문-소감문-통합형.html
 가이드북.md · DEPLOY.md · PATCHES.md
 ```
 
-**js 파일과 게임 페이지는 함께 배포**하세요. 모듈 주소를 같은 `?v=`(현재 `room-auth.js?v=4.5` · `game-kit.js?v=4.6`)로 통일하고 일부만 올려
+**js 파일과 게임 페이지는 함께 배포**하세요. 모듈 주소를 같은 `?v=`(현재 `room-auth.js?v=4.5` · `game-kit.js?v=4.7`)로 통일하고 일부만 올려
 한 페이지에서 서로 다른 모듈 버전이 섞이지 않게 합니다.
 
 **확인:** 아무 게임이나 빠른 입장 방을 만들어 학생 기기로 들어가 봅니다.
