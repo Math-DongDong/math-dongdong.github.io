@@ -95,6 +95,7 @@
     .ov-open { position: fixed; top: 10px; right: 10px; z-index: 5; opacity: 0.3; border: 1px solid rgba(255, 255, 255, 0.5); background: rgba(17, 24, 39, 0.6); color: #fff; border-radius: 8px; padding: 6px 12px; font: 14px 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; cursor: pointer; }
     .ov-open:hover { opacity: 1; }
     .ov-spot { right: 136px; }
+    :root:fullscreen .ov-full { display: none; } /* 청중 창의 [전체 화면] 단추: 전체 화면이 되면 숨긴다 */
     .ov-open.on, .pv-bar button.on { opacity: 1; background: #f59e0b; border-color: #f59e0b; color: #111827; }
     .pv-bar button.on[data-pv="laser"], .pv-bar button.on#pv-laser { background: #ef4444; border-color: #ef4444; color: #fff; } /* 레이저는 빨강으로 하이라이트와 구분 */
     .ov-backdrop { position: fixed; inset: 0; z-index: 3000; background: rgba(15, 23, 42, 0.65); display: flex; align-items: center; justify-content: center; padding: 24px; font-family: 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; }
@@ -924,6 +925,7 @@
                   <tr><td class="text-nowrap"><kbd>Home</kbd> / <kbd>End</kbd></td><td>첫 장 / 마지막 장</td></tr>
                   <tr><td class="text-nowrap"><kbd>H</kbd></td><td>하이라이트 켜기·끄기 (마우스 둘레만 밝게)</td></tr>
                   <tr><td class="text-nowrap"><kbd>+</kbd> / <kbd>-</kbd></td><td>하이라이트 범위 키우기 / 줄이기</td></tr>
+                  <tr><td class="text-nowrap"><kbd>F</kbd></td><td>전체 화면 켜기·끄기 (발표자 보기: 청중 창을 프로젝터 화면으로 옮긴 뒤 그 창에서 누르기)</td></tr>
                   <tr><td class="text-nowrap"><kbd>P</kbd></td><td>레이저 포인터 켜기·끄기 (발표자 보기: 내 마우스 위치를 청중 화면에 빨간 점으로, 처음엔 켜짐)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>발표 끝내기</td></tr>
                 </tbody>
@@ -3850,8 +3852,9 @@
             Show.timer = setInterval(Show.tick, 1000);
           }
           Show.paint();
+          // 청중 화면만 쓸 때만 전체 화면으로. 발표자 보기는 내 화면이라 그대로 두고, 청중 창을 열 때 전체 화면이 풀리며 발표가 끝나는 일도 막는다.
           const root = document.documentElement;
-          if (root.requestFullscreen && !document.fullscreenElement) root.requestFullscreen().catch(() => { /* 전체 화면을 못 써도 발표는 된다 */ });
+          if (Show.kind !== 'presenter' && root.requestFullscreen && !document.fullscreenElement) root.requestFullscreen().catch(() => { /* 전체 화면을 못 써도 발표는 된다 */ });
         },
 
         overview: null,
@@ -3967,6 +3970,12 @@
           if (Show.laserPos) Show.laserTimer = setTimeout(() => { Show.laserPos = null; Show.applyLaser(); }, Show.LASER_IDLE_MS);
         },
 
+        // 그 창(문서)의 전체 화면 켜기·끄기. 새 창은 브라우저 보안상 그 창에서 직접 눌러야 전체 화면이 된다.
+        toggleFullscreen(doc) {
+          if (doc.fullscreenElement) doc.exitFullscreen().catch(() => { /* 무시 */ });
+          else if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen().catch(() => { /* 전체 화면을 못 써도 발표는 된다 */ });
+        },
+
         laserButton() {
           const button = document.querySelector('[data-pv="laser"]');
           button.classList.toggle('on', Show.laser);
@@ -4053,10 +4062,12 @@
           doc.open();
           doc.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>' + Util.escapeHtml(Editor.deck.title) +
             ' - 청중 화면</title><style>' + $('ls-slide-css').textContent + '</style></head><body class="ls-viewer presentation-mode">' +
-            '<div class="v-host" id="pa-host"><div class="v-scaler" id="pa-scaler"><div class="slide-canvas" id="pa-canvas"></div></div></div></body></html>');
+            '<div class="v-host" id="pa-host"><div class="v-scaler" id="pa-scaler"><div class="slide-canvas" id="pa-canvas"></div></div></div>' +
+            '<button type="button" class="ov-open ov-full" id="pa-full" title="이 창을 프로젝터 화면으로 옮긴 뒤 누르세요">전체 화면 (F)</button></body></html>');
           doc.close();
           Show.popup = popup;
           doc.addEventListener('keydown', Show.onKey);
+          doc.getElementById('pa-full').addEventListener('click', () => Show.toggleFullscreen(doc));
           doc.getElementById('pa-host').addEventListener('click', () => Show.next());
           popup.addEventListener('resize', Show.fit);
           // 지금 장을 청중 창에만 그리고, 발표자 쪽에서 이미 재생 중인 영상은 이어서 맞춘다.
@@ -4082,6 +4093,11 @@
           else if (key === 'Escape') { event.preventDefault(); Show.exit(); }
           else if (['h', 'H', 'ㅗ'].includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); Show.toggleSpot(); }
           else if (['p', 'P', 'ㅔ'].includes(key) && Show.kind === 'presenter' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); Show.toggleLaser(); }
+          else if (['f', 'F', 'ㄹ'].includes(key) && Show.kind === 'presenter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            // 발표자 보기: 키를 누른 창(청중 창 또는 발표자 화면)의 전체 화면을 켜고 끈다.
+            event.preventDefault();
+            Show.toggleFullscreen(event.target.ownerDocument || event.target);
+          }
           else if ((key === '+' || key === '-') && Show.spot && !event.ctrlKey && !event.metaKey) {
             event.preventDefault();
             Show.spotRadius = spotResize(Show.spotRadius, key === '+' ? 1 : -1);
@@ -6552,7 +6568,7 @@
           else if ((k === 'h' || k === 'H' || k === 'ㅗ') && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); nav.spot(); }
           else if ((k === 'p' || k === 'P' || k === 'ㅔ') && nav.laser && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); nav.laser(); }
           else if ((k === '+' || k === '-') && !event.ctrlKey && !event.metaKey && nav.spotSize(k === '+' ? 1 : -1)) event.preventDefault();
-          else if (k === 'f' || k === 'F') {
+          else if (k === 'f' || k === 'F' || k === 'ㄹ') {
             if (doc.fullscreenElement) doc.exitFullscreen();
             else if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
           }
@@ -6716,9 +6732,13 @@
               doc.open();
               doc.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>' + esc(data.title || '') +
                 ' - 청중 화면</title><style>' + css + '</style></head><body class="ls-viewer presentation-mode">' +
-                '<div class="v-host" id="pa-host">' + stage('pa') + '</div></body></html>');
+                '<div class="v-host" id="pa-host">' + stage('pa') + '</div>' +
+                '<button type="button" class="ov-open ov-full" id="pa-full" title="이 창을 프로젝터 화면으로 옮긴 뒤 누르세요">전체 화면 (F)</button></body></html>');
               doc.close();
               doc.addEventListener('keydown', function (event) { onKey(event, doc, nav); });
+              doc.getElementById('pa-full').addEventListener('click', function () {
+                if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
+              });
               doc.getElementById('pa-host').addEventListener('click', function () { nav.next(); });
               popup.addEventListener('resize', function () { fit(doc, 'pa'); });
               paint(doc, 'pa', index);
@@ -7650,7 +7670,9 @@
         new ResizeObserver(() => Editor.fit()).observe($('stage-host'));
         window.addEventListener('resize', () => { if (Show.isOn()) Show.fit(); });
         document.addEventListener('fullscreenchange', () => {
-          if (!document.fullscreenElement && Show.isOn()) Show.exit();
+          // 청중 화면만 쓸 때: 전체 화면에서 Esc는 브라우저가 먼저 가져가므로 전체 화면이 풀리면 발표를 끝낸다.
+          // 발표자 보기는 청중 창을 열면 전체 화면이 풀리므로 끝내지 않는다(Esc·[편집 모드로]로 끝낸다).
+          if (!document.fullscreenElement && Show.isOn() && Show.kind !== 'presenter') Show.exit();
           else if (Show.isOn()) Show.fit();
         });
 
