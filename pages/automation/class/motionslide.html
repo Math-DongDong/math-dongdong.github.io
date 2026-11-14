@@ -375,6 +375,12 @@
     /* 묶인 상자를 골랐을 때 위에 뜨는 [그룹 해제] (캔버스가 축소되어 보이므로 크게) */
     .ls-ungroup { position: absolute; left: -4px; top: -64px; z-index: 10; padding: 6px 18px; font: 600 24px/1.2 Pretendard, sans-serif; color: #fff; background: var(--primary); border-radius: 8px; white-space: nowrap; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
     .ls-ungroup.below { top: auto; bottom: -64px; }
+    /* 끌어 옮길 때 보조선: 맞춤 선과 같은 간격 표시(굵기·글자 크기는 화면 배율에 맞춰 JS가 정한다) */
+    .snap-guides { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+    .snap-line, .snap-gap { position: absolute; background: #ec4899; }
+    .snap-gap-label { position: absolute; padding: 0.1em 0.5em; border-radius: 0.4em; background: #ec4899; color: #fff; font-weight: 700; line-height: 1.3; white-space: nowrap; }
+    .snap-gap-label.x { transform: translate(-50%, -100%); margin-top: -0.4em; }
+    .snap-gap-label.y { transform: translateY(-50%); margin-left: 0.5em; }
     /* 단계별 공개: 편집 화면에서만 클릭 순서 번호를 상자 왼쪽 위에 보인다(저장·발표에는 없음) */
     #slide-canvas .draggable-box[data-step]::before { content: attr(data-step); position: absolute; left: -24px; top: -24px; z-index: 12; width: 48px; height: 48px;
       border-radius: 50%; background: #f59e0b; color: #fff; font: 800 28px/48px system-ui, sans-serif; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); pointer-events: none; }
@@ -544,6 +550,7 @@
           <div class="stage-host" id="stage-host">
             <div class="stage-scaler" id="stage-scaler">
               <div class="slide-canvas" id="slide-canvas"></div>
+              <div class="snap-guides" id="snap-guides" aria-hidden="true"></div><!-- 끌 때 보조선(캔버스 밖이라 저장되지 않는다) -->
             </div>
           </div>
           <div class="notes-pane">
@@ -608,6 +615,7 @@
                   <li><button type="button" class="dropdown-item" data-insert="app" title="슬라이더·끌기·버튼으로 조작하는 학습 도구를 AI가 코드로 만듭니다"><i class="bi bi-puzzle"></i> 인터랙티브 요소 (AI가 코드 작성)</button></li>
                 </ul>
               </div>
+              <button type="button" class="btn btn-light btn-sm d-none text-nowrap" id="ai-revise-undo" title="AI가 고친 이 장을 고치기 전 모습으로 되돌립니다"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
               <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="ai-send"><i class="bi bi-magic"></i> <span id="ai-send-label">생성</span> <span class="opacity-75" id="ai-send-hint">Ctrl+Enter</span></button>
             </div>
             <!-- AI 진행 상황: 보내기 단추 아래 한 줄(높이 고정이라 입력칸이 늘었다 줄었다 하지 않는다). 결과는 알림으로 -->
@@ -2541,6 +2549,138 @@
           '<p class="editable-text" style="font-size:28px;color:#64748b;">✏️ 글자는 더블클릭해 고치고 상자는 끌어서 옮깁니다 · 단축키는 위쪽 [기타] → 단축키 · 이 안내 장은 첫 슬라이드를 만들면 그 결과로 바뀝니다</p></div></div>'
       };
 
+      // 끌어 옮길 때 보조선: 슬라이드 가운데·가장자리, 다른 상자의 가장자리·가운데에 가까우면 붙이고 선을 보인다.
+      // 앞뒤(가로는 좌우, 세로는 위아래) 상자나 슬라이드 끝과의 간격이 같아지면 붙이고 거리를 보인다.
+      // 좌표는 캔버스 단위(1920×1080). Alt를 누른 채 끌면 붙지 않는다.
+      const SnapGuides = {
+        RANGE: 6, // 붙는 거리(화면 픽셀)
+        SIZE: { x: 1920, y: 1080 },
+        KEYS: {
+          x: { start: 'left', mid: 'cx', end: 'right', crossStart: 'top', crossEnd: 'bottom', crossMid: 'cy' },
+          y: { start: 'top', mid: 'cy', end: 'bottom', crossStart: 'left', crossEnd: 'right', crossMid: 'cx' }
+        },
+
+        frame(left, top, width, height) {
+          return { left, top, width, height, right: left + width, bottom: top + height, cx: left + width / 2, cy: top + height / 2 };
+        },
+
+        // 끌기 시작할 때 한 번: 옮길 상자와 다른 상자들의 자리를 재 둔다.
+        begin(box) {
+          const canvas = $('slide-canvas');
+          const scale = Editor.scale || 1;
+          const origin = canvas.getBoundingClientRect();
+          const measure = el => {
+            const rect = el.getBoundingClientRect();
+            return SnapGuides.frame((rect.left - origin.left) / scale, (rect.top - origin.top) / scale, rect.width / scale, rect.height / scale);
+          };
+          const others = Array.from(canvas.querySelectorAll('.draggable-box'))
+            .filter(el => !el.contains(box) && !box.contains(el) && el.getClientRects().length)
+            .map(measure);
+          return { scale, limit: SnapGuides.RANGE / scale, box: measure(box), others };
+        },
+
+        // 같은 줄(가로면 위아래가 겹치는) 상자 중 바로 앞·뒤 것. 없으면 슬라이드 끝.
+        neighbors(ctx, r, key) {
+          const k = SnapGuides.KEYS[key];
+          let before = { at: 0, box: null };
+          let after = { at: SnapGuides.SIZE[key], box: null };
+          ctx.others.forEach(o => {
+            if (o[k.crossStart] >= r[k.crossEnd] || o[k.crossEnd] <= r[k.crossStart]) return;
+            if (o[k.end] <= r[k.start] + ctx.limit && o[k.end] > before.at) before = { at: o[k.end], box: o };
+            if (o[k.start] >= r[k.end] - ctx.limit && o[k.start] < after.at) after = { at: o[k.start], box: o };
+          });
+          return { before, after };
+        },
+
+        // 한 축에서 붙일 거리: 맞춤 후보와 같은 간격 후보 중 가장 가까운 것.
+        offset(ctx, r, key) {
+          const k = SnapGuides.KEYS[key];
+          const size = SnapGuides.SIZE[key];
+          const targets = [0, size / 2, size];
+          ctx.others.forEach(o => targets.push(o[k.start], o[k.mid], o[k.end]));
+          let best = null;
+          const consider = value => {
+            if (Math.abs(value) <= ctx.limit && (best === null || Math.abs(value) < Math.abs(best))) best = value;
+          };
+          targets.forEach(t => [r[k.start], r[k.mid], r[k.end]].forEach(p => consider(t - p)));
+          const { before, after } = SnapGuides.neighbors(ctx, r, key);
+          if (after.at - before.at > r[k.end] - r[k.start]) consider(((after.at - r[k.end]) - (r[k.start] - before.at)) / 2);
+          return best || 0;
+        },
+
+        // dx, dy: 마우스로 옮긴 양 → 붙인 뒤의 옮길 양(정수). 보조선도 그린다.
+        snap(ctx, dx, dy, free) {
+          if (!ctx || free) { SnapGuides.clear(); return { dx: Math.round(dx), dy: Math.round(dy) }; }
+          const b = ctx.box;
+          const at = () => SnapGuides.frame(b.left + dx, b.top + dy, b.width, b.height);
+          dx = Math.round(dx + SnapGuides.offset(ctx, at(), 'x'));
+          dy = Math.round(dy + SnapGuides.offset(ctx, at(), 'y'));
+          SnapGuides.draw(ctx, at());
+          return { dx, dy };
+        },
+
+        draw(ctx, r) {
+          const layer = $('snap-guides');
+          const near = (a, b) => Math.abs(a - b) < 1;
+          const thick = 2 / ctx.scale;
+          const cap = 7 / ctx.scale;
+          const lines = new Map(); // 같은 자리의 선은 하나로 합친다
+          const pieces = [];
+          const piece = (className, left, top, width, height) => {
+            const el = document.createElement('div');
+            el.className = className;
+            Object.assign(el.style, { left: left + 'px', top: top + 'px', width: width + 'px', height: height + 'px' });
+            pieces.push(el);
+            return el;
+          };
+          ['x', 'y'].forEach(key => {
+            const k = SnapGuides.KEYS[key];
+            const points = [r[k.start], r[k.mid], r[k.end]];
+            const addLine = (at, from, to) => {
+              const id = key + Math.round(at);
+              const line = lines.get(id);
+              if (line) { line.from = Math.min(line.from, from); line.to = Math.max(line.to, to); }
+              else lines.set(id, { key, at, from, to });
+            };
+            const size = SnapGuides.SIZE[key];
+            [0, size / 2, size].forEach(t => { if (points.some(p => near(p, t))) addLine(t, 0, SnapGuides.SIZE[key === 'x' ? 'y' : 'x']); });
+            ctx.others.forEach(o => [o[k.start], o[k.mid], o[k.end]].forEach(t => {
+              if (points.some(p => near(p, t))) addLine(t, Math.min(r[k.crossStart], o[k.crossStart]), Math.max(r[k.crossEnd], o[k.crossEnd]));
+            }));
+            // 앞뒤 간격이 같으면 두 간격에 거리 표시
+            const { before, after } = SnapGuides.neighbors(ctx, r, key);
+            const gap = r[k.start] - before.at;
+            if (gap < 1 || !near(gap, after.at - r[k.end])) return;
+            const cross = o => o ? (Math.max(r[k.crossStart], o[k.crossStart]) + Math.min(r[k.crossEnd], o[k.crossEnd])) / 2 : r[k.crossMid];
+            [[before.at, r[k.start], cross(before.box)], [r[k.end], after.at, cross(after.box)]].forEach(([a, b, c]) => {
+              const label = document.createElement('div');
+              label.className = 'snap-gap-label ' + key;
+              label.textContent = Math.round(b - a);
+              if (key === 'x') {
+                piece('snap-gap', a, c - thick / 2, b - a, thick);
+                piece('snap-gap', a, c - cap, thick, cap * 2);
+                piece('snap-gap', b - thick, c - cap, thick, cap * 2);
+                Object.assign(label.style, { left: (a + b) / 2 + 'px', top: c + 'px' });
+              } else {
+                piece('snap-gap', c - thick / 2, a, thick, b - a);
+                piece('snap-gap', c - cap, a, cap * 2, thick);
+                piece('snap-gap', c - cap, b - thick, cap * 2, thick);
+                Object.assign(label.style, { left: c + 'px', top: (a + b) / 2 + 'px' });
+              }
+              pieces.push(label);
+            });
+          });
+          lines.forEach(line => {
+            if (line.key === 'x') piece('snap-line', line.at - thick / 2, line.from, thick, line.to - line.from);
+            else piece('snap-line', line.from, line.at - thick / 2, line.to - line.from, thick);
+          });
+          layer.style.fontSize = (12 / ctx.scale) + 'px';
+          layer.replaceChildren(...pieces);
+        },
+
+        clear() { $('snap-guides').replaceChildren(); }
+      };
+
       const Editor = {
         deck: null,
         index: 0,
@@ -2611,6 +2751,7 @@
           Editor.undoStack = [];
           Editor.redoStack = [];
           Editor.lastSnap = Editor.snapshot();
+          AiPanel.reviseHistory = [];
 
           $('home-view').classList.add('d-none');
           $('editor-view').classList.remove('d-none');
@@ -2809,6 +2950,7 @@
           }
           $('slide-counter').textContent = (Editor.index + 1) + ' / ' + Editor.deck.slides.length;
           AiPanel.syncRecent(); // 장을 옮기면 [현재 슬라이드 수정]의 요청 기록도 그 장 것으로
+          AiPanel.syncReviseUndo();
         },
 
         // 캔버스를 현재 장으로 바꾼다(선택 상태는 DOM과 함께 사라진다).
@@ -3410,6 +3552,7 @@
             height: rect.height / scale
           };
           const fixedHeight = !!box.style.height;
+          const guides = mode ? null : SnapGuides.begin(box); // 옮길 때만 보조선
           let snapshot = null;
           let moved = false;
 
@@ -3432,14 +3575,16 @@
               if (fixedHeight) box.style.height = Math.max(10, Math.round(start.height * ratio)) + 'px';
               Editor.applyScale(snapshot, ratio);
             } else {
-              box.style.left = Math.round(start.left + dx) + 'px';
-              box.style.top = Math.round(start.top + dy) + 'px';
+              const snapped = SnapGuides.snap(guides, dx, dy, ev.altKey);
+              box.style.left = Math.round(start.left + snapped.dx) + 'px';
+              box.style.top = Math.round(start.top + snapped.dy) + 'px';
             }
           };
           const up = () => {
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
             window.removeEventListener('pointercancel', up);
+            SnapGuides.clear();
             if (moved) Editor.commit();
           };
           window.addEventListener('pointermove', move);
@@ -4751,6 +4896,7 @@
         busy: false,
         files: [], // 참고 자료 { file, kind, parts }
         media: [], // 슬라이드에 넣을 개체 { kind: image|video|youtube, name, url, embed, width, height, token }
+        reviseHistory: [], // [현재 슬라이드 수정] 반영 취소용 { id: 장 id, before: 고치기 전 장(JSON) }
 
         syncKey() { $('ai-nokey').classList.toggle('d-none', !!Settings.apiKey()); },
 
@@ -4915,6 +5061,7 @@
         setBusy(on) {
           AiPanel.busy = on;
           $('ai-send').disabled = on;
+          $('ai-revise-undo').disabled = on;
           $('ai-send-hint').textContent = on ? 'Esc로 중단' : 'Ctrl+Enter';
           if (!on) AiPanel.hideStatus();
         },
@@ -5580,6 +5727,30 @@
             ? '예) 제목을 더 크게, 본문을 카드 3개로 나눠 줘. 배경은 밝은 하늘색으로 바꾸고 예시 하나 추가'
             : "예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문";
           AiPanel.syncRecent(); // 탭마다 기억하는 요청 목록이 다르다
+          AiPanel.syncReviseUndo();
+        },
+
+        // [반영 취소]는 [현재 슬라이드 수정]에서, 지금 장을 AI가 고친 기록이 있을 때만 보인다.
+        syncReviseUndo() {
+          const slide = Editor.deck && Editor.current();
+          const has = !!slide && AiPanel.reviseHistory.some(entry => entry.id === slide.id);
+          $('ai-revise-undo').classList.toggle('d-none', !(AiPanel.isReviseMode() && has));
+        },
+
+        // 지금 장을 AI가 마지막으로 고치기 전 모습으로 되돌린다(여러 번 고쳤으면 누를 때마다 한 단계씩).
+        undoRevise() {
+          if (AiPanel.busy || !Editor.deck) return;
+          const id = Editor.current().id;
+          const at = AiPanel.reviseHistory.map(entry => entry.id).lastIndexOf(id);
+          if (at < 0) return;
+          const entry = AiPanel.reviseHistory.splice(at, 1)[0];
+          Editor.deselect();
+          Editor.syncCurrent();
+          Editor.deck.slides[Editor.index] = JSON.parse(entry.before);
+          Editor.renderCanvas();
+          Editor.commit();
+          AiPanel.syncReviseUndo();
+          Util.toast((Editor.index + 1) + '번 장을 AI가 고치기 전으로 되돌렸습니다. 다시 실행(Ctrl+Y)하면 고친 모습으로 돌아갑니다.', 'success');
         },
 
         send() {
@@ -5691,6 +5862,8 @@
           Editor.deselect();
           Editor.syncCurrent();
           const current = deck.slides[at];
+          AiPanel.reviseHistory.push({ id: current.id, before: JSON.stringify(current) });
+          if (AiPanel.reviseHistory.length > 30) AiPanel.reviseHistory.shift();
           deck.slides[at] = Object.assign(fresh, {
             title: String(item.title || current.title || '').slice(0, 120),
             notes: item.notes ? Editor.normalizeNotes({ notes: item.notes, notesFormat: 'text' }) : current.notes,
@@ -5702,7 +5875,8 @@
           AiPanel.finishMedia(media, String(item.html || ''));
           AiPanel.remember(deck, '[이 장 수정] ' + request + AiPanel.fileNote(files), request, target.id);
           Editor.refreshThumb(at);
-          status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.' + AiPanel.repairNote(repairFailed), repairFailed > 0);
+          AiPanel.syncReviseUndo();
+          status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 [반영 취소]나 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.' + AiPanel.repairNote(repairFailed), repairFailed > 0);
         },
 
         init() {
@@ -5726,6 +5900,7 @@
             await AiPanel.clearRecent();
           });
           $('ai-send').addEventListener('click', AiPanel.send);
+          $('ai-revise-undo').addEventListener('click', AiPanel.undoRevise);
           $('ai-attach').addEventListener('click', () => $('ai-file').click());
           $('ai-file').addEventListener('change', event => {
             AiPanel.addFiles(event.target.files);

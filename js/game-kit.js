@@ -254,9 +254,14 @@ export function renderRoomOptions(selectEl, rooms, labelFn, emptyTeacherText = '
 export const PRESENCE_FRESH_MS = 120 * 1000;      // 이 안에 신호가 있으면 접속중·다른화면 (학생 관리와 같은 값)
 export const PRESENCE_DROP_MS = 30 * 60 * 1000;   // 끊긴 뒤 이 시간까지 '접속 끊김', 지나면 플레이 횟수
 const PRESENCE_BEAT_MS = 30 * 1000;               // 신호 주기 (끊김은 서버가 잡으므로 느슨하게)
+const PRESENCE_RETRY_MS = 60 * 1000;              // 권한 거부(규칙 배포 전 · App Check 토큰 문제) 뒤 다시 시도하기까지
+
+const isPermissionError = (e) => String(e?.code || e?.message || '').toLowerCase().includes('permission');
 
 /**
  * 학생: 방에 들어온 뒤 접속 신호를 시작합니다.
+ * 권한이 거부되어도 멈춰 버리지 않고, 1분 뒤 또는 다시 연결될 때 다시 시도합니다
+ * (아이폰 등에서 App Check 토큰이 잠깐 늦거나 실패해도 회복되도록).
  * @param {string} gameKey  Firestore 컬렉션 이름 (room.collectionName)
  * @returns {Function} stop — 같은 페이지에서 방을 떠날 때 부르면 offline으로 내리고 예약을 지웁니다.
  */
@@ -264,29 +269,59 @@ export function startRoomPresence(gameKey, code, nickname) {
     if (!gameKey || !code || !nickname) return () => { };
     const nodeRef = ref(rtdbPresence, `${presenceRoomPath(gameKey, code)}/${nickname}`);
     const offlineValue = () => ({ status: 'offline', lastHeartbeat: rtTimestamp() });
-    let active = true, connected = false, denied = false;
+    let active = true, connected = false;
+    let armed = false, arming = false, gen = 0;   // 이번 연결에 끊김 예약(onDisconnect)을 걸었는지 · 연결 세대
+    let pausedUntil = 0, warned = false;          // 권한 거부 뒤 쉬는 시각 · 경고를 이미 띄웠는지 (콘솔 도배 방지)
 
-    // 규칙 배포 전이면 한 번만 알리고 신호를 멈춥니다 (콘솔 도배 방지 · 게임은 그대로 진행)
     const onError = (e) => {
-        if (String(e?.code || e?.message || '').toLowerCase().includes('permission')) {
-            if (!denied) console.warn('[presence] 접속 상태 쓰기 권한이 없습니다 — 접속 전용 RTDB 규칙을 확인하세요.', e);
-            denied = true;
+        if (isPermissionError(e)) {
+            pausedUntil = Date.now() + PRESENCE_RETRY_MS;   // 게임은 그대로, 접속 신호만 잠시 쉼
+            armed = false;
+            if (!warned) {
+                warned = true;
+                console.warn('[presence] 접속 상태 쓰기 권한이 없습니다 — 1분 뒤 다시 시도합니다 (접속 전용 RTDB 규칙 · App Check 확인).', e);
+            }
         } else {
             console.warn('[presence] 접속 신호 실패:', e);
         }
     };
 
+    const write = () => set(nodeRef, { status: document.hidden ? 'away' : 'online', lastHeartbeat: rtTimestamp() })
+        .then(() => { warned = false; })
+        .catch(onError);
+
     // 연결되어 있을 때만 보냅니다 (끊긴 동안 쌓아 두지 않고, 다시 연결되면 지금 상태를 보냄)
+    // 끊김 예약이 없으면 예약부터 겁니다 — 권한 거부로 쉬었다가 다시 시도할 때도 이 길로 옵니다.
     const send = () => {
-        if (!active || !connected || denied) return;
-        set(nodeRef, { status: document.hidden ? 'away' : 'online', lastHeartbeat: rtTimestamp() }).catch(onError);
+        if (!active || !connected || Date.now() < pausedUntil) return;
+        if (armed) { write(); return; }
+        if (arming) return;
+        arming = true;
+        const myGen = gen;
+        onDisconnect(nodeRef).set(offlineValue())
+            .then(() => {
+                if (myGen !== gen || !active) return;      // 그사이 연결이 바뀌었으면 새 연결 쪽에서 다시 겁니다
+                arming = false;
+                armed = true;
+                write();
+            })
+            .catch((e) => {
+                if (myGen !== gen) return;
+                arming = false;
+                onError(e);
+            });
     };
 
-    // 처음 연결 + 다시 연결될 때마다: 끊김 예약 → 지금 상태 전송
+    // 연결이 바뀔 때마다 예약을 새로 겁니다 (끊길 때 서버가 이미 실행했으므로). 다시 연결되면 쉬던 중이어도 바로 시도
     const unsubConnected = onValue(ref(rtdbPresence, '.info/connected'), (snap) => {
         connected = snap.val() === true;
-        if (!active || !connected || denied) return;
-        onDisconnect(nodeRef).set(offlineValue()).then(send).catch(onError);
+        gen++;
+        armed = false;
+        arming = false;
+        if (connected) {
+            pausedUntil = 0;
+            send();
+        }
     });
     const timer = setInterval(send, PRESENCE_BEAT_MS);
     document.addEventListener('visibilitychange', send);
@@ -294,10 +329,10 @@ export function startRoomPresence(gameKey, code, nickname) {
     return function stop() {
         if (!active) return;
         active = false;
+        gen++;
         clearInterval(timer);
         document.removeEventListener('visibilitychange', send);
         unsubConnected();
-        if (denied) return;
         onDisconnect(nodeRef).cancel().catch(() => { });
         set(nodeRef, offlineValue()).catch(() => { });
     };
@@ -315,19 +350,35 @@ export function presenceNow() {
 
 /**
  * 선생님: 방의 접속 상태를 구독합니다.
- * 권한이 없거나(규칙 배포 전 · 권한 동기화 전) 실패하면 빈 값을 넘겨 플레이 횟수만 보이게 합니다.
+ * 권한이 없거나(규칙 배포 전 · 권한 동기화 전 · App Check 토큰 문제) 실패하면 빈 값을 넘겨 플레이 횟수만 보이게 하고,
+ * 1분 뒤 다시 구독합니다 (구독이 한 번 거부되면 Firebase가 그 구독을 끝내 버리므로).
  * @param {Function} onChange (presenceMap) => void   — { 닉네임: { status, lastHeartbeat } }
  * @returns {Function} 구독 해제
  */
 export function watchRoomPresence(gameKey, code, onChange) {
     if (!gameKey || !code) return () => { };
     presenceNow();   // 서버 시각 보정값 구독 시작
-    return onValue(ref(rtdbPresence, presenceRoomPath(gameKey, code)),
-        (snap) => onChange(snap.val() || {}),
-        (err) => {
-            console.warn('[presence] 접속 상태를 읽지 못했습니다 — 접속 전용 RTDB 규칙과 [권한 동기화]를 확인하세요.', err);
-            onChange({});
-        });
+    let stopped = false, unsub = null, retryTimer = null, warned = false;
+    const subscribe = () => {
+        if (stopped) return;
+        unsub = onValue(ref(rtdbPresence, presenceRoomPath(gameKey, code)),
+            (snap) => { warned = false; onChange(snap.val() || {}); },
+            (err) => {
+                if (!warned) {
+                    warned = true;
+                    console.warn('[presence] 접속 상태를 읽지 못했습니다 — 1분 뒤 다시 시도합니다 (접속 전용 RTDB 규칙 · [권한 동기화] · App Check 확인).', err);
+                }
+                if (stopped) return;
+                onChange({});
+                retryTimer = setTimeout(subscribe, PRESENCE_RETRY_MS);
+            });
+    };
+    subscribe();
+    return () => {
+        stopped = true;
+        clearTimeout(retryTimer);
+        if (unsub) unsub();
+    };
 }
 
 /**

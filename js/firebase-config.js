@@ -19,6 +19,9 @@ const appCheck = initializeAppCheck(app, {
   provider: new ReCaptchaV3Provider('6LcldW4tAAAAAHZBALIPn8CeB0uhuLII_6nZbinh'),
   isTokenAutoRefreshEnabled: true
 });
+// room-auth.js가 '권한 거부'의 원인이 App Check(기기 확인)인지 가릴 때 씁니다.
+// import 대신 전역으로도 둡니다 — 배포 직후 이 파일이 옛 캐시여도 다른 모듈이 깨지지 않도록.
+if (typeof window !== 'undefined') window.firebaseAppCheck = appCheck;
 
 const db = getFirestore(app);
 const rtdbBlotto = getDatabase(app, "https://blottogame.asia-southeast1.firebasedatabase.app/");
@@ -31,5 +34,5 @@ const rtdbPresence = getDatabase(app, "https://mathdongdong-default-rtdb.asia-so
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-export { app, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbPresence, auth, googleProvider };
+export { app, appCheck, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbPresence, auth, googleProvider };
 

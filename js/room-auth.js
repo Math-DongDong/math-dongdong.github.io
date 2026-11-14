@@ -45,6 +45,7 @@ import {
     verifyProofViaGate, buildPinRecordFromProof
 } from "./student-crypto.js";
 import { uiAlert, uiConfirm, uiPrompt } from "./ui-dialog.js";   // 사이트 공용 모달
+import { getToken as getAppCheckToken } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js";
 
 // =====================================================================
 // 0. 공통 유틸
@@ -400,7 +401,27 @@ export function startPresenceHeartbeat(studentKey, state = 'online') {
     _beatTimer = setInterval(sendPresence, PRESENCE_BEAT_MS);
     document.addEventListener('visibilitychange', sendPresence);
 
-    window.addEventListener('pagehide', releasePresence, { once: true });
+    window.addEventListener('pagehide', handlePresencePageHide, { once: true });
+}
+
+/**
+ * 화면을 떠날 때 — 접속을 내리되, 페이지를 '닫는' 게 아니라 '얼려 두는' 경우(뒤로가기 캐시)는 기억해 둡니다.
+ * 아이폰 Safari는 밀어서 뒤로 가기 후 돌아오면 페이지를 처음부터 열지 않고 얼린 상태 그대로 되살립니다.
+ * 예전에는 되살아나도 신호를 다시 시작하지 않아, 게임은 계속되는데 학생 관리에는 끊긴 것으로 보였습니다.
+ */
+let _resumeAfterRestore = null;    // { key, state } — 되살아나면 이 학번으로 신호를 다시 시작
+function handlePresencePageHide(event) {
+    const key = _beatKey, state = _beatState;
+    releasePresence();
+    _resumeAfterRestore = (event && event.persisted && key) ? { key, state } : null;
+}
+
+/** 얼려 둔 페이지가 되살아날 때 — 신호를 다시 시작합니다 */
+function handlePresencePageShow(event) {
+    if (!event || !event.persisted || !_resumeAfterRestore) return;
+    const { key, state } = _resumeAfterRestore;
+    _resumeAfterRestore = null;
+    if (!_beatKey) startPresenceHeartbeat(key, state);
 }
 
 export function stopPresenceHeartbeat() {
@@ -420,6 +441,7 @@ export function releasePresence() {
 
 if (typeof window !== 'undefined') {
     window.releaseStudentPresence = releasePresence;
+    window.addEventListener('pageshow', handlePresencePageShow);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -782,6 +804,52 @@ export function showCustomModal(title, message, isPrompt = false, isPassword = f
 export const customAlert = (t, m) => showCustomModal(t, m, false);
 export const customPrompt = (t, m, pw = false) => showCustomModal(t, m, true, pw);
 export const customConfirm = (t, m) => showCustomModal(t, m, false, false, true);
+
+// ─────────────────────────────────────────────────────────────────────
+//  App Check(기기 확인) 실패 안내
+//
+//  App Check 토큰을 받지 못한 요청은 Firestore·RTDB에서 '권한 거부'로 돌아옵니다.
+//  보안 규칙 위반과 오류 코드가 같아서, 그대로 두면 학생에게 "보안 규칙 문제"라고 잘못 안내합니다.
+//  (아이폰 Safari · 카카오톡 등 앱 안 브라우저 · 광고 차단 · 학교망 차단에서 잦습니다)
+//  그래서 권한 거부가 나면 토큰을 받을 수 있는지 먼저 확인하고 알맞은 문구를 고릅니다.
+// ─────────────────────────────────────────────────────────────────────
+const APP_CHECK_FAIL_HTML =
+    "이 브라우저에서 <b>기기 확인</b>에 실패했어요.<br>" +
+    "다른 브라우저(Safari·Chrome)로 열거나, <b>Wi-Fi ↔ 모바일 데이터</b>를 바꿔 다시 시도해 주세요.<br>" +
+    '<span class="text-muted small">카카오톡·네이버 앱 안에서 열었다면 Safari·Chrome으로 열어 주세요. 계속 안 되면 선생님께 알려 주세요.</span>';
+
+/** App Check 토큰을 받을 수 있는지 (최대 6초). App Check를 쓰지 않는 환경이면 true */
+export async function canGetAppCheckToken() {
+    const appCheck = typeof window !== 'undefined' ? window.firebaseAppCheck : null;
+    if (!appCheck) return true;
+    let timer = null;
+    try {
+        const result = await Promise.race([
+            getAppCheckToken(appCheck, false),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), 6000); })
+        ]);
+        return !!result?.token;
+    } catch (e) {
+        console.warn('[App Check] 기기 확인 토큰을 받지 못했습니다:', e);
+        return false;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/** App Check 실패면 안내를 띄우고 true. 정상이면 아무것도 하지 않고 false (원래 안내를 이어서 띄우면 됩니다) */
+export async function alertIfAppCheckFailed(title = "입장 실패") {
+    if (await canGetAppCheckToken()) return false;
+    await customAlert(title, APP_CHECK_FAIL_HTML);
+    return true;
+}
+
+/** 권한 거부 안내 — App Check 실패면 기기 확인 안내, 아니면 보안 규칙 안내 */
+export async function alertPermissionDenied(title = "입장 실패") {
+    if (await alertIfAppCheckFailed(title)) return;
+    await customAlert(title,
+        "데이터베이스 접근이 거부되었습니다.<br>네트워크가 아니라 <b>보안 규칙</b> 문제입니다.<br>선생님께 알려주세요.");
+}
 
 // =====================================================================
 // 2. 게임방법 안내 슬라이드 모달
@@ -1918,7 +1986,10 @@ export function renderRoomEntrance(container, options = {}) {
             if (roomMode !== 'auth') {
                 const nickname = await resolveRoomNickname();
                 if (!nickname) {
-                    await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                    // 이름표 만들기가 권한 거부되면 '남이 쓰는 이름'으로 보고 넘어가므로, 기기 확인 실패도 여기로 옵니다
+                    if (!(await alertIfAppCheckFailed("입장 실패"))) {
+                        await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                    }
                     return;
                 }
                 rememberEntrance(roomCode, nickname);
@@ -2019,6 +2090,8 @@ export function renderRoomEntrance(container, options = {}) {
                         allowPinSetup: !sData.pinSetAt
                     });
                     if (verdict === 'wrong') {
+                        // PIN 확인도 서버 쓰기라서, 기기 확인 실패가 'PIN 불일치'로 보일 수 있습니다 → 먼저 가립니다
+                        if (await alertIfAppCheckFailed("입장 실패")) return;
                         await customAlert("인증 실패",
                             "PIN이 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
                             '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
@@ -2044,7 +2117,9 @@ export function renderRoomEntrance(container, options = {}) {
                     ? await getAuthenticatedRoomKey({ ...guestInput, isGuest: true })
                     : await claimFreshNickname();
                 if (!guestNick) {
-                    await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                    if (!(await alertIfAppCheckFailed("입장 실패"))) {
+                        await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                    }
                     return;
                 }
 
@@ -2195,6 +2270,8 @@ export function renderRoomEntrance(container, options = {}) {
                         allowPinSetup: !next.data.pinSetAt
                     });
                     if (verdict === 'wrong') {
+                        // PIN 확인도 서버 쓰기라서, 기기 확인 실패가 'PIN 불일치'로 보일 수 있습니다 → 먼저 가립니다
+                        if (await alertIfAppCheckFailed("입장 실패")) return;
                         await customAlert("인증 실패",
                             "등록된 PIN과 일치하지 않습니다.<br>본인 학번이 맞는지 확인해주세요.<br>" +
                             '<span class="text-muted small">잊었다면 선생님께 초기화를 요청하세요.</span>');
@@ -2263,7 +2340,9 @@ export function renderRoomEntrance(container, options = {}) {
                 ? await getAuthenticatedRoomKey({ school, studentId, isGuest: false })
                 : await resolveRoomNickname();
             if (!nickname) {
-                await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                if (!(await alertIfAppCheckFailed("입장 실패"))) {
+                    await customAlert("입장 실패", "이름을 배정하지 못했습니다.<br>잠시 후 다시 시도해주세요.");
+                }
                 return;
             }
 
@@ -2291,8 +2370,7 @@ export function renderRoomEntrance(container, options = {}) {
             console.error('입장 처리 오류:', err);
             const msg = String(err?.code || err?.message || err).toLowerCase();
             if (msg.includes('permission')) {
-                await customAlert("입장 실패",
-                    "데이터베이스 접근이 거부되었습니다.<br>네트워크가 아니라 <b>보안 규칙</b> 문제입니다.<br>선생님께 알려주세요.");
+                await alertPermissionDenied("입장 실패");   // App Check 실패면 기기 확인 안내, 아니면 보안 규칙 안내
             } else {
                 await customAlert("입장 실패", "입장 중 문제가 발생했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.");
             }
