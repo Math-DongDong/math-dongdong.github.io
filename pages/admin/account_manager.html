@@ -27,10 +27,7 @@
     <div class="container admin-container" id="adminContent" style="display: none;">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <h2 class="fw-bold mb-0"><i class="bi bi-people-fill text-primary me-2"></i>교사 계정 관리</h2>
-            <div class="d-flex gap-2">
-                <button class="btn btn-outline-primary" id="btnSyncRtdb" title="승인된 모든 교사를 실시간 DB 권한 목록에 다시 등록"><i class="bi bi-arrow-repeat me-1"></i>권한 동기화</button>
-                <button class="btn btn-outline-secondary" id="btnReload"><i class="bi bi-arrow-clockwise me-1"></i>새로고침</button>
-            </div>
+            <button class="btn btn-outline-secondary" id="btnReload"><i class="bi bi-arrow-clockwise me-1"></i>새로고침</button>
         </div>
 
         <div class="alert alert-light border small text-muted sync-note">
@@ -40,9 +37,7 @@
             <b>③</b> 연동된 실시간 데이터베이스의 교사 권한 목록에 uid를 추가합니다.
             <b>반려</b>(승인 대기)는 가입 신청만 지웁니다.
             <b>삭제</b>(승인 완료)는 ②, ③을 회수하고 그 교사가 만든 방(기록 포함)도 모두 지웁니다.
-            학생 정보는 담당 교사가 그 교사뿐이면 삭제·다른 담당 교사가 있으면 담당 교사 목록에서만 뺍니다.
-            실시간 데이터베이스를 새로 추가했다면 <b>[권한 동기화]</b>를 한 번 눌러 이미 승인된 교사의 ③을 채워 주세요.
-        </div>
+            학생 정보는 담당 교사가 그 교사뿐이면 삭제·다른 담당 교사가 있으면 담당 교사 목록에서만 뺍니다.        </div>
 
         <div class="card mb-4">
             <div class="card-header bg-white border-bottom py-3">
@@ -187,7 +182,7 @@
             return uiConfirm(title, message, { confirmText, type });
         }
 
-        // ── 권한 동기화 ────────────────────────────────────────────────
+        // ── 권한 등록 · 회수 ───────────────────────────────────────────
         async function grantTeacher(uid, data) {
             // ① 공개 교사 목록 (학교·이름만 — 이메일은 절대 넣지 않습니다)
             await setDoc(doc(db, "teacher_directory", uid), {
@@ -207,39 +202,6 @@
                 catch (e) { console.error(r.name, e); failed.push(r.name); }
             }
             return failed;
-        }
-
-        /** 권한 동기화 — 새 실시간 DB를 추가한 뒤, 이미 승인된 교사들의 권한을 한 번에 채웁니다 (이미 있으면 그대로) */
-        async function syncRtdbPermissions() {
-            const ok = await showConfirmModal("교사 권한 동기화",
-                "승인된 모든 교사를 실시간 데이터베이스 권한 목록에 다시 등록합니다.\n새 실시간 데이터베이스를 추가한 뒤 한 번 실행하세요. (이미 등록된 권한은 그대로 둡니다)",
-                "동기화");
-            if (!ok) return;
-
-            const btn = document.getElementById('btnSyncRtdb');
-            const label = btn.innerHTML;
-            btn.disabled = true;
-            try {
-                const snapshot = await getDocs(collection(db, "teachers"));
-                const approved = snapshot.docs.filter(d => d.id !== ADMIN_UID && (d.data() || {}).status === 'approved');
-                const failed = new Set();
-                for (let i = 0; i < approved.length; i++) {
-                    btn.textContent = `동기화 중... ${i + 1}/${approved.length}`;
-                    (await grantRtdb(approved[i].id)).forEach(name => failed.add(name));
-                }
-                if (failed.size) {
-                    showMessageModal("일부 동기화 실패",
-                        `승인된 교사 ${approved.length}명 중 다음 데이터베이스 등록에 실패했습니다: ${[...failed].join(', ')}\n해당 실시간 DB 규칙을 확인한 뒤 다시 실행해 주세요.`, 'warning');
-                } else {
-                    showMessageModal("동기화 완료", `승인된 교사 ${approved.length}명의 권한을 등록했습니다.`, 'success');
-                }
-            } catch (e) {
-                console.error(e);
-                showMessageModal("동기화 실패", "교사 목록을 불러오지 못했습니다.", 'danger');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = label;
-            }
         }
 
         async function revokeTeacher(uid) {
@@ -483,7 +445,6 @@
             else if (act === 'delete') removeTeacherAccount(uid);
         });
         document.getElementById('btnReload').addEventListener('click', loadTeachers);
-        document.getElementById('btnSyncRtdb').addEventListener('click', syncRtdbPermissions);
 
         onAuthStateChanged(auth, (user) => {
             if (user && user.uid === ADMIN_UID) {
