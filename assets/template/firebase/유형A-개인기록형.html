@@ -17,6 +17,8 @@
       방 만들기는 game-kit의 createRoom()이 모드 선택·학교명 확인·creatorSchool 저장까지 합니다.
     · 종료는 한 번만 처리합니다(gameOver 플래그). 종료 버튼 연타·하트 0 타이머가 겹쳐도 기록은 1건입니다.
     · 대시보드에 학급 요약 카드(평균 점수·평균 정답률)와 학생 상세 모달(판별 기록)이 들어 있습니다.
+    · 대시보드 플레이 칸은 학생이 접속해 있으면 접속중 / 다른화면 / 접속 끊김을, 끊긴 지 30분이 지나면 플레이 횟수를 보여 줍니다.
+      접속 상태는 접속 전용 RTDB(presence/{컬렉션}/{방}/{닉네임})에 따로 둡니다 — game-kit의 startRoomPresence · watchRoomPresence.
 
   ★ 새 게임을 만들 때 고칠 곳은 "★ 여기" 표시를 따라가면 됩니다.
   ★ 컬렉션 이름만 '..._records' 로 지으면 보안 규칙은 손댈 필요가 없습니다.
@@ -53,6 +55,28 @@
 
         #adminTableWrap.show-sid .col-studentid {
             display: table-cell;
+        }
+
+        /* 플레이 열 접속 상태 점 — game-kit.js 의 STATUS_DOT_CSS 와 같은 내용 */
+        .status-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .status-online {
+            background-color: #198754;
+        }
+
+        .status-away {
+            background-color: #ffc107;
+        }
+
+        .status-offline {
+            background-color: #dc3545;
         }
 
         /* ★ 여기: 게임 화면 스타일 */
@@ -220,8 +244,9 @@
         } from "../../../js/room-auth.js?v=4.5";
         import {
             firestoreRoom, renderGuestApproval, bindDeleteRoomButton, bindStudentIdToggle,
-            buildSidMap, escapeHtml, safeNumber
-        } from "../../../js/game-kit.js?v=4.6";
+            buildSidMap, escapeHtml, safeNumber,
+            startRoomPresence, watchRoomPresence, presenceStatus, presenceNow, playStatusCell
+        } from "../../../js/game-kit.js?v=4.7";
         import {
             doc, setDoc, addDoc, getDocs, onSnapshot, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -240,6 +265,7 @@
         // ★ 여기: 게임 상태 변수
         let score = 0, lives = 5, solved = 0, attempts = 0;
         let gameOver = false;   // 종료 처리 중복 방지 (기록이 두 번 저장되지 않도록)
+        let stopPresence = null;    // 접속 신호 중지 함수 (startRoomPresence)
 
         function $(id) { return document.getElementById(id); }
         function showSection(id) {
@@ -263,6 +289,10 @@
 
                 showSection('game-section');
                 initGame();
+
+                // 접속 신호 (접속 전용 RTDB) — 대시보드 플레이 칸의 접속중·다른화면·접속 끊김. 지우지 마세요.
+                if (stopPresence) stopPresence();
+                stopPresence = startRoomPresence(room.collectionName, roomCode, nickname);
             },
             onAdminSuccess: () => {
                 showSection('dashboard-section');
@@ -399,6 +429,8 @@
         let roomStudents = [], roomRecords = [];
         let currentAdminRoom = '';
         let excelData = [];
+        // 접속 상태 (접속 전용 RTDB) · 마지막으로 그린 학생별 통계 · 기록 없는 접속 학생 목록 · 이 방 기록을 받았는지
+        let unsubPresence = null, roomPresence = {}, lastStats = {}, renderedWaitingKey = '', recordsReady = false;
 
         // 교사 로그인 결과는 비동기로 나중에 도착합니다. 이 줄이 없으면 목록이 비어 보입니다.
         window.addEventListener('teacherAuthChanged', () => {
@@ -410,13 +442,19 @@
             currentAdminRoom = e.target.value;
             if (unsubStudents) unsubStudents();
             if (unsubRecords) unsubRecords();
+            if (unsubPresence) unsubPresence();
+            unsubPresence = null; roomPresence = {}; recordsReady = false;
             if (!currentAdminRoom) { roomStudents = []; roomRecords = []; render(); return; }
 
             unsubStudents = onSnapshot(room.students(currentAdminRoom), snap => {
                 roomStudents = []; snap.forEach(d => roomStudents.push(d.data())); render();
             });
             unsubRecords = onSnapshot(room.records(currentAdminRoom), snap => {
-                roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); render();
+                roomRecords = []; snap.forEach(d => roomRecords.push(d.data())); recordsReady = true; render();
+            });
+            // 접속 상태는 RTDB에서 따로 받아 플레이 칸만 바꿉니다 (Firestore 재조회 없음)
+            unsubPresence = watchRoomPresence(room.collectionName, currentAdminRoom, data => {
+                roomPresence = data; refreshPlayCells();
             });
         });
 
@@ -473,8 +511,29 @@
             });
 
             const keys = Object.keys(stats).sort((a, b) => stats[b].best - stats[a].best);
+
+            // 접속 상태: 저장된 판은 없지만 접속해 있는 학생(첫 판 진행 중 등)도 표 아래쪽에 보여 줍니다
+            // 플레이 칸: 접속중·다른화면·접속 끊김 → 끊긴 지 30분이 지나면 플레이 횟수 (refreshPlayCells가 이 칸만 갱신)
+            const now = presenceNow();
+            const waitingNames = waitingPresenceNames(stats, now);
+            lastStats = stats;
+            renderedWaitingKey = waitingNames.join('\n');
+            const playCell = (nick, plays) => `<td data-play-nick="${escapeHtml(nick)}">${playStatusCell(roomPresence[nick], plays, now)}</td>`;
+            const waitingRows = waitingNames.map(nick => {
+                const sid = sidByNick[nick] || '';
+                // ★ 여기: 표 열 수를 바꾸면 colspan(닉네임과 플레이 사이 열 수)도 맞춰 주세요
+                return `<tr>
+                    <td class="text-muted">-</td>
+                    <td class="col-studentid fw-bold text-secondary">${sid ? escapeHtml(sid) : '-'}</td>
+                    <td class="fw-bold">${escapeHtml(nick)}</td>
+                    <td colspan="2" class="text-muted small">아직 저장된 기록이 없습니다</td>
+                    ${playCell(nick, 0)}
+                </tr>`;
+            }).join('');
+
             if (keys.length === 0) {
-                $('adminTableBody').innerHTML = '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                $('adminTableBody').innerHTML = waitingRows || '<tr><td colspan="6" class="py-4 text-muted">아직 참여한 학생이 없습니다.</td></tr>';
+                excelData = [];
                 return;
             }
 
@@ -502,10 +561,35 @@
                     <td class="fw-bold">${escapeHtml(nick)}</td>
                     <td class="fw-bold text-primary">${s.best}점</td>
                     <td>${acc}%</td>
-                    <td><span class="badge bg-secondary">${s.plays}회</span></td>
+                    ${playCell(nick, s.plays)}
                 </tr>`;
-            }).join('');
+            }).join('') + waitingRows;
         }
+
+        /** 저장된 판이 없는데 접속 상태가 살아 있는(30분 이내) 닉네임 */
+        function waitingPresenceNames(stats, now) {
+            return Object.keys(roomPresence)
+                .filter(nick => !Object.prototype.hasOwnProperty.call(stats, nick) && presenceStatus(roomPresence[nick], now).key !== 'idle')
+                .sort((a, b) => a.localeCompare(b, 'ko'));
+        }
+
+        /**
+         * 접속 상태만 바뀌었을 때 — 표 전체가 아니라 플레이 칸만 다시 씁니다.
+         * (게스트 승인 버튼·행 클릭이 신호마다 다시 그려져 끊기지 않도록 · Firestore 재조회 없음)
+         */
+        function refreshPlayCells() {
+            if (!currentAdminRoom || !recordsReady) return;
+            const now = presenceNow();
+            // 기록 없이 접속한 학생이 새로 생기거나 30분이 지나 빠질 때만 표를 다시 그립니다
+            if (waitingPresenceNames(lastStats, now).join('\n') !== renderedWaitingKey) { render(); return; }
+            $('adminTableBody').querySelectorAll('td[data-play-nick]').forEach(td => {
+                const nick = td.dataset.playNick;
+                const plays = Object.prototype.hasOwnProperty.call(lastStats, nick) ? lastStats[nick].plays : 0;
+                const html = playStatusCell(roomPresence[nick], plays, now);
+                if (td.innerHTML !== html) td.innerHTML = html;
+            });
+        }
+        setInterval(refreshPlayCells, 10000);   // 새 신호 없이 시간만 흘러 바뀌는 상태 (신호 멈춤 → 접속 끊김, 30분 경과 → 횟수)
 
         // 학생 상세 보기 — 이벤트 위임 (표를 다시 그려도 동작합니다)
         $('adminTableBody').addEventListener('click', (e) => {
