@@ -630,40 +630,41 @@ Live.ensureDeck():
 > `<ADMIN_UID>`는 가이드북의 RTDB 규칙과 같은 관리자 uid입니다.
 
 ### 7.1 Storage
+> 2026-11-16 배포용으로 확정(아래는 모션 슬라이드 부분만, 설문 `custom_forms` 규칙은 그대로). 승인 교사 판정에 Firestore를 요청당 **1번만** 읽습니다(Storage 규칙의 Firestore 읽기는 요청당 2번까지).
 ```
 function isAdmin() {
   return request.auth != null && request.auth.uid == '<ADMIN_UID>';
 }
-function isTeacher() {   // Storage 규칙에서 Firestore 읽기 (콘솔에서 교차 서비스 권한 허용 필요)
-  return request.auth != null
-    && firestore.get(/databases/(default)/documents/teachers/$(request.auth.uid)).data.status == 'approved';
+// 승인된 교사 (Firestore teachers/{uid}.status) — 경로의 uid가 본인일 때만 읽는다
+function isApprovedTeacher() {
+  return firestore.get(/databases/(default)/documents/teachers/$(request.auth.uid)).data.status == 'approved';
 }
-function isOwner(uid) {
-  return request.auth != null && request.auth.uid == uid && isTeacher();
-}
-match /live_slides/{uid}/{code}/{allPaths=**} {
-  allow get: if true;                               // 학생 읽기 (경로를 아는 경우만, 목록은 못 봄)
-  allow list: if isAdmin() || isOwner(uid);         // 정리할 때 deleteStorageFolder가 listAll을 씀
-  allow create, update: if (isAdmin() || isOwner(uid))
-    && request.resource.size < 100 * 1024 * 1024
-    && request.resource.contentType.matches('(application/json|text/css|video/.*).*');
-  allow delete: if isAdmin() || isOwner(uid);
+function isOwnerTeacher(uid) {
+  return request.auth != null && request.auth.uid == uid && isApprovedTeacher();
 }
 
-// 저장된 슬라이드 (D29) — 교사별 폴더
+// 저장된 슬라이드: motion_slides/{uid}/{이름}.html (HTML, 50MB 미만)
 match /motion_slides/{uid}/{file} {
-  allow read, list, delete: if isAdmin() || isOwner(uid);
-  allow create, update: if (isAdmin() || isOwner(uid))
-    && request.resource.size < 100 * 1024 * 1024        // 지금 규칙에 크기 제한이 있으면 그 값을 따름
-    && request.resource.contentType.matches('text/html.*');
+  allow get, delete: if isAdmin() || isOwnerTeacher(uid);
+  allow create, update: if (isAdmin() || isOwnerTeacher(uid))
+                        && file.matches('^.+\\.html$')
+                        && request.resource.size < 50 * 1024 * 1024
+                        && request.resource.contentType.matches('text/html.*');
 }
-// 관리자가 전체 목록(listAll('motion_slides'))을 읽을 때. 폴더 밖에 파일을 쓰는 규칙은 두지 않음(D30)
-match /motion_slides/{allPaths=**} {
-  allow list: if isAdmin();
+match /motion_slides/{uid}/{rest=**} { allow list: if isAdmin() || isOwnerTeacher(uid); }  // 교사: 자기 폴더 목록
+match /motion_slides/{rest=**}       { allow list: if isAdmin(); }                         // 관리자: 교사별 폴더 전체 (폴더 밖 파일 쓰기 규칙은 없음, D30)
+
+// 함께 보기: live_slides/{uid}/{코드}/{이름}.json · media/{해시}.mp4
+match /live_slides/{uid}/{rest=**} {
+  allow get: if true;   // 학생(로그인 없음) — 경로를 알아야 받는다, 목록은 못 본다
+  allow list, delete: if isAdmin() || isOwnerTeacher(uid);
+  allow create, update: if (isAdmin() || isOwnerTeacher(uid))
+                        && request.resource.size < 100 * 1024 * 1024
+                        && request.resource.contentType.matches('(application/json|video/).*');
 }
 ```
 - 교사는 **자기 uid 폴더만** 목록·쓰기·지우기가 됩니다. 관리자는 모두 됩니다(D11·D29).
-- `motion_slides` 규칙은 지금 콘솔에 있는 관리자 전용 규칙을 **바꾸는** 것입니다. 배포 전에 지금 규칙을 백업하고, 관리자 조건(지금은 이메일 기준)을 위 `isAdmin()`과 하나로 맞추세요.
+- `motion_slides` 규칙은 예전 관리자 전용 규칙(`motion_slides/{이름}.html`)을 **바꾸는** 것입니다. 배포 전에 지금 규칙을 백업하세요. 관리자 판정은 설문 규칙과 같은 uid 기준입니다.
 - Storage의 `list`는 폴더 단위로 판정합니다. 관리자 전체 목록과 교사 자기 폴더 목록이 모두 되는지 Rules Playground로 시험하세요.
 - 덱 파일 크기는 앱에서 30MB로 막고, 규칙은 영상 때문에 100MB로 둡니다.
 - `firestore.get()`은 교사가 **쓸 때만** 실행되어 Firestore 읽기가 몇 건 늘 뿐입니다. 학생 `get`에는 실행되지 않습니다.
@@ -713,7 +714,12 @@ match /motion_slides/{allPaths=**} {
 - `firebase-config.js`의 App Check가 RTDB·Storage에서 **실제로 강제(enforce)되는지** 콘솔에서 확인하세요. 최근 커밋 "앱체크 설정 약화"가 있었습니다.
 
 ### 7.3 Firestore
-- 새 규칙이 필요 없습니다. `motionslide_live_records`는 기존 `{게임}_records` 규칙(방 주인 = `createdBy`, `students`는 교사만 읽음, `nicknames`·`guests`는 기존 방식)을 그대로 따릅니다. 규칙이 컬렉션 이름을 목록으로 적어 두는 방식이면 이 이름을 더하세요.
+- 새 규칙이 필요 없습니다(2026-11-16 실제 규칙 v4.4로 확인). `motionslide_live_records`는 `isGameCol()`(이름이 `_records`로 끝나고 `custom_forms`·`studentsreview_records`가 아님)에 걸려 `match /{gameCol}/{roomCode}` 규칙을 그대로 따릅니다.
+  - 방 만들기: 승인 교사 · 4자리 대문자 코드 · `createdBy == 내 uid` · 학번 인증이면 `creatorSchool == 내 학교` — 코드가 보내는 값과 맞음
+  - 학생 입장: 방 문서 `get` 공개, `nicknames` 빈 문서 만들기, `students`·`guests` 쓰기 — 기존 게임과 같음
+  - 접속 목록·게스트 승인: `students` 목록은 방 주인만, 승인은 `ownsRoom`
+  - 취소: 하위 컬렉션 목록·삭제와 방 문서 삭제가 방 주인·관리자에게 허락됨
+  - 관리자 필터: `teacher_directory`는 공개 읽기
 - `room_registry`는 기존 규칙.
 
 ---
@@ -790,7 +796,7 @@ match /motion_slides/{allPaths=**} {
 - [x] `account_manager.html` 동기화 대상에 새 인스턴스 추가
 - [ ] 계정 관리에서 **[권한 동기화]** 한 번 누르기 (승인 교사 uid를 새 DB의 `teacher_uids`에 채움)
 - [ ] RTDB 규칙(7.2), Storage 규칙(7.1, `motion_slides` 교사별 폴더 포함) 배포. 지금 Storage 규칙 백업. Storage → Firestore 교차 서비스 읽기 허용
-- [ ] Firestore 규칙이 `motionslide_live_records`를 `{게임}_records`로 받는지 확인(7.3)
+- [x] Firestore 규칙이 `motionslide_live_records`를 `{게임}_records`로 받는지 확인(7.3) — 고칠 것 없음
 - [ ] Storage 버킷 **위치**·**CORS** 확인
 - [ ] App Check가 RTDB·Storage에서 강제되는지 확인
 - [ ] 예산 알림 설정
