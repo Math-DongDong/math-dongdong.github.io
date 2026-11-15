@@ -1,9 +1,11 @@
 # 모션 슬라이드 — 학생과 함께 보기(실시간 화면 공유) 설계
 
-> **상태**: 구상만 끝남 (구현 전) · **작성일**: 2026-11-15 · **대상 파일**: `motionslide.html` (같은 폴더)
+> **상태**: 1단계 구현 완료(2026-11-16) — Firebase 콘솔 준비(10장 0단계)와 실제 수업 시험(11장)이 남음 · **작성일**: 2026-11-15 · **대상 파일**: `motionslide.html` (같은 폴더)
 >
 > 나중에 이 기능을 만들 때 이 문서만 보고 시작할 수 있게, 대화에서 정한 결정과 기존 코드의 연결 지점, 데이터 구조, 보안 규칙 초안, 비용 계산, 단계별 작업 목록을 모았습니다.
 > 코드 위치는 줄 번호가 바뀌므로 **객체·함수 이름**으로 적었습니다. `motionslide.html`에서 이름으로 검색하세요.
+>
+> **구현 위치(2026-11-16)**: `motionslide.html`의 `14-1. Firebase Storage 관리`(`CloudUI`)와 `14-2. 함께 보기`(`LIVE` · `LiveFb` · `LiveUtil` · `LiveDeck` · `Live` · `LiveCache` · `LiveView` · `LiveJoin` · `LiveRoute`), 아래쪽 `window.SlideCloud` 모듈. 그 밖에 `js/firebase-config.js`(`rtdbLive`), `pages/admin/account_manager.html`([권한 동기화] 대상), `js/teacher-cleanup.js`(교사별 Storage 폴더 정리).
 >
 > **범위 변경 기록**
 > - 한때 함께 설계했던 "의견 모으기"(학생 제출·결과 보기·덱에 의견 저장) 기능은 **빼기로 했습니다**(D16). 이 문서는 **실시간 화면 공유**만 다룹니다.
@@ -114,7 +116,6 @@
    │                                   저장된 슬라이드 ──► Storage motion_slides/{uid}/… (교사는 자기 것, 관리자는 전체)
    │
    ├──► Firebase Storage   motion_slides/{uid}/{파일}.html          ← [Firebase Storage에 저장] (D29, 함께 보기와 별개)
-   │                       live_slides/{uid}/{code}/deck.css
    │                       live_slides/{uid}/{code}/{이름}.json     ← 덱 전체(난독화), 버전 deckV
    │                       live_slides/{uid}/{code}/media/{해시}.mp4 ← 영상(전체 보기에서만 받음)
    ├──► RTDB (전용 인스턴스) live/{code}/{createdBy,name,file,status,mode,presenting,paused,state}
@@ -124,7 +125,7 @@
    └──► 접속 전용 RTDB      presence/motionslide_live_records/{code}/{닉}
                                                                     
  [학생 기기: motionslide.html 메인 → [함께 보기] → 코드 입력  (QR이면 ?room=CODE 로 채워짐)]
-   입장(빠른 입장 / 학번 인증) → 학생 보기 화면(#live-view) → deck.css · 덱 파일 받기(메모리에만) → mode·state·paused 구독
+   입장(빠른 입장 / 학번 인증) → 학생 보기 화면(#live-view) → 덱 파일 받기(메모리에만, 공용 CSS 포함) → mode·state·paused 구독
      → state.deckV가 받아 둔 것과 다르면 덱 파일 다시 받기
      → paused = true  : (mode = 'live'일 때만) 화면 전체를 어두운 덮개로 가림 "👀 선생님을 봐 주세요"
      → mode = 'live'  : 덱에서 state.slideId 장만 꺼내 그리기 → 단계 적용 (넘기기 단추 없음, 영상은 자리표시)
@@ -209,7 +210,7 @@
 | Storage 관리 모달 | `CloudUI.open()` · `CloudUI.sync()` · `#cloud-modal` · `window.SlideCloud.list/load/remove` | 이름을 [Firebase Storage 관리]로 바꾸고 "함께 보기 중" 영역을 더함(6.11) |
 | 보기 화면 코드 | `exportRuntime()` 안 `fillCanvas` · `freeze`, 편집기의 `fitStage(host, scaler, pad)` | 학생 보기 화면은 편집기 안이므로 `fitStage`를 그대로 쓰고, `view`를 캔버스에 넣는 부분만 `fillCanvas`를 본떠 만듭니다 |
 | 단계별 공개 | 공용 ES5 함수 `slideSteps(canvas)` · `applySteps(canvas, step, replay)` | 그대로 씁니다 |
-| 슬라이드 공용 CSS | `<style id="ls-slide-css">` | 함께 보기를 열 때 `deck.css`로 올려, 학생 기기에 캐시된 옛 `motionslide.html`과 버전이 어긋나지 않게 합니다 |
+| 슬라이드 공용 CSS | `<style id="ls-slide-css">` | 덱 파일 안 `baseCss`에 넣어 보내, 학생 기기에 캐시된 옛 `motionslide.html`과 버전이 어긋나지 않게 합니다 |
 | 인터랙티브 칸 통신 | `appBridge(seed)`, 메시지 `lsApp: escape · nav · evt · snapshot · replay` | 바꾸지 않습니다. 학생 보기 화면에서는 칸이 보내는 `nav`·`escape`를 무시합니다 |
 | 인터랙티브 격리 | `AppKit` (`sandbox="allow-scripts"`, `AppKit.CSP`가 네트워크를 막음) | 학생 기기에서도 그대로 격리된 채 실행됩니다 |
 | 덱 저장소 | `DeckStore` (IndexedDB `htmlSlideStudio`) | 덱은 교사 브라우저에만 있음 → 함께 보기를 열 때 올려야 함. 이어 붙이기는 `deckId` 기준이라 **같은 브라우저**에서 고쳐야 함(8.3) |
@@ -231,7 +232,6 @@ motionslide_live_records/{code}/guests/{닉}      // 학번 인증 + 게스트�
 
 ### 5.2 Storage
 ```
-live_slides/{uid}/{code}/deck.css             // ls-slide-css 내용(함께 보기를 열 때 1번)
 live_slides/{uid}/{code}/{이름}.json          // 학생용 덱 전체(A 방식, D15). 덱을 고치면 덮어씀
 live_slides/{uid}/{code}/media/{해시}.{확장자} // 덱 속 동영상(D9). 같은 영상은 해시가 같아 한 번만 올림
 ```
@@ -250,6 +250,7 @@ live_slides/{uid}/{code}/media/{해시}.{확장자} // 덱 속 동영상(D9). �
   "format": 1,
   "deckV": "9f3a1c2e",
   "title": "일차방정식의 활용",
+  "baseCss": "…ls-slide-css 내용…",
   "slides": [
     { "id": "s_ab12cd", "bg": "#ffffff", "view": { "cls": "slide-canvas", "css": "…", "html": "…" }, "maxStep": 3 }
   ]
@@ -343,7 +344,7 @@ live_index/{code}: { createdBy, creatorName, creatorSchool, name, deckId, deckTi
   │                                    [취소] [시작]          │
   └──────────────────────────────────────────────────────────┘
   ```
-  → 코드 고르기 → Firestore 방 문서(`roomMode`) → `createRoom()`(name·deckId·deckTitle·file·`mode: 'live'`) → `deck.css`·덱 파일·영상 업로드(6.3) → `state` → 청중 창에 QR
+  → 코드 고르기 → Firestore 방 문서(`roomMode`) → `createRoom()`(name·deckId·deckTitle·file·`mode: 'live'`) → 덱 파일·영상 업로드(6.3) → `state` → 청중 창에 QR
 - 보기 모드는 묻지 않습니다. **항상 [실시간 페이지]로 시작**합니다(D18).
 - 덱 업로드는 크기에 따라 몇 초 걸릴 수 있어 "학생 화면 준비 중…(n%)"을 보입니다(`uploadBytesResumable`로 진행률).
 
@@ -359,7 +360,7 @@ live_index/{code}: { createdBy, creatorName, creatorSchool, name, deckId, deckTi
 - 지금 함께 보기가 [전체 보기] 상태면 이름 줄에 "📚 전체 보기 중 — [Storage 관리]에서 실시간으로 바꿀 수 있어요"를 회색 글씨로 보입니다. 진행 신호는 계속 쓰므로, 실시간으로 바꾸는 순간 학생 화면이 교사 장으로 맞춰집니다.
 
 **그 밖의 흐름**
-1. 시작하면 청중 창(`Show.popup`)에 **QR + 방 코드 + 이름 + 입장 인원 + 안내 문구**를 크게 덮어 보입니다.
+1. 시작하면 청중 창(`Show.popup`)에 **QR + 방 코드 + 이름 + 입장 인원 + 안내 문구**를 크게 덮어 보입니다. 청중 창이 아직 없으면 발표자 화면에 같은 내용을 창(`#live-qr-modal`)으로 띄웁니다.
    - QR 주소: `{사이트}/pages/automation/class/motionslide.html?room={code}#/live` (D8)
    - 안내 문구: "QR을 찍거나, AI 모션 슬라이드 첫 화면의 [함께 보기]를 눌러 코드를 입력하세요"
    - "지금 27명 입장"이 실시간으로 올라가 다 들어왔는지 함께 볼 수 있습니다.
@@ -439,13 +440,13 @@ live_index/{code}: { createdBy, creatorName, creatorSchool, name, deckId, deckTi
 - **빠른 입장 방**: 코드만 넣으면 바로 들어갑니다. 닉네임은 자동 발급(접속 표시용).
 - **학번 인증 방**: 기존 게임과 똑같이 학번 + PIN. 본인 기기는 처음 한 번만, 공용 기기는 게스트로 들어와 교사가 발표자 패널(6.1-1)에서 승인하면 입장합니다. 들어온 학생은 [학생 관리]에 쌓입니다.
 - QR로 들어오면(`?room={code}`) `renderRoomEntrance`가 코드를 미리 채웁니다. 페이지가 `#/live`로 열리면 이 창을 바로 띄웁니다.
-- 틀린 코드: "존재하지 않는 방 코드입니다"(기존 문구). Firestore 방 문서는 있는데 RTDB `status`가 없으면 "끝난 수업입니다".
+- 틀린 코드·취소된 함께 보기: "존재하지 않는 방 코드입니다"(기존 문구). 입장 화면의 `getRoomData`가 Firestore 방 문서와 RTDB `status`를 함께 확인합니다. 이미 들어와 있던 학생이 취소를 겪으면 "끝난 수업입니다"가 뜹니다.
 - 교사가 눌러도 같은 입장 창만 뜹니다(학생 화면 확인용). 함께 보기 관리는 [Storage 관리](6.11)에서 합니다.
 
 **입장 뒤**
 1. 해시를 `#/live/{code}`로 바꾸고, 메인·편집 화면을 숨긴 채 **학생 보기 화면 `#live-view`**(전체 화면 캔버스)를 보입니다. `MobileView.route`·해시 라우터에 `#/live` 분기를 더합니다.
 2. `startRoomPresence('motionslide_live_records', code, nickname)`로 접속 표시를 시작합니다.
-3. `deck.css`와 덱 파일(`live/{code}/file`)을 받아, 풀어서(뒤섞기 되돌림) **메모리에만** 둡니다(5.2-1). 받는 동안 "수업 자료 받는 중…(n%)"을 보입니다.
+3. 덱 파일(`live/{code}/file`, 공용 CSS `baseCss` 포함)을 받아, 풀어서(뒤섞기 되돌림) **메모리에만** 둡니다(5.2-1). 받는 동안 "수업 자료 받는 중…(n%)"을 보입니다.
 4. `mode`·`state`·`paused`·`presenting`을 구독(`onValue`)합니다.
    - `state.deckV`가 받아 둔 덱과 다르면 → 덱 파일을 다시 받음(교사가 덱을 고친 경우, D27)
    - 그리기는 모드에 따라 6.10을 따릅니다. 이미 받아 둔 덱이라 **바로 넘어갑니다**
@@ -666,7 +667,8 @@ match /motion_slides/{allPaths=**} {
 - Storage의 `list`는 폴더 단위로 판정합니다. 관리자 전체 목록과 교사 자기 폴더 목록이 모두 되는지 Rules Playground로 시험하세요.
 - 덱 파일 크기는 앱에서 30MB로 막고, 규칙은 영상 때문에 100MB로 둡니다.
 - `firestore.get()`은 교사가 **쓸 때만** 실행되어 Firestore 읽기가 몇 건 늘 뿐입니다. 학생 `get`에는 실행되지 않습니다.
-- 버킷 **CORS**에 사이트 주소가 허용돼 있어야 학생 `getBlob`이 됩니다(`CloudUI.errorText`가 이미 이 오류를 안내함).
+- 버킷 **CORS**에 사이트 주소가 허용돼 있어야 학생이 덱 파일을 받습니다(`getDownloadURL` + `fetch`로 진행률을 보이며 받음). 저장된 슬라이드 불러오기(`getBlob`)도 같은 설정이 필요합니다.
+- 학생 덱 파일 형식: `{ "v": 1, "data": "<뒤섞은 base64>" }` (JSON). `contentType`은 `application/json`.
 
 ### 7.2 RTDB (전용 인스턴스)
 ```json
@@ -774,7 +776,7 @@ match /motion_slides/{allPaths=**} {
 | 덱 수정 후 발표자 모드 다시 들어오기 | 덱 파일 덮어씀, 새 영상만 추가 | 유지 | 유지 |
 | **[함께 보기 취소]** ([Storage 관리]에서만) | 삭제 | 삭제 | 삭제 |
 
-- 취소 순서: `deleteStorageFolder('live_slides/' + uid + '/' + code)` → `purgeRoomParts(code, parts)`(RTDB 방·인덱스 + Firestore 방 문서·하위 컬렉션) → `unregisterRoom(code, parts)`
+- 취소 순서: `purgeRoomParts(code, parts)` 한 번으로 RTDB 방·인덱스 → Storage 폴더(`parts`의 `storage: 'live_slides/{uid}'`) → Firestore 방 문서·하위 컬렉션) → `unregisterRoom(code, parts)`
 - 취소하면 그 코드로 들어와 있던 학생 화면에는 "끝난 수업입니다"가 뜹니다.
 - 교사 계정 삭제·학교 변경 때는 `room_registry`에 등록된 `parts`로 RTDB·Firestore가 정리됩니다. **Storage 폴더(`live_slides/{uid}/`, `motion_slides/{uid}/`)도 함께 지우도록 `teacher-cleanup.js`에 더합니다.** (학교 변경 때는 저장된 슬라이드 `motion_slides/{uid}/`는 지우지 않습니다. 학생 기록이 아니라 교사 자료이기 때문입니다.)
 - **시간 기준 자동 정리는 두지 않습니다**(D7). 열린 함께 보기는 [Storage 관리]에서 한눈에 보고 정리합니다(6.11).
@@ -784,8 +786,9 @@ match /motion_slides/{allPaths=**} {
 ## 10. 단계별 구현 계획
 
 ### 0단계 — Firebase 콘솔 준비
-- [ ] RTDB 인스턴스 만들기(예: `motionslide-live`, asia-southeast1) → `firebase-config.js`에 `rtdbLive` 추가·export
-- [ ] `account_manager.html` 동기화 대상에 새 인스턴스 추가 → **[권한 동기화]**
+- [x] RTDB 인스턴스 만들기(`https://motionslide-live.asia-southeast1.firebasedatabase.app/`) → `firebase-config.js`에 `rtdbLive` 추가·export
+- [x] `account_manager.html` 동기화 대상에 새 인스턴스 추가
+- [ ] 계정 관리에서 **[권한 동기화]** 한 번 누르기 (승인 교사 uid를 새 DB의 `teacher_uids`에 채움)
 - [ ] RTDB 규칙(7.2), Storage 규칙(7.1, `motion_slides` 교사별 폴더 포함) 배포. 지금 Storage 규칙 백업. Storage → Firestore 교차 서비스 읽기 허용
 - [ ] Firestore 규칙이 `motionslide_live_records`를 `{게임}_records`로 받는지 확인(7.3)
 - [ ] Storage 버킷 **위치**·**CORS** 확인
@@ -793,24 +796,24 @@ match /motion_slides/{allPaths=**} {
 - [ ] 예산 알림 설정
 
 ### 1단계 — 함께 보기
-- [ ] `motionslide.html`: `Live` 객체 (`start` · `attach` · `detach` · `ensureDeck` · `sync` · `pause` · `showQr`) — 교사용
-- [ ] `LiveAdmin`(Storage 관리 쪽): `list`(내 것/전체) · `setMode` · `cancel`
-- [ ] 시작 창: 이름(기본값 덱 제목 + 날짜) + **입장 방식(빠른 입장 / 학번 인증)** + 학생 1명당 받는 양. 보기 모드는 묻지 않음(항상 실시간)
-- [ ] 방 만들기: Firestore 방 문서(`roomMode`) + `rtdbRoom(..., { linked })` `createRoom()`
-- [ ] 학생용 덱 업로드(진행률), **뒤섞기·풀기**, 영상 분리(`media/{해시}`), notes 제외
-- [ ] 발표자 바 **[함께 보기 ▾]**(승인 교사·관리자): 실시간 시작… / 이름·입장 방식·모드 표시 / **⏸ 학생 화면 멈추기(S, 실시간 페이지에서만)** / QR 다시 보기 (덱 하나에 하나, D32)
-- [ ] 일시정지(6.12): `live/{code}/paused`, 단축키 S·ㄴ, 전체 보기에서는 숨김·무시, 멈춤 중 단추 색, `Show.exit`·`onDisconnect`에서 자동 해제
-- [ ] 발표자 바 **접속 배지 `[👥 n · 대기 n]`** + 전송 상태 + 오른쪽 offcanvas 접속 목록(상태 점, 학번 인증이면 학번·게스트 승인)
-- [ ] 청중 창 QR 덮개(qrcodejs 1.0.0, `motionslide.html?room={code}#/live` + 코드·이름·입장 인원 크게 + 안내 문구)
-- [ ] `Show.paint` · `Show.applyStep` 끝에 `Live.sync()`, `Show.onKey`에 S, `Show.enter`에 `Live.attach()`(자동 이어 붙기 + 수정본 업로드), `Show.exit`에 `Live.detach()`(일시정지 해제 포함)
-- [ ] 메인 `#home-actions` · `#home-setup`의 [AI 설정] 왼쪽, `#mobile-block`에 [함께 보기] 단추
-- [ ] 입장 모달 `#live-join-modal`: `renderRoomEntrance`(빠른 입장·학번 인증·게스트), `?room=` 자동 입력, `#/live` 라우팅, [대시보드 열기] 숨김
-- [ ] 학생 보기 화면 `#live-view`: 덱 받기(진행률, **메모리에만, 지금 장만 DOM에**), `mode`·`state`·`paused` 구독, 단계, **일시정지 덮개**, 대기·종료 화면, 연결 상태, [나가기], 접속 표시
-- [ ] 전체 보기 모드(6.10): ◀ ▶·밀기·화살표, 단계 모두 펼침, **영상 ▶ 눌러서 받아 재생**, 유튜브 iframe 복원
-- [ ] **`SlideCloud` 승인 교사에게 열기(5.2-2)**: `canUse`, `motion_slides/{uid}/` 저장, 교사는 자기 것·관리자는 전체 목록, SDK 불러오는 조건, "(관리자)" 문구 제거, 권한 오류 문구
-- [ ] **[Storage에서 불러오기] → [Firebase Storage 관리]**: 이름 변경, 승인 교사에게도 표시, 저장된 슬라이드(교사는 자기 것), "함께 보기 중" 영역(이름·코드·입장 방식·**보기 모드 전환**·[함께 보기 취소]), 관리자는 전체 + 교사 이름
-- [ ] [Storage 관리] 관리자용 **학교·교사 필터**(6.11-1): `teacher_directory` 한 번 읽기, 두 영역에 함께 적용, 기본값 내 학교, 고른 값 유지
-- [ ] 취소 절차(9장), `teacher-cleanup.js`에 `live_slides/{uid}/`·`motion_slides/{uid}/` 정리 추가
+- [x] `motionslide.html`: `Live` 객체 (`create` · `attach` · `bind` · `detach` · `ensureDeck` · `sync`/`push` · `setPaused` · `showQr`) — 교사용
+- [x] Storage 관리 쪽: `CloudUI.loadLive`(내 것/전체) · `Live.setMode` · `Live.cancel`
+- [x] 시작 창: 이름(기본값 덱 제목 + 날짜) + **입장 방식(빠른 입장 / 학번 인증)** + 학생 1명당 받는 양. 보기 모드는 묻지 않음(항상 실시간)
+- [x] 방 만들기: Firestore 방 문서(`roomMode`) + `rtdbRoom(..., { linked })` `createRoom()`
+- [x] 학생용 덱 업로드(진행률), **뒤섞기·풀기**, 영상 분리(`media/{해시}`), notes 제외
+- [x] 발표자 바 **[함께 보기 ▾]**(승인 교사·관리자): 실시간 시작… / 이름·입장 방식·모드 표시 / **⏸ 학생 화면 멈추기(S, 실시간 페이지에서만)** / QR 다시 보기 (덱 하나에 하나, D32)
+- [x] 일시정지(6.12): `live/{code}/paused`, 단축키 S·ㄴ, 전체 보기에서는 숨김·무시, 멈춤 중 단추 색, `Show.exit`·`onDisconnect`에서 자동 해제
+- [x] 발표자 바 **접속 배지 `[👥 n · 대기 n]`** + 전송 상태 + 오른쪽 offcanvas 접속 목록(상태 점, 학번 인증이면 학번·게스트 승인)
+- [x] 청중 창 QR 덮개(qrcodejs 1.0.0, `motionslide.html?room={code}#/live` + 코드·이름·입장 인원 크게 + 안내 문구)
+- [x] `Show.paint` · `Show.applyStep` 끝에 `Live.sync()`, `Show.onKey`에 S, `Show.enter`에 `Live.attach()`(자동 이어 붙기 + 수정본 업로드), `Show.exit`에 `Live.detach()`(일시정지 해제 포함)
+- [x] 메인 `#home-actions` · `#home-setup`의 [AI 설정] 왼쪽, `#mobile-block`에 [함께 보기] 단추
+- [x] 입장 모달 `#live-join-modal`: `renderRoomEntrance`(빠른 입장·학번 인증·게스트), `?room=` 자동 입력, `#/live` 라우팅, [대시보드 열기] 숨김
+- [x] 학생 보기 화면 `#live-view`: 덱 받기(진행률, **메모리에만, 지금 장만 DOM에**), `mode`·`state`·`paused` 구독, 단계, **일시정지 덮개**, 대기·종료 화면, 연결 상태, [나가기], 접속 표시
+- [x] 전체 보기 모드(6.10): ◀ ▶·밀기·화살표, 단계 모두 펼침, **영상 ▶ 눌러서 받아 재생**, 유튜브 iframe 복원
+- [x] **`SlideCloud` 승인 교사에게 열기(5.2-2)**: `canUse`, `motion_slides/{uid}/` 저장, 교사는 자기 것·관리자는 전체 목록, SDK 불러오는 조건, "(관리자)" 문구 제거, 권한 오류 문구
+- [x] **[Storage에서 불러오기] → [Firebase Storage 관리]**: 이름 변경, 승인 교사에게도 표시, 저장된 슬라이드(교사는 자기 것), "함께 보기 중" 영역(이름·코드·입장 방식·**보기 모드 전환**·[함께 보기 취소]), 관리자는 전체 + 교사 이름
+- [x] [Storage 관리] 관리자용 **학교·교사 필터**(6.11-1): `teacher_directory` 한 번 읽기, 두 영역에 함께 적용, 기본값 내 학교, 고른 값 유지
+- [x] 취소 절차(9장), `teacher-cleanup.js`에 `live_slides/{uid}/`·`motion_slides/{uid}/` 정리 추가
 
 ### 2단계 — 선택
 - [ ] 그림을 장 밖으로 분리해 중복 전송 줄이기
@@ -821,6 +824,8 @@ match /motion_slides/{allPaths=**} {
 ---
 
 ## 11. 시험 목록
+
+> **2026-11-16 자동 시험(가짜 Firebase, 브라우저)**: 실시간 시작(방 문서·RTDB·덱·영상 업로드) · 덱 뒤섞기와 시나리오 제외 · 넘김·단계 신호 · S 일시정지 · 발표자 모드 나가기/다시 들어가기(같은 덱이면 다시 올리지 않음, 고친 덱은 자동으로 다시 올림) · 학생 화면(지금 장만, 단계, 일시정지 덮개, 유튜브·동영상 자리표시, 전체 보기 넘기기·키보드, 끝난 수업, 나가기) · 휴대폰 세로·가로 · 실제 입장 화면 그리기를 확인했습니다. 아래 목록은 **실제 Firebase(규칙 배포 뒤)**에서 다시 확인할 항목입니다.
 
 - [ ] 관리자 PC + 승인 교사 PC + 학생 기기 2대 이상(휴대폰 1, 태블릿 1)
 - [ ] 비로그인·미승인 교사에게 [함께 보기 ▾]·[Storage 관리]가 안 보이는지, 규칙이 쓰기를 막는지

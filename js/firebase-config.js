@@ -30,9 +30,11 @@ const rtdbGridGomoku = getDatabase(app, "https://gridgomoku.asia-southeast1.fire
 const rtdbRelativeFrequency = getDatabase(app, "https://relativefrequency.asia-southeast1.firebasedatabase.app/");
 // 접속 상태 전용 — 진행에 RTDB를 쓰지 않는 게임(유형 A)의 접속중·다른화면·접속 끊김 (game-kit의 startRoomPresence)
 const rtdbPresence = getDatabase(app, "https://mathdongdong-default-rtdb.asia-southeast1.firebasedatabase.app/");
+// AI 모션 슬라이드 '함께 보기' 진행 신호 전용 (live/{코드} · live_index/{코드})
+const rtdbLive = getDatabase(app, "https://motionslide-live.asia-southeast1.firebasedatabase.app/");
 
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-export { app, appCheck, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbPresence, auth, googleProvider };
+export { app, appCheck, db, rtdbBlotto, rtdbSentiment, rtdbGridGomoku, rtdbRelativeFrequency, rtdbPresence, rtdbLive, auth, googleProvider };
 

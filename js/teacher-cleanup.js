@@ -6,6 +6,7 @@
  *
  * 정리 내용
  *   · 방: room_registry 에서 createdBy == uid 인 방을 저장 위치마다 지웁니다 (room-registry.js의 purgeRoomParts)
+ *   · AI 모션 슬라이드 Storage: motion_slides/{uid} · live_slides/{uid} 폴더 (계정 삭제 · 탈퇴 때만 — 학교 변경은 이 파일을 쓰지 않음)
  *   · 학생: 같은 학교 + 담당 선생님(teachers)에 이 교사 이름
  *       - 담당 선생님이 이 교사뿐이면 학생 정보를 모두 지웁니다 (PIN · 기기 인증 포함)
  *       - 다른 담당 선생님이 있으면 담당 선생님 목록에서 이름만 뺍니다
@@ -123,6 +124,21 @@ export async function runTeacherCleanup(plan, onProgress = () => { }) {
             failures.push(`학생 ${id} (삭제)`);
         }
         step();
+    }
+    // AI 모션 슬라이드: 교사별 Storage 폴더 (저장된 슬라이드 · 남은 함께 보기 파일)
+    // 함께 보기 방은 위 방 정리에서 함께 지워지고, 여기서는 폴더에 남은 파일만 비웁니다. 개수에는 넣지 않습니다.
+    try {
+        const { deleteStorageFolder } = await import('./firebase-storage.js');
+        for (const folder of [`motion_slides/${plan.uid}`, `live_slides/${plan.uid}`]) {
+            try {
+                await deleteStorageFolder(folder);
+            } catch (e) {
+                console.error('Storage 폴더 삭제 실패', folder, e);
+                failures.push(`Storage ${folder}`);
+            }
+        }
+    } catch (e) {
+        console.warn('[teacher-cleanup] Storage 모듈을 불러오지 못했습니다:', e);
     }
     return failures;
 }
