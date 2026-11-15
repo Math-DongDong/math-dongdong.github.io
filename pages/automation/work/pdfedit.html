@@ -291,6 +291,28 @@
             font-size: 0.7rem;
             line-height: 1.5;
         }
+
+        .mask-rect-tools .form-select,
+        .mask-rect-tools .form-control {
+            font-size: 0.7rem;
+            line-height: 1.5;
+            padding-top: 0;
+            padding-bottom: 0;
+            min-height: 0;
+        }
+
+        .mask-rect-tools .form-select {
+            width: auto;
+            padding-left: 6px;
+            padding-right: 1.4rem;
+            background-position: right 0.3rem center;
+        }
+
+        .mask-rect-tools .mask-step-input {
+            width: 3.2rem;
+            padding-left: 4px;
+            padding-right: 2px;
+        }
     </style>
 </head>
 
@@ -528,7 +550,7 @@
                                 </div>
                             </div>
                         </div>
-                        <p class="text-muted small mt-2 mb-0 text-center"><i class="bi bi-hand-index"></i> 페이지 위에서 드래그하여 가릴 영역을 지정하세요. 영역 위 버튼으로 적용 범위(이 쪽/전체)를 바꾸거나 삭제할 수 있습니다.</p>
+                        <p class="text-muted small mt-2 mb-0 text-center"><i class="bi bi-hand-index"></i> 페이지 위에서 드래그하여 가릴 영역을 지정하세요. 영역 위 메뉴로 적용 범위(이 쪽/모든 쪽/현재 쪽부터 n쪽마다)를 바꾸거나 삭제할 수 있습니다.</p>
                     </div>
                 </div>
             </div>
@@ -1100,7 +1122,7 @@
         // =====================================================
         // 3. PDF 영역 가리기
         // 영역 좌표는 화면에 보이는(회전 적용) 페이지 기준 0~1 비율로 저장
-        // pageIndex === null 이면 모든 쪽에 적용
+        // mode: 'page'(startPage만) | 'all'(모든 쪽) | 'every'(startPage부터 step쪽마다)
         // =====================================================
         const MASK_EXPORT_SCALE = 2;
         const maskState = {
@@ -1135,8 +1157,14 @@
         });
         document.getElementById('maskColorPicker').addEventListener('input', (e) => selectMaskColor(e.target.value));
 
+        function isRectOnPage(r, pageIndex) {
+            if (r.mode === 'all') return true;
+            if (r.mode === 'every') return pageIndex >= r.startPage && (pageIndex - r.startPage) % r.step === 0;
+            return r.startPage === pageIndex;
+        }
+
         function getRectsForPage(pageIndex) {
-            return maskState.rects.filter(r => r.pageIndex === null || r.pageIndex === pageIndex);
+            return maskState.rects.filter(r => isRectOnPage(r, pageIndex));
         }
 
         function clamp01(v) {
@@ -1187,11 +1215,16 @@
                 el.style.top = (r.ny * 100) + '%';
                 el.style.width = (r.nw * 100) + '%';
                 el.style.height = (r.nh * 100) + '%';
-                const isGlobal = r.pageIndex === null;
+                const scopeTitle = r.mode === 'every' ? `${r.startPage + 1}쪽부터 ${r.step}쪽마다` : '적용 범위';
                 el.innerHTML = `
-                    <div class="mask-rect-tools">
-                        <button type="button" class="btn btn-sm ${isGlobal ? 'btn-primary' : 'btn-light border'}" data-mask-action="scope"
-                            title="클릭하여 적용 범위 변경">${isGlobal ? '모든 쪽' : '이 쪽'}</button>
+                    <div class="mask-rect-tools" title="${scopeTitle}">
+                        <select class="form-select form-select-sm" data-mask-action="scope">
+                            <option value="page" ${r.mode === 'page' ? 'selected' : ''}>이 쪽</option>
+                            <option value="all" ${r.mode === 'all' ? 'selected' : ''}>모든 쪽</option>
+                            <option value="every" ${r.mode === 'every' ? 'selected' : ''}>n쪽마다</option>
+                        </select>
+                        ${r.mode === 'every' ? `<input type="number" class="form-control form-control-sm mask-step-input" data-mask-action="step"
+                            min="2" max="${Math.max(2, maskState.pageCount)}" value="${r.step}" title="몇 쪽마다 가릴지 입력">` : ''}
                         <button type="button" class="btn btn-sm btn-danger" data-mask-action="delete" title="삭제"><i class="bi bi-x-lg"></i></button>
                     </div>`;
                 maskOverlay.appendChild(el);
@@ -1200,11 +1233,12 @@
         }
 
         function updateMaskSummary() {
-            const pageOnly = maskState.rects.filter(r => r.pageIndex === maskState.currentPage).length;
-            const global = maskState.rects.filter(r => r.pageIndex === null).length;
+            const pageOnly = maskState.rects.filter(r => r.mode === 'page' && r.startPage === maskState.currentPage).length;
+            const global = maskState.rects.filter(r => r.mode === 'all').length;
+            const periodic = maskState.rects.filter(r => r.mode === 'every').length;
             const hasFile = !!maskState.pdfJsDoc;
             document.getElementById('maskSummary').textContent = hasFile
-                ? `이 쪽 전용 ${pageOnly}개 · 모든 쪽 ${global}개 · 총 ${maskState.rects.length}개`
+                ? `이 쪽 전용 ${pageOnly}개 · 모든 쪽 ${global}개 · n쪽마다 ${periodic}개 · 총 ${maskState.rects.length}개`
                 : '';
             document.getElementById('btnMaskDownload').disabled = !hasFile || maskState.rects.length === 0;
         }
@@ -1256,7 +1290,9 @@
 
             maskState.rects.push({
                 id: maskState.nextId++,
-                pageIndex: maskState.currentPage,
+                mode: 'page',
+                startPage: maskState.currentPage,
+                step: 2,
                 color: maskColor,
                 ...r
             });
@@ -1266,17 +1302,35 @@
         maskOverlay.addEventListener('pointerup', finishMaskDraw);
         maskOverlay.addEventListener('pointercancel', finishMaskDraw);
 
-        // 영역 버튼 (범위 전환 / 삭제)
+        // 영역 도구 (삭제 / 범위 변경 / n쪽 간격)
+        function findMaskRectByControl(control) {
+            const id = parseInt(control.closest('.mask-rect').dataset.id, 10);
+            return maskState.rects.find(r => r.id === id);
+        }
+
         maskOverlay.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-mask-action]');
+            const btn = e.target.closest('[data-mask-action="delete"]');
             if (!btn) return;
-            const id = parseInt(btn.closest('.mask-rect').dataset.id, 10);
-            const rect = maskState.rects.find(r => r.id === id);
+            const rect = findMaskRectByControl(btn);
             if (!rect) return;
-            if (btn.dataset.maskAction === 'delete') {
-                maskState.rects = maskState.rects.filter(r => r.id !== id);
-            } else {
-                rect.pageIndex = rect.pageIndex === null ? maskState.currentPage : null;
+            maskState.rects = maskState.rects.filter(r => r.id !== rect.id);
+            renderMaskRects();
+        });
+
+        maskOverlay.addEventListener('change', (e) => {
+            const control = e.target.closest('[data-mask-action]');
+            if (!control) return;
+            const rect = findMaskRectByControl(control);
+            if (!rect) return;
+            if (control.dataset.maskAction === 'scope') {
+                rect.mode = control.value;
+                // 이 쪽 / n쪽마다는 현재 쪽을 기준(시작)으로 삼음
+                if (rect.mode !== 'all') rect.startPage = maskState.currentPage;
+            } else if (control.dataset.maskAction === 'step') {
+                const step = parseInt(control.value, 10);
+                rect.step = Number.isFinite(step) && step >= 2 ? step : 2;
+                // 현재 쪽이 간격에서 벗어나면 현재 쪽을 새 시작으로
+                if (!isRectOnPage(rect, maskState.currentPage)) rect.startPage = maskState.currentPage;
             }
             renderMaskRects();
         });
