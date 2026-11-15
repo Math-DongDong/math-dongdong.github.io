@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>선분 만들기</title>
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" />
+
+    <!-- 공용 네비게이션 바 -->
+    <link rel="stylesheet" href="../../../css/navbar.css" />
+    <link rel="icon" href="../../../assets/images/mainPage/동동이.jpg" />
+
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+        :root {
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --primary: #2563eb;
+            --primary-soft: #eff6ff;
+        }
+
+        body {
+            margin: 0;
+            background-color: #ffffff;
+            color: var(--text);
+            font-family: 'Pretendard Variable', system-ui, sans-serif;
+        }
+
+        .page-wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem 1rem 4rem;
+        }
+
+        .content-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+        }
+
+        .canvas-wrap {
+            position: relative;
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            background: #fff;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 0.75rem;
+        }
+
+        #board {
+            display: block;
+            width: 100%;
+            height: auto;
+            touch-action: none;
+            cursor: crosshair;
+            user-select: none;
+        }
+
+        #board.picking {
+            cursor: cell;
+        }
+
+        .pt-label,
+        .mark-text {
+            cursor: text;
+        }
+
+        .pt-dot {
+            cursor: grab;
+        }
+
+        .dragging .pt-dot {
+            cursor: grabbing;
+        }
+
+        #nameEditor {
+            position: absolute;
+            display: none;
+            width: 96px;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-weight: 600;
+            padding: 0.15rem 0.3rem;
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            outline: none;
+            z-index: 5;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.6;
+        }
+
+        .form-label {
+            font-size: 0.84rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: #374151;
+        }
+
+        .btn-primary,
+        .btn-outline-secondary,
+        .btn-outline-primary,
+        .btn-outline-danger {
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .list-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #fff;
+        }
+
+        .list-row .name-input {
+            width: 64px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .list-row .val {
+            flex: 1;
+            font-size: 0.88rem;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .empty {
+            color: var(--muted);
+            font-size: 0.85rem;
+            padding: 0.6rem 0.2rem;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--primary-soft);
+            color: #1d4ed8;
+            border: 1px solid #dbeafe;
+            border-radius: 999px;
+            padding: 0.25rem 0.7rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin: 0 0.3rem 0.3rem 0;
+        }
+
+        .chip button {
+            border: none;
+            background: transparent;
+            color: #1d4ed8;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .range-value {
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .accordion-button:not(.collapsed) {
+            box-shadow: none;
+        }
+
+        .accordion-item {
+            border-radius: 14px !important;
+            overflow: hidden;
+        }
+
+        .point-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+
+        .point-grid .empty {
+            grid-column: 1 / -1;
+        }
+
+        .pick-guide {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--primary-soft);
+            border: 1px solid #dbeafe;
+            color: #1d4ed8;
+            border-radius: 10px;
+            padding: 0.5rem 0.8rem;
+            font-size: 0.86rem;
+            font-weight: 600;
+        }
+
+        .bar-preview {
+            font-family: 'Times New Roman', serif;
+            letter-spacing: 1px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 991.98px) {
+            .content-card {
+                padding: 1rem;
+            }
+
+            .point-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .point-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 상단 네비게이션바 (업무자동화 전용) -->
+    <script src="../../../js/navbar.js"></script>
+
+    <header class="page-wrap pb-0">
+        <div class="text-center mb-4">
+            <h1 class="fw-bold text-primary mt-2">
+                <i class="bi bi-dash-lg"></i> 선분 만들기
+            </h1>
+            <p class="text-muted fs-6">
+                선분 위에 점을 찍고 길이를 표시해 이미지로 저장합니다.
+            </p>
+        </div>
+    </header>
+
+    <main class="page-wrap pt-3">
+        <!-- 기본 설정 -->
+        <div class="accordion mb-3 shadow-sm" id="setupAccordion">
+            <div class="accordion-item border-0">
+                <h2 class="accordion-header" id="headingSetup">
+                    <button class="accordion-button fw-bold text-primary bg-light" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#collapseSetup" aria-expanded="true"
+                        aria-controls="collapseSetup">
+                        <i class="bi bi-sliders me-2"></i>선분 기본 설정
+                    </button>
+                </h2>
+                <div id="collapseSetup" class="accordion-collapse collapse show" aria-labelledby="headingSetup"
+                    data-bs-parent="#setupAccordion">
+                    <div class="accordion-body p-4 bg-white">
+
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label class="form-label" for="inLength">선분 길이 <span class="range-value"
+                                        id="lengthValue">480px</span></label>
+                                <input type="range" class="form-range" id="inLength" min="120" max="1200" step="10"
+                                    value="480">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="inFontSize">글자 크기 <span class="range-value"
+                                        id="fontValue">22</span></label>
+                                <input type="range" class="form-range" id="inFontSize" min="12" max="44" step="1"
+                                    value="22">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="inLineWidth">선 굵기 <span class="range-value"
+                                        id="lineWidthValue">2.2</span></label>
+                                <input type="range" class="form-range" id="inLineWidth" min="1" max="6" step="0.2"
+                                    value="2.2">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="inDotSize">점 크기 <span class="range-value"
+                                        id="dotValue">5</span></label>
+                                <input type="range" class="form-range" id="inDotSize" min="2" max="12" step="0.5"
+                                    value="5">
+                            </div>
+                        </div>
+
+                        <hr class="my-3">
+
+                        <div class="row g-3">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label" for="inUnits">안내 눈금 칸 수</label>
+                                <input id="inUnits" type="number" class="form-control form-control-sm" value="10"
+                                    min="1" max="100" step="1" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label" for="inSnap">점 이동 단위</label>
+                                <select id="inSnap" class="form-select form-select-sm">
+                                    <option value="0">자유</option>
+                                    <option value="1" selected>1칸</option>
+                                    <option value="0.5">1/2칸</option>
+                                    <option value="0.25">1/4칸</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label" for="inNameSide">점 이름 위치</label>
+                                <select id="inNameSide" class="form-select form-select-sm">
+                                    <option value="down" selected>선분 아래</option>
+                                    <option value="up">선분 위</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label" for="inDotColor">점 색</label>
+                                <select id="inDotColor" class="form-select form-select-sm">
+                                    <option value="#111827" selected>검정</option>
+                                    <option value="#e11d48">빨강</option>
+                                    <option value="#2563eb">파랑</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-3 mt-3">
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" id="chkGuide" checked>
+                                <label class="form-check-label" for="chkGuide">안내 눈금 보기 (저장 안 됨)</label>
+                            </div>
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" id="chkNames" checked>
+                                <label class="form-check-label" for="chkNames">점 이름 표시</label>
+                            </div>
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" id="chkSort">
+                                <label class="form-check-label" for="chkSort">왼쪽부터 이름 정렬</label>
+                            </div>
+                        </div>
+
+                        <div class="hint mt-3" id="sizeInfo"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 미리보기 -->
+        <section class="content-card">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <button id="btnMarkMode" class="btn btn-outline-primary btn-sm" type="button">
+                    <i class="bi bi-arrows me-1"></i>길이 표시하기
+                </button>
+                <div id="markList" class="d-flex flex-wrap align-items-center"></div>
+            </div>
+
+            <div id="pickGuide" class="pick-guide mb-2 d-none">
+                <i class="bi bi-hand-index-thumb"></i><span id="pickGuideText"></span>
+            </div>
+
+            <div class="canvas-wrap">
+                <svg id="board" viewBox="0 0 960 200" xmlns="http://www.w3.org/2000/svg"></svg>
+                <input id="nameEditor" class="form-control form-control-sm" type="text" maxlength="16" />
+            </div>
+
+            <p class="hint mt-3 mb-2">
+                선분을 클릭하면 점이 찍히고 A, B, C… 순서로 이름이 붙습니다.
+                점 이름·길이 글자를 클릭하면 바꿀 수 있고, 점을 끌면 위치가 옮겨집니다. 점 위에서 오른쪽 클릭하면 삭제됩니다.
+                길이 표시는 점에 붙어 있어 점을 옮기면 함께 움직입니다.
+            </p>
+
+            <div id="pointList" class="point-grid"></div>
+
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-3 pt-3 border-top">
+                <button id="btnPng" class="btn btn-primary btn-sm">
+                    <i class="bi bi-download me-1"></i>PNG로 저장
+                </button>
+                <button id="btnSvg" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-filetype-svg me-1"></i>SVG로 저장
+                </button>
+                <button id="btnReset" class="btn btn-outline-danger btn-sm ms-auto">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>초기화
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- 길이 표시 모달 -->
+    <div class="modal fade" id="markModal" tabindex="-1" aria-labelledby="markModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius: 16px;">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-6 fw-bold" id="markModalLabel">길이 표시</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="hint mb-3" id="markRangeText"></p>
+
+                    <label class="form-label" for="inputMarkText">표시할 글자 <span class="text-muted fw-normal">(비워도
+                            됨)</span></label>
+                    <input id="inputMarkText" type="text" class="form-control form-control-sm" value="10 cm"
+                        maxlength="16" placeholder="예: 10 cm, x, 3" />
+
+                    <div class="row g-3 mt-1">
+                        <div class="col-6">
+                            <label class="form-label" for="inputMarkShape">모양</label>
+                            <select id="inputMarkShape" class="form-select form-select-sm">
+                                <option value="none">글자만</option>
+                                <option value="brace" selected>중괄호 ︷</option>
+                                <option value="arc">호 ⌒</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="inputMarkSide">위치</label>
+                            <select id="inputMarkSide" class="form-select form-select-sm">
+                                <option value="up" selected>선분 위</option>
+                                <option value="down">선분 아래</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <span class="form-label d-block mt-3">같은 길이 표시</span>
+                    <div class="d-flex flex-wrap gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar0" value="0" checked>
+                            <label class="form-check-label" for="bar0">없음</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar1" value="1">
+                            <label class="form-check-label" for="bar1">1줄 <span class="bar-preview">|</span></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar2" value="2">
+                            <label class="form-check-label" for="bar2">2줄 <span class="bar-preview">||</span></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="barCount" id="bar3" value="3">
+                            <label class="form-check-label" for="bar3">3줄 <span class="bar-preview">|||</span></label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+                    <button type="button" id="btnMarkConfirm" class="btn btn-primary btn-sm">표시 적용</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // 안내 모달 — 사이트 공용 모달(js/ui-dialog.js). 불러오지 못하면 브라우저 기본창으로 대신합니다
+        function showNoticeModal(message, title = '알림') {
+            return import('../../../js/ui-dialog.js').then(m => m.uiAlert(title, message)).catch(() => window.alert(message));
+        }
+
+        (function () {
+            'use strict';
+
+            /* ---------- 상수 ---------- */
+            const NS = 'http://www.w3.org/2000/svg';
+            const FONT_SERIF = "'Times New Roman', Times, 'Nanum Myeongjo', serif";
+            const INK = '#111827';
+            const EXPORT_SCALE = 3;
+
+            /* ---------- 상태 (점 위치는 0 ~ units 칸 좌표) ---------- */
+            const state = {
+                units: 10,
+                snap: 1,
+                lineLength: 480,
+                fontSize: 22,
+                lineWidth: 2.2,
+                dotSize: 5,
+                dotColor: INK,
+                nameSide: 'down',
+                showGuide: true,
+                showNames: true,
+                autoSort: false,
+                points: [],
+                marks: [],
+                seqPoint: 0,
+                seqMark: 0,
+                markMode: false,
+                markStart: null,
+                pendingMark: null
+            };
+
+            /* ---------- 도형 크기 계산 ---------- */
+            const M = {};
+
+            function nameExtent() {
+                return state.dotSize + 6 + M.fs * 1.05;
+            }
+
+            // 길이 표시 하나가 선분에서 차지하는 높이(근접 여백, 모양 높이, 글자 기준선 위치)
+            function markGeometry(mark) {
+                const namesHere = state.showNames && state.nameSide === mark.side;
+                const near = namesHere ? nameExtent() + 4 : Math.max(state.dotSize, state.lineWidth) + 6;
+                const shapeH = mark.shape === 'none' ? 0 : Math.max(8, M.fs * 0.5);
+                const textGap = mark.text ? M.fs * 1.1 : 0;
+                return { near, shapeH, extent: near + shapeH + textGap + (mark.shape === 'none' ? 0 : 3) };
+            }
+
+            function computeMetrics() {
+                const fs = state.fontSize;
+                M.fs = fs;
+                M.pad = Math.max(fs * 0.9, state.dotSize + 4) + 8;
+                M.barHalf = Math.max(5, fs * 0.3);
+
+                const side = s => {
+                    let ext = Math.max(state.dotSize, M.barHalf);
+                    if (state.showNames && state.nameSide === s) ext = Math.max(ext, nameExtent());
+                    state.marks.forEach(m => { if (m.side === s) ext = Math.max(ext, markGeometry(m).extent); });
+                    return ext + fs * 0.35 + 4;
+                };
+
+                M.top = side('up');
+                M.bottom = side('down');
+                M.base = M.top;
+                M.W = state.lineLength + M.pad * 2;
+                M.H = M.top + M.bottom;
+            }
+
+            /* ---------- DOM ---------- */
+            const svg = document.getElementById('board');
+            const wrap = svg.parentElement;
+            const editor = document.getElementById('nameEditor');
+            const pointListEl = document.getElementById('pointList');
+            const markListEl = document.getElementById('markList');
+            const btnMarkMode = document.getElementById('btnMarkMode');
+            const pickGuide = document.getElementById('pickGuide');
+            const pickGuideText = document.getElementById('pickGuideText');
+            const markModalEl = document.getElementById('markModal');
+            const markModal = new bootstrap.Modal(markModalEl);
+
+            /* ---------- 유틸 ---------- */
+            const round6 = v => Math.round(v * 1e6) / 1e6;
+            const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+            const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+            function el(tag, attrs, text) {
+                const node = document.createElementNS(NS, tag);
+                for (const k in attrs) node.setAttribute(k, attrs[k]);
+                if (text !== undefined) node.textContent = text;
+                return node;
+            }
+
+            function xOf(v) {
+                return M.pad + v / state.units * state.lineLength;
+            }
+
+            function valueOf(x) {
+                return (x - M.pad) / state.lineLength * state.units;
+            }
+
+            function letterAt(i) {
+                let s = '', n = i + 1;
+                while (n > 0) {
+                    const r = (n - 1) % 26;
+                    s = String.fromCharCode(65 + r) + s;
+                    n = Math.floor((n - 1) / 26);
+                }
+                return s;
+            }
+
+            function nextAutoName(exclude) {
+                const used = new Set(state.points.filter(p => p !== exclude).map(p => p.name));
+                let i = 0;
+                while (used.has(letterAt(i))) i++;
+                return letterAt(i);
+            }
+
+            function snapValue(v) {
+                const s = state.snap ? round6(Math.round(v / state.snap) * state.snap) : round6(v);
+                return clamp(s, 0, state.units);
+            }
+
+            function findPoint(id) {
+                return state.points.find(p => p.id === Number(id));
+            }
+
+            // 길이 표시의 끝: 점에 붙어 있으면 점 위치, 아니면 저장된 값
+            function endValue(end) {
+                const p = end.pointId ? findPoint(end.pointId) : null;
+                return p ? p.value : end.value;
+            }
+
+            function endName(end) {
+                const p = end.pointId ? findPoint(end.pointId) : null;
+                return p ? p.name : `${round6(end.value)}칸`;
+            }
+
+            /* ---------- 렌더링 ---------- */
+            function render() {
+                computeMetrics();
+                svg.setAttribute('viewBox', `0 0 ${round6(M.W)} ${round6(M.H)}`);
+                svg.style.maxWidth = Math.round(M.W) + 'px';
+
+                while (svg.firstChild) svg.removeChild(svg.firstChild);
+                svg.appendChild(el('rect', { x: 0, y: 0, width: M.W, height: M.H, fill: '#ffffff' }));
+
+                drawGuide();
+                drawSegment();
+                drawMarks();
+                drawPoints();
+                drawPendingMark();
+
+                renderMarkList();
+                renderPointList();
+                updateSizeInfo();
+            }
+
+            function updateSizeInfo() {
+                const w = Math.round(M.W), h = Math.round(M.H);
+                document.getElementById('sizeInfo').textContent =
+                    `이미지 크기 ${w} × ${h}px · PNG 저장 시 ${w * EXPORT_SCALE} × ${h * EXPORT_SCALE}px (${EXPORT_SCALE}배 해상도)`;
+            }
+
+            function drawGuide() {
+                if (!state.showGuide) return;
+                const half = Math.max(5, M.fs * 0.28);
+                for (let i = 0; i <= state.units; i++) {
+                    const x = xOf(i);
+                    svg.appendChild(el('line', {
+                        x1: x, y1: M.base - half, x2: x, y2: M.base + half, class: 'no-export',
+                        stroke: '#cbd5e1', 'stroke-width': 1.2
+                    }));
+                }
+            }
+
+            function drawSegment() {
+                svg.appendChild(el('line', {
+                    x1: xOf(0), y1: M.base, x2: xOf(state.units), y2: M.base,
+                    stroke: INK, 'stroke-width': state.lineWidth
+                }));
+            }
+
+            function bracePath(xa, xb, y, h, dir) {
+                const mid = (xa + xb) / 2;
+                const r = Math.min(h, (xb - xa) / 4);
+                const yMid = y + dir * h / 2, yTip = y + dir * h;
+                return `M ${xa} ${y} Q ${xa} ${yMid} ${xa + r} ${yMid} L ${mid - r} ${yMid} ` +
+                    `Q ${mid} ${yMid} ${mid} ${yTip} Q ${mid} ${yMid} ${mid + r} ${yMid} ` +
+                    `L ${xb - r} ${yMid} Q ${xb} ${yMid} ${xb} ${y}`;
+            }
+
+            function drawEqualBars(cx, count) {
+                if (!count) return;
+                const gap = Math.max(3, M.fs * 0.2);
+                const offset = (count - 1) / 2;
+                for (let i = 0; i < count; i++) {
+                    const x = cx + (i - offset) * gap;
+                    svg.appendChild(el('line', {
+                        x1: x, y1: M.base - M.barHalf, x2: x, y2: M.base + M.barHalf,
+                        stroke: INK, 'stroke-width': state.lineWidth * 0.7, 'stroke-linecap': 'round'
+                    }));
+                }
+            }
+
+            function drawMarks() {
+                state.marks.forEach(mark => {
+                    const a = endValue(mark.start), b = endValue(mark.end);
+                    const xa = xOf(Math.min(a, b)), xb = xOf(Math.max(a, b));
+                    if (xb - xa < 1) return;
+                    const cx = (xa + xb) / 2;
+                    const dir = mark.side === 'up' ? -1 : 1;
+                    const geo = markGeometry(mark);
+                    const y0 = M.base + dir * geo.near;
+                    const strokeW = state.lineWidth * 0.7;
+
+                    drawEqualBars(cx, mark.bars);
+
+                    if (mark.shape === 'brace') {
+                        svg.appendChild(el('path', {
+                            d: bracePath(xa, xb, y0, geo.shapeH, dir),
+                            fill: 'none', stroke: INK, 'stroke-width': strokeW, 'stroke-linejoin': 'round'
+                        }));
+                    } else if (mark.shape === 'arc') {
+                        const rx = (xb - xa) / 2;
+                        const ry = Math.min(rx, geo.shapeH);
+                        svg.appendChild(el('path', {
+                            d: `M ${xa} ${y0} A ${rx} ${ry} 0 0 ${dir < 0 ? 1 : 0} ${xb} ${y0}`,
+                            fill: 'none', stroke: INK, 'stroke-width': strokeW
+                        }));
+                    }
+
+                    if (!mark.text) return;
+                    const shapeEnd = y0 + dir * (geo.shapeH + (mark.shape === 'none' ? 0 : 3));
+                    const textY = dir < 0 ? shapeEnd - M.fs * 0.22 : shapeEnd + M.fs * 0.82;
+                    svg.appendChild(el('text', {
+                        x: cx, y: textY, 'text-anchor': 'middle', class: 'mark-text',
+                        'font-family': FONT_SERIF, 'font-size': M.fs, fill: INK,
+                        'data-mark': mark.id
+                    }, mark.text));
+                });
+            }
+
+            function drawPendingMark() {
+                if (!state.markMode || state.markStart === null) return;
+                const x = xOf(endValue(state.markStart));
+                svg.appendChild(el('line', {
+                    x1: x, y1: 1, x2: x, y2: M.H - 1, class: 'no-export',
+                    stroke: '#2563eb', 'stroke-width': 1.6, 'stroke-dasharray': '5 4'
+                }));
+            }
+
+            function drawPoints() {
+                const hit = Math.max(11, state.dotSize * 2.6);
+                const nameY = state.nameSide === 'up'
+                    ? M.base - state.dotSize - 6 - M.fs * 0.12
+                    : M.base + state.dotSize + 6 + M.fs * 0.78;
+
+                state.points.forEach(p => {
+                    const x = xOf(p.value);
+                    const g = el('g', { 'data-point': p.id });
+
+                    if (state.showNames) {
+                        g.appendChild(el('text', {
+                            x: x, y: nameY, 'text-anchor': 'middle', class: 'pt-label',
+                            'font-family': FONT_SERIF, 'font-size': M.fs, fill: INK, 'data-role': 'label'
+                        }, p.name));
+                    }
+                    g.appendChild(el('circle', {
+                        cx: x, cy: M.base, r: hit, fill: 'transparent', class: 'pt-dot', 'data-role': 'dot'
+                    }));
+                    g.appendChild(el('circle', {
+                        cx: x, cy: M.base, r: state.dotSize, class: 'pt-dot',
+                        'data-role': 'dot', style: `fill:${state.dotColor}`
+                    }));
+                    svg.appendChild(g);
+                });
+            }
+
+            /* ---------- 목록 ---------- */
+            function renderMarkList() {
+                markListEl.innerHTML = state.marks.map(m => {
+                    const extra = [m.text ? escapeHtml(m.text) : '', m.bars ? '|'.repeat(m.bars) : '']
+                        .filter(Boolean).join(' · ');
+                    return `<span class="chip">${escapeHtml(endName(m.start))}${escapeHtml(endName(m.end))}` +
+                        `${extra ? ' · ' + extra : ''}` +
+                        `<button type="button" data-del-mark="${m.id}" aria-label="삭제"><i class="bi bi-x-lg"></i></button></span>`;
+                }).join('');
+            }
+
+            function renderPointList() {
+                if (!state.points.length) {
+                    pointListEl.innerHTML = '<div class="empty">선분을 클릭하면 점이 여기에 쌓입니다.</div>';
+                    return;
+                }
+                pointListEl.innerHTML = state.points.map(p => `<div class="list-row">
+            <input class="form-control form-control-sm name-input" data-name="${p.id}" value="${escapeHtml(p.name)}" maxlength="12" />
+            <span class="val">${round6(p.value)}칸 / ${state.units}칸</span>
+            <button class="btn btn-sm btn-outline-danger" data-del-point="${p.id}" aria-label="삭제"><i class="bi bi-trash"></i></button>
+          </div>`).join('');
+            }
+
+            /* ---------- 점 조작 ---------- */
+            function addPoint(value, name) {
+                const p = { id: ++state.seqPoint, value: snapValue(value), name: '', auto: !name };
+                p.name = name || nextAutoName(p);
+                state.points.push(p);
+                applyAutoSort();
+                return p;
+            }
+
+            function removePoint(id) {
+                const p = findPoint(id);
+                if (!p) return;
+                // 붙어 있던 길이 표시는 마지막 위치에 고정
+                state.marks.forEach(m => [m.start, m.end].forEach(end => {
+                    if (end.pointId === p.id) { end.value = p.value; end.pointId = null; }
+                }));
+                state.points = state.points.filter(q => q !== p);
+                applyAutoSort();
+                render();
+            }
+
+            function applyAutoSort() {
+                if (!state.autoSort) return;
+                const fixed = new Set(state.points.filter(p => !p.auto).map(p => p.name));
+                const autos = state.points.filter(p => p.auto).slice().sort((a, b) => a.value - b.value);
+                let i = 0;
+                autos.forEach(p => {
+                    while (fixed.has(letterAt(i))) i++;
+                    p.name = letterAt(i++);
+                });
+            }
+
+            /* ---------- 마우스 / 터치 ---------- */
+            let drag = null;
+
+            function pointerToSvgX(evt) {
+                const pt = svg.createSVGPoint();
+                pt.x = evt.clientX;
+                pt.y = evt.clientY;
+                return pt.matrixTransform(svg.getScreenCTM().inverse()).x;
+            }
+
+            svg.addEventListener('pointerdown', evt => {
+                if (state.markMode) return;
+                const group = evt.target.closest('[data-point]');
+                if (!group) return;
+                evt.preventDefault();
+                hideEditor();
+                drag = {
+                    id: Number(group.getAttribute('data-point')),
+                    role: evt.target.getAttribute('data-role'),
+                    moved: false
+                };
+                svg.setPointerCapture(evt.pointerId);
+                wrap.classList.add('dragging');
+            });
+
+            svg.addEventListener('pointermove', evt => {
+                if (!drag) return;
+                const p = findPoint(drag.id);
+                if (!p) return;
+                const v = snapValue(valueOf(pointerToSvgX(evt)));
+                if (v !== p.value) {
+                    p.value = v;
+                    drag.moved = true;
+                    applyAutoSort();
+                    render();
+                }
+            });
+
+            svg.addEventListener('pointerup', () => {
+                if (!drag) return;
+                const info = drag;
+                drag = null;
+                wrap.classList.remove('dragging');
+                if (!info.moved && info.role === 'label') {
+                    const p = findPoint(info.id);
+                    if (p) openPointEditor(p);
+                }
+            });
+
+            svg.addEventListener('click', evt => {
+                if (state.markMode) {
+                    hideEditor();
+                    handleMarkPick(evt);
+                    return;
+                }
+                const markText = evt.target.closest('[data-mark]');
+                if (markText) {
+                    openMarkEditor(Number(markText.getAttribute('data-mark')), markText);
+                    return;
+                }
+                if (evt.target.closest('[data-point]')) return;
+                hideEditor();
+                addPoint(valueOf(pointerToSvgX(evt)));
+                render();
+            });
+
+            svg.addEventListener('contextmenu', evt => {
+                if (state.markMode) {
+                    evt.preventDefault();
+                    exitMarkMode();
+                    return;
+                }
+                const group = evt.target.closest('[data-point]');
+                if (!group) return;
+                evt.preventDefault();
+                removePoint(group.getAttribute('data-point'));
+            });
+
+            /* ---------- 인라인 편집 (점 이름 · 길이 글자) ---------- */
+            let editTarget = null;
+
+            function placeEditor(node, value) {
+                const box = node.getBoundingClientRect();
+                const base = wrap.getBoundingClientRect();
+                editor.value = value;
+                editor.style.left = (box.left - base.left + box.width / 2) + 'px';
+                editor.style.top = (box.top - base.top + box.height / 2) + 'px';
+                editor.style.display = 'block';
+                editor.focus();
+                editor.select();
+            }
+
+            function openPointEditor(p) {
+                const node = svg.querySelector(`[data-point="${p.id}"] [data-role="label"]`);
+                if (!node) return;
+                editTarget = { type: 'point', id: p.id };
+                placeEditor(node, p.name);
+            }
+
+            function openMarkEditor(id, node) {
+                const mark = state.marks.find(m => m.id === id);
+                if (!mark) return;
+                editTarget = { type: 'mark', id };
+                placeEditor(node, mark.text);
+            }
+
+            function hideEditor() {
+                editor.style.display = 'none';
+                editTarget = null;
+            }
+
+            function commitEditor() {
+                if (!editTarget) return;
+                const value = editor.value.trim();
+                if (editTarget.type === 'point') {
+                    const p = findPoint(editTarget.id);
+                    if (p && value) { p.name = value; p.auto = false; }
+                } else {
+                    const mark = state.marks.find(m => m.id === editTarget.id);
+                    if (mark) mark.text = value;
+                }
+                hideEditor();
+                render();
+            }
+
+            editor.addEventListener('keydown', evt => {
+                if (evt.key === 'Enter') { evt.preventDefault(); commitEditor(); }
+                if (evt.key === 'Escape') { evt.preventDefault(); hideEditor(); }
+            });
+            editor.addEventListener('blur', commitEditor);
+
+            /* ---------- 목록 이벤트 ---------- */
+            pointListEl.addEventListener('click', evt => {
+                const btn = evt.target.closest('[data-del-point]');
+                if (btn) removePoint(btn.getAttribute('data-del-point'));
+            });
+
+            pointListEl.addEventListener('change', evt => {
+                const input = evt.target.closest('[data-name]');
+                if (!input) return;
+                const p = findPoint(input.getAttribute('data-name'));
+                const name = input.value.trim();
+                if (p && name) { p.name = name; p.auto = false; }
+                render();
+            });
+
+            markListEl.addEventListener('click', evt => {
+                const btn = evt.target.closest('[data-del-mark]');
+                if (!btn) return;
+                const id = Number(btn.getAttribute('data-del-mark'));
+                state.marks = state.marks.filter(m => m.id !== id);
+                render();
+            });
+
+            /* ---------- 설정 입력 ---------- */
+            const shapeInputs = [
+                { id: 'inLength', key: 'lineLength', out: 'lengthValue', unit: 'px' },
+                { id: 'inFontSize', key: 'fontSize', out: 'fontValue', unit: '' },
+                { id: 'inLineWidth', key: 'lineWidth', out: 'lineWidthValue', unit: '' },
+                { id: 'inDotSize', key: 'dotSize', out: 'dotValue', unit: '' }
+            ];
+
+            shapeInputs.forEach(cfg => {
+                const input = document.getElementById(cfg.id);
+                input.value = state[cfg.key];
+                document.getElementById(cfg.out).textContent = state[cfg.key] + cfg.unit;
+                input.addEventListener('input', e => {
+                    state[cfg.key] = parseFloat(e.target.value);
+                    document.getElementById(cfg.out).textContent = state[cfg.key] + cfg.unit;
+                    hideEditor();
+                    render();
+                });
+            });
+
+            const inUnits = document.getElementById('inUnits');
+            inUnits.addEventListener('change', () => {
+                const n = parseInt(inUnits.value, 10);
+                if (!(n >= 1 && n <= 100)) { inUnits.value = state.units; return; }
+                // 점·길이 표시의 상대 위치를 유지하도록 비율 변환
+                const ratio = n / state.units;
+                state.points.forEach(p => { p.value = round6(p.value * ratio); });
+                state.marks.forEach(m => [m.start, m.end].forEach(end => { end.value = round6(end.value * ratio); }));
+                state.units = n;
+                hideEditor();
+                render();
+            });
+
+            document.getElementById('inSnap').addEventListener('change', e => {
+                state.snap = parseFloat(e.target.value) || 0;
+            });
+
+            document.getElementById('inNameSide').addEventListener('change', e => {
+                state.nameSide = e.target.value;
+                render();
+            });
+
+            document.getElementById('inDotColor').addEventListener('change', e => {
+                state.dotColor = e.target.value;
+                render();
+            });
+
+            [['chkGuide', 'showGuide'], ['chkNames', 'showNames'], ['chkSort', 'autoSort']].forEach(([id, key]) => {
+                document.getElementById(id).addEventListener('change', e => {
+                    state[key] = e.target.checked;
+                    applyAutoSort();
+                    hideEditor();
+                    render();
+                });
+            });
+
+            /* ---------- 길이 표시: 두 점 클릭 → 모달 ---------- */
+            function updateMarkUi() {
+                btnMarkMode.classList.toggle('active', state.markMode);
+                btnMarkMode.innerHTML = state.markMode
+                    ? '<i class="bi bi-x-circle me-1"></i>선택 취소'
+                    : '<i class="bi bi-arrows me-1"></i>길이 표시하기';
+                svg.classList.toggle('picking', state.markMode);
+                pickGuide.classList.toggle('d-none', !state.markMode);
+                pickGuideText.textContent = state.markStart === null
+                    ? '길이를 표시할 구간의 한쪽 끝(점)을 클릭하세요.'
+                    : `${endName(state.markStart)} 선택됨 — 이제 다른 쪽 끝을 클릭하세요.`;
+            }
+
+            function enterMarkMode() {
+                state.markMode = true;
+                state.markStart = null;
+                hideEditor();
+                updateMarkUi();
+                render();
+            }
+
+            function exitMarkMode() {
+                state.markMode = false;
+                state.markStart = null;
+                state.pendingMark = null;
+                updateMarkUi();
+                render();
+            }
+
+            // 클릭 위치 근처에 점이 있으면 그 점에, 없으면 눈금 위치에 붙입니다
+            function pickEnd(evt) {
+                const x = pointerToSvgX(evt);
+                const hit = Math.max(14, state.dotSize * 2.6);
+                let best = null;
+                state.points.forEach(p => {
+                    const d = Math.abs(xOf(p.value) - x);
+                    if (d <= hit && (!best || d < best.d)) best = { d, p };
+                });
+                if (best) return { pointId: best.p.id, value: best.p.value };
+                return { pointId: null, value: snapValue(valueOf(x)) };
+            }
+
+            function handleMarkPick(evt) {
+                const end = pickEnd(evt);
+                if (state.markStart === null) {
+                    state.markStart = end;
+                    updateMarkUi();
+                    render();
+                    return;
+                }
+                if (Math.abs(endValue(end) - endValue(state.markStart)) < 1e-9) return;
+                const [start, finish] = endValue(state.markStart) < endValue(end)
+                    ? [state.markStart, end] : [end, state.markStart];
+                state.pendingMark = { start, end: finish };
+                state.markStart = null;
+                document.getElementById('markRangeText').textContent =
+                    `선택한 구간: ${endName(start)}${endName(finish)}`;
+                markModal.show();
+            }
+
+            btnMarkMode.addEventListener('click', () => {
+                if (state.markMode) exitMarkMode();
+                else enterMarkMode();
+            });
+
+            document.getElementById('btnMarkConfirm').addEventListener('click', () => {
+                const pending = state.pendingMark;
+                if (!pending) return;
+                state.marks.push({
+                    id: ++state.seqMark,
+                    start: pending.start,
+                    end: pending.end,
+                    text: document.getElementById('inputMarkText').value.trim(),
+                    shape: document.getElementById('inputMarkShape').value,
+                    side: document.getElementById('inputMarkSide').value,
+                    bars: parseInt(document.querySelector('input[name="barCount"]:checked').value, 10)
+                });
+                state.pendingMark = null;
+                markModal.hide();
+            });
+
+            markModalEl.addEventListener('hidden.bs.modal', exitMarkMode);
+
+            markModalEl.addEventListener('shown.bs.modal', () => {
+                const input = document.getElementById('inputMarkText');
+                input.focus();
+                input.select();
+            });
+
+            document.addEventListener('keydown', evt => {
+                if (evt.key === 'Escape' && state.markMode) exitMarkMode();
+            });
+
+            /* ---------- 초기화 ---------- */
+            document.getElementById('btnReset').addEventListener('click', () => {
+                state.points = [];
+                state.marks = [];
+                state.seqPoint = 0;
+                hideEditor();
+                addPoint(0);
+                addPoint(state.units);
+                exitMarkMode();
+            });
+
+            /* ---------- 내보내기 ---------- */
+            function serializeSvg(scale) {
+                const clone = svg.cloneNode(true);
+                clone.setAttribute('xmlns', NS);
+                clone.setAttribute('width', Math.round(M.W * scale));
+                clone.setAttribute('height', Math.round(M.H * scale));
+                clone.setAttribute('viewBox', `0 0 ${round6(M.W)} ${round6(M.H)}`);
+                clone.removeAttribute('style');
+                clone.removeAttribute('class');
+                clone.querySelectorAll('.no-export').forEach(node => node.remove());
+                return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
+            }
+
+            function downloadBlob(blob, filename) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+
+            function fileName(ext) {
+                const d = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                return `선분_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`;
+            }
+
+            document.getElementById('btnPng').addEventListener('click', () => {
+                hideEditor();
+                const width = Math.round(M.W * EXPORT_SCALE);
+                const height = Math.round(M.H * EXPORT_SCALE);
+                const url = URL.createObjectURL(new Blob([serializeSvg(EXPORT_SCALE)], { type: 'image/svg+xml;charset=utf-8' }));
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+                    URL.revokeObjectURL(url);
+                    canvas.toBlob(blob => downloadBlob(blob, fileName('png')), 'image/png');
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    showNoticeModal('PNG 변환에 실패했습니다. SVG로 저장한 뒤 사용해 주세요.');
+                };
+                img.src = url;
+            });
+
+            document.getElementById('btnSvg').addEventListener('click', () => {
+                hideEditor();
+                downloadBlob(new Blob([serializeSvg(1)], { type: 'image/svg+xml;charset=utf-8' }), fileName('svg'));
+            });
+
+            window.addEventListener('resize', hideEditor);
+
+            /* ---------- 시작: 예시 (A, M, B, N, C + AM = 10 cm) ---------- */
+            computeMetrics();
+            const pointA = addPoint(0, 'A');
+            const pointM = addPoint(2, 'M');
+            addPoint(4, 'B');
+            addPoint(7, 'N');
+            addPoint(10, 'C');
+            state.marks.push({
+                id: ++state.seqMark,
+                start: { pointId: pointA.id, value: pointA.value },
+                end: { pointId: pointM.id, value: pointM.value },
+                text: '10 cm', shape: 'none', side: 'up', bars: 0
+            });
+            updateMarkUi();
+            render();
+        })();
+    </script>
+</body>
+
+</html>
