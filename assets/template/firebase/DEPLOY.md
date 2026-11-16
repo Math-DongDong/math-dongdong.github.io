@@ -10,6 +10,7 @@
 - 좀비헌터 완료 체크포인트가 있는 플레이는 이후 게임오버에서 `isCompleted: false`로 되돌리지 않습니다.
 - 학생 삭제는 학생 문서에 기록된 기기 지문으로 `gate/{기기ID}`를 직접 지정해 배치 삭제하고 `private/auth`도 직접 삭제합니다. Firestore 규칙은 교사에게 담당 학생의 `gate` 문서 delete 및 `private/auth` 문서 delete를 허용해야 합니다. `gate`와 `private/auth`의 read/list는 허용하지 마세요.
 - 기존 기기 초기화로 부모 문서에서 지워진 지문에 해당하는 고아 `gate` 문서는 클라이언트 삭제 대상에서 찾을 수 없습니다. 전체 정리가 필요하면 관리자 콘솔 또는 서버 측 정리 작업을 사용하세요. PIN 증명값을 보기 위해 교사 list/read 권한을 추가하지 마세요.
+- 설문조사 Form의 학생별 개인 데이터(`custom_forms/{방}/personal/{학번}`)를 쓰려면 가이드북 12장 '학생별 개인 데이터'의 규칙 블록을 추가하세요. 추가 전에는 저장만 거부되고 기존 설문은 그대로 동작합니다.
 - 통합 설문 템플릿에서 교사 검토를 저장하려면 `custom_forms/{room}/responses/{studentId}`의 `feedback`, `feedbackUpdatedAt`, `teacherView`, `teacherViewUpdatedAt` 필드 갱신을 교사 규칙에 허용하세요.
 - Gemini 초안 생성에 쓰는 API 키는 선택적으로 이 기기의 localStorage에 저장됩니다. 학생 답변을 Gemini API로 전송하는 데 동의하는 내용만 입력하세요.
 - 우리반 관계지도(`pages/admin/relationmap.html`)는 새 컬렉션 `relation_maps`를 씁니다. 가이드북 13장의 규칙 블록을 Firestore 규칙에 **추가**해야 동작합니다. `student_auth`의 `gate`는 v4.3에서 `{ proof, at }`만 받도록 좁혀졌으며, 관계지도의 게이트 쓰기는 이 형식을 그대로 따릅니다.
