@@ -408,6 +408,13 @@
     .show-tools { position: absolute; top: 10px; right: 10px; z-index: 1; display: flex; gap: 6px; opacity: 0.25; transition: opacity 0.2s; }
     .show-tools:hover { opacity: 1; }
 
+    /* ---------- 발표자 보기: 현재 화면 오른쪽 위 도구 (하이라이트·레이저·학생 화면 멈추기) ---------- */
+    .pv-slide-tools { position: absolute; top: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; opacity: 0.45; transition: opacity 0.2s; }
+    .pv-slide-tools:hover, .pv-slide-tools:focus-within { opacity: 1; }
+    .pv-slide-tools button { border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 8px; padding: 6px 12px; background: rgba(17, 24, 39, 0.75); color: #fff; font-size: 14px; cursor: pointer; }
+    .pv-slide-tools button.on { background: #f59e0b; border-color: #f59e0b; color: #111827; }
+    .pv-slide-tools button.on[data-pv="laser"] { background: #ef4444; border-color: #ef4444; color: #fff; } /* 레이저는 빨강으로 하이라이트와 구분 */
+
     /* ---------- 함께 보기: 교사(발표자 바) ---------- */
     /* 발표 화면(z-index 2000) 위에서도 창·옆 패널이 보이게 */
     body.presentation-mode .modal { z-index: 2060; }
@@ -746,8 +753,6 @@
       <button type="button" data-pv="prev">◀ 이전</button>
       <button type="button" data-pv="next">다음 ▶</button>
       <button type="button" data-pv="overview">모든 슬라이드 보기</button>
-      <button type="button" data-pv="spot" aria-pressed="false">하이라이트 (H)</button>
-      <button type="button" class="on" data-pv="laser" aria-pressed="true" title="내 마우스 위치를 청중 화면에 빨간 점으로 보입니다">레이저 (P)</button>
       <!-- 함께 보기 (승인 교사·관리자): 실시간 시작 · 일시정지 · QR -->
       <div class="dropdown d-none" id="pv-live">
         <button type="button" class="dropdown-toggle" id="pv-live-btn" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-broadcast"></i> <span id="pv-live-label">함께 보기</span></button>
@@ -761,7 +766,14 @@
     <main class="pv-main">
       <section class="pv-col">
         <div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>
-        <div class="v-host pv-current" id="pv-c-host"><div class="v-scaler" id="pv-c-scaler"><div class="slide-canvas" id="pv-c-canvas"></div></div></div>
+        <div class="v-host pv-current" id="pv-c-host"><div class="v-scaler" id="pv-c-scaler"><div class="slide-canvas" id="pv-c-canvas"></div></div>
+          <!-- 현재 화면 오른쪽 위 도구 (청중 창의 [전체 화면]처럼 반투명, 마우스를 올리면 진하게) -->
+          <div class="pv-slide-tools" id="pv-slide-tools">
+            <button type="button" data-pv="spot" aria-pressed="false" title="마우스 둘레만 밝게 (청중 화면에도 보임)"><i class="bi bi-brightness-high"></i> 하이라이트 (H)</button>
+            <button type="button" class="on" data-pv="laser" aria-pressed="true" title="내 마우스 위치를 청중 화면에 빨간 점으로 보입니다"><i class="bi bi-cursor"></i> 레이저 (P)</button>
+            <button type="button" class="d-none" data-pv="pause" id="pv-pause" aria-pressed="false" title="함께 보기 학생 화면을 어둡게 가리고 '선생님을 봐 주세요'를 띄웁니다"><i class="bi bi-pause-fill"></i> 학생 화면 멈추기 (S)</button>
+          </div>
+        </div>
       </section>
       <aside class="pv-col">
         <div class="pv-label">다음 장</div>
@@ -8112,6 +8124,14 @@
           button.classList.toggle('is-on', !!Live.code && !Live.paused);
           button.classList.toggle('is-paused', !!Live.code && Live.paused);
           $('pv-live-label').textContent = !Live.code ? '함께 보기' : (Live.paused ? '⏸ 멈춤 중 · ' : '함께 보기 · ') + Live.code;
+          // 현재 화면 오른쪽 위 [학생 화면 멈추기]: 함께 보기가 실시간 페이지일 때만
+          const pause = $('pv-pause');
+          pause.classList.toggle('d-none', !visible || !Live.code || Live.mode !== 'live');
+          pause.classList.toggle('on', Live.paused);
+          pause.setAttribute('aria-pressed', String(Live.paused));
+          pause.innerHTML = Live.paused
+            ? '<i class="bi bi-play-fill"></i> 학생 화면 다시 보이기 (S)'
+            : '<i class="bi bi-pause-fill"></i> 학생 화면 멈추기 (S)';
           const menu = $('pv-live-menu');
           menu.textContent = '';
           const add = html => menu.insertAdjacentHTML('beforeend', html);
@@ -9527,8 +9547,12 @@
           if (action === 'audience') Show.openAudience();
           if (action === 'spot') Show.toggleSpot();
           if (action === 'laser') Show.toggleLaser();
+          if (action === 'pause') Live.togglePause();
           if (action === 'exit') Show.exit();
         });
+        // 현재 화면 오른쪽 위 도구 위에서는 레이저 점이 단추를 따라가지 않게 한다.
+        $('pv-slide-tools').addEventListener('mousemove', event => event.stopPropagation());
+        $('pv-slide-tools').addEventListener('mouseenter', () => Show.moveLaser(null));
         // 그림·동영상은 여러 개를 한 번에 골라 담을 수 있다.
         $('file-image').addEventListener('change', event => {
           AiPanel.stageMany(event.target.files, 'image');
