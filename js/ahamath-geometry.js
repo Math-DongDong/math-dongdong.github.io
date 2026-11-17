@@ -77,7 +77,7 @@
         /* ---------- 분수 ---------- */
         '.frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;',
         '    line-height:1.15;margin:0 .12em;font-size:.82em}',
-        '.frac>i{font-style:normal;padding:0 .3em}',
+        '.frac>i{font-style:normal;padding:0 .3em;align-self:stretch;text-align:center}',
         '.frac>i:last-of-type{border-top:2px solid currentColor}',
 
         /* ---------- 문자(소문자) : 기울인 글꼴 ---------- */
