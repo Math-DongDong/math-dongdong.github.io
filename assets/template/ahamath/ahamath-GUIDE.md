@@ -94,6 +94,10 @@ pages/
 | `position` | `1/position.html` | 위치 관계 | 4 / 3 |
 | `construct` | `1/construct.html` | 작도와 삼각형의 작도 | 4 / 1 |
 | `congruent` | `1/congruent.html` | 삼각형의 합동 조건 | 5 / 3 |
+| `triangleangle` | `1/triangleangle.html` | 삼각형의 내각과 외각 | 5 / 3 |
+| `interiorsum` | `1/interiorsum.html` | 다각형의 내각의 크기의 합 | 4 / 3 |
+| `exteriorsum` | `1/exteriorsum.html` | 다각형의 외각의 크기의 합 | 4 / 3 |
+| `diagonal` | `1/diagonal.html` | 다각형의 대각선 | 4 / 3 |
 | `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
 | `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
 | `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |
@@ -103,7 +107,7 @@ pages/
 > 문자 분수 표기(`AhaAlgebra.fracText('(x + 2)/3')`)가 들어 있고, 본문의 영문자를 기울인 글꼴로 바꿔 x 와 × 를 구별합니다.
 > 쓰는 법은 그 파일 맨 위 주석에 있습니다.
 
-> 기본 도형과 작도 단원 6개 페이지는 `js/ahamath-geometry.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
+> 기본 도형과 작도 단원 6개 페이지와 평면도형의 성질 단원 4개 페이지는 `js/ahamath-geometry.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
 > 점 · 선 · 각 · 원을 좌표로 적어 단계별로 그리는 `geo`(작도 애니메이션 포함)와 `dense` 가 들어 있고,
 > 본문에 `‾AB` · `→AB` · `↔AB` 라고 적으면 선분 · 반직선 · 직선 기호로 바뀝니다. 홀로 쓴 소문자(l, ∠a)는 기울인 글꼴이 됩니다.
 > 그리기 명령과 점 계산(중점 · 수선의 발 · 두 원의 교점 등)은 그 파일 맨 위 주석에 모두 있습니다.
