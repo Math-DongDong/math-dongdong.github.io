@@ -41,6 +41,7 @@
      data-gap    단계 사이 시간(ms, 기본 900)
      data-step-caps  단계마다 바뀌는 그림 아래 문구. | 로 나누고, 앞에 hl: c2: c3: c4: 를 붙이면 그 색으로 써요
                    예) data-step-caps="hl:모서리 AB | c3:초록 : 만나는 모서리 | c2:주황 : 꼬인 위치"
+     data-caps-stack="1"  단계별 문구를 바꾸지 않고 한 줄씩 쌓아요 (앞 문구가 사라지지 않음, 줄 자리는 처음부터 잡아 둠)
      data-instant="1"  움직이지 않고 처음부터 다 보이기 (문항 안의 그림에 씁니다)
 
      그리기 명령 (점 자리에는 A 같은 이름이나 120,40 같은 좌표를 씁니다)
@@ -123,6 +124,8 @@
         '.geo.g-instant *{transition:none !important}',
         '.geo .g-cap{text-align:center;font-weight:700;margin:.6rem 0 0;opacity:0;transition:opacity .4s ease}',
         '.geo .g-cap.on{opacity:1}',
+        '.geo .g-cap-line{margin:.15rem 0 0;opacity:0;transition:opacity .4s ease}',
+        '.geo .g-cap-line.on{opacity:1}',
         '.geo .g-err{color:#b91c1c;font-size:.85rem;margin:0}'
     ].join('\n');
 
@@ -479,7 +482,15 @@
             el.classList.add('geo');
             el.style.maxWidth = Math.round(W * 1.25) + 'px';
             const hasCap = el.dataset.caption || el.dataset.stepCaps;
-            el.innerHTML = svg + (hasCap ? '<p class="g-cap">' + fracText(el.dataset.caption || '') + '</p>' : '');
+            let capHtml = hasCap ? '<p class="g-cap">' + fracText(el.dataset.caption || '') + '</p>' : '';
+            if (capsStacked(el)) {
+                /* 쌓기 : 모든 줄을 처음부터 (보이지 않게) 넣어 두어 줄이 나타날 때 그림이 밀리지 않아요 */
+                capHtml = '<div class="g-cap on">' + splitBy(el.dataset.stepCaps, '|').map(function (item) {
+                    const part = capPart(item);
+                    return '<p class="g-cap-line' + part.cls + '">' + fracText(part.text) + '</p>';
+                }).join('') + '</div>';
+            }
+            el.innerHTML = svg + capHtml;
             el._moves = moves;
             if (el.dataset.instant === '1') { geoShowAll(el); }
         } catch (err) {
@@ -528,15 +539,26 @@
         window.requestAnimationFrame(frame);
     }
 
-    /* 단계별 문구 : i 번째 단계의 문구와 색으로 바꿔요 */
+    /* 문구 앞의 색 꼬리표(hl: c2: c3: c4: gray:)를 떼어 { cls, text } 로 */
+    function capPart(item) {
+        const m = item.match(/^(hl|c2|c3|c4|gray):\s*/);
+        return { cls: m ? ' g-' + m[1] : '', text: m ? item.slice(m[0].length) : item };
+    }
+
+    function capsStacked(el) { return el.dataset.capsStack === '1' && !!el.dataset.stepCaps; }
+
+    /* 단계별 문구 : i 번째 단계의 문구와 색으로 바꿔요 (쌓기면 0 ~ i 번째 줄을 모두 보여요) */
     function setStepCap(el, i) {
+        if (capsStacked(el)) {
+            el.querySelectorAll('.g-cap-line').forEach(function (line, k) { line.classList.toggle('on', k <= i); });
+            return;
+        }
         const cap = el.querySelector('.g-cap');
         const caps = splitBy(el.dataset.stepCaps || '', '|');
         if (!cap || !caps.length) { return; }
-        const item = caps[Math.min(i, caps.length - 1)];
-        const m = item.match(/^(hl|c2|c3|c4|gray):\s*/);
-        cap.className = 'g-cap on' + (m ? ' g-' + m[1] : '');
-        cap.innerHTML = fracText(m ? item.slice(m[0].length) : item);
+        const part = capPart(caps[Math.min(i, caps.length - 1)]);
+        cap.className = 'g-cap on' + part.cls;
+        cap.innerHTML = fracText(part.text);
     }
 
     function geoShowAll(el) {
