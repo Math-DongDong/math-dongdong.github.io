@@ -1155,17 +1155,19 @@
         <div class="modal-body">
           <p class="small text-muted mb-2">AI 호출에서 실패한 기록입니다. 다시 시도해서 성공한 호출도 함께 남깁니다. 요청 내용은 저장하지 않으며, 이 브라우저에만 최근 100건까지 남습니다.</p>
           <div id="ai-error-summary"></div>
-          <div class="table-responsive">
-            <table class="table table-sm align-middle small mb-0" id="ai-error-table">
-              <thead><tr><th class="text-nowrap">시각</th><th>작업</th><th class="text-nowrap">결과</th><th>오류 내용</th></tr></thead>
-              <tbody id="ai-error-list"></tbody>
-            </table>
+          <div id="ai-error-table">
+            <div class="d-flex align-items-center mb-1">
+              <h3 class="h6 fw-bold mb-0 me-auto">상세 기록</h3>
+              <button type="button" class="btn btn-outline-danger btn-sm" id="ai-error-clear"><i class="bi bi-eraser"></i> 기록 지우기</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle small mb-0">
+                <thead><tr><th class="text-nowrap">시각</th><th>작업</th><th class="text-nowrap">결과</th><th>오류 내용</th></tr></thead>
+                <tbody id="ai-error-list"></tbody>
+              </table>
+            </div>
           </div>
           <p class="text-muted text-center small my-4 d-none" id="ai-error-empty">아직 오류 기록이 없습니다. 🎉</p>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-danger btn-sm me-auto" id="ai-error-clear"><i class="bi bi-eraser"></i> 기록 지우기</button>
-          <button type="button" class="btn btn-light" data-bs-dismiss="modal">닫기</button>
         </div>
       </div>
     </div>
@@ -3887,6 +3889,7 @@
           const fixedHeight = !!box.style.height;
           const guides = mode ? null : SnapGuides.begin(box); // 옮길 때만 보조선
           let snapshot = null;
+          let filled = false;
           let moved = false;
 
           const move = ev => {
@@ -3897,6 +3900,7 @@
             if (mode === 'e') {
               box.style.width = Math.max(40, Math.round(start.width + dx)) + 'px';
             } else if (mode === 's') {
+              if (!filled) { Editor.fillHeight(box); filled = true; } // 처음 끌 때 한 번: 안의 내용이 상자 높이를 따라가게
               box.style.height = Math.max(20, Math.round(start.height + dy)) + 'px';
             } else if (mode === 'se') {
               // 더 많이 끈 방향을 기준으로 같은 비율로 키우거나 줄인다.
@@ -3923,6 +3927,23 @@
           window.addEventListener('pointermove', move);
           window.addEventListener('pointerup', up);
           window.addEventListener('pointercancel', up);
+        },
+
+        // 세로 크기 손잡이: AI가 만든 상자는 보통 높이 없이 안의 내용 높이를 그대로 쓴다.
+        // 상자 높이만 바꾸면 안쪽 사각형(카드·배경)은 그대로라 줄지도 늘지도 않으므로,
+        // .motion-content부터 한 겹짜리 감싸개를 따라 내려가며 상자 높이를 채우게 한다(글자·그림 같은 내용 자체에서 멈춘다).
+        // 내용이 줄인 높이보다 길면 상자 밖으로 보인다(잘라 내지 않는다).
+        fillHeight(box) {
+          const leaf = '.editable-text, .editable-image, .editable-video, .math-tex, .motion-graphic, .app-frame, img, video, iframe, svg';
+          let node = box.querySelector(':scope > .motion-content');
+          while (node) {
+            Object.assign(node.style, { height: '100%', minHeight: '0', maxHeight: 'none', boxSizing: 'border-box' });
+            if (node.matches('img, video') && !node.style.objectFit) node.style.objectFit = 'cover'; // 그림·영상은 찌그러지지 않게
+            if (node.matches(leaf)) break;
+            const kids = Array.from(node.children).filter(el => !el.matches('.ls-handle, .ls-ungroup, .ls-step, style, .iframe-drag-overlay'));
+            if (kids.length !== 1) break;
+            node = kids[0];
+          }
         },
 
         /* --- 개체 넣기·다루기 --- */
