@@ -4457,6 +4457,7 @@
         KEY: 'motionslide.aiErrorLog',
         MAX: 100,
         KINDS: {
+          cut: { label: '응답 끊김', color: 'warning', tip: '응답을 받던 중 연결이 끊겼습니다(대개 서버 혼잡). AI 설정에서 모델을 flash로 바꾸거나 요청 간격을 늘려 보세요.' },
           truncated: { label: '응답 잘림', color: 'danger', tip: '응답이 길이 한도에 걸려 중간에 잘렸습니다. 한 장에 넣는 모션그래픽·인터랙티브 요소를 줄이거나 내용을 두 장으로 나눠 보세요.' },
           parse: { label: '응답 해석 실패', color: 'danger', tip: 'AI가 형식에 맞지 않는 응답을 보냈습니다. 대개 다시 시도하면 됩니다.' },
           empty: { label: '빈 응답', color: 'warning', tip: 'AI 응답에 슬라이드(계획)가 없었습니다. 다시 시도해 보세요.' },
@@ -4487,6 +4488,7 @@
         // 실패한 시도 하나를 종류로 나눈다(timedOut: 'idle' | 'total' | '').
         classify(err, timedOut) {
           if (timedOut) return timedOut === 'idle' ? 'idle' : 'total';
+          if (err.isCut) return 'cut';
           if (err.isJsonParse) return err.finishReason === 'MAX_TOKENS' ? 'truncated' : 'parse';
           if (err.finishReason) return 'blocked';
           if (err.status === 429) return 'quota';
@@ -4497,10 +4499,11 @@
           return 'other';
         },
 
-        // 시도 하나: { kind, msg, finish, received(받은 글자 수), ms }
+        // 시도 하나: { kind, mid(응답 도중 받은 서버 오류), msg, finish, received(받은 글자 수), ms }
         attempt(err, timedOut, received, ms) {
           return {
             kind: AiErrorLog.classify(err, timedOut),
+            mid: !!(err && err.inStream),
             msg: String((err && err.message) || '').split('\n')[0].slice(0, 160),
             finish: (err && err.finishReason) || '',
             received: Number(received) || 0,
@@ -4536,7 +4539,7 @@
 
         attemptText(a) {
           const kind = AiErrorLog.KINDS[a.kind] || AiErrorLog.KINDS.other;
-          return [kind.label, a.received ? a.received.toLocaleString('ko-KR') + '자 받음' : '', a.finish ? '종료 이유 ' + a.finish : '',
+          return [kind.label + (a.mid ? ' (응답 도중)' : ''), a.received ? a.received.toLocaleString('ko-KR') + '자 받음' : '', a.finish ? '종료 이유 ' + a.finish : '',
             a.ms >= 1000 ? AiErrorLog.duration(a.ms) : '', a.msg].filter(Boolean).join(' · ');
         },
 
@@ -4670,7 +4673,23 @@
         function collect(data) {
           const candidate = (data.candidates || [])[0] || {};
           const parts = (candidate.content && candidate.content.parts) || [];
-          return { text: parts.map(part => (part.thought ? '' : part.text || '')).join(''), finishReason: candidate.finishReason || null };
+          // 질문 자체가 막히면(promptFeedback.blockReason) 답 없이 끝난다 → 응답 중단으로 알린다.
+          const blocked = data.promptFeedback && data.promptFeedback.blockReason;
+          return {
+            text: parts.map(part => (part.thought ? '' : part.text || '')).join(''),
+            finishReason: candidate.finishReason || (blocked ? 'BLOCKED_' + blocked : null)
+          };
+        }
+
+        // 응답(스트리밍 도중 포함)에 실린 서버 오류 → 상태 코드가 붙은 오류(503이면 서버 혼잡처럼 다시 시도한다)
+        function streamError(data) {
+          const error = data && (Array.isArray(data) ? (data[0] || {}).error : data.error);
+          if (!error) return null;
+          const status = Number(error.code) || 500;
+          const err = new Error(describe(status, JSON.stringify({ error })));
+          err.status = status;
+          err.inStream = true;
+          return err;
         }
 
         async function post(model, body, signal, onChunk) {
@@ -4695,26 +4714,42 @@
           let buffer = '';
           let text = '';
           let finishReason = null;
-          const handle = line => {
-            if (!line.startsWith('data:')) return;
+          let stray = ''; // data: 가 아닌 줄(서버가 오류를 SSE 형식이 아니게 보낼 때)
+          const handle = raw => {
+            const line = raw.trim();
+            if (!line) return;
+            if (!line.startsWith('data:')) { if (stray.length < 20000) stray += line + '\n'; return; }
             const payload = line.slice(5).trim();
             if (!payload || payload === '[DONE]') return;
             let chunk;
             try { chunk = JSON.parse(payload); } catch (err) { return; }
+            const failure = streamError(chunk); // 응답 도중 서버가 보낸 오류(예: 503 붐빔)를 넘기지 않는다
+            if (failure) throw failure;
             const piece = collect(chunk);
             text += piece.text;
             finishReason = piece.finishReason || finishReason;
           };
-          for (;;) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-            lines.forEach(handle);
-            onChunk(text.length);
+          try {
+            for (;;) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop();
+              lines.forEach(handle);
+              onChunk(text.length);
+            }
+            handle(buffer);
+            if (!finishReason && stray.trim()) {
+              let data = null;
+              try { data = JSON.parse(stray); } catch (err) { /* 오류 글이 아니다 */ }
+              const failure = streamError(data);
+              if (failure) throw failure;
+            }
+          } catch (err) {
+            reader.cancel().catch(() => { });
+            throw err;
           }
-          handle(buffer);
           return { text, finishReason };
         }
 
@@ -4762,6 +4797,7 @@
           let useSchema = true;
           let serverErrors = 0;
           let extra = '';
+          let cutRetried = false;
           let lastError = null;
           // 오류 기록: 실패한 시도가 하나라도 있으면 호출이 끝날 때 남긴다(AiErrorLog).
           const log = { task: options.task || 'AI 요청', model: options.model, outcome: 'fail', attempts: [] };
@@ -4796,7 +4832,13 @@
                 try {
                   parsed = parseJson(result.text);
                 } catch (err) {
-                  err.finishReason = result.finishReason || ''; // MAX_TOKENS면 길이 한도에 걸려 잘린 것
+                  // 끝맺음 신호(finishReason) 없이 끝났는데 형식도 깨졌다 → 응답 도중 연결이 끊긴 것(대개 서버 혼잡)
+                  if (!result.finishReason) {
+                    const cut = new Error('AI 응답이 중간에 끊겼습니다(' + received.toLocaleString('ko-KR') + '자 받음). 서버가 붐비는 것 같습니다. 잠시 뒤 다시 시도해 주세요.');
+                    cut.isCut = true;
+                    throw cut;
+                  }
+                  err.finishReason = result.finishReason; // MAX_TOKENS면 길이 한도에 걸려 잘린 것
                   throw err;
                 }
                 log.outcome = 'ok';
@@ -4825,6 +4867,12 @@
                   continue;
                 }
                 if (err.status === 429) { await Util.sleep(Math.min(3000 * Math.pow(2, attempt), 20000)); continue; }
+                // 끊김은 형식 문제가 아니므로 '형식을 지켜라'를 붙이지 않고, 잠깐 기다렸다 한 번 더 요청한다.
+                if (err.isCut && !cutRetried) {
+                  cutRetried = true;
+                  await Util.sleep(2000);
+                  continue;
+                }
                 if (err.isJsonParse && !extra) {
                   extra = '\n\n' + Prompts.text('jsonRetry');
                   continue;
@@ -6320,7 +6368,7 @@
             }
             if (slideError) {
               streak++;
-              lastError = String(slideError.message || lastError).replace(/\s*다시 시도해 주세요\.?$/, '');
+              lastError = String(slideError.message || lastError).replace(/\s*(잠시 뒤\s*)?다시 시도해 주세요\.?$/, '');
               const holders = plan.slides.slice(start, start + count).map((item, k) => placeholder(item, start + k));
               holders.forEach(slide => failedIds.push(slide.id));
               insertSlides(holders);

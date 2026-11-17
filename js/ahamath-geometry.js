@@ -51,6 +51,7 @@
        seg A B                선분            line A B [늘일 길이]   직선 (기본: 그림 끝까지)
        ray A B [늘일 길이]    반직선          curve A B 휘는 정도    굽은 선
        arc O 반지름 시작각 끝각   컴퍼스로 그린 원의 일부     circle O 반지름   원
+       oval O 가로 세로 [front|back]   타원 (원기둥 · 원뿔의 밑면). front 앞쪽 반, back 뒤쪽 반. .fill 이면 칠하기
        ang A O B [글자] [반지름]   ∠AOB 표시 (작은 쪽 각)      right A O B   직각 표시
        tick A B [개수]        같은 길이 표시   poly A B C …   다각형(면)   grid 0,0 360,200 20   모눈
        slide A O B T          ∠AOB 를 꼭짓점 T 까지 밀어 옮기기
@@ -367,6 +368,26 @@
             const r = lengthOf(tok[2], pts);
             return pathTag(arcPath(c, r, 0, 180) + ' ' + arcPath(c, r, 180, 359.9).replace(/^M[^A]+/, ''),
                 'g-ar', styles.length ? styles : ['gray']);
+        }
+
+        /* 타원 (입체도형의 밑면 · 단면) : oval O 가로반지름 세로반지름 [front | back]
+           front 는 앞쪽(아래) 반, back 은 뒤쪽(위) 반만 그려요. 꼬리표 fill 이면 안을 칠해요 */
+        if (cmd === 'oval') {
+            const c = p(1);
+            const rx = lengthOf(tok[2], pts);
+            const ry = lengthOf(tok[3], pts);
+            const part = tok[4] || 'all';
+            const L = xy(pt(c.x - rx, c.y));
+            const R = xy(pt(c.x + rx, c.y));
+            const ar = ' A' + fmt(rx) + ',' + fmt(ry) + ' 0 0,';
+            let d = '';
+            if (part === 'front') { d = 'M' + L + ar + '0 ' + R; }
+            else if (part === 'back') { d = 'M' + L + ar + '1 ' + R; }
+            else { d = 'M' + L + ar + '0 ' + R + ar + '0 ' + L + ' Z'; }
+            if (has('fill')) {
+                return '<path d="' + d + '" class="' + cls('g-poly', styles, 'gf') + '"/>';
+            }
+            return pathTag(d, 'g-ln', styles);
         }
 
         if (cmd === 'ang') {
