@@ -247,6 +247,9 @@
     .thumb-item.picked .mini-host { outline: 3px solid #93c5fd; }
     .thumb-item.picked .num { color: var(--primary); font-weight: 700; }
     .thumb-item.dragging { opacity: 0.4; }
+    /* AI가 만들지 못해 자리만 잡아 둔 장 */
+    .thumb-item.ai-retry:not(.active) .mini-host { outline: 2px dashed #f59e0b; }
+    .thumb-item.ai-retry::after { content: '⚠ 다시 만들기'; position: absolute; right: 4px; top: 4px; padding: 0 0.4rem; border-radius: 999px; background: #f59e0b; color: #111827; font-size: 0.65rem; font-weight: 700; pointer-events: none; }
     .thumb-item.drop-before { box-shadow: 0 -4px 0 var(--primary); }
     .thumb-item.drop-after { box-shadow: 0 4px 0 var(--primary); }
 
@@ -2994,7 +2997,7 @@
 
         normalizeSlide(slide) {
           const parsed = Sanitizer.slide(slide.html);
-          return {
+          const out = {
             id: slide.id || Util.uid(),
             title: String(slide.title || '').slice(0, 120),
             html: parsed.html,
@@ -3006,6 +3009,9 @@
             section: slide.section ? String(slide.section) : null,
             design: Editor.normalizeDesign(slide.design)
           };
+          // 여러 장 생성 중 AI가 만들지 못해 자리만 잡아 둔 장: [현재 슬라이드 수정]에 다시 넣을 요청(AiPanel.syncDraft)
+          if (slide.aiDraft) out.aiDraft = String(slide.aiDraft).slice(0, 8000);
+          return out;
         },
 
         // 디자인 키워드: 쉼표로 나눈 짧은 낱말들(너무 길면 자른다)
@@ -3222,6 +3228,7 @@
             const active = index === Editor.index;
             item.classList.toggle('active', active);
             item.classList.toggle('picked', !active && Editor.picked.has(slides[index].id));
+            item.classList.toggle('ai-retry', !!slides[index].aiDraft);
             if (active) item.scrollIntoView({ block: 'nearest' });
           });
           // 여러 장을 고르면 마지막으로 고른 장 옆에 [구역 추가]를 띄운다(그룹 해제 단추처럼).
@@ -3247,6 +3254,7 @@
           $('slide-counter').textContent = (Editor.index + 1) + ' / ' + Editor.deck.slides.length;
           AiPanel.syncRecent(); // 장을 옮기면 [현재 슬라이드 수정]의 요청 기록도 그 장 것으로
           AiPanel.syncReviseUndo();
+          AiPanel.syncDraft();
         },
 
         // 캔버스를 현재 장으로 바꾼다(선택 상태는 DOM과 함께 사라진다).
@@ -5323,7 +5331,9 @@
           $('ai-recent-count').textContent = AiPanel.recent(Editor.deck, AiPanel.scopeId()).length;
           const revise = AiPanel.isReviseMode();
           $('ai-hint').textContent = revise
-            ? (Editor.index + 1) + '번 장을 고칠 점을 적어 보내세요. 이 장에서 보낸 요청만 함께 기억합니다.'
+            ? (Editor.current().aiDraft
+              ? '⚠ ' + (Editor.index + 1) + '번 장은 AI가 만들지 못해 자리만 잡아 둔 장입니다. 입력칸의 요청 그대로 [다시 만들기]를 누르면 계획대로 새로 만듭니다.'
+              : (Editor.index + 1) + '번 장을 고칠 점을 적어 보내세요. 이 장에서 보낸 요청만 함께 기억합니다.')
             : '발표 주제와 개요를 적으면 지금 장 뒤에 슬라이드를 만들어 넣습니다. [여러 장]을 켜면 장별 계획을 먼저 보여 줍니다.';
         },
 
@@ -5973,8 +5983,50 @@
           // 승인된 계획이 있으면 계획이 의도를 대신하므로 이전 요청 기록은 보내지 않는다(계획 짜기 단계에서만 보낸다).
           const pastRequests = plan ? '' : AiPanel.pastRequests(deck);
 
+          // 만든 장(또는 자리 장)을 지금 자리에 끼워 넣는다. 손대지 않은 첫 표지는 처음 넣을 때 바꾼다.
+          let inserted = 0;
+          const insertSlides = slides => {
+            Editor.deselect();
+            Editor.syncCurrent();
+            if (replaceFirst && inserted === 0 && deck.slides.length === 1 && deck.slides[0].pristine) deck.slides.splice(0, 1);
+            insertAt = Math.min(insertAt, deck.slides.length);
+            const sectionId = insertAt > 0 ? deck.slides[insertAt - 1].section || null : null; // 앞 장의 구역을 이어받는다
+            slides.forEach(slide => { slide.section = sectionId; });
+            deck.slides.splice(insertAt, 0, ...slides);
+            Editor.index = insertAt;
+            insertAt += slides.length;
+            inserted += slides.length;
+            Editor.renderRail();
+            Editor.renderCanvas();
+            Editor.commit();
+          };
+          // 계획대로 만들 때 한 장이 실패하면 멈추지 않고 그 자리에 자리 장을 넣는다.
+          // 자리 장에는 그 장의 계획 요청을 남겨 두어 나중에 [현재 슬라이드 수정]에서 그대로 다시 만들 수 있다.
+          const failedIds = [];
+          let lastError = '';
+          let streak = 0;           // 연속으로 실패한 장 수
+          let gaveUp = false;
+          const GIVE_UP_AFTER = 3;  // 이만큼 연속 실패하면 남은 장은 요청하지 않고 자리만 잡는다(서버 장애·한도 초과일 때 오래 기다리지 않게)
+          // 계획 한 장의 글. 계획의 장 번호는 덱의 장 번호와 다르므로 '제목:'으로 바꾼다.
+          const planText = (item, i) => Planner.itemText(item, i).replace(/^\d+\.\s*/, '제목: ');
+          const placeholder = (item, i) => {
+            const points = String(item.points || '').split('\n').map(line => line.trim().replace(/^[-•·]\s*/, '')).filter(Boolean);
+            return Editor.normalizeSlide({
+              title: item.title,
+              html: textBox('left:120px;top:90px;width:1680px;', Util.escapeHtml(item.title), 'font-size:72px;font-weight:800;') +
+                textBox('left:120px;top:250px;width:1680px;', '⚠ AI가 이 장을 만들지 못해 자리만 잡아 두었습니다.<br>오른쪽 AI 창 [현재 슬라이드 수정]에 요청이 들어 있으니 [다시 만들기]를 누르세요.',
+                  'font-size:36px;line-height:1.5;color:#b45309;') +
+                (points.length ? textBox('left:120px;top:420px;width:1680px;', points.map(line => '• ' + Util.escapeHtml(line)).join('<br>'),
+                  'font-size:40px;line-height:1.6;color:#4b5563;') : ''),
+              bg: '#ffffff',
+              aiDraft: Prompts.text('plan.retryDraft', { topic: topic.slice(0, 600), item: planText(item, i) }) || planText(item, i)
+            });
+          };
+
           for (let start = 0; !failure && start < total; start += AI_BATCH) {
-            if (start > 0) {
+            const giveUp = !!plan && streak >= GIVE_UP_AFTER;
+            if (giveUp) gaveUp = true;
+            if (start > 0 && !giveUp) {
               await AiPanel.pause(controller.signal, status);
               if (controller.signal.aborted) { failure = { aborted: true }; break; }
             }
@@ -5985,29 +6037,45 @@
             // 그냥 만들 때: 담아 둔 개체를 앞 장에 이미 다 넣었으면 다음 장 요청에는 보내지 않는다.
             const slideMedia = plan ? Planner.mediaFor(plan.slides[start]) : null;
             const slideRequest = slideMedia && slideMedia.length ? AiPanel.mediaRequest(slideMedia, refs) : null;
-            if (slideMedia) planMedia.push(...slideMedia);
             // 앞 장에 이미 넣은 개체는 빼고, 아직 안 넣은 것만 다시 보낸다(넣은 것까지 보내면 AI가 헷갈려 겹치거나 빠뜨린다).
             const remaining = plan ? [] : media.filter(item => !item.token || rawHtml.indexOf(item.token) < 0);
             const sending = slideRequest || (!remaining.length ? null
               : remaining.length === media.length && start === 0 ? mediaRequest : AiPanel.mediaRequest(remaining, refs));
-            let result;
-            try {
-              result = await Gemini.generateJson({
-                model: Settings.model(),
-                system: Prompts.slideSystem(),
-                prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference, plan, AiPanel.designs(deck, insertAt)) + AiPanel.filePrompt(files) + (sending ? sending.text : ''),
-                parts: sending ? fileParts.concat(sending.parts) : fileParts,
-                schema: AI_SCHEMA,
-                signal: controller.signal,
-                onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
-              });
-            } catch (err) {
-              failure = err;
-              break;
+            let result = null;
+            let slideError = giveUp ? new Error(lastError) : null;
+            if (!giveUp) {
+              try {
+                result = await Gemini.generateJson({
+                  model: Settings.model(),
+                  system: Prompts.slideSystem(),
+                  prompt: pastRequests + AiPanel.prompt(topic, total, start, count, madeTitles, reference, plan, AiPanel.designs(deck, insertAt)) + AiPanel.filePrompt(files) + (sending ? sending.text : ''),
+                  parts: sending ? fileParts.concat(sending.parts) : fileParts,
+                  schema: AI_SCHEMA,
+                  signal: controller.signal,
+                  onProgress: length => status.set(label + '\n' + length.toLocaleString('ko-KR') + '자 받음')
+                });
+              } catch (err) {
+                // 중단·API 키 없음은 멈춘다. 그 밖의 실패(응답 깨짐·시간 초과·서버 오류)는 계획이 있으면 이 장만 건너뛴다.
+                if (!plan || err.aborted || err.needsKey) { failure = err; break; }
+                slideError = err;
+              }
             }
             if (Editor.deck !== deck) break; // 다른 화면으로 나갔다
-            const list = (result && Array.isArray(result.slides) ? result.slides : []).slice(0, count);
-            if (!list.length) { failure = new Error('AI 응답에 슬라이드가 없습니다. 다시 시도해 주세요.'); break; }
+            const list = slideError ? [] : (result && Array.isArray(result.slides) ? result.slides : []).slice(0, count);
+            if (!slideError && !list.length) {
+              slideError = new Error('AI 응답에 슬라이드가 없습니다. 다시 시도해 주세요.');
+              if (!plan) { failure = slideError; break; }
+            }
+            if (slideError) {
+              streak++;
+              lastError = String(slideError.message || lastError).replace(/\s*다시 시도해 주세요\.?$/, '');
+              const holders = plan.slides.slice(start, start + count).map((item, k) => placeholder(item, start + k));
+              holders.forEach(slide => failedIds.push(slide.id));
+              insertSlides(holders);
+              continue;
+            }
+            streak = 0;
+            if (slideMedia) planMedia.push(...slideMedia); // 실패한 장의 개체는 AI 창에 그대로 남겨 다시 만들 때 쓴다
 
             if (result.deckTitle && deck.title === DEFAULT_TITLE) {
               deck.title = String(result.deckTitle).trim().slice(0, 80) || DEFAULT_TITLE;
@@ -6030,24 +6098,13 @@
             for (const slide of slides) slide.html = await MathKit.renderHtml(slide.html);
             if (Editor.deck !== deck) break;
 
-            Editor.deselect();
-            Editor.syncCurrent();
-            if (replaceFirst && added === 0 && deck.slides.length === 1 && deck.slides[0].pristine) deck.slides.splice(0, 1);
-            insertAt = Math.min(insertAt, deck.slides.length);
-            const sectionId = insertAt > 0 ? deck.slides[insertAt - 1].section || null : null; // 앞 장의 구역을 이어받는다
-            slides.forEach(slide => { slide.section = sectionId; });
-            deck.slides.splice(insertAt, 0, ...slides);
-            Editor.index = insertAt;
-            insertAt += slides.length;
+            insertSlides(slides);
             added += slides.length;
             slides.forEach(slide => {
               madeTitles.push(slide.title || '(제목 없음)');
               madeIds.push(slide.id);
             });
             reference = AiPanel.reference(slides[slides.length - 1]) || reference; // 다음 장은 방금 만든 장에서 이어진다
-            Editor.renderRail();
-            Editor.renderCanvas();
-            Editor.commit();
           }
 
           AiPanel.setBusy(false);
@@ -6060,16 +6117,27 @@
             const list = madeIds.map((id, i) => (deck.slides.findIndex(slide => slide.id === id) + 1) + '번 장: ' + madeTitles[i]).join(', ');
             AiPanel.remember(deck, '[새 슬라이드 생성' + (total > 1 ? ', ' + total + '장' : '') + '] ' + topic + AiPanel.fileNote(files), topic);
           }
-          if (failure && !added) {
+          // 자리만 잡아 둔 장 안내(장 번호는 지금 위치 기준)
+          const failedNumbers = failedIds.map(id => deck.slides.findIndex(slide => slide.id === id) + 1).filter(n => n > 0);
+          const failedNote = failedNumbers.length
+            ? '\n⚠ ' + failedNumbers.join(', ') + '번 장은 만들지 못해 자리만 넣어 두었습니다' + (lastError ? ' (' + lastError + ')' : '') + '.' +
+              (gaveUp ? ' 연속 ' + GIVE_UP_AFTER + '장이 실패해 그 뒤의 장은 AI에 요청하지 않았습니다.' : '') +
+              '\n그 장을 고르면 [현재 슬라이드 수정]에 요청이 들어 있으니 [다시 만들기]만 누르세요.'
+            : '';
+          const madeText = added ? added + '장을 추가했습니다.' : '한 장도 만들지 못했습니다.';
+          if (failure && !added && !failedNumbers.length) {
             status.set(failure.aborted ? '중단했습니다.' : '⚠ ' + failure.message, !failure.aborted);
             if (!$('ai-prompt').value) $('ai-prompt').value = topic;
             if (failure.needsKey) SettingsModal.open();
           } else if (failure) {
-            status.set(added + '장을 추가했습니다.\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 만들지 못했습니다: ' + failure.message) +
-              AiPanel.repairNote(repairFailed), !failure.aborted);
+            status.set(madeText + '\n' + (failure.aborted ? '나머지는 중단했습니다.' : '나머지는 만들지 못했습니다: ' + failure.message) +
+              failedNote + AiPanel.repairNote(repairFailed), !failure.aborted || failedNumbers.length > 0);
+          } else if (failedNumbers.length) {
+            status.set(madeText + failedNote + AiPanel.repairNote(repairFailed), true);
           } else {
             status.set(added + '장을 추가했습니다. 글자를 더블클릭해 고치고, 끌어서 옮겨 보세요.' + AiPanel.repairNote(repairFailed), repairFailed > 0);
           }
+          if (failedNumbers.length) Editor.markActiveThumb(); // 지금 장이 자리 장이면 [현재 슬라이드 수정]에 요청을 넣는다
         },
 
         /* --- 현재 슬라이드 수정 --- */
@@ -6093,12 +6161,48 @@
           // 여러 장 생성은 새 슬라이드 생성에서만 쓴다.
           $('ai-multi').disabled = revise;
           $('ai-count').disabled = revise;
-          $('ai-send-label').textContent = revise ? '수정' : '생성';
+          // 자리 장의 요청: [새 슬라이드 생성]으로 바꾸면 거두고, [현재 슬라이드 수정]으로 돌아오면 다시 넣는다.
+          const input = $('ai-prompt');
+          const draft = Editor.deck ? Editor.current().aiDraft || '' : '';
+          if (!revise && AiPanel.draftShown && input.value === AiPanel.draftShown) input.value = '';
+          else if (revise && draft && !input.value.trim()) { input.value = draft; AiPanel.draftShown = draft; }
+          AiPanel.syncSendLabel();
           $('ai-prompt').placeholder = revise
             ? '예) 제목을 더 크게, 본문을 카드 3개로 나눠 줘. 배경은 밝은 하늘색으로 바꾸고 예시 하나 추가'
             : "예) 중학교 1학년 '일차방정식의 활용' 수업 도입. 생활 속 예시로 시작하고 마지막에 생각해 볼 질문";
           AiPanel.syncRecent(); // 탭마다 기억하는 요청 목록이 다르다
           AiPanel.syncReviseUndo();
+        },
+
+        syncSendLabel() {
+          const revise = AiPanel.isReviseMode();
+          const draft = revise && !!Editor.deck && !!Editor.current().aiDraft;
+          $('ai-send-label').textContent = revise ? (draft ? '다시 만들기' : '수정') : '생성';
+        },
+
+        // AI가 만들지 못해 자리만 잡아 둔 장(slide.aiDraft)을 고르면 [현재 슬라이드 수정]으로 바꾸고 입력칸에 그 장의 요청을 넣는다.
+        // 사용자가 입력칸에 직접 쓰던 글은 덮어쓰지 않고, 자동으로 넣은 요청은 다른 장으로 가면 비운다.
+        draftShown: '', // 입력칸에 자동으로 넣은 요청
+        draftFor: '',   // 마지막으로 입력칸을 맞춘 장 id (장을 옮겼을 때만 입력칸을 바꾼다)
+        syncDraft() {
+          if (!Editor.deck || AiPanel.busy) return;
+          const slide = Editor.current();
+          const draft = slide.aiDraft || '';
+          const input = $('ai-prompt');
+          if (AiPanel.draftFor !== slide.id) {
+            AiPanel.draftFor = slide.id;
+            const auto = !input.value.trim() || input.value === AiPanel.draftShown;
+            if (auto && draft) {
+              if (!AiPanel.isReviseMode()) AiPanel.setMode('revise');
+              input.value = draft;
+              AiPanel.draftShown = draft;
+            } else if (auto && AiPanel.draftShown) {
+              input.value = '';
+              AiPanel.draftShown = '';
+            }
+          }
+          AiPanel.syncSendLabel();
+          AiPanel.syncRecent();
         },
 
         // [반영 취소]는 [현재 슬라이드 수정]에서, 지금 장을 AI가 고친 기록이 있을 때만 보인다.
@@ -6120,7 +6224,7 @@
           Editor.deck.slides[Editor.index] = JSON.parse(entry.before);
           Editor.renderCanvas();
           Editor.commit();
-          AiPanel.syncReviseUndo();
+          Editor.markActiveThumb(); // [반영 취소]·자리 장 표시를 다시 맞춘다
           Util.toast((Editor.index + 1) + '번 장을 AI가 고치기 전으로 되돌렸습니다. 다시 실행(Ctrl+Y)하면 고친 모습으로 돌아갑니다.', 'success');
         },
 
@@ -6247,6 +6351,7 @@
           AiPanel.remember(deck, '[이 장 수정] ' + request + AiPanel.fileNote(files), request, target.id);
           Editor.refreshThumb(at);
           AiPanel.syncReviseUndo();
+          if (current.aiDraft) Editor.markActiveThumb(); // 자리 장을 다시 만들었다: [다시 만들기] 표시와 요청을 거둔다
           status.set(number + '번 장을 고쳤습니다. 마음에 들지 않으면 [반영 취소]나 되돌리기(Ctrl+Z)로 이전 모습으로 돌아갈 수 있습니다.' + AiPanel.repairNote(repairFailed), repairFailed > 0);
         },
 
