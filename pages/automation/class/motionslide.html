@@ -136,6 +136,11 @@
     .pv-next { aspect-ratio: 16 / 9; flex: none; }
     .pv-text { flex: 1; min-height: 70px; overflow: auto; background: #111827; border-radius: 8px; padding: 12px; white-space: pre-wrap; font-size: 18px; line-height: 1.6; }
     @media (max-width: 800px) { .pv-main { grid-template-columns: 1fr; overflow: auto; } .pv-current { flex: none; aspect-ratio: 16 / 9; } }
+    /* 이 장의 클릭 요소 진행 (발표자 보기·휴대폰 리모컨): 남음 = 주황, 다 보임 = 초록 */
+    .pv-steps, .pv-bar .pv-steps { padding: 3px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .pv-steps:empty { display: none; }
+    .pv-steps.is-left { background: #f59e0b; color: #111827; }
+    .pv-steps.is-done { background: #065f46; color: #d1fae5; }
   </style>
 
   <!-- PDF(인쇄)용: 숨은 인쇄 문서에만 넣는다 -->
@@ -481,11 +486,9 @@
     .rm-elapsed { font-weight: 700; color: #fff; }
     .rm-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem 0.75rem 0; overflow: hidden; }
     .rm-stage { flex: none; display: flex; flex-direction: column; gap: 0.4rem; min-height: 0; }
-    #remote-view .v-host { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 8px; }
     .rm-info { display: flex; align-items: center; gap: 0.5rem; font-variant-numeric: tabular-nums; }
-    #rm-count { margin-right: auto; font-weight: 700; }
-    .rm-next-row { display: flex; align-items: center; gap: 0.6rem; }
-    #remote-view #rm-n-host { width: 36%; flex: none; }
+    #rm-count { flex: 1; min-width: 0; font-weight: 700; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #remote-view .pv-steps { align-self: flex-start; max-width: 100%; padding: 0.35rem 0.8rem; font-size: 1rem; white-space: normal; }
     .rm-next-label { min-width: 0; font-size: 0.85rem; color: #9ca3af; overflow-wrap: anywhere; }
     .rm-notes-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid #374151; padding-top: 0.4rem; }
     .rm-notes-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; font-size: 0.85rem; color: #9ca3af; }
@@ -500,15 +503,7 @@
     #rm-prev { flex: 1; }
     #rm-next { flex: 2.2; }
     .rm-message { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 1.5rem; text-align: center; white-space: pre-line; background: rgba(17, 24, 39, 0.97); font-size: 1.05rem; }
-    /* 가로(태블릿·휴대폰 가로): 왼쪽 지금 장·다음 장, 오른쪽 시나리오 */
-    @media (orientation: landscape) and (min-width: 560px) {
-      .rm-body { flex-direction: row; gap: 0.75rem; }
-      .rm-stage { flex: 1.2 1 0; min-width: 0; }
-      #remote-view .rm-current { flex: 0 1 auto; min-height: 0; } /* 16:9로 두되 높이가 모자라면 줄이고, fitStage가 가운데 맞춤 */
-      .rm-notes-wrap { flex: 1 1 0; min-width: 0; border-top: 0; border-left: 1px solid #374151; padding: 0 0 0 0.75rem; }
-      .rm-nav .btn { height: 3.4rem; }
-    }
-    @media (orientation: landscape) and (max-height: 480px) { .rm-next-row { display: none; } } /* 휴대폰 가로: 높이가 모자라 다음 장은 숨긴다 */
+    @media (orientation: landscape) and (max-height: 480px) { .rm-nav .btn { height: 3.2rem; } } /* 휴대폰 가로: 시나리오 칸을 넓게 */
 
     /* ---------- 떠 있는 서식 도구 ---------- */
     #float-toolbar { position: fixed; z-index: 1500; display: none; align-items: center; gap: 0.2rem; padding: 0.25rem; background: #fff; border: 1px solid var(--line); border-radius: 0.5rem; }
@@ -812,6 +807,7 @@
     <header class="pv-bar">
       <strong id="pv-title"></strong>
       <span id="pv-count"></span>
+      <span class="pv-steps" id="pv-steps" role="status"></span>
       <span id="pv-clock" title="현재 시각"></span>
       <button type="button" data-pv="prev">◀ 이전</button>
       <button type="button" data-pv="next">다음 ▶</button>
@@ -877,20 +873,16 @@
     <header class="rm-top">
       <span class="rm-conn" id="rm-conn">연결 중…</span>
       <span class="rm-elapsed" id="rm-elapsed" title="발표를 시작한 뒤 지난 시간">-:--</span>
-      <span class="text-secondary" id="rm-clock" title="현재 시각"></span>
-      <button type="button" class="btn btn-sm btn-outline-light" id="rm-exit"><i class="bi bi-box-arrow-right"></i> 나가기</button>
     </header>
+    <!-- 슬라이드는 PC 화면에서 보므로 휴대폰에는 위치·클릭 요소·다음 장 제목만 글자로 보인다 -->
     <div class="rm-body">
       <div class="rm-stage">
-        <div class="v-host rm-current" id="rm-c-host"><div class="v-scaler" id="rm-c-scaler"><div class="slide-canvas" id="rm-c-canvas"></div></div></div>
         <div class="rm-info">
           <span id="rm-count"></span>
           <button type="button" class="btn btn-sm btn-outline-light" id="rm-overview"><i class="bi bi-grid-3x3-gap"></i> 모든 장</button>
         </div>
-        <div class="rm-next-row">
-          <div class="v-host v-static" id="rm-n-host"><div class="v-scaler" id="rm-n-scaler"><div class="slide-canvas" id="rm-n-canvas"></div></div></div>
-          <div class="rm-next-label" id="rm-next-label"></div>
-        </div>
+        <div class="pv-steps" id="rm-steps" role="status"></div>
+        <div class="rm-next-label" id="rm-next-label"></div>
       </div>
       <section class="rm-notes-wrap" aria-label="발표 시나리오">
         <div class="rm-notes-head">
@@ -4323,9 +4315,11 @@
         applyStep(replay) {
           Show.canvases().forEach(canvas => applySteps(canvas, Show.step, replay));
           const slides = Editor.deck.slides;
-          const text = (Show.index + 1) + ' / ' + slides.length + (Show.maxStep ? ' · 단계 ' + Show.step + '/' + Show.maxStep : '');
-          if (Show.kind === 'presenter') $('pv-count').textContent = text;
-          else $('show-counter').textContent = text;
+          const count = (Show.index + 1) + ' / ' + slides.length;
+          if (Show.kind === 'presenter') {
+            $('pv-count').textContent = count;
+            stepBadge($('pv-steps'), Show.step, Show.maxStep);
+          } else $('show-counter').textContent = count + (Show.maxStep ? ' · 단계 ' + Show.step + '/' + Show.maxStep : '');
           Live.sync(); // 함께 보기: 지금 장·단계를 학생 화면에 보낸다(빠른 연타는 마지막 것만)
           Remote.sync();
         },
@@ -6406,6 +6400,17 @@
         });
       }
 
+      // 이 장의 클릭 요소 진행 표시(발표자 보기·휴대폰 리모컨): 다음 클릭이 요소를 보이는지, 다음 장으로 넘어가는지.
+      // 클릭 요소가 없는 장은 비워서 숨긴다(.pv-steps:empty).
+      function stepBadge(el, step, max) {
+        if (!el) return;
+        step = Math.max(0, Math.min(step, max));
+        el.className = 'pv-steps' + (max ? (step < max ? ' is-left' : ' is-done') : '');
+        el.textContent = !max ? '' : step < max
+          ? '👆 클릭 요소 ' + (max - step) + '번 남음 (' + step + '/' + max + ')'
+          : '✓ 클릭 요소 다 보임 · 다음 클릭은 다음 장';
+      }
+
       // 하이라이트: pos({x, y}, 0~1 비율) 둘레 radius(px)만 밝고 나머지는 어둡게. pos가 없으면 지운다.
       // 하이라이트 막은 슬라이드(canvas) 안이 아니라 바로 바깥 틀(scaler)의 맨 위에 둔다.
       // 슬라이드 안 CSS(z-index·혼합 효과)나 인터랙티브 칸이 막보다 위로 비쳐 나오지 않게 하려는 것이다.
@@ -6957,7 +6962,7 @@
           );
           document.body.className = 'pv-view';
           document.body.innerHTML =
-            '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span id="pv-clock" title="현재 시각"></span>' +
+            '<header class="pv-bar"><strong id="pv-title"></strong><span id="pv-count"></span><span class="pv-steps" id="pv-steps" role="status"></span><span id="pv-clock" title="현재 시각"></span>' +
             '<button type="button" id="pv-prev">◀ 이전</button>' +
             '<button type="button" id="pv-next">다음 ▶</button><button type="button" id="pv-overview">모든 슬라이드 보기</button>' +
             '<button type="button" id="pv-spot" aria-pressed="false">하이라이트 (H)</button>' +
@@ -6979,7 +6984,8 @@
           function showStep(replay) {
             applySteps(document.getElementById('c-canvas'), step, replay);
             if (popup && !popup.closed) applySteps(popup.document.getElementById('pa-canvas'), step, replay);
-            document.getElementById('pv-count').textContent = (index + 1) + ' / ' + slides.length + (maxStep ? ' · 단계 ' + step + '/' + maxStep : '');
+            document.getElementById('pv-count').textContent = (index + 1) + ' / ' + slides.length;
+            stepBadge(document.getElementById('pv-steps'), step, maxStep);
           }
           // 하이라이트: 발표자 화면의 마우스 자리를 청중 창에도 같은 자리로 보인다.
           var spotOn = false, spotPos = null, spotRadius = 190;
@@ -7144,7 +7150,7 @@
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
-            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + spotlight.toString() + '\n' + laserDot.toString() + '\n' + spotResize.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + stepBadge.toString() + '\n' + spotlight.toString() + '\n' + laserDot.toString() + '\n' + spotResize.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
         },
 
         download(kind) {
@@ -9460,7 +9466,7 @@
         const view = {
           active: false, linked: false, gen: 0, uid: '', fb: null, pid: '',
           session: null, sessionKnown: false, state: null, live: null, connected: true, offset: 0,
-          expected: null, pending: '', pendingTimer: null, shownKey: '', nextKey: '', loadingV: '', tries: 0,
+          expected: null, pending: '', pendingTimer: null, shownKey: '', loadingV: '', tries: 0,
           unsubs: [], clockTimer: null, authTimer: null, wake: null, font: 2
         };
 
@@ -9495,7 +9501,6 @@
         }
 
         function tick() {
-          $('rm-clock').textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
           const s = view.session;
           let text = '-:--';
           if (s && s.pcOnline && Number(s.startedAt)) {
@@ -9518,19 +9523,13 @@
           } catch (err) { /* 저전력 모드 등에서는 쓸 수 없다 */ }
         }
 
-        function fit() {
-          if (!view.active) return;
-          fitStage($('rm-c-host'), $('rm-c-scaler'), 0);
-          fitStage($('rm-n-host'), $('rm-n-scaler'), 0);
-        }
-
         function setFont(delta) {
           view.font = Math.max(0, Math.min(FONT_SIZES.length - 1, view.font + delta));
           $('rm-notes').style.setProperty('--rm-font', FONT_SIZES[view.font] + 'rem');
           if (delta) try { localStorage.setItem(FONT_KEY, String(view.font)); } catch (err) { /* 기억 못 해도 된다 */ }
         }
 
-        // 받은 장(보기 형태)을 캔버스에 넣는다. 영상은 PC 화면에서 재생되므로 자리표시만 둔다.
+        // 받은 장(보기 형태)을 캔버스에 넣는다([모든 장] 미리보기). 영상은 PC 화면에서 재생되므로 자리표시만 둔다.
         function fillView(canvas, slide) {
           const v = slide.view || {};
           canvas.className = v.cls || 'slide-canvas';
@@ -9590,29 +9589,22 @@
           const key = deck.deckV + '|' + slide.id;
           if (view.shownKey !== key) {
             view.shownKey = key;
-            fillView($('rm-c-canvas'), slide);
             const notes = $('rm-notes');
             if (slide.notes) notes.innerHTML = slide.notes; // 교사 본인 덱의 시나리오(발표자 보기와 같은 방식)
             else notes.innerHTML = '<span class="text-secondary">(시나리오 없음)</span>';
             notes.scrollTop = 0;
           }
-          applySteps($('rm-c-canvas'), s, false);
           const next = slides[i + 1];
-          const nextKey = next ? deck.deckV + '|' + next.id : '';
-          if (view.nextKey !== nextKey) {
-            view.nextKey = nextKey;
-            if (next) fillView($('rm-n-canvas'), next);
-            else $('rm-n-canvas').innerHTML = '';
-            $('rm-n-host').classList.toggle('invisible', !next);
-          }
-          $('rm-next-label').textContent = next ? '다음 장 · ' + (i + 2) + (next.title ? '. ' + next.title : '') : '마지막 장이에요';
           const max = maxStep(i);
-          $('rm-count').textContent = (i + 1) + ' / ' + slides.length + (max ? ' · 단계 ' + s + '/' + max : '');
+          $('rm-count').textContent = (i + 1) + ' / ' + slides.length + (slide.title ? ' · ' + slide.title : '');
+          stepBadge($('rm-steps'), s, max);
+          $('rm-next-label').textContent = next ? '다음 장 · ' + (i + 2) + (next.title ? '. ' + next.title : '') : '마지막 장이에요';
+          // [다음] 단추: 이번 클릭이 요소를 보이는지, 다음 장으로 넘어가는지
+          $('rm-next').innerHTML = s < max ? '<i class="bi bi-hand-index"></i> 요소 보이기' : '다음 장 <i class="bi bi-chevron-right"></i>';
           lock(false);
           $('rm-prev').disabled = !prevPos({ i, s });
           $('rm-next').disabled = !nextPos({ i, s });
           renderLive();
-          fit();
         }
 
         function render() {
@@ -9649,7 +9641,6 @@
             if (!view.active || view.uid !== uid || view.loadingV !== deckV) return;
             deck = parsed;
             view.shownKey = '';
-            view.nextKey = '';
             if (parsed.deckV !== deckV && view.tries < 5) {
               // 캐시 등으로 옛 자료를 받았으면 조금 뒤 다시 받는다(받은 것은 우선 보인다).
               view.tries++;
@@ -9747,12 +9738,11 @@
           clearTimeout(view.pendingTimer);
           Object.assign(view, {
             session: null, sessionKnown: false, state: null, live: null, expected: null, pending: '',
-            shownKey: '', nextKey: '', loadingV: '', tries: 0
+            shownKey: '', loadingV: '', tries: 0
           });
-          $('rm-c-canvas').innerHTML = '';
-          $('rm-n-canvas').innerHTML = '';
           $('rm-notes').textContent = '';
           $('rm-count').textContent = '';
+          stepBadge($('rm-steps'), 0, 0);
           $('rm-next-label').textContent = '';
           $('rm-live').classList.add('d-none');
         }
@@ -9856,7 +9846,6 @@
           tick();
           view.clockTimer = setInterval(tick, 1000);
           keepAwake();
-          requestAnimationFrame(fit);
           if (Live.canUse()) connect();
           else if (authKnown) showLogin(false);
           else view.authTimer = setTimeout(() => { if (view.active && !view.linked) showLogin(true); }, 8000);
@@ -9896,14 +9885,12 @@
             if (saved >= 0 && saved < FONT_SIZES.length) view.font = saved;
           } catch (err) { /* 기본 크기 */ }
           setFont(0);
-          $('rm-exit').addEventListener('click', leave);
           $('rm-prev').addEventListener('click', () => send('prev'));
           $('rm-next').addEventListener('click', () => send('next'));
           $('rm-overview').addEventListener('click', openOverview);
           $('rm-pause').addEventListener('click', togglePause);
           document.querySelectorAll('[data-rm-font]').forEach(button => button.addEventListener('click', () => setFont(Number(button.dataset.rmFont))));
           document.addEventListener('keydown', onKey);
-          new ResizeObserver(fit).observe($('rm-c-host')); // 화면 돌리기·주소창 접힘
           document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
           window.addEventListener('teacherAuthChanged', onAuth);
         }
