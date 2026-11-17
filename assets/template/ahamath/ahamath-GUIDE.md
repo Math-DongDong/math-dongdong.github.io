@@ -98,6 +98,9 @@ pages/
 | `interiorsum` | `1/interiorsum.html` | 다각형의 내각의 크기의 합 | 4 / 3 |
 | `exteriorsum` | `1/exteriorsum.html` | 다각형의 외각의 크기의 합 | 4 / 3 |
 | `diagonal` | `1/diagonal.html` | 다각형의 대각선 | 4 / 3 |
+| `circlesector` | `1/circlesector.html` | 원과 부채꼴 (준비 중 · `soon`) | 4 / 3 |
+| `sectorarea` | `1/sectorarea.html` | 부채꼴의 넓이와 호의 길이 (준비 중 · `soon`) | 4 / 3 |
+| `sectorproperty` | `1/sectorproperty.html` | 부채꼴의 성질 (준비 중 · `soon`) | 4 / 3 |
 | `polyhedron` | `1/polyhedron.html` | 다면체 (준비 중 · `soon`) | 4 / 3 |
 | `frustum` | `1/frustum.html` | 각뿔대 (준비 중 · `soon`) | 4 / 3 |
 | `regularpolyhedron` | `1/regularpolyhedron.html` | 정다면체 (준비 중 · `soon`) | 4 / 3 |
