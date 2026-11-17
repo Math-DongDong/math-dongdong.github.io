@@ -1555,6 +1555,8 @@
             if (!el.style.left && !el.style.right) el.style.left = '120px';
             if (!el.style.top && !el.style.bottom) { el.style.top = nextTop + 'px'; nextTop += 160; }
           });
+          // 이미 그려 둔 모션그래픽: 위치 지정과 움직임 이름이 겹친 부위를 나눈다(발표 중 왼쪽 위로 튀는 문제)
+          host.querySelectorAll('.motion-graphic svg, .math-shape svg').forEach(svg => MotionKit.splitTransforms(svg));
           return { html: host.innerHTML.replace(/__k[a-z0-9]+/g, ''), css: Sanitizer.css(css), bg };
         },
 
@@ -2079,7 +2081,24 @@
           svg.removeAttribute('width');
           svg.removeAttribute('height');
           svg.setAttribute('role', 'img');
+          MotionKit.splitTransforms(svg);
           return svg;
+        },
+
+        // 위치 지정(transform 속성)과 움직임 이름(class)이 한 요소에 함께 있으면 둘로 나눈다.
+        // CSS 키프레임의 transform은 SVG의 transform 속성을 덮어써서, 발표 중(움직임이 켜질 때) 그 부위가 원점(왼쪽 위)으로 튄다.
+        // 편집 화면은 움직임을 꺼 두어 멀쩡해 보인다. 바깥 <g>로 위치 지정을 옮기고 안쪽에는 이름만 남긴다(보이는 모습은 그대로).
+        // 저장된 슬라이드에도 쓰므로(Sanitizer.slide) 여러 번 불러도 같은 결과가 되게 한다.
+        splitTransforms(svg) {
+          if (!svg) return;
+          svg.querySelectorAll('[transform][class]').forEach(el => {
+            if (!el.getAttribute('class').trim() || el.matches('tspan, textPath') || !el.parentNode) return;
+            const wrap = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            wrap.setAttribute('transform', el.getAttribute('transform'));
+            el.removeAttribute('transform');
+            el.parentNode.insertBefore(wrap, el);
+            wrap.append(el);
+          });
         }
       };
 
