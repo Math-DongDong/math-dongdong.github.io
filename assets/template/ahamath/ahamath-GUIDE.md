@@ -101,9 +101,13 @@ pages/
 | `circlesector` | `1/circlesector.html` | 원과 부채꼴 (준비 중 · `soon`) | 4 / 3 |
 | `sectorarea` | `1/sectorarea.html` | 부채꼴의 넓이와 호의 길이 (준비 중 · `soon`) | 4 / 3 |
 | `sectorproperty` | `1/sectorproperty.html` | 부채꼴의 성질 (준비 중 · `soon`) | 4 / 3 |
-| `polyhedron` | `1/polyhedron.html` | 다면체 (준비 중 · `soon`) | 4 / 3 |
+| `polyhedron` | `1/polyhedron.html` | 다면체 (준비 중 · `soon`) | 5 / 3 |
 | `frustum` | `1/frustum.html` | 각뿔대 (준비 중 · `soon`) | 4 / 3 |
-| `regularpolyhedron` | `1/regularpolyhedron.html` | 정다면체 (준비 중 · `soon`) | 4 / 3 |
+| `regularpolyhedron` | `1/regularpolyhedron.html` | 정다면체 (준비 중 · `soon`) | 5 / 3 |
+| `revolution` | `1/revolution.html` | 회전체 (준비 중 · `soon`) | 4 / 3 |
+| `volume` | `1/volume.html` | 기둥과 뿔의 부피 (준비 중 · `soon`) | 4 / 3 |
+| `surfacearea` | `1/surfacearea.html` | 기둥과 뿔의 겉넓이 (준비 중 · `soon`) | 4 / 3 |
+| `sphere` | `1/sphere.html` | 구의 부피와 겉넓이 (준비 중 · `soon`) | 4 / 3 |
 
 > `status: 'soon'` 인 주제는 메인 목록에 '준비 중이에요'로만 보이고 열리지 않습니다. 네비바 메뉴와 sitemap 에는 공개할 때(`ready` 로 바꿀 때) 함께 넣으세요.
 | `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
@@ -115,7 +119,7 @@ pages/
 > 문자 분수 표기(`AhaAlgebra.fracText('(x + 2)/3')`)가 들어 있고, 본문의 영문자를 기울인 글꼴로 바꿔 x 와 × 를 구별합니다.
 > 쓰는 법은 그 파일 맨 위 주석에 있습니다.
 
-> 기본 도형과 작도 단원 6개 페이지와 평면도형의 성질 단원 4개 페이지는 `js/ahamath-geometry.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
+> 기본 도형과 작도 · 평면도형의 성질 · 입체도형의 성질 단원 페이지는 `js/ahamath-geometry.js` 를 `ahamath.js` 뒤에 한 줄 더 부릅니다.
 > 점 · 선 · 각 · 원을 좌표로 적어 단계별로 그리는 `geo`(작도 애니메이션 포함)와 `dense` 가 들어 있고,
 > 본문에 `‾AB` · `→AB` · `↔AB` 라고 적으면 선분 · 반직선 · 직선 기호로 바뀝니다. 홀로 쓴 소문자(l, ∠a)는 기울인 글꼴이 됩니다.
 > 그리기 명령과 점 계산(중점 · 수선의 발 · 두 원의 교점 등)은 그 파일 맨 위 주석에 모두 있습니다.
