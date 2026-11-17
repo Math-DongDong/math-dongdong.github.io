@@ -483,7 +483,6 @@
     .rm-conn { margin-right: auto; display: flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .rm-conn::before { content: ''; width: 9px; height: 9px; flex: none; border-radius: 50%; background: #9ca3af; }
     .rm-conn.is-on::before { background: #22c55e; }
-    .rm-elapsed { font-weight: 700; color: #fff; }
     .rm-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem 0.75rem 0; overflow: hidden; }
     .rm-stage { flex: none; display: flex; flex-direction: column; gap: 0.4rem; min-height: 0; }
     .rm-info { display: flex; align-items: center; gap: 0.5rem; font-variant-numeric: tabular-nums; }
@@ -872,7 +871,6 @@
   <section id="remote-view" class="d-none" aria-label="발표 리모컨">
     <header class="rm-top">
       <span class="rm-conn" id="rm-conn">연결 중…</span>
-      <span class="rm-elapsed" id="rm-elapsed" title="발표를 시작한 뒤 지난 시간">-:--</span>
     </header>
     <!-- 슬라이드는 PC 화면에서 보므로 휴대폰에는 위치·클릭 요소·다음 장 제목만 글자로 보인다 -->
     <div class="rm-body">
@@ -9465,9 +9463,9 @@
         const FONT_KEY = 'motionslide.remoteFont';
         const view = {
           active: false, linked: false, gen: 0, uid: '', fb: null, pid: '',
-          session: null, sessionKnown: false, state: null, live: null, connected: true, offset: 0,
+          session: null, sessionKnown: false, state: null, live: null, connected: true,
           expected: null, pending: '', pendingTimer: null, shownKey: '', loadingV: '', tries: 0,
-          unsubs: [], clockTimer: null, authTimer: null, wake: null, font: 2
+          unsubs: [], authTimer: null, wake: null, font: 2
         };
 
         function message(text, actions) {
@@ -9498,18 +9496,6 @@
 
         function lock(on) {
           ['rm-prev', 'rm-next', 'rm-overview', 'rm-pause'].forEach(id => { $(id).disabled = on; });
-        }
-
-        function tick() {
-          const s = view.session;
-          let text = '-:--';
-          if (s && s.pcOnline && Number(s.startedAt)) {
-            const sec = Math.max(0, Math.floor((Date.now() + view.offset - Number(s.startedAt)) / 1000));
-            const h = Math.floor(sec / 3600);
-            const m = Math.floor(sec % 3600 / 60);
-            text = (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec % 60).padStart(2, '0');
-          }
-          $('rm-elapsed').textContent = text;
         }
 
         // 수업 중 휴대폰 화면이 꺼지지 않게(지원하는 브라우저만)
@@ -9609,7 +9595,6 @@
 
         function render() {
           if (!view.active || !view.linked || !view.sessionKnown) return;
-          tick();
           const s = view.session;
           if (!s || !s.pcOnline) {
             setConn(false, s ? 'PC 발표가 끝났어요' : 'PC를 기다리는 중');
@@ -9782,7 +9767,6 @@
               onDisconnect(phone).cancel().catch(() => { });
               remove(phone).catch(() => { });
             });
-            view.unsubs.push(onValue(ref(fb.rtdb, '.info/serverTimeOffset'), snap => { view.offset = Number(snap.val()) || 0; }));
             view.unsubs.push(onValue(ref(fb.rtdb, base + 'session'), snap => {
               const value = snap.val();
               if (!value || !view.session || value.sid !== view.session.sid) { // 새 발표: 기다리던 명령은 버린다
@@ -9843,8 +9827,6 @@
           setConn(false, '연결 중…');
           lock(true);
           message('교사 로그인 확인 중…');
-          tick();
-          view.clockTimer = setInterval(tick, 1000);
           keepAwake();
           if (Live.canUse()) connect();
           else if (authKnown) showLogin(false);
@@ -9857,7 +9839,6 @@
           stopWatching();
           resetData();
           view.uid = '';
-          clearInterval(view.clockTimer);
           clearTimeout(view.authTimer);
           if (view.wake) { view.wake.release().catch(() => { }); view.wake = null; }
           document.querySelectorAll('.ov-backdrop').forEach(el => el.remove());
