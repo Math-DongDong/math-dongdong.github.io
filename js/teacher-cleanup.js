@@ -6,7 +6,8 @@
  *
  * 정리 내용
  *   · 방: room_registry 에서 createdBy == uid 인 방을 저장 위치마다 지웁니다 (room-registry.js의 purgeRoomParts)
- *   · AI 모션 슬라이드 Storage: motion_slides/{uid} · live_slides/{uid} 폴더 (계정 삭제 · 탈퇴 때만 — 학교 변경은 이 파일을 쓰지 않음)
+ *   · AI 모션 슬라이드 Storage: motion_slides/{uid} · live_slides/{uid} · motion_remote/{uid} 폴더 (계정 삭제 · 탈퇴 때만 — 학교 변경은 이 파일을 쓰지 않음)
+ *   · AI 모션 슬라이드 휴대폰 리모컨: RTDB(motionslide-live) remote/{uid}
  *   · 학생: 같은 학교 + 담당 선생님(teachers)에 이 교사 이름
  *       - 담당 선생님이 이 교사뿐이면 학생 정보를 모두 지웁니다 (PIN · 기기 인증 포함)
  *       - 다른 담당 선생님이 있으면 담당 선생님 목록에서 이름만 뺍니다
@@ -129,7 +130,7 @@ export async function runTeacherCleanup(plan, onProgress = () => { }) {
     // 함께 보기 방은 위 방 정리에서 함께 지워지고, 여기서는 폴더에 남은 파일만 비웁니다. 개수에는 넣지 않습니다.
     try {
         const { deleteStorageFolder } = await import('./firebase-storage.js');
-        for (const folder of [`motion_slides/${plan.uid}`, `live_slides/${plan.uid}`]) {
+        for (const folder of [`motion_slides/${plan.uid}`, `live_slides/${plan.uid}`, `motion_remote/${plan.uid}`]) {
             try {
                 await deleteStorageFolder(folder);
             } catch (e) {
@@ -139,6 +140,17 @@ export async function runTeacherCleanup(plan, onProgress = () => { }) {
         }
     } catch (e) {
         console.warn('[teacher-cleanup] Storage 모듈을 불러오지 못했습니다:', e);
+    }
+    // AI 모션 슬라이드 휴대폰 리모컨: 연결 정보(진행 위치·명령) — 옛 캐시의 firebase-config.js에 rtdbLive가 없으면 건너뜁니다
+    try {
+        const [config, { ref, remove }] = await Promise.all([
+            import('./firebase-config.js'),
+            import("https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js")
+        ]);
+        if (config.rtdbLive) await remove(ref(config.rtdbLive, `remote/${plan.uid}`));
+    } catch (e) {
+        console.error('휴대폰 리모컨 정보 삭제 실패', e);
+        failures.push(`리모컨 remote/${plan.uid}`);
     }
     return failures;
 }
