@@ -94,10 +94,15 @@ pages/
 | `position` | `1/position.html` | 위치 관계 | 4 / 3 |
 | `construct` | `1/construct.html` | 작도와 삼각형의 작도 | 4 / 1 |
 | `congruent` | `1/congruent.html` | 삼각형의 합동 조건 | 5 / 3 |
-| `triangleangle` | `1/triangleangle.html` | 삼각형의 내각과 외각 | 5 / 3 |
+| `triangleangle` | `1/triangleangle.html` | 삼각형의 내각과 외각 | 4 / 3 |
 | `interiorsum` | `1/interiorsum.html` | 다각형의 내각의 크기의 합 | 4 / 3 |
 | `exteriorsum` | `1/exteriorsum.html` | 다각형의 외각의 크기의 합 | 4 / 3 |
 | `diagonal` | `1/diagonal.html` | 다각형의 대각선 | 4 / 3 |
+| `polyhedron` | `1/polyhedron.html` | 다면체 (준비 중 · `soon`) | 4 / 3 |
+| `frustum` | `1/frustum.html` | 각뿔대 (준비 중 · `soon`) | 4 / 3 |
+| `regularpolyhedron` | `1/regularpolyhedron.html` | 정다면체 (준비 중 · `soon`) | 4 / 3 |
+
+> `status: 'soon'` 인 주제는 메인 목록에 '준비 중이에요'로만 보이고 열리지 않습니다. 네비바 메뉴와 sitemap 에는 공개할 때(`ready` 로 바꿀 때) 함께 넣으세요.
 | `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
 | `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
 | `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |

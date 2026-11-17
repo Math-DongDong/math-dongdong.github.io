@@ -837,6 +837,20 @@
             if (choice) { choice.classList.toggle('d-none', !isVisible); }
         }
 
+        /* '아직은....' 안내 상자 : 미션 대신 다른 주제로 갈 수 있도록 목록 링크를 넣어요 (모든 학습 페이지 공통) */
+        function addListLink(noteId, anywayId) {
+            const note = document.getElementById(noteId);
+            const anyway = document.getElementById(anywayId);
+            if (!note || !anyway || note.querySelector('.to-list')) { return; }
+            const link = document.createElement('a');
+            link.className = 'btn btn-light w-100 mb-2 fw-bold to-list';
+            link.href = LIST_HREF;
+            link.innerHTML = '<i class="bi bi-grid"></i> 다른 주제 보러 가기';
+            anyway.parentNode.insertBefore(link, anyway);
+        }
+        addListLink('gateWaitNote', 'gateOpenAnyway');
+        addListLink('cgateWaitNote', 'cgateOpenAnyway');
+
         document.getElementById('gateAha').addEventListener('click', function () {
             record.gate = 'aha';
             saveRecord();
