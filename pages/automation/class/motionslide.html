@@ -336,10 +336,12 @@
     .plan-title { border: 0; padding: 0.15rem 0.25rem; font-size: 1.05rem; font-weight: 700; background: transparent; }
     .plan-title:focus { background: #f8fafc; box-shadow: none; }
     .plan-points { resize: none; overflow: hidden; background: #f8fafc; border-color: #e2e8f0; } /* 글에 맞춰 높이가 늘어난다 */
+    .plan-talk { resize: none; overflow: hidden; background: #f5f3ff; border-color: #ddd6fe; line-height: 1.5; } /* 말할 내용: 시나리오 뼈대 */
+    .plan-talk-label { color: #7c3aed; font-size: 0.78rem; font-weight: 700; }
     .plan-el { --k: #64748b; --kbg: #f8fafc; background: var(--kbg); border-radius: 8px; padding: 0.3rem 0.4rem; align-items: flex-start !important; }
     .plan-el .plan-el-kind { padding-top: 0.3rem; }
     .plan-el textarea.plan-el-text { resize: none; overflow: hidden; line-height: 1.5; }
-    .plan-el[data-kind="math"], .plan-add-el[data-plan="add-math"], .plan-chip[data-kind="math"] { --k: #4f46e5; --kbg: #eef2ff; }
+    .plan-el[data-kind="motion"], .plan-add-el[data-plan="add-motion"], .plan-chip[data-kind="motion"] { --k: #4f46e5; --kbg: #eef2ff; }
     .plan-el[data-kind="image"], .plan-add-el[data-plan="add-image"], .plan-chip[data-kind="image"] { --k: #059669; --kbg: #ecfdf5; }
     .plan-el[data-kind="video"], .plan-add-el[data-plan="add-video"], .plan-chip[data-kind="video"] { --k: #dc2626; --kbg: #fef2f2; }
     .plan-el[data-kind="app"], .plan-add-el[data-plan="add-app"], .plan-chip[data-kind="app"] { --k: #d97706; --kbg: #fffbeb; }
@@ -5197,13 +5199,15 @@
                 properties: {
                   title: { type: 'STRING' },
                   points: { type: 'STRING' },
+                  // 말할 내용: 화면에 쓰지 않고 발표자가 말로 전할 메모(시나리오의 뼈대)
+                  talk: { type: 'STRING' },
                   motion: { type: 'STRING' },
                   image: { type: 'STRING' },
                   video: { type: 'STRING' },
                   interactive: { type: 'STRING' }
                 },
-                // 선택 항목으로 두면 AI가 칸을 통째로 빼 버리기 쉬워, 모션그래픽·인터랙티브 칸은 꼭 답하게 한다(넣을 것이 없으면 빈 글자).
-                required: ['title', 'points', 'motion', 'interactive']
+                // 선택 항목으로 두면 AI가 칸을 통째로 빼 버리기 쉬워, 말할 내용·모션그래픽·인터랙티브 칸은 꼭 답하게 한다(넣을 것이 없으면 빈 글자).
+                required: ['title', 'points', 'talk', 'motion', 'interactive']
               }
             }
           },
@@ -5215,6 +5219,8 @@
           const lines = [(i + 1) + '. ' + item.title];
           String(item.points || '').split('\n').map(line => line.trim()).filter(Boolean)
             .forEach(line => lines.push('   - ' + line.replace(/^[-•·]\s*/, '')));
+          const talk = String(item.talk || '').split('\n').map(line => line.trim().replace(/^[-•·]\s*/, '')).filter(Boolean);
+          if (talk.length) lines.push('   [말할 내용] ' + talk.join(' / '));
           (item.elements || []).forEach(el => {
             let note = '';
             if (el.kind === 'image') note = el.media ? ' (사용자가 넣을 그림: ' + el.media.name + ')' : ' (실제 그림 없음 — 모션그래픽·이모지·인라인 SVG로 표현)';
@@ -5258,6 +5264,7 @@
           return {
             title: String(item.title || '').trim().slice(0, 80),
             points: String(item.points || '').trim().slice(0, 800),
+            talk: String(item.talk || '').trim().slice(0, 1500),
             elements: elements.slice(0, Planner.MAX_ELEMENTS)
           };
         },
@@ -5459,6 +5466,19 @@
           points.value = item.points || '';
           points.addEventListener('input', () => Planner.grow(points));
           requestAnimationFrame(() => Planner.grow(points));
+          // 말할 내용: 화면에 쓰지 않고 말로 전할 메모. 만들 때 이 장 시나리오(notes)의 뼈대가 된다.
+          const talkLabel = document.createElement('label');
+          talkLabel.className = 'plan-talk-label d-block mb-1';
+          talkLabel.innerHTML = '<i class="bi bi-chat-quote"></i> ';
+          talkLabel.append('말할 내용 (시나리오 뼈대)');
+          const talk = document.createElement('textarea');
+          talk.className = 'form-control form-control-sm mb-2 plan-talk';
+          talk.rows = 1;
+          talk.placeholder = '화면에 쓰지 않고 말로 전할 설명·예시·질문 (예: 택시 요금 예시로 시작 / "기본요금은 왜 있을까?" 묻기)';
+          talk.value = item.talk || '';
+          talkLabel.htmlFor = talk.id = 'plan-talk-' + Util.uid().slice(-8);
+          talk.addEventListener('input', () => Planner.grow(talk));
+          requestAnimationFrame(() => Planner.grow(talk));
           const elements = document.createElement('div');
           elements.className = 'plan-elements';
           Planner.mergeLines(item.elements).forEach(el => elements.append(Planner.elementRow(el)));
@@ -5473,7 +5493,7 @@
             button.append('+ ' + Planner.KINDS[kind].label);
             adds.append(button);
           });
-          card.append(top, points, elements, adds);
+          card.append(top, points, talkLabel, talk, elements, adds);
           // 왼쪽 흐름 줄: 번호 원 아래에 [+] — 이 장 바로 다음에 새 장을 넣는다(마지막 장이면 맨 끝에).
           const rail = document.createElement('div');
           rail.className = 'plan-rail';
@@ -5597,6 +5617,7 @@
           const slides = Array.from(body.querySelectorAll('.plan-item')).map(li => ({
             title: li.querySelector('.plan-title').value.trim(),
             points: li.querySelector('.plan-points').value.trim(),
+            talk: li.querySelector('.plan-talk').value.trim(),
             // 모션그래픽·인터랙티브 칸은 한 칸에 줄마다 하나씩 적으므로 줄을 각각의 요소로 나눈다.
             elements: Array.from(li.querySelectorAll('.plan-el')).flatMap(row => {
               const text = row.querySelector('.plan-el-text').value;
