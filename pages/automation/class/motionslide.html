@@ -338,6 +338,12 @@
     .plan-points { resize: none; overflow: hidden; background: #f8fafc; border-color: #e2e8f0; } /* 글에 맞춰 높이가 늘어난다 */
     .plan-talk { resize: none; overflow: hidden; background: #f5f3ff; border-color: #ddd6fe; line-height: 1.5; } /* 말할 내용: 시나리오 뼈대 */
     .plan-talk-label { color: #7c3aed; font-size: 0.78rem; font-weight: 700; }
+    .plan-pick-label { color: #64748b; cursor: pointer; border-radius: 6px; }
+    .plan-item.is-picked .plan-card { border-color: #2563eb; background: #f8fbff; } /* 다시 짤 장 */
+    .plan-item.is-picked .plan-pick-label { color: #2563eb; font-weight: 700; }
+    .plan-item.is-changed .plan-card { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2); } /* 방금 AI가 바꾼 장 */
+    .plan-changed-badge { display: none; background: #fef3c7; color: #b45309; font-weight: 700; }
+    .plan-item.is-changed .plan-changed-badge { display: inline-block; }
     .plan-el { --k: #64748b; --kbg: #f8fafc; background: var(--kbg); border-radius: 8px; padding: 0.3rem 0.4rem; align-items: flex-start !important; }
     .plan-el .plan-el-kind { padding-top: 0.3rem; }
     .plan-el textarea.plan-el-text { resize: none; overflow: hidden; line-height: 1.5; }
@@ -1147,7 +1153,7 @@
         <div class="modal-footer flex-column align-items-stretch gap-2">
           <div class="input-group input-group-sm">
             <input class="form-control plan-redo" placeholder="예) 3장은 실생활 문제로 바꿔 줘" aria-label="계획 다시 짜기 요청">
-            <button type="button" class="btn btn-outline-primary" data-plan="redo"><i class="bi bi-arrow-repeat"></i> AI에게 다시 짜기</button>
+            <button type="button" class="btn btn-outline-primary" data-plan="redo"><i class="bi bi-arrow-repeat"></i> AI에게 전체 다시 짜기</button>
           </div>
           <div class="small text-primary d-none" id="plan-status" role="status"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span id="plan-status-text"></span></div>
           <button type="button" class="btn btn-primary plan-approve" data-plan="approve"></button>
@@ -5321,13 +5327,7 @@
           let failure = null;
           try {
             const parts = await AiPanel.prepareFiles(files, status);
-            const context = [
-              deck.title !== DEFAULT_TITLE ? Prompts.text('newSlides.deckTitle', { title: deck.title }) : '',
-              deck.slides.some(slide => !slide.pristine) ? Prompts.text('plan.context', { outline: AiPanel.outline(deck), after: Editor.index + 1 }) : '',
-              // 바로 앞 장(새 장들이 이어 붙을 장)의 원본: 어디부터 이어서 계획할지 알 수 있게
-              AiPanel.reference(Editor.current()) ? Prompts.text('plan.previous', { previous: AiPanel.reference(Editor.current()) }) : '',
-              Planner.staged.length ? Prompts.text('plan.media', { list: Planner.staged.map(item => item.name + '(' + (item.kind === 'image' ? '그림' : '영상') + ')').join(', ') }) : ''
-            ].filter(Boolean).join('\n');
+            const context = Planner.context(deck);
             const label = revision ? 'AI가 계획을 다시 짜는 중…' : '장별 계획을 짜는 중…';
             status.set(label);
             // 처음 계획은 장 수를 응답 형식으로 못 박는다(다시 짜기는 '3장으로 줄여'처럼 장 수가 바뀔 수 있어 두지 않는다).
@@ -5378,14 +5378,14 @@
           if (!revision && slides.length < total) {
             const short = total - slides.length;
             for (let i = 0; i < short; i++) slides.push({ title: '', points: '', elements: [] });
-            Util.toast('AI가 ' + (total - short) + '장만 계획해 나머지 ' + short + '장은 비워 두었습니다. 직접 채우거나 [AI에게 다시 짜기]를 눌러 주세요.', 'warning');
+            Util.toast('AI가 ' + (total - short) + '장만 계획해 나머지 ' + short + '장은 비워 두었습니다. 직접 채우거나, 빈 장의 [다시 짜기]에 체크하고 AI에게 채워 달라고 요청해 주세요.', 'warning');
           }
           const plan = { deckTitle: String((result && result.deckTitle) || '').trim(), slides };
           if (revision) {
-            Planner.fill(topic, plan);
+            const changed = Planner.fill(topic, plan, previous && previous.plan);
             Planner.status('');
             $('plan-modal').querySelector('.plan-redo').value = '';
-            Util.toast('계획을 다시 짰습니다. 확인하고 [이대로 만들기]를 누르세요.', 'success');
+            Util.toast('계획을 다시 짰습니다. ' + (changed ? '바뀐 ' + changed + '장은 노란 테두리로 표시했습니다. ' : '') + '확인하고 [이대로 만들기]를 누르세요.', 'success');
           } else {
             AiPanel.hideStatus();
             Planner.fill(topic, plan);
@@ -5394,21 +5394,121 @@
           }
         },
 
+        // 계획을 짤 때 함께 보내는 지금 발표 자료의 형편(제목·목차·바로 앞 장·담아 둔 개체)
+        context(deck) {
+          return [
+            deck.title !== DEFAULT_TITLE ? Prompts.text('newSlides.deckTitle', { title: deck.title }) : '',
+            deck.slides.some(slide => !slide.pristine) ? Prompts.text('plan.context', { outline: AiPanel.outline(deck), after: Editor.index + 1 }) : '',
+            // 바로 앞 장(새 장들이 이어 붙을 장)의 원본: 어디부터 이어서 계획할지 알 수 있게
+            AiPanel.reference(Editor.current()) ? Prompts.text('plan.previous', { previous: AiPanel.reference(Editor.current()) }) : '',
+            Planner.staged.length ? Prompts.text('plan.media', { list: Planner.staged.map(item => item.name + '(' + (item.kind === 'image' ? '그림' : '영상') + ')').join(', ') }) : ''
+          ].filter(Boolean).join('\n');
+        },
+
         // 다시 짠 계획에서도, 같은 소제목 장에 골라 두었던 그림·영상은 같은 종류 순서대로 이어 붙인다.
         keepMedia(oldPlan, slides) {
           slides.forEach(item => {
             const old = oldPlan.slides.find(prev => prev.title === item.title);
-            if (!old) return;
-            ['image', 'video'].forEach(kind => {
-              const picked = old.elements.filter(el => el.kind === kind && el.media);
-              item.elements.filter(el => el.kind === kind && !el.media).forEach((el, k) => { if (picked[k]) el.media = picked[k].media; });
-              picked.slice(item.elements.filter(el => el.kind === kind).length).forEach(el => item.elements.push(Object.assign({}, el)));
-            });
+            if (old) Planner.carryMedia(old, item);
           });
         },
 
-        // 고칠 수 있는 계획표를 창에 채운다.
-        fill(topic, plan) {
+        // old 장에 골라 두었던 그림·영상을 item 장으로 옮겨 붙인다.
+        carryMedia(old, item) {
+          ['image', 'video'].forEach(kind => {
+            const picked = old.elements.filter(el => el.kind === kind && el.media);
+            item.elements.filter(el => el.kind === kind && !el.media).forEach((el, k) => { if (picked[k]) el.media = picked[k].media; });
+            picked.slice(item.elements.filter(el => el.kind === kind).length).forEach(el => item.elements.push(Object.assign({}, el)));
+          });
+        },
+
+        // 체크한 장만 다시 짜기: 처음 요청과 계획 전체는 흐름을 맞추는 참고로 보내고, 체크한 장만 받아 그 자리만 바꾼다.
+        // 체크하지 않은 장은 AI가 무엇을 보내든 프로그램이 손대지 않는다. 한 장을 여러 장으로 나누는 요청이면 그 자리에 여러 장이 들어간다.
+        async revisePicked(items, picked, request) {
+          const deck = Editor.deck;
+          const active = Planner.active;
+          const files = AiPanel.files.slice();
+          const numbers = picked.map(li => items.indexOf(li) + 1);
+          const all = items.map(li => Planner.itemFrom(li));
+          const planText = all.map((item, i) => item.title ? Planner.itemText(item, i) : (i + 1) + '. (빈 장 — 요청에 맞게 새로 채울 자리)').join('\n');
+          const label = '체크한 ' + numbers.length + '장을 다시 짜는 중…';
+          Planner.setBusy(true);
+          Planner.status(label);
+          AiPanel.setBusy(true);
+          const controller = new AbortController();
+          AiPanel.aborter = controller;
+          let result = null;
+          let failure = null;
+          try {
+            const parts = await AiPanel.prepareFiles(files, { set: (text, isError) => Planner.status(text, isError) });
+            // 장마다 원래 번호(number)를 받아 어느 자리에 넣을지 안다.
+            const schema = JSON.parse(JSON.stringify(Planner.SCHEMA));
+            const itemSchema = schema.properties.slides.items;
+            itemSchema.properties = Object.assign({ number: { type: 'INTEGER' } }, itemSchema.properties);
+            itemSchema.required = ['number'].concat(itemSchema.required);
+            const prompt = AiPanel.pastRequests(deck) + Prompts.text('newSlides.topic', { topic: active.topic }) + Planner.context(deck) + '\n' +
+              Prompts.text('plan.revisePicked', { plan: planText, numbers: numbers.join(', '), request }) + AiPanel.filePrompt(files);
+            result = await Gemini.generateJson({
+              task: '체크한 장 다시 짜기 (' + numbers.join(', ') + '번 장)',
+              model: Settings.model(),
+              system: Prompts.text('plan.system'),
+              prompt,
+              parts,
+              schema,
+              signal: controller.signal,
+              onProgress: length => Planner.status(label + ' ' + length.toLocaleString('ko-KR') + '자 받음')
+            });
+          } catch (err) {
+            failure = err;
+          }
+          AiPanel.setBusy(false);
+          AiPanel.aborter = null;
+          Planner.setBusy(false);
+          if (Editor.deck !== deck || Planner.active !== active) return;
+          const got = (result && Array.isArray(result.slides) ? result.slides : [])
+            .map(entry => ({ number: Number(entry && entry.number), item: Planner.fromAi(entry || {}) }))
+            .filter(entry => entry.item.title);
+          if (failure || !got.length) {
+            const message = failure && failure.aborted ? '중단했습니다.' : '⚠ ' + ((failure && failure.message) || 'AI 응답에 계획이 없습니다. 다시 시도해 주세요.');
+            Planner.status(message + ' 지금 계획은 그대로입니다.', true);
+            return;
+          }
+          // 원래 번호대로 나눈다. 번호가 없거나 엉뚱하면 아직 받지 못한 체크 장에 차례로 준다. 체크하지 않은 장의 번호면 버린다.
+          const groups = new Map(numbers.map(n => [n, []]));
+          got.forEach(entry => {
+            if (groups.has(entry.number)) { groups.get(entry.number).push(entry.item); return; }
+            if (entry.number >= 1 && entry.number <= items.length) return; // 체크하지 않은 장: 바꾸지 않는다
+            const empty = numbers.find(n => !groups.get(n).length);
+            if (empty !== undefined) groups.get(empty).push(entry.item);
+          });
+          $('plan-body').querySelectorAll('.plan-item.is-changed').forEach(li => li.classList.remove('is-changed'));
+          let changed = 0;
+          let firstRow = null;
+          picked.forEach((li, k) => {
+            const list = groups.get(numbers[k]);
+            if (!list.length) return; // 받지 못한 장은 체크한 채 그대로 둔다(다시 누르면 그 장만 다시 짠다)
+            Planner.carryMedia(all[numbers[k] - 1], list[0]);
+            list.forEach(item => {
+              const row = Planner.row(item);
+              row.classList.add('is-changed');
+              li.before(row);
+              firstRow = firstRow || row;
+            });
+            li.remove();
+            changed += 1;
+          });
+          Planner.active.plan = Planner.read();
+          Planner.refresh();
+          Planner.status('');
+          $('plan-modal').querySelector('.plan-redo').value = '';
+          if (firstRow) firstRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          const missed = numbers.length - changed;
+          Util.toast('체크한 ' + changed + '장만 다시 짰습니다(노란 테두리). 나머지 장은 그대로입니다.' +
+            (missed ? '\n' + missed + '장은 응답에 없어 체크한 채 그대로 두었습니다.' : ''), missed ? 'warning' : 'success');
+        },
+
+        // 고칠 수 있는 계획표를 창에 채운다. oldPlan(다시 짜기 전 계획)이 있으면 달라진 장에 노란 테두리를 두르고 그 수를 돌려준다.
+        fill(topic, plan, oldPlan) {
           const body = $('plan-body');
           body.textContent = '';
           const titleLabel = document.createElement('label');
@@ -5422,7 +5522,13 @@
           titleInput.value = Editor.deck.title !== DEFAULT_TITLE ? Editor.deck.title : (plan.deckTitle || '');
           const list = document.createElement('ol');
           list.className = 'plan-list list-unstyled mb-2';
-          plan.slides.forEach(item => list.append(Planner.row(item)));
+          const before = oldPlan ? new Set(oldPlan.slides.map(item => Planner.itemText(item, 0))) : null;
+          let changed = 0;
+          plan.slides.forEach(item => {
+            const row = Planner.row(item);
+            if (before && !before.has(Planner.itemText(item, 0))) { row.classList.add('is-changed'); changed += 1; }
+            list.append(row);
+          });
           const add = document.createElement('button');
           add.type = 'button';
           add.className = 'btn btn-sm btn-outline-secondary w-100';
@@ -5431,6 +5537,7 @@
           body.append(titleLabel, titleInput, list, add);
           Planner.active = { topic, plan };
           Planner.refresh();
+          return changed;
         },
 
         row(item) {
@@ -5447,8 +5554,20 @@
           title.placeholder = '소제목';
           title.setAttribute('aria-label', '소제목');
           title.value = item.title || '';
-          top.append(title);
-          [['up', 'bi-arrow-up', '위로'], ['down', 'bi-arrow-down', '아래로'], ['remove', 'bi-x-lg', '이 장 빼기']].forEach(([act, icon, label]) => {
+          // 방금 AI가 바꾼 장 표시(.is-changed일 때만 보인다)
+          const changedBadge = document.createElement('span');
+          changedBadge.className = 'badge plan-changed-badge';
+          changedBadge.textContent = '방금 바뀜';
+          // 체크한 장만 AI에게 다시 짜게 한다.
+          const pickLabel = document.createElement('label');
+          pickLabel.className = 'plan-pick-label d-flex align-items-center gap-1 small text-nowrap px-1';
+          pickLabel.title = '체크한 장만 AI에게 다시 짜기 (나머지 장은 그대로)';
+          const pick = document.createElement('input');
+          pick.type = 'checkbox';
+          pick.className = 'form-check-input m-0 plan-pick';
+          pickLabel.append(pick, '다시 짜기');
+          top.append(title, changedBadge, pickLabel);
+          [['up', 'bi-arrow-up', '위로'],['down', 'bi-arrow-down', '아래로'], ['remove', 'bi-x-lg', '이 장 빼기']].forEach(([act, icon, label]) => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn-sm btn-link text-muted p-0 px-1';
@@ -5614,7 +5733,14 @@
         // 계획표에서 지금 적힌 값을 읽는다(소제목이 빈 장은 뺀다).
         read() {
           const body = $('plan-body');
-          const slides = Array.from(body.querySelectorAll('.plan-item')).map(li => ({
+          const slides = Array.from(body.querySelectorAll('.plan-item')).map(Planner.itemFrom).filter(item => item.title);
+          const title = body.querySelector('.plan-deck-title');
+          return { deckTitle: title ? title.value.trim() : '', slides };
+        },
+
+        // 계획표 한 장(li)에 적힌 값
+        itemFrom(li) {
+          return {
             title: li.querySelector('.plan-title').value.trim(),
             points: li.querySelector('.plan-points').value.trim(),
             talk: li.querySelector('.plan-talk').value.trim(),
@@ -5627,9 +5753,7 @@
               // 그림·영상은 실제 파일을 고른 것만(고르지 않은 줄은 AI가 알아서 꾸미게 둔다)
               return row.lsMedia ? [{ kind: row.dataset.kind, text: text.trim(), media: row.lsMedia }] : [];
             }).filter(el => el.text || el.media)
-          })).filter(item => item.title);
-          const title = body.querySelector('.plan-deck-title');
-          return { deckTitle: title ? title.value.trim() : '', slides };
+          };
         },
 
         refresh() {
@@ -5645,7 +5769,16 @@
             insert.disabled = items.length >= Planner.MAX || AiPanel.busy;
             const full = li.querySelectorAll('.plan-el').length >= Planner.MAX_ELEMENTS;
             li.querySelectorAll('.plan-add-el').forEach(button => { button.disabled = full || AiPanel.busy; });
+            li.classList.toggle('is-picked', li.querySelector('.plan-pick').checked);
           });
+          // 체크한 장이 있으면 그 장만, 없으면 계획 전체를 다시 짠다.
+          const pickedCount = modal.querySelectorAll('.plan-pick:checked').length;
+          const redo = modal.querySelector('[data-plan="redo"]');
+          redo.innerHTML = '<i class="bi bi-arrow-repeat"></i> ';
+          redo.append(pickedCount ? '체크한 ' + pickedCount + '장만 다시 짜기' : 'AI에게 전체 다시 짜기');
+          modal.querySelector('.plan-redo').placeholder = pickedCount
+            ? '예) 실생활 문제로 바꿔 줘 · 두 장으로 나눠 줘 (체크한 장만 바뀝니다)'
+            : '예) 3장은 실생활 문제로 바꿔 줘 · 바꿀 장만 [다시 짜기]에 체크하면 그 장만 바뀝니다';
           const plan = Planner.read();
           const count = plan.slides.length;
           modal.querySelector('.plan-count').textContent = count + '장';
@@ -5720,6 +5853,9 @@
           const input = $('plan-modal').querySelector('.plan-redo');
           const request = input.value.trim();
           if (!request) { Planner.status('계획을 어떻게 바꿀지 적어 주세요.', true); input.focus(); return; }
+          const items = Array.from($('plan-body').querySelectorAll('.plan-item'));
+          const picked = items.filter(li => li.querySelector('.plan-pick').checked);
+          if (picked.length) { Planner.revisePicked(items, picked, request); return; }
           Planner.active.plan = Planner.read(); // 직접 고친 내용을 바탕으로 다시 짠다
           Planner.start(Planner.active.topic, Math.max(1, Planner.active.plan.slides.length), request);
         },
@@ -5748,7 +5884,10 @@
           const modal = $('plan-modal');
           modal.addEventListener('click', Planner.onClick);
           modal.addEventListener('input', Planner.refresh);
-          modal.addEventListener('change', event => { if (event.target.matches('.plan-el-source')) Planner.onSource(event.target); });
+          modal.addEventListener('change', event => {
+            if (event.target.matches('.plan-el-source')) Planner.onSource(event.target);
+            else if (event.target.matches('.plan-pick')) Planner.refresh();
+          });
           modal.addEventListener('shown.bs.modal', Planner.growAll); // 창이 보인 뒤에야 글 높이를 잴 수 있다
           modal.querySelector('.plan-redo').addEventListener('keydown', event => {
             if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); Planner.redo(); }
