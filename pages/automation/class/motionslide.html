@@ -2156,9 +2156,11 @@
       const AppEditor = {
         el: null,
         original: null,   // 편집을 시작할 때의 data-code 속성(없으면 null)
-        history: [],      // AI가 고치기 전 data-code(되돌리기용)
+        history: [],      // { code: AI가 고치기 전 data-code, request: 그때 보낸 요청 } ([반영 취소]용)
         files: [],        // 이번 편집에서 붙인 참고 자료(AI 창의 참고 자료와 따로)
-        aborter: null,
+        // AI가 고치는 중인 요청 { el, deck, slideId, app, before, motion, name, request, controller }.
+        // 편집 창을 닫거나 다른 개체·다른 장으로 가도 멈추지 않고, 끝나면 그 개체를 찾아 반영한다(멈추기: 그 개체 편집 창에서 Esc).
+        job: null,
         SCHEMA: {
           type: 'OBJECT',
           properties: { code: { type: 'STRING' }, summary: { type: 'STRING' } },
@@ -2191,12 +2193,58 @@
           const text = AppEditor.text();
           $('app-help').textContent = text.help;
           $('app-request').placeholder = text.placeholder;
-          $('app-request').value = '';
           $('app-undo').classList.add('d-none');
-          AppEditor.status('');
-          AppEditor.setBusy(false);
+          // 창을 닫은 뒤에도 AI가 이 개체를 고치고 있었다면 진행 상황을 이어서 보인다.
+          const job = AppEditor.job;
+          const mine = !!job && Editor.deck === job.deck && Editor.current().id === job.slideId && AppEditor.locate(job, $('slide-canvas')) === el;
+          if (mine) job.el = el;
+          $('app-request').value = mine ? job.request : '';
+          if (mine) AppEditor.status('Gemini가 코드를 고치는 중… (Esc: 중단)', 'primary');
+          else AppEditor.status('');
+          AppEditor.setBusy(mine);
           ObjectPanel.open(AppEditor, el, text.title, text.icon);
           $('app-request').focus();
+        },
+
+        // 고치는 중인 개체 찾기: 이름(data-app)이 같고 코드가 요청을 보낼 때 그대로인 개체(처음 그 개체가 남아 있으면 그것).
+        locate(job, root) {
+          const list = Array.from(root.querySelectorAll(AppKit.CODED))
+            .filter(el => el.getAttribute('data-app') === job.app && el.getAttribute('data-code') === job.before);
+          return list.includes(job.el) ? job.el : list[0] || null;
+        },
+
+        // AI가 고친 코드를 그 개체에 넣는다. 지금 장이면 캔버스에서, 다른 장으로 옮겼으면 그 장의 HTML에서 고친다(둘 다 되돌리기 기록에 남는다).
+        // 멈췄거나 다른 슬라이드로 나갔거나 개체가 지워졌·바뀌었으면 null.
+        async deliver(job, code) {
+          const attr = AppKit.encode(AppKit.tidy(code, job.motion).slice(0, 300000));
+          let content = null;
+          let error = '';
+          if (job.motion) {
+            try { content = await MotionKit.draw(AppKit.decode(attr)); } catch (err) { error = err.message; }
+          }
+          const deck = Editor.deck;
+          if (job.controller.signal.aborted || deck !== job.deck) return null;
+          const index = deck.slides.findIndex(slide => slide.id === job.slideId);
+          if (index < 0) return null;
+          const onCanvas = index === Editor.index;
+          const template = onCanvas ? null : document.createElement('template');
+          if (template) template.innerHTML = deck.slides[index].html;
+          const el = AppEditor.locate(job, onCanvas ? $('slide-canvas') : template.content);
+          if (!el) return null;
+          el.setAttribute('data-code', attr);
+          if (job.motion) {
+            if (typeof content === 'string') el.innerHTML = content;
+            else el.replaceChildren(content || MathKit.note('모션그래픽을 그리지 못했습니다: ' + error));
+          } else if (onCanvas) {
+            AppKit.hydrate(el.closest('.draggable-box') || el.parentElement, 'edit');
+          }
+          if (template) {
+            deck.slides[index].html = template.innerHTML;
+            deck.slides[index].pristine = false;
+            Editor.refreshThumb(index);
+          }
+          Editor.commit();
+          return { el, index, error };
         },
 
         setBusy(on) {
@@ -2248,90 +2296,110 @@
           return true;
         },
 
-        // 고친 결과는 바로 반영되므로, 따로 적용할 것은 AI가 고치는 중일 때뿐이다.
-        dirty() { return !!AppEditor.aborter; },
+        // 고친 결과는 바로 반영되므로, 따로 적용할 것은 이 창의 개체를 AI가 고치는 중일 때뿐이다.
+        dirty() { return !!AppEditor.job && !!AppEditor.el && AppEditor.el === AppEditor.job.el; },
         restoreInto() { /* 바로 반영하므로 저장할 때 되돌릴 것이 없다 */ },
+        stop() { if (AppEditor.job) AppEditor.job.controller.abort(); },
 
         async send() {
           const el = AppEditor.el;
-          if (!el || AppEditor.aborter) return;
+          if (!el) return;
+          if (AppEditor.job) { AppEditor.status('다른 개체를 AI가 고치는 중입니다. 끝나면 알려 드리니 그 뒤에 보내 주세요.', 'danger'); return; }
           const request = $('app-request').value.trim();
           if (!request) { AppEditor.status('어떻게 바꿀지 적어 주세요.', 'danger'); $('app-request').focus(); return; }
           if (!Settings.apiKey()) { SettingsModal.open(); return; }
-          if (!await Prompts.ready() || AppEditor.el !== el) return;
+          if (!await Prompts.ready() || AppEditor.el !== el || AppEditor.job) return;
           const before = el.getAttribute('data-code');
           const code = AppKit.decode(before);
-          const controller = new AbortController();
-          AppEditor.aborter = controller;
+          const slide = Editor.current();
+          const job = { el, deck: Editor.deck, slideId: slide.id, app: el.getAttribute('data-app'), before, motion: AppEditor.motion,
+            name: AppEditor.text().name, particle: AppEditor.text().particle, request, controller: new AbortController() };
+          AppEditor.job = job;
+          Editor.syncCurrent(); // 편집 창을 열 때 붙인 이름(data-app)을 장 HTML에도 남긴다(화면을 다시 그려도 이 개체를 찾도록)
+          const say = text => { if (AppEditor.el === job.el) AppEditor.status(text, 'primary'); }; // 이 개체의 편집 창이 열려 있을 때만
           AppEditor.setBusy(true);
-          AppEditor.status('Gemini가 코드를 고치는 중… (Esc: 중단)', 'primary');
+          say('Gemini가 코드를 고치는 중… (Esc: 중단)');
           ObjectPanel.syncDirty();
           let result = null;
           let failure = null;
-          const key = AppEditor.motion ? 'motionRevise' : 'appRevise';
+          const key = job.motion ? 'motionRevise' : 'appRevise';
           // 모션그래픽은 슬라이드 <style>의 키프레임이 SVG 부위(class)를 움직이므로, 그 규칙을 함께 보내 class 이름을 지키게 한다.
-          const slide = Editor.current();
-          const css = AppEditor.motion && slide && slide.css ? slide.css.slice(0, 6000) : '(없음)';
+          const css = job.motion && slide.css ? slide.css.slice(0, 6000) : '(없음)';
           const files = AppEditor.files.slice();
           try {
             // 참고 자료(그림·PDF 등)는 AI 창과 같은 방법으로 읽어 함께 보낸다.
-            const parts = await AiPanel.prepareFiles(files, { set: text => { if (AppEditor.el === el) AppEditor.status(text, 'primary'); } });
-            if (AppEditor.el !== el) return;
-            AppEditor.status('Gemini가 코드를 고치는 중… (Esc: 중단)', 'primary');
+            const parts = await AiPanel.prepareFiles(files, { set: say });
+            say('Gemini가 코드를 고치는 중… (Esc: 중단)');
             result = await Gemini.generateJson({
-              task: (AppEditor.motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드 수정 (개체 편집 창)',
+              task: job.name + ' 코드 수정 (개체 편집 창)',
               model: Settings.model(),
               system: Prompts.text(key + '.system'),
               prompt: Prompts.text(key + '.request', { request, css, code: code || '(아직 코드가 없다. 요청대로 새로 만든다.)' }) + AiPanel.filePrompt(files),
               parts,
               schema: AppEditor.SCHEMA,
-              signal: controller.signal,
-              onProgress: length => { if (AppEditor.el === el) AppEditor.status('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음', 'primary'); }
+              signal: job.controller.signal,
+              onProgress: length => say('Gemini가 코드를 고치는 중… ' + length.toLocaleString('ko-KR') + '자 받음')
             });
           } catch (err) {
             failure = err;
           }
-          if (AppEditor.aborter === controller) AppEditor.aborter = null;
-          if (AppEditor.el !== el) return; // 편집을 끝냈다
-          AppEditor.setBusy(false);
           const next = !failure && result && typeof result.code === 'string' ? result.code.trim() : '';
-          if (!next) {
-            AppEditor.status(failure && failure.aborted ? '중단했습니다.'
-              : '⚠ ' + ((failure && failure.message) || 'AI 응답에 코드가 없습니다. 다시 시도해 주세요.'), 'danger');
-            ObjectPanel.syncDirty();
+          if (next) say('고친 코드를 반영하는 중…');
+          const done = next ? await AppEditor.deliver(job, next) : null;
+          AppEditor.job = null;
+          const stopped = job.controller.signal.aborted;
+          const watching = !!AppEditor.el && (AppEditor.el === job.el || (!!done && AppEditor.el === done.el));
+          if (watching) AppEditor.setBusy(false);
+          ObjectPanel.syncDirty();
+          const where = done ? (done.index + 1) + '번 장 ' + job.name : job.name;
+          if (!done) {
+            const message = stopped ? '중단했습니다.'
+              : !next ? '⚠ ' + ((failure && failure.message) || 'AI 응답에 코드가 없습니다. 다시 시도해 주세요.')
+                : '⚠ 고치던 개체가 지워졌거나 그사이 바뀌어 AI가 고친 결과를 넣지 못했습니다.';
+            if (watching) AppEditor.status(message, 'danger');
+            else if (!stopped && Editor.deck === job.deck) Util.toast(where + ' 고치기: ' + message.replace('⚠ ', ''), 'warning');
             return;
           }
-          AppEditor.setBusy(true);
-          const applied = await AppEditor.setCode(AppKit.encode(AppKit.tidy(next, AppEditor.motion).slice(0, 300000)));
-          if (AppEditor.el !== el) return;
-          AppEditor.setBusy(false);
-          if (!applied) return;
-          AppEditor.history.push(before);
+          // 그 장의 수정 기록에 남긴다(다음 AI 요청의 맥락)
+          AiPanel.remember(job.deck, '[' + job.name + ' 수정] ' + request, request, job.slideId);
+          const summary = result.summary ? ': ' + String(result.summary).slice(0, 120) : '.';
+          if (!watching) {
+            Util.toast(done.error ? where + job.particle + ' 고쳤지만 그리지 못했습니다: ' + done.error + '\n그 개체를 더블클릭해 다시 고쳐 달라고 하거나 Ctrl+Z로 되돌리세요.'
+              : where + job.particle + ' AI가 고쳐 반영했습니다' + summary + '\n마음에 들지 않으면 Ctrl+Z로 되돌릴 수 있습니다.', done.error ? 'warning' : 'success');
+            return;
+          }
+          AppEditor.history.push({ code: before, request });
           $('app-undo').classList.remove('d-none');
           $('app-request').value = '';
-          // 그 장의 수정 기록에 남긴다(다음 AI 요청의 맥락)
-          const text = AppEditor.text();
-          if (Editor.deck) AiPanel.remember(Editor.deck, '[' + text.name + ' 수정] ' + request, request, Editor.current().id);
-          if (!$('app-status').classList.contains('text-danger')) {
-            AppEditor.status('고쳐서 바로 반영했습니다' + (result.summary ? ': ' + String(result.summary).slice(0, 120) : '.') +
-              ' 마음에 들지 않으면 [반영 취소]나 Ctrl+Z로 되돌릴 수 있습니다.', 'success');
-          }
+          if (done.error) AppEditor.status('⚠ 모션그래픽을 그리지 못했습니다: ' + done.error + ' — 다시 고쳐 달라고 요청하거나 [반영 취소]를 누르세요.', 'danger');
+          else AppEditor.status('고쳐서 바로 반영했습니다' + summary + ' 마음에 들지 않으면 [반영 취소]나 Ctrl+Z로 되돌릴 수 있습니다.', 'success');
         },
 
         async undo() {
-          if (!AppEditor.history.length || AppEditor.aborter) return;
+          if (!AppEditor.history.length || AppEditor.job) return;
+          const el = AppEditor.el;
           AppEditor.status('');
-          await AppEditor.setCode(AppEditor.history.pop());
+          const entry = AppEditor.history.pop();
+          await AppEditor.setCode(entry.code);
+          if (AppEditor.el !== el) return; // 그사이 편집 창을 닫았다
           $('app-undo').classList.toggle('d-none', !AppEditor.history.length);
-          if (!$('app-status').classList.contains('text-danger')) AppEditor.status('AI 수정 반영을 취소했습니다.');
+          // 그때 보낸 요청을 입력칸에 되살려 조금만 고쳐 바로 다시 보낼 수 있게 한다(새로 적던 글이 있으면 그대로 둔다).
+          const input = $('app-request');
+          const restored = !input.value.trim() && !!entry.request;
+          if (restored) {
+            input.value = entry.request;
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+          if (!$('app-status').classList.contains('text-danger')) {
+            AppEditor.status('AI 수정 반영을 취소했습니다.' + (restored ? ' 보냈던 요청을 입력칸에 살려 두었습니다. 고쳐서 다시 보내세요(Ctrl+Enter).' : ''));
+          }
         },
 
         apply() { ObjectPanel.close(false); },
 
-        // 편집 창을 닫는다. AI가 고치는 중이면 중단한다(이미 반영한 것은 그대로).
+        // 편집 창을 닫는다. AI가 고치는 중이어도 멈추지 않는다(끝나면 그 개체에 반영하고 알린다).
         finish() {
-          if (AppEditor.aborter) AppEditor.aborter.abort();
-          AppEditor.aborter = null;
           AppEditor.setBusy(false);
           AppEditor.el = null;
           AppEditor.history = [];
@@ -2406,6 +2474,7 @@
 
         // ObjectPanel이 부르는 약속: 고친 결과는 바로 들어가므로 '적용 전'은 AI가 쓰는 중일 때뿐이다.
         dirty() { return !!NotesEditor.aborter; },
+        stop() { if (NotesEditor.aborter) NotesEditor.aborter.abort(); },
         restoreInto() { /* 시나리오 칸은 캔버스 밖이라 할 일 없음 */ },
         apply() { ObjectPanel.close(false); },
         finish() {
@@ -2552,7 +2621,10 @@
         // 고친 결과는 바로 반영되므로 닫을 때 묻지 않는다. AI가 고치는 중이었으면 중단하고 알린다.
         closeNow() {
           if (!ObjectPanel.session) return;
-          if (ObjectPanel.dirty()) Util.toast('AI가 고치던 요청을 중단했습니다. 이미 반영한 내용은 그대로입니다.', 'warning');
+          if (ObjectPanel.dirty()) {
+            if (ObjectPanel.session.editor === AppEditor) Util.toast('AI는 그 개체를 계속 고칩니다. 다른 작업을 하셔도 되고, 끝나면 바로 반영하고 알려 드립니다.\n멈추려면 그 개체를 다시 더블클릭한 뒤 Esc를 누르세요.');
+            else Util.toast('AI가 고치던 요청을 중단했습니다. 이미 반영한 내용은 그대로입니다.', 'warning');
+          }
           ObjectPanel.close(false);
         },
 
@@ -3176,6 +3248,7 @@
         async leave() {
           if (!Editor.deck) return;
           AiPanel.abort();
+          AppEditor.stop(); // 개체를 고치던 AI 요청도 이 슬라이드를 떠나면 멈춘다
           if (document.body.classList.contains('presentation-mode')) Show.exit();
           Editor.deselect();
           Editor.syncCurrent();
@@ -11275,7 +11348,7 @@
         if (key === 'Escape' && ObjectPanel.session && !document.querySelector('.modal.show')) {
           event.preventDefault();
           const editor = ObjectPanel.session.editor;
-          if (editor.aborter) editor.aborter.abort();
+          if (editor.dirty()) editor.stop();
           else ObjectPanel.requestClose();
           return;
         }
