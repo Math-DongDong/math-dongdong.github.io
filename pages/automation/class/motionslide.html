@@ -415,6 +415,9 @@
     .ls-step-label { padding: 0 6px; }
     .ls-step-btn .bi { font-size: 24px; }
     .ls-step-sep { align-self: stretch; width: 2px; margin: 2px 6px; background: #e2e8f0; }
+    .ls-step-toggle { height: 36px; padding: 0 10px; border-radius: 8px; background: #f1f5f9; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+    .ls-step-toggle:hover { background: #e2e8f0; }
+    .ls-step-toggle.on { background: var(--primary); color: #fff; }
 
     /* ---------- 발표 모드 ---------- */
     #show-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; }
@@ -518,13 +521,9 @@
     @media (orientation: landscape) and (max-height: 480px) { .rm-nav .btn { height: 3.2rem; } } /* 휴대폰 가로: 시나리오 칸을 넓게 */
 
     /* ---------- 떠 있는 서식 도구 ---------- */
-    #float-toolbar, #obj-toolbar { position: fixed; z-index: 1500; display: none; align-items: center; gap: 0.2rem; padding: 0.25rem; background: #fff; border: 1px solid var(--line); border-radius: 0.5rem; }
+    #float-toolbar { position: fixed; z-index: 1500; display: none; align-items: center; gap: 0.2rem; padding: 0.25rem; background: #fff; border: 1px solid var(--line); border-radius: 0.5rem; }
     #float-toolbar .form-control-color { width: 2rem; height: 1.8rem; padding: 0.1rem; }
     #fmt-size { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; }
-    /* 그림·영상 서식: 고른 동안 계속 떠 있으므로 열린 창(모달, 1050~)보다는 아래에 둔다 */
-    #obj-toolbar { z-index: 1045; padding: 0.25rem 0.6rem 0.25rem 0.25rem; }
-    #obj-toolbar .form-range { width: 7rem; }
-    #obj-opacity-value { min-width: 2.4rem; text-align: right; font-variant-numeric: tabular-nums; }
 
     /* 알림은 아래 가운데: 오른쪽 AI 창의 입력칸·보내기 단추를 가리지 않게 */
     #toast-area { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 2100; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; max-width: calc(100vw - 2rem); }
@@ -1018,15 +1017,6 @@
     <span class="small" id="fmt-size">40px</span>
     <button type="button" class="btn btn-sm btn-light" data-fmt="bigger" title="글자 크게"><i class="bi bi-plus-lg"></i></button>
     <input type="color" class="form-control form-control-color" id="fmt-color" value="#1f2937" title="글자 색">
-  </div>
-
-  <!-- 그림·영상을 고르면 상자 아래에 뜨는 서식 도구 -->
-  <div id="obj-toolbar" class="shadow" role="toolbar" aria-label="그림·영상 서식">
-    <button type="button" class="btn btn-sm btn-light" id="obj-round" aria-pressed="false" title="모서리를 살짝 둥글게 (다시 누르면 각지게)"><i class="bi bi-app"></i> 둥글게</button>
-    <span class="vr mx-1"></span>
-    <label class="small text-secondary text-nowrap mb-0" for="obj-opacity" title="오른쪽으로 갈수록 연해집니다"><i class="bi bi-circle-half"></i> 투명도</label>
-    <input type="range" class="form-range" id="obj-opacity" min="0" max="90" step="5" value="0">
-    <span class="small" id="obj-opacity-value">0%</span>
   </div>
 
   <!-- AI 설정 모달 -->
@@ -3631,8 +3621,19 @@
             button.innerHTML = '<i class="bi ' + icon + '"></i>';
             return button;
           };
-          chip.append(minus, label, plus, sep,
-            layerButton(1, 'bi-layer-forward', '앞으로 가져오기: 겹친 개체보다 한 칸 앞으로 (Ctrl+])'),
+          chip.append(minus, label, plus, sep);
+          // 그림·영상 하나가 든 상자: 모서리 [둥글게] 켜기·끄기
+          if (Editor.roundTarget(box)) {
+            const round = document.createElement('span');
+            round.className = 'ls-step-toggle';
+            round.dataset.round = '';
+            round.title = '모서리를 살짝 둥글게 (다시 누르면 각지게)';
+            round.innerHTML = '<i class="bi bi-app"></i> 둥글게';
+            const roundSep = document.createElement('span');
+            roundSep.className = 'ls-step-sep';
+            chip.append(round, roundSep);
+          }
+          chip.append(layerButton(1, 'bi-layer-forward', '앞으로 가져오기: 겹친 개체보다 한 칸 앞으로 (Ctrl+])'),
             layerButton(-1, 'bi-layer-backward', '뒤로 보내기: 겹친 개체보다 한 칸 뒤로 (Ctrl+[)'));
           box.append(chip);
           Editor.syncStepChip(box);
@@ -3644,6 +3645,25 @@
           const n = parseInt(box.getAttribute('data-step'), 10) || 0;
           label.textContent = n ? '클릭 ' + n + '번째에 등장' : '처음부터 보임';
           box.querySelector(':scope > .ls-step').classList.toggle('on', !!n);
+          const round = box.querySelector(':scope > .ls-step [data-round]');
+          const el = Editor.roundTarget(box);
+          if (round && el) round.classList.toggle('on', parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0);
+        },
+
+        /* --- 그림·영상 모서리 --- */
+        // 상자에 그림·영상이 하나일 때만 그것을 고친다(여럿 묶인 상자는 어느 것을 바꿀지 알 수 없다).
+        roundTarget(box) {
+          const list = box.querySelectorAll('.editable-image, .editable-video');
+          return list.length === 1 ? list[0] : null;
+        },
+
+        // 각지게 ↔ 살짝 둥글게(16px)
+        toggleRound(box) {
+          const el = Editor.roundTarget(box);
+          if (!el) return;
+          el.style.borderRadius = parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0 ? '0' : '16px';
+          Editor.syncStepChip(box);
+          Editor.commit();
         },
 
         // n: 0이면 처음부터 보임(단계 없음)
@@ -3688,7 +3708,6 @@
           Editor.selected = box;
           box.classList.add('is-selected');
           Editor.addHandles(box);
-          ObjBar.watch(); // 그림·영상이면 서식 막대를 띄운다
         },
 
         deselect() {
@@ -3931,6 +3950,7 @@
           }
           const layerButton = event.target.closest('[data-layer]');
           if (layerButton) { Editor.layer(box, Number(layerButton.dataset.layer)); return; }
+          if (event.target.closest('[data-round]')) { Editor.toggleRound(box); return; }
           if (event.target.closest('.ls-step')) return;
           Editor.select(box);
           Editor.drag(event, box, handle ? handle.dataset.dir || 'se' : null);
@@ -4399,102 +4419,6 @@
           });
           $('fmt-color').addEventListener('input', event => FloatBar.apply({ color: event.target.value }));
           document.addEventListener('selectionchange', FloatBar.onSelection);
-        }
-      };
-
-      /* ===== 9-1. 그림·영상 서식 도구: 모서리(각지게·살짝 둥글게)와 투명도 =====
-         상자를 고른 동안 매 프레임 상자를 따라다닌다(끌기·크기 조절·방향키·화면 크기 변화). 고르기를 풀면 멈춘다. */
-      const ObjBar = {
-        ROUND: '16px',
-        target: null, // 서식을 바꿀 그림·영상(img·video·유튜브 iframe)
-        frame: 0,
-        spot: '',
-
-        // 고른 상자에 그림·영상이 하나일 때만(여럿 묶인 상자는 어느 것을 바꿀지 알 수 없다). 글자 편집 중에는 숨긴다.
-        find() {
-          const box = Editor.selected;
-          if (!box || !box.isConnected || Editor.editing || Router.view !== 'editor' || Show.isOn()) return null;
-          const list = box.querySelectorAll('.editable-image, .editable-video');
-          return list.length === 1 ? list[0] : null;
-        },
-
-        watch() {
-          if (ObjBar.frame) return;
-          const tick = () => {
-            ObjBar.frame = 0;
-            if (!Editor.selected) { ObjBar.hide(); return; }
-            const el = ObjBar.find();
-            if (!el) ObjBar.hide();
-            else {
-              if (el !== ObjBar.target) { ObjBar.target = el; ObjBar.sync(); }
-              ObjBar.place(el.closest('.draggable-box'));
-            }
-            ObjBar.frame = requestAnimationFrame(tick);
-          };
-          ObjBar.frame = requestAnimationFrame(tick);
-        },
-
-        hide() {
-          ObjBar.target = null;
-          ObjBar.spot = '';
-          if ($('obj-toolbar').style.display !== 'none') $('obj-toolbar').style.display = 'none';
-        },
-
-        // 상자 아래(크기 손잡이 밑)에 둔다. 아래에 자리가 없으면 위([클릭 순서] 칩 위)로, 그것도 없으면 상자 안 아래쪽에.
-        place(box) {
-          const bar = $('obj-toolbar');
-          if (bar.style.display !== 'flex') bar.style.display = 'flex';
-          const rect = box.getBoundingClientRect();
-          const scale = Editor.scale || 1;
-          const width = bar.offsetWidth;
-          const height = bar.offsetHeight;
-          const chipsAbove = !box.querySelector(':scope > .ls-step.below');
-          let top = rect.bottom + 22 * scale + 8;
-          if (top + height > window.innerHeight - 8) top = rect.top - (chipsAbove ? 72 * scale : 0) - height - 8;
-          if (top < 8) top = Math.min(rect.bottom, window.innerHeight) - height - 12;
-          const left = Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 8));
-          const spot = Math.round(left) + ',' + Math.round(top);
-          if (spot === ObjBar.spot) return;
-          ObjBar.spot = spot;
-          bar.style.left = Math.round(left) + 'px';
-          bar.style.top = Math.round(top) + 'px';
-        },
-
-        // 막대에 지금 모습(둥근지·투명도)을 보인다.
-        sync() {
-          const style = getComputedStyle(ObjBar.target);
-          const round = parseFloat(style.borderTopLeftRadius) > 0;
-          $('obj-round').classList.toggle('active', round);
-          $('obj-round').setAttribute('aria-pressed', String(round));
-          const opacity = parseFloat(style.opacity);
-          const clear = Math.max(0, Math.min(90, Math.round((1 - (isNaN(opacity) ? 1 : opacity)) * 20) * 5));
-          $('obj-opacity').value = String(clear);
-          $('obj-opacity-value').textContent = clear + '%';
-        },
-
-        toggleRound() {
-          const el = ObjBar.target;
-          if (!el) return;
-          el.style.borderRadius = parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0 ? '0' : ObjBar.ROUND;
-          ObjBar.sync();
-          Editor.commit();
-        },
-
-        // clear: 투명도(%). 0이면 원래대로 선명하게. done이면 되돌리기 기록에 남긴다(끄는 동안에는 보이기만).
-        setClear(clear, done) {
-          const el = ObjBar.target;
-          if (!el) return;
-          clear = Math.max(0, Math.min(90, Number(clear) || 0));
-          el.style.removeProperty('opacity');
-          if (clear || parseFloat(getComputedStyle(el).opacity) < 1) el.style.opacity = String(Math.round(100 - clear) / 100);
-          $('obj-opacity-value').textContent = clear + '%';
-          if (done) Editor.commit();
-        },
-
-        init() {
-          $('obj-round').addEventListener('click', ObjBar.toggleRound);
-          $('obj-opacity').addEventListener('input', event => ObjBar.setClear(event.target.value, false));
-          $('obj-opacity').addEventListener('change', event => ObjBar.setClear(event.target.value, true));
         }
       };
 
@@ -11367,7 +11291,6 @@
 
         wireEditor();
         FloatBar.init();
-        ObjBar.init();
         AiPanel.init();
         AiErrorLog.init();
         DirectInsert.init();
