@@ -1201,6 +1201,7 @@
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>다시 실행</td></tr>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> / <kbd>→</kbd> <kbd>↓</kbd></td><td>이전 / 다음 장 (개체를 고르지 않았을 때)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>현재 쪽부터 청중 화면으로 발표 시작·끝</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>V</kbd> / 끌어다 놓기</td><td>그림·동영상·글자를 지금 장에 바로 넣기 (AI에게 보낼 자료는 AI 창에)</td></tr>
                 </tbody>
               </table>
             </section>
@@ -4030,10 +4031,14 @@
          AI가 만드는 개체와 같은 3계층(.draggable-box > .motion-content > 내용)이라 끌기·크기·클릭 순서·복제가 똑같이 된다.
          그림·영상은 이 브라우저에만 저장되고 Gemini로 보내지 않는다(AI 창의 [삽입]은 AI가 보고 배치하도록 보낸다). */
       const DirectInsert = {
-        // 가운데에 두되, 같은 자리에 이미 상자가 있으면 40px씩 비켜 놓는다(연달아 넣어도 겹치지 않게).
-        spot(width, height) {
+        // 가운데(at이 있으면 그 점이 상자 가운데)에 두되, 같은 자리에 이미 상자가 있으면 40px씩 비켜 놓는다(연달아 넣어도 겹치지 않게).
+        spot(width, height, at) {
           let left = Math.round((CANVAS_W - width) / 2);
           let top = Math.max(40, Math.round((CANVAS_H - height) / 2));
+          if (at) {
+            left = Math.round(Math.min(Math.max(0, at.x - width / 2), Math.max(0, CANVAS_W - width)));
+            top = Math.round(Math.min(Math.max(0, at.y - height / 2), Math.max(0, CANVAS_H - height)));
+          }
           const taken = new Set(Array.from($('slide-canvas').querySelectorAll(':scope > .draggable-box'))
             .map(box => Math.round(parseFloat(box.style.left) || 0) + ',' + Math.round(parseFloat(box.style.top) || 0)));
           while (taken.has(left + ',' + top) && top < CANVAS_H - 80) { left += 40; top += 40; }
@@ -4041,11 +4046,11 @@
         },
 
         // 상자를 만들어 지금 장 맨 위에 넣고 고른 상태로 둔다.
-        place(content, width, height) {
+        place(content, width, height, at) {
           if (!Editor.deck) return null;
           ObjectPanel.closeNow(); // 개체 편집 창은 지금 모습 그대로 닫는다
           Editor.deselect();
-          const { left, top } = DirectInsert.spot(width, height);
+          const { left, top } = DirectInsert.spot(width, height, at);
           const box = document.createElement('div');
           box.className = 'draggable-box';
           box.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + Math.round(width) + 'px;';
@@ -4060,17 +4065,43 @@
           return box;
         },
 
-        text() {
+        // pasted: 캔버스에 붙여 넣은 글자(있으면 그 글로 글상자를 만들고 고른 상태로 둔다)
+        text(pasted) {
           const el = document.createElement('div');
           el.className = 'editable-text';
-          el.style.cssText = 'font-size:44px;line-height:1.5;';
-          el.textContent = '글자를 입력하세요';
-          const box = DirectInsert.place(el, 800, 80);
-          if (box) Editor.startEditing(el); // 넣자마자 입력: 안내 글이 골라져 있어 바로 타이핑하면 바뀐다
+          const lines = pasted ? String(pasted).replace(/\r\n?/g, '\n').slice(0, 5000).split('\n') : null;
+          const long = lines && (lines.length > 2 || pasted.length > 60);
+          el.style.cssText = 'font-size:' + (long ? 28 : 44) + 'px;line-height:1.5;';
+          if (!lines) el.textContent = '글자를 입력하세요';
+          else lines.forEach((line, i) => { if (i) el.append(document.createElement('br')); el.append(line); });
+          const box = DirectInsert.place(el, 800, long ? 42 * lines.length : 80);
+          if (box && !lines) Editor.startEditing(el); // 넣자마자 입력: 안내 글이 골라져 있어 바로 타이핑하면 바뀐다
+        },
+
+        // 끌어다 놓은 자리(화면 좌표 → 캔버스 좌표). 캔버스 밖이면 null(가운데에 넣는다).
+        pointFrom(event) {
+          const rect = $('slide-canvas').getBoundingClientRect();
+          const scale = Editor.scale || 1;
+          const x = (event.clientX - rect.left) / scale;
+          const y = (event.clientY - rect.top) / scale;
+          return x >= 0 && y >= 0 && x <= CANVAS_W && y <= CANVAS_H ? { x, y } : null;
+        },
+
+        // 붙여 넣거나 끌어다 놓은 파일들: 그림은 모두, 동영상은 하나씩 넣는다.
+        async files(list, at) {
+          list = Array.from(list || []);
+          const images = list.filter(file => file.type.startsWith('image/'));
+          const videos = list.filter(file => file.type.startsWith('video/'));
+          if (!images.length && !videos.length) {
+            if (list.length) Util.toast('그림(PNG·JPG·GIF·WEBP)과 동영상(MP4·WEBM)만 슬라이드에 바로 넣을 수 있습니다.', 'warning');
+            return;
+          }
+          await DirectInsert.images(images, at);
+          for (const file of videos) await DirectInsert.video(file, at);
         },
 
         // 여러 장을 한 번에 고를 수 있다. 원래 비율 그대로, 화면의 절반 남짓(가로 960 · 세로 760 안쪽)으로 맞춘다.
-        async images(files) {
+        async images(files, at) {
           for (const file of Array.from(files || [])) {
             try {
               const image = await readImage(file);
@@ -4080,7 +4111,7 @@
               img.src = image.url;
               img.alt = '';
               img.style.cssText = 'display:block;width:100%;';
-              DirectInsert.place(img, Math.max(80, image.width * ratio), image.height * ratio);
+              DirectInsert.place(img, Math.max(80, image.width * ratio), image.height * ratio, at);
             } catch (err) {
               Util.toast((file.name ? file.name + ': ' : '') + err.message, 'warning');
             }
@@ -4088,7 +4119,7 @@
         },
 
         // 직접 넣은 영상은 발표 중에 선생님이 재생하도록 재생 막대를 두고 소리를 켠다(AI가 넣는 꾸밈 영상은 자동 반복·무음).
-        async video(file) {
+        async video(file, at) {
           if (!file) return;
           try {
             const video = document.createElement('video');
@@ -4098,7 +4129,7 @@
             video.setAttribute('playsinline', '');
             video.setAttribute('preload', 'metadata');
             video.style.cssText = 'display:block;width:100%;border-radius:12px;background:#000;';
-            DirectInsert.place(video, 960, 540);
+            DirectInsert.place(video, 960, 540, at);
           } catch (err) {
             Util.toast((file.name ? file.name + ': ' : '') + err.message, 'warning');
           }
@@ -10681,18 +10712,25 @@
         });
         canvas.addEventListener('drop', event => { if (Editor.editing) event.preventDefault(); });
 
-        // 그림 붙여넣기·끌어다 놓기
+        // 캔버스에 붙여넣기·끌어다 놓기 → 지금 장에 바로 넣는다(직접 삽입). AI에게 보낼 자료는 AI 창에 붙여 넣거나 끌어다 놓는다.
         document.addEventListener('paste', event => {
-          if (Router.view !== 'editor' || Editor.editing || Show.isOn()) return;
-          if (event.target.closest && event.target.closest('input, textarea, [contenteditable="true"]')) return;
-          const file = Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/'));
-          if (file) { event.preventDefault(); AiPanel.stageImage(file); }
+          if (Router.view !== 'editor' || Editor.editing || Show.isOn() || document.querySelector('.modal.show')) return;
+          const target = event.target.closest ? event.target : document.body;
+          if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+          const files = Array.from(event.clipboardData.files || []);
+          if (target.closest('#ai-panel')) { // AI 창에 초점이 있으면 지금처럼 AI 자료로 담는다
+            if (files.length && $('ai-panel').dataset.view !== 'obj') { event.preventDefault(); AiPanel.addFiles(files); }
+            return;
+          }
+          if (files.length) { event.preventDefault(); DirectInsert.files(files); return; }
+          const text = event.clipboardData.getData('text/plain');
+          if (text.trim()) { event.preventDefault(); DirectInsert.text(text.trim()); }
         });
         $('stage-host').addEventListener('dragover', event => event.preventDefault());
         $('stage-host').addEventListener('drop', event => {
           event.preventDefault();
-          const file = Array.from(event.dataTransfer.files || []).find(item => item.type.startsWith('image/'));
-          if (file) AiPanel.stageImage(file);
+          if (Router.view !== 'editor' || Show.isOn() || !event.dataTransfer.files.length) return;
+          DirectInsert.files(event.dataTransfer.files, DirectInsert.pointFrom(event));
         });
 
         new ResizeObserver(() => Editor.fit()).observe($('stage-host'));
