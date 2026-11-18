@@ -1921,11 +1921,9 @@
         // mode: 'edit'·'show'면 실행하고, 'static'(썸네일·PDF)이면 자리표시만 둔다.
         hydrate(canvas, mode) {
           const doc = canvas.ownerDocument;
+          if (mode === 'show') AppKit.passClicks(canvas);
           canvas.querySelectorAll('.app-frame').forEach(host => {
             const code = AppKit.decode(host.getAttribute('data-code'));
-            // 발표 화면에서는 장식 상자에 가려 클릭이 막히지 않게 맨 앞으로 올린다.
-            const box = host.closest('.draggable-box');
-            if (mode === 'show' && box) box.style.zIndex = '1000';
             if (mode === 'static' || !code) {
               const holder = doc.createElement('div');
               holder.className = 'app-placeholder';
@@ -1940,6 +1938,20 @@
             frame.setAttribute('title', '인터랙티브 요소');
             frame.srcdoc = AppKit.doc(code);
             host.replaceChildren(frame);
+          });
+        },
+
+        // 발표 화면: 편집 화면에서 정한 앞뒤 순서는 그대로 보이고, 인터랙티브 요소보다 앞에 놓인 상자는 클릭만 통과시켜 요소 조작을 막지 않는다.
+        // (링크·영상·버튼처럼 자기도 눌러야 하는 상자는 그대로 둔다. 내보내기처럼 문서에 붙지 않은 칸은 인라인 z-index로 순서를 센다.)
+        passClicks(canvas) {
+          const view = canvas.ownerDocument.defaultView;
+          const zOf = el => Number((canvas.isConnected && view ? view.getComputedStyle(el) : el.style).zIndex) || 0; // auto → 0
+          const order = Array.from(canvas.querySelectorAll(':scope > .draggable-box'))
+            .map((el, i) => ({ el, i, z: zOf(el) })).sort((a, b) => a.z - b.z || a.i - b.i).map(item => item.el);
+          const lowest = order.findIndex(el => el.querySelector('.app-frame'));
+          if (lowest < 0) return;
+          order.slice(lowest + 1).forEach(el => {
+            if (!el.querySelector('.app-frame, iframe, video, audio, a[href], button, input, select, textarea')) el.style.pointerEvents = 'none';
           });
         },
 
