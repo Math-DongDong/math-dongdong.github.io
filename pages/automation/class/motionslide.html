@@ -1239,10 +1239,9 @@
                   <tr><td class="text-nowrap"><kbd>→</kbd> <kbd>↓</kbd> <kbd>Space</kbd> <kbd>Enter</kbd> / 화면 클릭</td><td>다음 단계 (단계를 다 보이면 다음 장)</td></tr>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>Backspace</kbd></td><td>이전 단계 (없으면 이전 장)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Home</kbd> / <kbd>End</kbd></td><td>첫 장 / 마지막 장</td></tr>
-                  <tr><td class="text-nowrap"><kbd>H</kbd></td><td>하이라이트 켜기·끄기 (마우스 둘레만 밝게)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>+</kbd> / <kbd>-</kbd></td><td>하이라이트 범위 키우기 / 줄이기</td></tr>
+                  <tr><td class="text-nowrap"><kbd>H</kbd> / <kbd>P</kbd></td><td>하이라이트 / 레이저 포인터 켜기·끄기
+                    <div class="text-muted mt-1"><b>H 하이라이트</b>: 마우스 둘레만 밝게, 나머지는 어둡게 (모든 발표 화면)<br><b>P 레이저</b>: 내 마우스 위치를 청중 화면에 빨간 점으로 (발표자 보기, 처음엔 켜짐)</div></td></tr>
                   <tr><td class="text-nowrap"><kbd>F</kbd></td><td>전체 화면 켜기·끄기 (발표자 보기: 청중 창을 프로젝터 화면으로 옮긴 뒤 그 창에서 누르기)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>P</kbd></td><td>레이저 포인터 켜기·끄기 (발표자 보기: 내 마우스 위치를 청중 화면에 빨간 점으로, 처음엔 켜짐)</td></tr>
                   <tr><td class="text-nowrap"><kbd>S</kbd></td><td>함께 보기 학생 화면 멈추기·다시 보이기 (발표자 보기, 실시간 페이지에서만)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>발표 끝내기</td></tr>
                 </tbody>
@@ -4643,11 +4642,6 @@
             event.preventDefault();
             Show.toggleFullscreen(event.target.ownerDocument || event.target);
           }
-          else if ((key === '+' || key === '-') && Show.spot && !event.ctrlKey && !event.metaKey) {
-            event.preventDefault();
-            Show.spotRadius = spotResize(Show.spotRadius, key === '+' ? 1 : -1);
-            Show.applySpot();
-          }
         }
       };
 
@@ -7036,11 +7030,6 @@
         dot.style.top = Math.round(pos.y * 1080) + 'px';
       }
 
-      // 하이라이트 크기: dir 1이면 키우고 -1이면 줄인다.
-      function spotResize(radius, dir) {
-        return Math.max(70, Math.min(700, (radius || 190) + dir * 40));
-      }
-
       // 화면의 마우스 위치를 슬라이드 안 비율로 바꾼다(슬라이드 밖이면 null).
       function canvasPoint(canvas, event) {
         var rect = canvas.getBoundingClientRect();
@@ -7086,10 +7075,10 @@
         var send = function (message) { try { parent.postMessage(message, '*'); } catch (err) { /* 무시 */ } };
         // 칸 안을 누른 뒤에도 Esc로 발표를 끝낼 수 있게 바깥에 알린다.
         window.addEventListener('keydown', function (e) { if (e.isTrusted && e.key === 'Escape') send({ lsApp: 'escape' }); }, true);
-        // 칸 안을 누른 뒤에도 방향키·PageUp/PageDown(발표용 리모컨)·Home/End로 장을 넘기고, H·+·-로 하이라이트를 다룰 수 있게 바깥에 알린다.
+        // 칸 안을 누른 뒤에도 방향키·PageUp/PageDown(발표용 리모컨)·Home/End로 장을 넘기고, H·P로 하이라이트·레이저를 다룰 수 있게 바깥에 알린다.
         // 칸의 코드가 그 키를 직접 쓰면(preventDefault) 넘기지 않고, 입력칸·슬라이더·버튼 등에 초점이 있을 때도 넘기지 않는다.
-        // H(한글 자판 ㅗ)·+·-는 하이라이트 켜기/끄기·크기 조절 키, P(ㅔ)는 레이저 포인터 켜기/끄기 키다.
-        var NAV_KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'h', 'H', 'ㅗ', '+', '-', 'p', 'P', 'ㅔ'];
+        // H(한글 자판 ㅗ)는 하이라이트 켜기/끄기, P(ㅔ)는 레이저 포인터 켜기/끄기 키다.
+        var NAV_KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'h', 'H', 'ㅗ', 'p', 'P', 'ㅔ'];
         window.addEventListener('keydown', function (e) {
           if (!e.isTrusted || e.defaultPrevented || NAV_KEYS.indexOf(e.key) < 0 || e.ctrlKey || e.metaKey || e.altKey) return;
           var el = e.target;
@@ -7476,7 +7465,6 @@
           else if (k === 'End') nav.go(slides.length - 1);
           else if ((k === 'h' || k === 'H' || k === 'ㅗ') && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); nav.spot(); }
           else if ((k === 'p' || k === 'P' || k === 'ㅔ') && nav.laser && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); nav.laser(); }
-          else if ((k === '+' || k === '-') && !event.ctrlKey && !event.metaKey && nav.spotSize(k === '+' ? 1 : -1)) event.preventDefault();
           else if (k === 'f' || k === 'F' || k === 'ㄹ') {
             if (doc.fullscreenElement) doc.exitFullscreen();
             else if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
@@ -7521,8 +7509,7 @@
               if (step > 0) { step--; applySteps(document.getElementById('a-canvas'), step, false); counter(); }
               else go(index - 1, true);
             },
-            spot: function () { spotOn = !spotOn; showSpot(); },
-            spotSize: function (dir) { if (!spotOn) return false; spotRadius = spotResize(spotRadius, dir); showSpot(); return true; }
+            spot: function () { spotOn = !spotOn; showSpot(); }
           };
           var audienceMedia = createMediaSync(window, null);
           document.addEventListener('keydown', function (event) { onKey(event, document, nav); });
@@ -7630,7 +7617,6 @@
             next: function () { if (step < maxStep) { step++; showStep(true); } else go(index + 1); },
             prev: function () { if (step > 0) { step--; showStep(false); } else go(index - 1, true); },
             spot: function () { spotOn = !spotOn; if (!spotOn) spotPos = null; showSpot(); showLaser(); },
-            spotSize: function (dir) { if (!spotOn) return false; spotRadius = spotResize(spotRadius, dir); showSpot(); return true; },
             laser: function () { laserOn = !laserOn; showLaser(); }
           };
           function openAudience() {
@@ -7740,7 +7726,7 @@
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
-            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + stepBadge.toString() + '\n' + spotlight.toString() + '\n' + laserDot.toString() + '\n' + spotResize.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + stepBadge.toString() + '\n' + spotlight.toString() + '\n' + laserDot.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
         },
 
         download(kind) {
