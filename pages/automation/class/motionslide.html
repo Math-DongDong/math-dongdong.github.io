@@ -418,6 +418,14 @@
     .ls-step-toggle { height: 36px; padding: 0 10px; border-radius: 8px; background: #f1f5f9; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
     .ls-step-toggle:hover { background: #e2e8f0; }
     .ls-step-toggle.on { background: var(--primary); color: #fff; }
+    /* 여러 개 고르기: 묶음 테두리, 도구 칩(그룹·맞춤), 끌어 고르기 사각형 (캔버스 크기 단위) */
+    .multi-layer { position: absolute; inset: 0; z-index: 19; pointer-events: none; }
+    .ls-multi-frame { position: absolute; outline: 3px dashed var(--primary); outline-offset: 12px; }
+    .ls-marquee { position: absolute; border: 3px solid var(--primary); background: rgba(37, 99, 235, 0.08); }
+    .ls-multi-chip { position: absolute; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 10px; transform: translateY(-100%);
+      background: #fff; border: 3px solid var(--primary); font: 600 22px/1.2 Pretendard, sans-serif; color: #475569; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); pointer-events: auto; cursor: default; }
+    .ls-multi-chip.below { transform: none; }
+    .ls-multi-count { padding: 0 8px; color: var(--primary); }
 
     /* ---------- 발표 모드 ---------- */
     #show-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; }
@@ -691,6 +699,7 @@
             <div class="stage-scaler" id="stage-scaler">
               <div class="slide-canvas" id="slide-canvas"></div>
               <div class="snap-guides" id="snap-guides" aria-hidden="true"></div><!-- 끌 때 보조선(캔버스 밖이라 저장되지 않는다) -->
+              <div class="multi-layer" id="multi-layer"></div><!-- 여러 개 고르기: 묶음 테두리·도구 칩·끌어 고르기 사각형(저장되지 않는다) -->
             </div>
           </div>
           <div class="notes-pane">
@@ -1241,6 +1250,8 @@
                   <tr><td class="text-nowrap"><kbd>Delete</kbd></td><td>개체 삭제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>개체 복제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>]</kbd> / <kbd>Ctrl</kbd>+<kbd>[</kbd></td><td>겹친 개체보다 한 칸 앞으로 / 뒤로 (고른 개체 위 <i class="bi bi-layer-forward"></i> <i class="bi bi-layer-backward"></i>)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Shift</kbd>+클릭 / 빈 곳에서 끌기</td><td>여러 개 고르기 (함께 옮기기·지우기·복제·맞춤) · <kbd>Ctrl</kbd>+<kbd>A</kbd> 모두 고르기</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>G</kbd></td><td>여러 개 고른 개체를 그룹으로 묶기</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></td><td>그룹 해제 (묶인 제목·카드를 따로따로)</td></tr>
                   <tr><td class="text-nowrap"><kbd>1</kbd> ~ <kbd>9</kbd> / <kbd>0</kbd></td><td>발표 중 몇 번째 클릭에 나타날지 / 처음부터 보임</td></tr>
                 </tbody>
@@ -1252,12 +1263,10 @@
                 <tbody>
                   <tr><td class="text-nowrap"><kbd>→</kbd> <kbd>↓</kbd> <kbd>Space</kbd> <kbd>Enter</kbd> / 화면 클릭</td><td>다음 단계 (단계를 다 보이면 다음 장)</td></tr>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>Backspace</kbd></td><td>이전 단계 (없으면 이전 장)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>Home</kbd> / <kbd>End</kbd></td><td>첫 장 / 마지막 장</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Home</kbd> / <kbd>End</kbd> / <kbd>Esc</kbd></td><td>첫 장 / 마지막 장 / 발표 끝내기</td></tr>
                   <tr><td class="text-nowrap"><kbd>H</kbd> / <kbd>P</kbd></td><td>하이라이트 / 레이저 포인터 켜기·끄기
                     <div class="text-muted mt-1"><b>H 하이라이트</b>: 마우스 둘레만 밝게, 나머지는 어둡게 (모든 발표 화면)<br><b>P 레이저</b>: 내 마우스 위치를 청중 화면에 빨간 점으로 (발표자 보기, 처음엔 켜짐)</div></td></tr>
                   <tr><td class="text-nowrap"><kbd>F</kbd></td><td>전체 화면 켜기·끄기 (발표자 보기: 청중 창을 프로젝터 화면으로 옮긴 뒤 그 창에서 누르기)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>S</kbd></td><td>함께 보기 학생 화면 멈추기·다시 보이기 (발표자 보기, 실시간 페이지에서만)</td></tr>
-                  <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>발표 끝내기</td></tr>
                 </tbody>
               </table>
             </section>
@@ -2941,8 +2950,9 @@
           return { left, top, width, height, right: left + width, bottom: top + height, cx: left + width / 2, cy: top + height / 2 };
         },
 
-        // 끌기 시작할 때 한 번: 옮길 상자와 다른 상자들의 자리를 재 둔다.
-        begin(box) {
+        // 끌기 시작할 때 한 번: 옮길 상자(여럿이면 모두를 감싸는 테두리)와 다른 상자들의 자리를 재 둔다.
+        begin(target) {
+          const list = Array.isArray(target) ? target : [target];
           const canvas = $('slide-canvas');
           const scale = Editor.scale || 1;
           const origin = canvas.getBoundingClientRect();
@@ -2951,9 +2961,13 @@
             return SnapGuides.frame((rect.left - origin.left) / scale, (rect.top - origin.top) / scale, rect.width / scale, rect.height / scale);
           };
           const others = Array.from(canvas.querySelectorAll('.draggable-box'))
-            .filter(el => !el.contains(box) && !box.contains(el) && el.getClientRects().length)
+            .filter(el => !list.some(box => el.contains(box) || box.contains(el)) && el.getClientRects().length)
             .map(measure);
-          return { scale, limit: SnapGuides.RANGE / scale, box: measure(box), others };
+          const frames = list.map(measure);
+          const left = Math.min(...frames.map(f => f.left));
+          const top = Math.min(...frames.map(f => f.top));
+          const box = SnapGuides.frame(left, top, Math.max(...frames.map(f => f.right)) - left, Math.max(...frames.map(f => f.bottom)) - top);
+          return { scale, limit: SnapGuides.RANGE / scale, box, others };
         },
 
         // 같은 줄(가로면 위아래가 겹치는) 상자 중 바로 앞·뒤 것. 없으면 슬라이드 끝.
@@ -3343,6 +3357,8 @@
           if (ObjectPanel.session && ObjectPanel.session.editor === NotesEditor) NotesEditor.slideChanged();
           else ObjectPanel.close(false);
           Editor.selected = null;
+          Editor.multi = [];
+          $('multi-layer').replaceChildren();
           Editor.editing = null;
           FloatBar.hide();
           SlideView.fill(canvas, slide, 'edit');
@@ -3582,7 +3598,10 @@
           Editor.addStepChip(box);
           if (Editor.groupParts(box).length < 2) return;
           const ungroup = document.createElement('span');
-          ungroup.className = 'ls-ungroup' + ((parseFloat(box.style.top) || 0) < 80 ? ' below' : '');
+          // 폭이 좁은 상자는 [클릭 순서] 칩과 겹치지 않게 반대쪽(위·아래)에 둔다.
+          const stepBelow = (parseFloat(box.style.top) || 0) < 80;
+          const narrow = box.getBoundingClientRect().width / (Editor.scale || 1) < 760;
+          ungroup.className = 'ls-ungroup' + (stepBelow !== narrow ? ' below' : '');
           ungroup.contentEditable = 'false';
           ungroup.title = '묶인 개체를 하나씩 따로 움직이게 나눕니다 (Ctrl+Shift+G)';
           ungroup.textContent = '그룹 해제';
@@ -3703,7 +3722,7 @@
         },
 
         select(box) {
-          if (Editor.selected === box) return;
+          if (Editor.selected === box && !Editor.multi.length) return;
           Editor.deselect();
           Editor.selected = box;
           box.classList.add('is-selected');
@@ -3719,6 +3738,277 @@
             Editor.removeHandles(box);
           }
           Editor.selected = null;
+          Editor.clearMulti();
+        },
+
+        /* --- 여러 개 고르기 --- */
+        // Shift·Ctrl+클릭으로 더하고 빼기, 빈 곳에서 끌어 사각형으로 고르기, Ctrl+A로 모두 고르기.
+        // 둘 이상이면 Editor.selected(하나) 대신 Editor.multi에 담고, 묶음 위에 [N개 · 그룹 · 맞춤] 칩을 띄운다.
+        multi: [],
+
+        pick(list) {
+          list = list.filter((box, i) => box && box.isConnected && list.indexOf(box) === i);
+          if (list.length < 2) {
+            if (list.length) Editor.select(list[0]);
+            else Editor.deselect();
+            return;
+          }
+          Editor.deselect();
+          Editor.multi = list;
+          list.forEach(box => box.classList.add('is-selected'));
+          Editor.drawMulti();
+        },
+
+        clearMulti() {
+          Editor.multi.forEach(box => box.classList.remove('is-selected'));
+          Editor.multi = [];
+          $('multi-layer').replaceChildren();
+        },
+
+        // Shift·Ctrl+클릭: 고른 묶음에 넣거나 뺀다.
+        togglePick(box) {
+          const list = Editor.multi.length ? Editor.multi.slice() : (Editor.selected ? [Editor.selected] : []);
+          const at = list.indexOf(box);
+          if (at >= 0) list.splice(at, 1);
+          else list.push(box);
+          Editor.pick(list);
+        },
+
+        selectAll() {
+          Editor.pick(Array.from($('slide-canvas').querySelectorAll(':scope > .draggable-box')).filter(box => box.getClientRects().length));
+        },
+
+        // 상자들을 모두 감싸는 테두리(캔버스 좌표)
+        frameOf(list) {
+          const origin = $('slide-canvas').getBoundingClientRect();
+          const scale = Editor.scale || 1;
+          const rects = list.map(box => box.getBoundingClientRect());
+          const left = (Math.min(...rects.map(r => r.left)) - origin.left) / scale;
+          const top = (Math.min(...rects.map(r => r.top)) - origin.top) / scale;
+          const right = (Math.max(...rects.map(r => r.right)) - origin.left) / scale;
+          const bottom = (Math.max(...rects.map(r => r.bottom)) - origin.top) / scale;
+          return { left, top, right, bottom, width: right - left, height: bottom - top };
+        },
+
+        drawMulti() {
+          const layer = $('multi-layer');
+          if (Editor.multi.length < 2) { layer.replaceChildren(); return; }
+          const f = Editor.frameOf(Editor.multi);
+          const frame = document.createElement('div');
+          frame.className = 'ls-multi-frame';
+          Object.assign(frame.style, { left: f.left + 'px', top: f.top + 'px', width: f.width + 'px', height: f.height + 'px' });
+          const below = f.top < 90;
+          const chip = document.createElement('div');
+          chip.className = 'ls-multi-chip' + (below ? ' below' : '');
+          chip.style.left = Math.max(0, Math.min(f.left, CANVAS_W - 600)) + 'px';
+          chip.style.top = (below ? f.bottom + 22 : f.top - 22) + 'px';
+          const count = document.createElement('span');
+          count.className = 'ls-multi-count';
+          count.textContent = Editor.multi.length + '개 선택';
+          const group = document.createElement('span');
+          group.className = 'ls-step-toggle';
+          group.dataset.multi = 'group';
+          group.title = '고른 개체를 그룹으로 묶기 (Ctrl+G)';
+          group.innerHTML = '<i class="bi bi-collection"></i> 그룹';
+          const sep = () => { const el = document.createElement('span'); el.className = 'ls-step-sep'; return el; };
+          const aligns = [['left', 'bi-align-start', '왼쪽 맞춤'], ['center', 'bi-align-center', '가운데 맞춤(가로)'], ['right', 'bi-align-end', '오른쪽 맞춤'],
+            ['top', 'bi-align-top', '위쪽 맞춤'], ['middle', 'bi-align-middle', '가운데 맞춤(세로)'], ['bottom', 'bi-align-bottom', '아래쪽 맞춤']].map(([side, icon, title]) => {
+            const button = document.createElement('span');
+            button.className = 'ls-step-btn';
+            button.dataset.multi = 'align-' + side;
+            button.title = title + ' (고른 개체 전체 테두리 기준)';
+            button.innerHTML = '<i class="bi ' + icon + '"></i>';
+            return button;
+          });
+          chip.append(count, sep(), group, sep(), ...aligns);
+          layer.replaceChildren(frame, chip);
+        },
+
+        multiAction(action) {
+          if (Editor.multi.length < 2) return;
+          if (action === 'group') Editor.group();
+          else if (action.startsWith('align-')) Editor.align(action.slice(6));
+        },
+
+        // 고른 개체 전체를 감싸는 테두리의 한쪽 끝(또는 가운데)에 맞춘다.
+        align(side) {
+          const list = Editor.multi.slice();
+          const f = Editor.frameOf(list);
+          const origin = $('slide-canvas').getBoundingClientRect();
+          const scale = Editor.scale || 1;
+          list.forEach(box => {
+            Editor.bakePosition(box);
+            const r = box.getBoundingClientRect();
+            const left = (r.left - origin.left) / scale;
+            const top = (r.top - origin.top) / scale;
+            const width = r.width / scale;
+            const height = r.height / scale;
+            let dx = 0;
+            let dy = 0;
+            if (side === 'left') dx = f.left - left;
+            if (side === 'center') dx = f.left + f.width / 2 - (left + width / 2);
+            if (side === 'right') dx = f.right - (left + width);
+            if (side === 'top') dy = f.top - top;
+            if (side === 'middle') dy = f.top + f.height / 2 - (top + height / 2);
+            if (side === 'bottom') dy = f.bottom - (top + height);
+            box.style.left = Math.round((parseFloat(box.style.left) || 0) + dx) + 'px';
+            box.style.top = Math.round((parseFloat(box.style.top) || 0) + dy) + 'px';
+          });
+          Editor.drawMulti();
+          Editor.commit();
+        },
+
+        // 빈 곳에서 끌면 사각형 안에 다 들어온 개체를 고른다(Shift·Ctrl을 누른 채면 지금 고른 것에 더한다). 끌지 않고 떼면 고르기를 푼다.
+        marquee(event) {
+          const add = event.shiftKey || event.ctrlKey || event.metaKey;
+          const before = add ? (Editor.multi.length ? Editor.multi.slice() : (Editor.selected ? [Editor.selected] : [])) : [];
+          if (!add) Editor.deselect();
+          const canvas = $('slide-canvas');
+          const scale = Editor.scale || 1;
+          const origin = canvas.getBoundingClientRect();
+          const point = ev => ({ x: (ev.clientX - origin.left) / scale, y: (ev.clientY - origin.top) / scale });
+          const start = point(event);
+          const band = document.createElement('div');
+          band.className = 'ls-marquee';
+          let area = null;
+          const move = ev => {
+            const p = point(ev);
+            if (!area && Math.abs(p.x - start.x) * scale < 4 && Math.abs(p.y - start.y) * scale < 4) return;
+            if (!area) $('multi-layer').append(band);
+            area = { left: Math.min(start.x, p.x), top: Math.min(start.y, p.y), right: Math.max(start.x, p.x), bottom: Math.max(start.y, p.y) };
+            Object.assign(band.style, { left: area.left + 'px', top: area.top + 'px', width: area.right - area.left + 'px', height: area.bottom - area.top + 'px' });
+          };
+          const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+            band.remove();
+            if (!area) return;
+            const inside = Array.from(canvas.querySelectorAll(':scope > .draggable-box')).filter(box => {
+              if (!box.getClientRects().length) return false;
+              const r = box.getBoundingClientRect();
+              return (r.left - origin.left) / scale >= area.left && (r.right - origin.left) / scale <= area.right &&
+                (r.top - origin.top) / scale >= area.top && (r.bottom - origin.top) / scale <= area.bottom;
+            });
+            Editor.pick(before.concat(inside));
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+          window.addEventListener('pointercancel', up);
+        },
+
+        // 고른 개체들을 함께 옮긴다(보조선은 묶음 테두리 기준). 끌지 않고 떼면 누른 개체 하나만 고른다.
+        dragMulti(event, box) {
+          const list = Editor.multi.slice();
+          const scale = Editor.scale || 1;
+          list.forEach(item => Editor.bakePosition(item));
+          const starts = list.map(item => ({ item, left: parseFloat(item.style.left) || 0, top: parseFloat(item.style.top) || 0 }));
+          const guides = SnapGuides.begin(list);
+          const start = { x: event.clientX, y: event.clientY };
+          let moved = false;
+          const move = ev => {
+            const dx = (ev.clientX - start.x) / scale;
+            const dy = (ev.clientY - start.y) / scale;
+            if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+            moved = true;
+            const snapped = SnapGuides.snap(guides, dx, dy, ev.altKey);
+            starts.forEach(s => {
+              s.item.style.left = Math.round(s.left + snapped.dx) + 'px';
+              s.item.style.top = Math.round(s.top + snapped.dy) + 'px';
+            });
+            Editor.drawMulti();
+          };
+          const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+            SnapGuides.clear();
+            if (moved) Editor.commit();
+            else Editor.select(box);
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+          window.addEventListener('pointercancel', up);
+        },
+
+        /* --- 그룹으로 묶기 --- */
+        // 고른 개체들을 상자 하나(.motion-content.box-group)로 묶는다. 안쪽 개체(.box-group-item)는 지금 자리·크기·등장 효과 그대로 두고,
+        // 그룹 해제(Ctrl+Shift+G)로 원래 상자들로 되돌린다. 클릭 순서는 가장 먼저 나오는 것으로 합친다.
+        group() {
+          const list = Editor.multi.slice();
+          if (list.length < 2) { Util.toast('그룹으로 묶으려면 Shift+클릭이나 빈 곳에서 끌어 두 개 이상 고르세요.', 'warning'); return; }
+          const canvas = $('slide-canvas');
+          const scale = Editor.scale || 1;
+          list.forEach(box => Editor.bakePosition(box));
+          const boxes = Array.from(canvas.querySelectorAll(':scope > .draggable-box'));
+          const zOf = el => Number(getComputedStyle(el).zIndex) || 0;
+          const layered = list.some(el => getComputedStyle(el).zIndex !== 'auto');
+          const order = list.slice().sort((a, b) => zOf(a) - zOf(b) || boxes.indexOf(a) - boxes.indexOf(b)); // 뒤 → 앞
+          const f = Editor.frameOf(list);
+          const left = Math.round(f.left);
+          const top = Math.round(f.top);
+          const widths = order.map(box => box.style.width || Math.round(box.getBoundingClientRect().width / scale) + 'px');
+          const steps = list.map(box => parseInt(box.getAttribute('data-step'), 10) || 0);
+          const step = Math.min(...steps);
+
+          const group = document.createElement('div');
+          group.className = 'draggable-box';
+          group.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + Math.round(f.width) + 'px;';
+          if (layered) group.style.zIndex = String(Math.max(...list.map(zOf)));
+          if (step) group.setAttribute('data-step', String(step));
+          const inner = document.createElement('div');
+          inner.className = 'motion-content box-group';
+          inner.style.cssText = 'position:relative;height:' + Math.round(f.height) + 'px;';
+          group.append(inner);
+          order[order.length - 1].before(group); // 맨 앞 개체가 있던 자리(겹친 순서)에 둔다
+
+          Editor.clearMulti();
+          order.forEach((box, i) => {
+            Editor.removeHandles(box);
+            box.querySelectorAll(':scope > .iframe-drag-overlay').forEach(el => el.remove());
+            box.classList.remove('draggable-box', 'is-selected');
+            box.classList.add('box-group-item');
+            box.removeAttribute('data-step');
+            box.style.position = 'absolute';
+            box.style.boxSizing = 'border-box';
+            box.style.left = Math.round((parseFloat(box.style.left) || 0) - left) + 'px';
+            box.style.top = Math.round((parseFloat(box.style.top) || 0) - top) + 'px';
+            box.style.width = widths[i];
+            if (!layered) box.style.removeProperty('z-index');
+            inner.append(box);
+          });
+          SlideView.addOverlays(canvas); // 묶은 상자 안의 유튜브도 끌어 옮길 수 있게
+          Editor.select(group);
+          Editor.commit();
+          Util.toast(order.length + '개 개체를 그룹으로 묶었습니다. 풀려면 [그룹 해제] 또는 Ctrl+Shift+G' +
+            (new Set(steps).size > 1 ? '\n클릭 순서가 서로 달라 가장 먼저 나오는 순서(' + (step ? '클릭 ' + step + '번째' : '처음부터 보임') + ')로 맞췄습니다.' : ''), 'success');
+        },
+
+        // 그룹으로 묶었던 상자를 원래 상자들로 되돌린다(묶은 뒤 옮기거나 크기를 바꿨으면 그만큼 따라간다).
+        unpack(box, inner) {
+          Editor.removeHandles(box);
+          Editor.bakePosition(box);
+          const left = parseFloat(box.style.left) || 0;
+          const top = parseFloat(box.style.top) || 0;
+          const step = box.getAttribute('data-step');
+          const items = Array.from(inner.children).filter(el => !el.matches('style, .iframe-drag-overlay'));
+          items.forEach(item => {
+            item.classList.remove('box-group-item');
+            item.classList.add('draggable-box');
+            item.style.left = Math.round(left + (parseFloat(item.style.left) || 0)) + 'px';
+            item.style.top = Math.round(top + (parseFloat(item.style.top) || 0)) + 'px';
+            item.style.removeProperty('position');
+            item.style.removeProperty('box-sizing');
+            if (step) item.setAttribute('data-step', step);
+            if (box.style.zIndex && !item.style.zIndex) item.style.zIndex = box.style.zIndex;
+          });
+          box.after(...items);
+          box.remove();
+          Editor.selected = null;
+          SlideView.addOverlays($('slide-canvas'));
+          Editor.pick(items);
+          Editor.commit();
+          Util.toast(items.length + '개 개체로 나눴습니다. 되돌리려면 Ctrl+Z', 'success');
         },
 
         // 상자 안에서 따로 떼어 낼 수 있는 덩어리들. 감싸기만 하는 한 겹짜리 요소는 건너뛰고 내려간다.
@@ -3739,6 +4029,8 @@
           if (parts.length < 2) return;
           if (!ObjectPanel.leaveOr(() => Editor.ungroup(box))) return;
           Editor.stopEditing();
+          const packed = box.querySelector(':scope > .motion-content.box-group');
+          if (packed) { Editor.unpack(box, packed); return; } // 직접 묶은 그룹은 원래 상자들로
           Editor.removeHandles(box);
           const canvas = $('slide-canvas');
           const scale = Editor.scale || 1;
@@ -3927,6 +4219,13 @@
         onPointerDown(event) {
           if (!document.body.classList.contains('edit-mode') || event.button !== 0) return;
           const canvas = $('slide-canvas');
+          // 여러 개 고른 묶음 위의 [그룹 · 맞춤] 칩
+          if (event.target.closest('.ls-multi-chip')) {
+            event.preventDefault();
+            const button = event.target.closest('[data-multi]');
+            if (button) Editor.multiAction(button.dataset.multi);
+            return;
+          }
           const handle = event.target.closest('.ls-handle');
           const box = event.target.closest('.draggable-box');
           // 글자 편집 중인 상자 안: 커서 이동·블록 지정은 브라우저에 맡긴다.
@@ -3939,7 +4238,14 @@
             event.preventDefault();
             return;
           }
-          if (!box || !canvas.contains(box)) { Editor.deselect(); return; }
+          if (!box || !canvas.contains(box)) {
+            // 빈 곳: 끌면 사각형으로 여러 개 고르기, 그냥 누르면 고르기 풀기
+            event.preventDefault();
+            const active = document.activeElement;
+            if (active && active !== document.body && !canvas.contains(active) && active.blur) active.blur();
+            Editor.marquee(event);
+            return;
+          }
           event.preventDefault();
           if (event.target.closest('.ls-ungroup')) { Editor.ungroup(box); return; }
           const stepButton = event.target.closest('[data-step-act]');
@@ -3952,6 +4258,8 @@
           if (layerButton) { Editor.layer(box, Number(layerButton.dataset.layer)); return; }
           if (event.target.closest('[data-round]')) { Editor.toggleRound(box); return; }
           if (event.target.closest('.ls-step')) return;
+          if (!handle && (event.shiftKey || event.ctrlKey || event.metaKey)) { Editor.togglePick(box); return; } // 여러 개 고르기에 넣고 빼기
+          if (!handle && Editor.multi.includes(box)) { Editor.dragMulti(event, box); return; } // 고른 묶음을 함께 옮기기
           Editor.select(box);
           Editor.drag(event, box, handle ? handle.dataset.dir || 'se' : null);
         },
@@ -3972,9 +4280,9 @@
               const v = parseFloat(style.getPropertyValue(prop));
               if (v) values[prop] = v; // 0이거나 normal이면 건드리지 않는다
             });
-            // 직접 적힌 px 크기(그림 폭 등)와 px 줄 간격도 함께
-            ['width', 'height', 'min-height', 'line-height'].forEach(prop => {
-              if (el === box && (prop === 'width' || prop === 'height')) return; // 상자 크기는 따로
+            // 직접 적힌 px 크기(그림 폭 등)와 px 줄 간격, 안쪽 개체의 px 자리(묶은 그룹 안 개체 등)도 함께
+            ['width', 'height', 'min-height', 'line-height', 'left', 'top'].forEach(prop => {
+              if (el === box && (prop === 'width' || prop === 'height' || prop === 'left' || prop === 'top')) return; // 상자 크기·자리는 따로
               const inline = el.style.getPropertyValue(prop);
               if (/^[\d.]+px$/.test(inline)) values[prop] = parseFloat(inline);
             });
@@ -4076,6 +4384,7 @@
         },
 
         boxAction(action) {
+          if (Editor.multi.length) { Editor.multiBoxAction(action); return; }
           const box = Editor.selected;
           if (!box) return;
           if (!ObjectPanel.leaveOr(() => Editor.boxAction(action))) return;
@@ -4096,14 +4405,49 @@
           Editor.commit();
         },
 
+        // 여러 개 고른 상태에서 지우기·복제(복제본은 원본들 바로 뒤, 겹친 순서 그대로)
+        multiBoxAction(action) {
+          const boxes = Array.from($('slide-canvas').querySelectorAll(':scope > .draggable-box'));
+          const list = Editor.multi.slice().sort((a, b) => boxes.indexOf(a) - boxes.indexOf(b));
+          if (action === 'delete') {
+            Editor.clearMulti();
+            list.forEach(box => box.remove());
+          } else if (action === 'copy') {
+            const copies = list.map(box => {
+              const copy = box.cloneNode(true);
+              copy.classList.remove('is-selected', 'is-editing');
+              copy.querySelectorAll('.ls-handle, .ls-ungroup, .ls-step').forEach(el => el.remove());
+              copy.style.left = (parseFloat(box.style.left) || 0) + 40 + 'px';
+              copy.style.top = (parseFloat(box.style.top) || 0) + 40 + 'px';
+              return copy;
+            });
+            list[list.length - 1].after(...copies);
+            Editor.pick(copies);
+          }
+          Editor.commit();
+        },
+
+        // 여러 개 고른 상태에서 숫자 키: 모두 같은 클릭 순서로
+        setStepAll(n) {
+          n = Math.max(0, Math.min(20, n));
+          Editor.multi.forEach(box => {
+            if (n) box.setAttribute('data-step', String(n));
+            else box.removeAttribute('data-step');
+          });
+          Editor.commit();
+        },
+
         nudge(key, big) {
-          const box = Editor.selected;
+          const list = Editor.multi.length ? Editor.multi : [Editor.selected];
           const step = big ? 50 : 10;
-          Editor.bakePosition(box);
           const dx = key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0;
           const dy = key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0;
-          box.style.left = (parseFloat(box.style.left) || 0) + dx + 'px';
-          box.style.top = (parseFloat(box.style.top) || 0) + dy + 'px';
+          list.forEach(box => {
+            Editor.bakePosition(box);
+            box.style.left = (parseFloat(box.style.left) || 0) + dx + 'px';
+            box.style.top = (parseFloat(box.style.top) || 0) + dy + 'px';
+          });
+          if (Editor.multi.length) Editor.drawMulti();
           Editor.commitSoon();
         },
 
@@ -10937,7 +11281,21 @@
           if (key === 'Enter') { event.preventDefault(); Editor.slideAction('add'); return; }
           if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); Editor.slideAction('delete'); return; }
         }
+        const isG = lower === 'g' || event.code === 'KeyG'; // 한글 자판(ㅎ)에서도
+        // Ctrl+A: 이 장의 개체 모두 고르기(슬라이드 목록을 누른 상태는 제외)
+        if (mod && !event.shiftKey && (lower === 'a' || event.code === 'KeyA') && document.activeElement !== $('thumb-list')) { event.preventDefault(); Editor.selectAll(); return; }
+        // 여러 개 고른 상태: 그룹·복제·지우기·옮기기·클릭 순서
+        if (Editor.multi.length) {
+          if (mod && !event.shiftKey && isG) { event.preventDefault(); Editor.group(); }
+          else if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
+          else if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); Editor.boxAction('delete'); }
+          else if (!mod && /^[0-9]$/.test(key)) { event.preventDefault(); Editor.setStepAll(Number(key)); }
+          else if (key.startsWith('Arrow')) { event.preventDefault(); Editor.nudge(key, event.shiftKey); }
+          else if (key === 'Escape') Editor.deselect();
+          return;
+        }
         const box = Editor.selected;
+        if (mod && !event.shiftKey && isG) { event.preventDefault(); Editor.group(); return; } // 하나뿐이면 안내만
         if (!box) {
           if (!mod && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)) {
             event.preventDefault();
@@ -10945,7 +11303,7 @@
           }
           return;
         }
-        if (mod && event.shiftKey && lower === 'g') { event.preventDefault(); Editor.ungroup(box); }
+        if (mod && event.shiftKey && isG) { event.preventDefault(); Editor.ungroup(box); }
         else if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
         else if (mod && (key === ']' || event.code === 'BracketRight')) { event.preventDefault(); Editor.layer(box, 1); }
         else if (mod && (key === '[' || event.code === 'BracketLeft')) { event.preventDefault(); Editor.layer(box, -1); }
