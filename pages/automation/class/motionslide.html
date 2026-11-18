@@ -413,6 +413,8 @@
     .ls-step-btn { width: 36px; height: 36px; border-radius: 8px; background: #f1f5f9; display: inline-flex; align-items: center; justify-content: center; font-size: 28px; cursor: pointer; }
     .ls-step-btn:hover { background: #e2e8f0; }
     .ls-step-label { padding: 0 6px; }
+    .ls-step-btn .bi { font-size: 24px; }
+    .ls-step-sep { align-self: stretch; width: 2px; margin: 2px 6px; background: #e2e8f0; }
 
     /* ---------- 발표 모드 ---------- */
     #show-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; }
@@ -1248,6 +1250,7 @@
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>글자 편집 끝내기 · 선택 해제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Delete</kbd></td><td>개체 삭제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>개체 복제</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>]</kbd> / <kbd>Ctrl</kbd>+<kbd>[</kbd></td><td>겹친 개체보다 한 칸 앞으로 / 뒤로 (고른 개체 위 <i class="bi bi-layer-forward"></i> <i class="bi bi-layer-backward"></i>)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></td><td>그룹 해제 (묶인 제목·카드를 따로따로)</td></tr>
                   <tr><td class="text-nowrap"><kbd>1</kbd> ~ <kbd>9</kbd> / <kbd>0</kbd></td><td>발표 중 몇 번째 클릭에 나타날지 / 처음부터 보임</td></tr>
                 </tbody>
@@ -3617,7 +3620,20 @@
           plus.className = 'ls-step-btn';
           plus.dataset.stepAct = '+';
           plus.textContent = '+';
-          chip.append(minus, label, plus);
+          // 겹친 개체 순서: 앞으로 가져오기 / 뒤로 보내기
+          const sep = document.createElement('span');
+          sep.className = 'ls-step-sep';
+          const layerButton = (dir, icon, title) => {
+            const button = document.createElement('span');
+            button.className = 'ls-step-btn';
+            button.dataset.layer = String(dir);
+            button.title = title;
+            button.innerHTML = '<i class="bi ' + icon + '"></i>';
+            return button;
+          };
+          chip.append(minus, label, plus, sep,
+            layerButton(1, 'bi-layer-forward', '앞으로 가져오기: 겹친 개체보다 한 칸 앞으로 (Ctrl+])'),
+            layerButton(-1, 'bi-layer-backward', '뒤로 보내기: 겹친 개체보다 한 칸 뒤로 (Ctrl+[)'));
           box.append(chip);
           Editor.syncStepChip(box);
         },
@@ -3637,6 +3653,32 @@
           if (n) box.setAttribute('data-step', String(n));
           else box.removeAttribute('data-step');
           Editor.syncStepChip(box);
+          Editor.commit();
+        },
+
+        /* --- 겹친 개체 순서 --- */
+        // dir 1: 겹쳐 있는 바로 위 개체보다 앞으로, -1: 바로 아래 개체보다 뒤로(겹치지 않은 개체와의 순서는 화면에 차이가 없어 건너뛴다).
+        // z-index가 적힌 장이면 순서대로 z-index를 다시 매기고, 아니면 HTML 안 순서만 바꾼다.
+        layer(box, dir) {
+          if (!box || !box.isConnected) return;
+          const boxes = Array.from($('slide-canvas').querySelectorAll(':scope > .draggable-box'));
+          const zOf = el => Number(getComputedStyle(el).zIndex) || 0; // auto → 0
+          const layered = boxes.some(el => getComputedStyle(el).zIndex !== 'auto');
+          const order = boxes.map((el, i) => ({ el, i, z: zOf(el) })).sort((a, b) => a.z - b.z || a.i - b.i).map(item => item.el);
+          const at = order.indexOf(box);
+          const rect = box.getBoundingClientRect();
+          const overlaps = el => {
+            const r = el.getBoundingClientRect();
+            return r.left < rect.right && r.right > rect.left && r.top < rect.bottom && r.bottom > rect.top;
+          };
+          let target = null;
+          for (let k = at + dir; k >= 0 && k < order.length; k += dir) if (overlaps(order[k])) { target = order[k]; break; }
+          if (!target) { Util.toast(dir > 0 ? '겹친 개체 가운데 이미 맨 앞입니다.' : '겹친 개체 가운데 이미 맨 뒤입니다.'); return; }
+          order.splice(at, 1);
+          order.splice(order.indexOf(target) + (dir > 0 ? 1 : 0), 0, box);
+          if (layered) order.forEach((el, k) => { el.style.zIndex = String(k + 1); });
+          else if (dir > 0) target.after(box);
+          else target.before(box);
           Editor.commit();
         },
 
@@ -3887,6 +3929,8 @@
             Editor.setStep(box, n + (stepButton.dataset.stepAct === '+' ? 1 : -1));
             return;
           }
+          const layerButton = event.target.closest('[data-layer]');
+          if (layerButton) { Editor.layer(box, Number(layerButton.dataset.layer)); return; }
           if (event.target.closest('.ls-step')) return;
           Editor.select(box);
           Editor.drag(event, box, handle ? handle.dataset.dir || 'se' : null);
@@ -7354,6 +7398,43 @@
 
         var FIELDS = 'input, select, textarea';
         var send = function (message) { try { parent.postMessage(message, '*'); } catch (err) { /* 무시 */ } };
+
+        // 격리된 칸에서는 브라우저가 클립보드 쓰기를 막으므로(권한 정책), 복사할 글을 바깥 페이지에 보내 대신 복사하게 한다.
+        // 발표자 칸을 따라 하는 청중 칸(사람이 누르지 않은 다시 일으킨 클릭)은 실제로 복사하지 않는다.
+        var copyWaiting = {};
+        var copyNext = 0;
+        var copyOut = function (text) {
+          return new Promise(function (resolve, reject) {
+            if (navigator.userActivation && !navigator.userActivation.isActive) { resolve(); return; }
+            var id = ++copyNext;
+            copyWaiting[id] = function (ok) {
+              delete copyWaiting[id];
+              if (ok) resolve(); else reject(new Error('클립보드에 복사하지 못했습니다(브라우저가 막음)'));
+            };
+            setTimeout(function () { if (copyWaiting[id]) copyWaiting[id](false); }, 3000);
+            send({ lsApp: 'copy', id: id, text: String(text === undefined || text === null ? '' : text).slice(0, 200000) });
+          });
+        };
+        try {
+          var clip = navigator.clipboard;
+          if (!clip) { clip = {}; Object.defineProperty(navigator, 'clipboard', { value: clip, configurable: true }); }
+          clip.writeText = copyOut;
+          // ClipboardItem으로 쓰면 그 안의 글(text/plain)만 복사한다.
+          clip.write = function (items) {
+            var item = items && items[0];
+            if (!item || !item.types || item.types.indexOf('text/plain') < 0) return Promise.reject(new Error('글자만 복사할 수 있습니다'));
+            return item.getType('text/plain').then(function (blob) { return typeof blob === 'string' ? blob : blob.text(); }).then(copyOut);
+          };
+        } catch (err) { /* 클립보드 바꾸기 실패: 원래대로 둔다 */ }
+        var execCommand = document.execCommand;
+        document.execCommand = function (command) {
+          if (String(command).toLowerCase() !== 'copy') return execCommand.apply(document, arguments);
+          var el = document.activeElement;
+          var text = el && /^(TEXTAREA|INPUT)$/.test(el.tagName) && typeof el.selectionStart === 'number' ?
+            el.value.slice(el.selectionStart, el.selectionEnd) : String(window.getSelection() || '');
+          copyOut(text).catch(function () { /* 옛 방식은 실패를 알리지 않는다 */ });
+          return true;
+        };
         // 칸 안을 누른 뒤에도 Esc로 발표를 끝낼 수 있게 바깥에 알린다.
         window.addEventListener('keydown', function (e) { if (e.isTrusted && e.key === 'Escape') send({ lsApp: 'escape' }); }, true);
         // 칸 안을 누른 뒤에도 방향키·PageUp/PageDown(발표용 리모컨)·Home/End로 장을 넘기고, H·P로 하이라이트·레이저를 다룰 수 있게 바깥에 알린다.
@@ -7432,6 +7513,10 @@
         }
         window.addEventListener('message', function (e) {
           var data = e.data;
+          if (data && data.lsApp === 'copied' && e.source === parent) {
+            if (copyWaiting[data.id]) copyWaiting[data.id](!!data.ok);
+            return;
+          }
           if (data && data.lsApp === 'snapshot' && e.source === parent) {
             var html = '';
             try { html = snapshot(); } catch (err) { /* 빈 사본 */ }
@@ -7602,7 +7687,32 @@
           if (mirror && mirror.lsReady) replayTo(mirror, [event.data]);
         }
 
+        // 인터랙티브 칸이 부탁한 복사(appBridge): 격리된 칸 대신 이 창이 클립보드에 쓰고 결과를 알려 준다.
+        function copyForApp(event) {
+          var mine = false;
+          each(win.document.querySelectorAll('.app-frame > iframe'), function (item) { if (item.contentWindow === event.source) mine = true; });
+          if (!mine) return;
+          var text = String(event.data.text === undefined || event.data.text === null ? '' : event.data.text);
+          var reply = function (ok) { try { event.source.postMessage({ lsApp: 'copied', id: event.data.id, ok: ok }, '*'); } catch (err) { /* 칸이 사라졌다 */ } };
+          var fallback = function () {
+            var doc = win.document;
+            var area = doc.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+            doc.body.appendChild(area);
+            area.select();
+            var ok = false;
+            try { ok = doc.execCommand('copy'); } catch (err) { /* 막힘 */ }
+            area.parentNode.removeChild(area);
+            reply(ok);
+          };
+          if (win.navigator.clipboard && win.navigator.clipboard.writeText) win.navigator.clipboard.writeText(text).then(function () { reply(true); }, fallback);
+          else fallback();
+        }
+
         win.addEventListener('message', function (event) {
+          if (event.data && event.data.lsApp === 'copy') { copyForApp(event); return; }
           if (event.data && event.data.lsApp === 'evt') {
             if (event.data.type === 'mousemove') relayPointer(event);
             onAppInput(event);
@@ -10913,6 +11023,8 @@
         }
         if (mod && event.shiftKey && lower === 'g') { event.preventDefault(); Editor.ungroup(box); }
         else if (mod && lower === 'd') { event.preventDefault(); Editor.boxAction('copy'); }
+        else if (mod && (key === ']' || event.code === 'BracketRight')) { event.preventDefault(); Editor.layer(box, 1); }
+        else if (mod && (key === '[' || event.code === 'BracketLeft')) { event.preventDefault(); Editor.layer(box, -1); }
         else if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); Editor.boxAction('delete'); }
         else if (!mod && /^[0-9]$/.test(key)) { event.preventDefault(); Editor.setStep(box, Number(key)); } // 클릭 순서(0은 없음)
         else if (key.startsWith('Arrow')) { event.preventDefault(); Editor.nudge(key, event.shiftKey); }
