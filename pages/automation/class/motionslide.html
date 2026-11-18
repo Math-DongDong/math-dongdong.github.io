@@ -606,6 +606,17 @@
           </div>
           <span class="small text-muted text-nowrap d-flex align-items-center gap-1"><i class="bi bi-cloud-check" aria-hidden="true"></i><span id="save-status"></span></span>
           <div class="ms-auto d-flex flex-nowrap align-items-center gap-1">
+            <!-- 개체 직접 삽입: AI를 거치지 않고 지금 장 가운데에 바로 넣는다 (AI 창의 [삽입]은 AI가 배치) -->
+            <div class="dropdown">
+              <button type="button" class="btn btn-sm btn-ghost dropdown-toggle" data-bs-toggle="dropdown" title="AI 없이 지금 장에 바로 넣기"><i class="bi bi-plus-square"></i> 직접 삽입</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><h6 class="dropdown-header">지금 장에 바로 넣기</h6></li>
+                <li><button type="button" class="dropdown-item" data-direct="text"><i class="bi bi-fonts"></i> 글상자</button></li>
+                <li><button type="button" class="dropdown-item" data-direct="image"><i class="bi bi-image"></i> 그림 (내 컴퓨터)</button></li>
+                <li><button type="button" class="dropdown-item" data-direct="video"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
+                <li><button type="button" class="dropdown-item" data-direct="youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
+              </ul>
+            </div>
             <div class="dropdown">
               <button type="button" class="btn btn-sm btn-ghost dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i> 기타</button>
               <ul class="dropdown-menu dropdown-menu-end">
@@ -1292,6 +1303,9 @@
   <input type="file" class="d-none" id="file-plan">
   <input type="file" class="d-none" id="file-image" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
   <input type="file" class="d-none" id="file-video" accept="video/mp4,video/webm" multiple>
+  <!-- 직접 삽입용 (AI 창의 담기와 따로) -->
+  <input type="file" class="d-none" id="direct-image" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+  <input type="file" class="d-none" id="direct-video" accept="video/mp4,video/webm">
   <input type="file" class="d-none" id="file-media">
   <input type="file" class="d-none" id="ai-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
   <input type="file" class="d-none" id="app-file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.pptx,.txt,.md">
@@ -4010,6 +4024,123 @@
       };
       Editor.commitSoon = Util.debounce(() => Editor.commit(), 400);
       Editor.refreshThumbSoon = Util.debounce(() => { if (Editor.deck) Editor.refreshThumb(Editor.index); }, 400);
+
+      /* ===== 8-1. 개체 직접 삽입 ([직접 삽입 ▾]) =====
+         AI를 거치지 않고 글상자·그림·동영상·유튜브를 지금 장 가운데(맨 위 층)에 바로 넣는다.
+         AI가 만드는 개체와 같은 3계층(.draggable-box > .motion-content > 내용)이라 끌기·크기·클릭 순서·복제가 똑같이 된다.
+         그림·영상은 이 브라우저에만 저장되고 Gemini로 보내지 않는다(AI 창의 [삽입]은 AI가 보고 배치하도록 보낸다). */
+      const DirectInsert = {
+        // 가운데에 두되, 같은 자리에 이미 상자가 있으면 40px씩 비켜 놓는다(연달아 넣어도 겹치지 않게).
+        spot(width, height) {
+          let left = Math.round((CANVAS_W - width) / 2);
+          let top = Math.max(40, Math.round((CANVAS_H - height) / 2));
+          const taken = new Set(Array.from($('slide-canvas').querySelectorAll(':scope > .draggable-box'))
+            .map(box => Math.round(parseFloat(box.style.left) || 0) + ',' + Math.round(parseFloat(box.style.top) || 0)));
+          while (taken.has(left + ',' + top) && top < CANVAS_H - 80) { left += 40; top += 40; }
+          return { left, top };
+        },
+
+        // 상자를 만들어 지금 장 맨 위에 넣고 고른 상태로 둔다.
+        place(content, width, height) {
+          if (!Editor.deck) return null;
+          ObjectPanel.closeNow(); // 개체 편집 창은 지금 모습 그대로 닫는다
+          Editor.deselect();
+          const { left, top } = DirectInsert.spot(width, height);
+          const box = document.createElement('div');
+          box.className = 'draggable-box';
+          box.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + Math.round(width) + 'px;';
+          const motion = document.createElement('div');
+          motion.className = 'motion-content';
+          motion.append(content);
+          box.append(motion);
+          $('slide-canvas').append(box);
+          if (box.querySelector('iframe')) SlideView.addOverlays($('slide-canvas')); // 유튜브도 끌어 옮길 수 있게
+          Editor.select(box);
+          Editor.commit();
+          return box;
+        },
+
+        text() {
+          const el = document.createElement('div');
+          el.className = 'editable-text';
+          el.style.cssText = 'font-size:44px;line-height:1.5;';
+          el.textContent = '글자를 입력하세요';
+          const box = DirectInsert.place(el, 800, 80);
+          if (box) Editor.startEditing(el); // 넣자마자 입력: 안내 글이 골라져 있어 바로 타이핑하면 바뀐다
+        },
+
+        // 여러 장을 한 번에 고를 수 있다. 원래 비율 그대로, 화면의 절반 남짓(가로 960 · 세로 760 안쪽)으로 맞춘다.
+        async images(files) {
+          for (const file of Array.from(files || [])) {
+            try {
+              const image = await readImage(file);
+              const ratio = Math.min(1, 960 / image.width, 760 / image.height);
+              const img = document.createElement('img');
+              img.className = 'editable-image';
+              img.src = image.url;
+              img.alt = '';
+              img.style.cssText = 'display:block;width:100%;';
+              DirectInsert.place(img, Math.max(80, image.width * ratio), image.height * ratio);
+            } catch (err) {
+              Util.toast((file.name ? file.name + ': ' : '') + err.message, 'warning');
+            }
+          }
+        },
+
+        // 직접 넣은 영상은 발표 중에 선생님이 재생하도록 재생 막대를 두고 소리를 켠다(AI가 넣는 꾸밈 영상은 자동 반복·무음).
+        async video(file) {
+          if (!file) return;
+          try {
+            const video = document.createElement('video');
+            video.className = 'editable-video';
+            video.src = await readVideo(file);
+            video.setAttribute('controls', '');
+            video.setAttribute('playsinline', '');
+            video.setAttribute('preload', 'metadata');
+            video.style.cssText = 'display:block;width:100%;border-radius:12px;background:#000;';
+            DirectInsert.place(video, 960, 540);
+          } catch (err) {
+            Util.toast((file.name ? file.name + ': ' : '') + err.message, 'warning');
+          }
+        },
+
+        async youtube() {
+          const text = await Util.ask('유튜브 동영상 넣기', '유튜브 주소 (예: https://www.youtube.com/watch?v=...)', '');
+          if (text === null) return;
+          const embed = youtubeEmbed(text);
+          if (!embed) { Util.toast('유튜브 주소를 알아볼 수 없습니다.', 'warning'); return; }
+          const frame = document.createElement('iframe');
+          frame.className = 'editable-video';
+          frame.src = embed;
+          frame.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+          frame.setAttribute('allowfullscreen', '');
+          frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+          frame.style.cssText = 'display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;';
+          DirectInsert.place(frame, 960, 540);
+        },
+
+        run(kind) {
+          if (!Editor.deck || Show.isOn()) return;
+          if (kind === 'text') DirectInsert.text();
+          else if (kind === 'image') $('direct-image').click();
+          else if (kind === 'video') $('direct-video').click();
+          else if (kind === 'youtube') DirectInsert.youtube();
+        },
+
+        init() {
+          document.querySelectorAll('[data-direct]').forEach(button => button.addEventListener('click', () => DirectInsert.run(button.dataset.direct)));
+          $('direct-image').addEventListener('change', event => {
+            const files = Array.from(event.target.files || []);
+            event.target.value = '';
+            DirectInsert.images(files);
+          });
+          $('direct-video').addEventListener('change', event => {
+            const file = event.target.files[0];
+            event.target.value = '';
+            DirectInsert.video(file);
+          });
+        }
+      };
 
       async function readImage(file) {
         if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error('PNG, JPG, GIF, WEBP 그림만 넣을 수 있습니다.');
@@ -10821,6 +10952,7 @@
         FloatBar.init();
         AiPanel.init();
         AiErrorLog.init();
+        DirectInsert.init();
         ObjectPanel.init();
         Planner.init();
         Merger.init();
