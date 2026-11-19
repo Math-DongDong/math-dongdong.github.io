@@ -149,8 +149,12 @@
                 <div class="vis stick-demo" data-sides="1,2,4|1,2,3|1,2,2">
                     <canvas width="1440" height="520" class="w-100 d-block border rounded-3"
                         style="aspect-ratio:1440/520;background:#f9fafb" role="img" aria-label="길이 1, 2, 4 · 1, 2, 3 · 1, 2, 2 인 막대로 삼각형 만들기"></canvas>
-                    <div class="stick-status mt-2"></div>
                     <button class="replay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
+                </div>
+                <div class="text-center fw-bold mb-3">
+                    <p class="mb-1">① 1 + 2 = 3 이 4 보다 작아요 → 끝이 만나지 않아 <span class="text-danger">삼각형이 안 돼요</span></p>
+                    <p class="mb-1">② 1 + 2 = 3 이 3 과 같아요 → 납작하게 펴져 <span class="text-danger">삼각형이 안 돼요</span></p>
+                    <p class="mb-0">③ 1 + 2 = 3 이 2 보다 커요 → 끝이 만나 <span class="text-primary">삼각형이 돼요</span></p>
                 </div>
                 <div class="formula">(가장 긴 변의 길이) &lt; (나머지 두 변의 길이의 합)</div>
                 <div class="fact-box">
@@ -382,12 +386,12 @@
            .stick-demo 의 data-sides 에 '1,2,4|1,2,3|1,2,2' 처럼 경우를 | 로 나눠 적으면
            한 그림 안에 같은 크기의 칸으로 나눠 그리고 함께 쓰러뜨려요.
            칸은 넓은 화면(태블릿 · 데스크탑)에서는 가로로, 좁은 화면(휴대폰)에서는 세로로 놓여요.
-           결과 문구는 그림 아래에 ① ② ③ 순서로 쌓여요. 화면에 보이면 자동으로 재생해요 */
+           모션은 막대를 쓰러뜨려 보는 것까지만 보여 줘요. 결과 문구는 그림 밖 글로 적어 두었어요.
+           화면에 보이면 자동으로 재생해요 */
         document.querySelectorAll('.stick-demo').forEach(function initStickDemo(box) {
             const cases = box.dataset.sides.split('|').map(function (t) { return t.split(',').map(Number); });
             const canvas = box.querySelector('canvas');
             const context = canvas.getContext('2d');
-            const statusBox = box.querySelector('.stick-status');
             const SIDE_COLORS = { a: '#ef4444', b: '#10b981', c: '#2563eb' };
             const NUMBERS = ['①', '②', '③', '④', '⑤'];
             const HALF_PI = Math.PI / 2;
@@ -401,15 +405,6 @@
             let scenes = [];
             let frameId = null;
             let lastTime = 0;
-
-            /* 결과 문구 자리 : 처음부터 줄을 잡아 두고, 끝난 경우부터 보이게 해요 */
-            const statusLines = cases.map(function () {
-                const line = document.createElement('p');
-                line.className = 'text-center fw-bold mb-1';
-                line.style.transition = 'opacity .4s ease';
-                statusBox.appendChild(line);
-                return line;
-            });
 
             function classify(a, b, c) {
                 const longest = Math.max(a, b, c);
@@ -430,40 +425,19 @@
                 return { length: length, physLength: length * physScale, angle: HALF_PI, velocity: 0, target: target, sweptMin: HALF_PI, sweptMax: HALF_PI };
             }
 
-            function statusMessage(scene) {
-                const a = scene.a, b = scene.b, c = scene.c, sum = a + b, no = NUMBERS[scene.index] + ' ';
-                if (scene.status === 'possible') {
-                    return no + a + ' + ' + b + ' = ' + sum + ' 이 ' + c + ' 보다 커요 → 끝이 만나 <span style="color:#2563eb">삼각형이 돼요</span>';
-                }
-                if (scene.status === 'degenerate') {
-                    return no + a + ' + ' + b + ' = ' + sum + ' 이 ' + c + ' 와 같아요 → 납작하게 펴져 <span style="color:#dc2626">삼각형이 안 돼요</span>';
-                }
-                return no + a + ' + ' + b + ' = ' + sum + ' 이 ' + c + ' 보다 작아요 → 끝이 만나지 않아 <span style="color:#dc2626">삼각형이 안 돼요</span>';
-            }
-
             function makeScene(sides, index) {
                 const a = sides[0], b = sides[1], c = sides[2];
                 const targets = targetAngles(a, b, c);
                 return {
-                    index: index, a: a, b: b, c: c, status: classify(a, b, c), phase: 'standing', elapsed: 0, done: false,
+                    index: index, a: a, b: b, c: c, status: classify(a, b, c), phase: 'standing', elapsed: 0,
                     stickA: createStick(b, targets.angleA, 7 / (a + b)),   // 왼쪽 끝에 세운 막대
                     stickB: createStick(a, targets.angleB, 7 / (a + b))    // 오른쪽 끝에 세운 막대
                 };
             }
 
-            function showStatus(scene) {
-                if (scene.done) { return; }
-                scene.done = true;
-                statusLines[scene.index].style.opacity = 1;
-            }
-
             function reset() {
                 cancelAnimationFrame(frameId);
                 scenes = cases.map(makeScene);
-                scenes.forEach(function (scene) {
-                    statusLines[scene.index].innerHTML = statusMessage(scene);
-                    statusLines[scene.index].style.opacity = 0;
-                });
                 draw();
             }
 
@@ -487,7 +461,6 @@
                         track(stick);
                     });
                     scene.phase = 'done';
-                    showStatus(scene);
                 });
                 draw();
             }
@@ -513,7 +486,6 @@
                     for (let i = 0; i < 4; i++) { sticks.forEach(function (stick) { swing(stick, dt / 4); }); }
                     if (scene.phase === 'falling' && sticks.every(function (stick) { return stick.angle < 0; })) {
                         scene.phase = 'swinging';
-                        showStatus(scene);
                     }
                     return !sticks.every(function (stick) { return Math.abs(stick.velocity) < 0.003 && Math.abs(stick.angle + HALF_PI) < 0.002; });
                 }
@@ -522,7 +494,6 @@
                 sticks.forEach(function (stick) { stick.angle = HALF_PI + (stick.target - HALF_PI) * eased; track(stick); });
                 if (progress >= 1) {
                     scene.phase = 'done';
-                    showStatus(scene);
                     return false;
                 }
                 return true;
