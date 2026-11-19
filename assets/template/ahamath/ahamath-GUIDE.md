@@ -108,7 +108,11 @@ pages/
 | `surfacearea` | `1/surfacearea.html` | 기둥과 뿔의 겉넓이 (준비 중 · `soon`) | 4 / 3 |
 | `sphere` | `1/sphere.html` | 구의 부피와 겉넓이 (준비 중 · `soon`) | 4 / 3 |
 
-> `status: 'soon'` 인 주제는 메인 목록에 '준비 중이에요'로만 보이고 열리지 않습니다. 네비바 메뉴와 sitemap 에는 공개할 때(`ready` 로 바꿀 때) 함께 넣으세요.
+> `status: 'soon'` 인 주제는 메인 목록에 '준비 중이에요'로만 보이고 열리지 않습니다.
+> 네비바(`js/navbar.js` 의 `ahamath` 중1 메뉴)는 메인 TOPICS 와 **같은 순서 · 같은 이름**으로 맞춥니다.
+> `ready` 는 `{ "name": …, "path": … }` 링크, `soon` 은 `{ "disabled": "주제 이름 · 준비 중" }` 회색 글자로 적어요.
+> 주제를 추가 · 삭제하거나 제목 · status 를 바꾸면 네비바도 함께 고치세요. sitemap 에는 공개할 때(`ready` 로 바꿀 때) 넣으세요.
+> 네비바를 고친 뒤에는 학습 페이지의 `navbar.js?v=날짜` 도 바꿔야 브라우저가 예전 메뉴를 쓰지 않습니다.
 | `daepyogap` | `1/representativevalue.html` | 대푯값 | 5 / 3 |
 | `frequency` | `1/frequency.html` | 도수분포표와 히스토그램 | 4 / 2 |
 | `relative` | `1/relative.html` | 상대도수와 그 그래프 | 4 / 2 |
