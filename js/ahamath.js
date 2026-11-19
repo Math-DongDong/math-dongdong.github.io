@@ -338,6 +338,7 @@
         const items = reviewItems(ids);
         document.getElementById('doneReviewBox').hidden = (items.length === 0);
         fillReviewList('doneReviewList', items);
+        document.getElementById('doneReviewList').classList.toggle('is-challenge', flow === 'challenge');
 
         const actions = document.getElementById('doneActions');
         actions.innerHTML = '';
@@ -409,25 +410,38 @@
         const items = reviewItems(ALL_IDS);
         const reviewCard = document.getElementById('reviewCard');
         reviewCard.hidden = (items.length === 0);
-        fillReviewList('reviewList', items);
+        /* 예전 단일 목록은 쓰지 않아요 (기초 · 도전 상자로 나눠서 보여 줌) */
+        document.getElementById('reviewList').hidden = true;
 
-        /* 첫 화면의 '다시 볼 문제만 풀어 보기' 버튼 (기초 · 도전 따로) */
-        let actions = document.getElementById('reviewActions');
-        if (!actions) {
-            actions = document.createElement('div');
-            actions.id = 'reviewActions';
-            actions.className = 'd-grid gap-2 mt-2';
-            reviewCard.appendChild(actions);
+        /* 기초는 노랑, 도전은 분홍 상자 : 상자 전체를 누르면 그 문제들만 다시 풀어요 */
+        let groups = document.getElementById('reviewGroups');
+        if (!groups) {
+            groups = document.createElement('div');
+            groups.id = 'reviewGroups';
+            groups.className = 'd-grid gap-2 mt-1';
+            reviewCard.appendChild(groups);
         }
-        actions.innerHTML = '';
+        groups.innerHTML = '';
         ['basic', 'challenge'].forEach(function (flow) {
-            if (!reviewIdsOf(flow).length) { return; }
-            const label = (flow === 'basic' ? '기초' : '도전') + ' 다시 볼 문제만 풀어 보기';
-            actions.appendChild(makeButton(
-                '<i class="bi bi-arrow-repeat"></i> ' + label,
-                'btn btn-outline-primary fw-bold w-100 py-2',
+            const flowItems = items.filter(function (item) { return item.flow === flow; });
+            if (!flowItems.length) { return; }
+            const name = (flow === 'basic' ? '기초 미션' : '도전 미션');
+            const html =
+                '<span class="review-group-head">' +
+                    '<span>' + name + ' · ' + flowItems.length + '문제</span>' +
+                    '<span class="review-go">다시 풀기 <i class="bi bi-chevron-right"></i></span>' +
+                '</span>' +
+                flowItems.map(function (item) {
+                    return '<span class="review-item">' + item.label + '</span>';
+                }).join('');
+            const box = makeButton(
+                html,
+                'review-group ' + (flow === 'basic' ? 'is-basic' : 'is-challenge'),
                 function () { startMission(flow, 'review', null); }
-            ));
+            );
+            box.type = 'button';
+            box.setAttribute('aria-label', name + ' 다시 볼 문제 ' + flowItems.length + '개 다시 풀기');
+            groups.appendChild(box);
         });
     }
 
