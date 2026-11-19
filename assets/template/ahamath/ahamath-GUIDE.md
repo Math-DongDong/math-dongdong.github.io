@@ -95,7 +95,7 @@ pages/
 | `construct` | `1/construct.html` | 작도와 삼각형의 작도 | 4 / 1 |
 | `congruent` | `1/congruent.html` | 삼각형의 합동 조건 | 5 / 3 |
 | `triangleangle` | `1/triangleangle.html` | 삼각형의 내각과 외각 | 4 / 3 |
-| `interiorsum` | `1/interiorsum.html` | 다각형의 내각과 외각의 크기의 합 (내각 기초 · 외각 심화) | 4 / 6 |
+| `interiorsum` | `1/interiorsum.html` | 다각형의 내각과 외각의 크기의 합 (내각 기초 · 외각 심화) | 4 / 4 |
 | `diagonal` | `1/diagonal.html` | 다각형의 대각선 | 3 / 2 |
 | `circlesector` | `1/circlesector.html` | 원과 부채꼴 (준비 중 · `soon`) | 4 / 3 |
 | `sectorarea` | `1/sectorarea.html` | 부채꼴의 넓이와 호의 길이 (준비 중 · `soon`) | 4 / 3 |
