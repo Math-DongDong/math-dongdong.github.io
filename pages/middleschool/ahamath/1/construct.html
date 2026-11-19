@@ -146,15 +146,15 @@
             <section class="card-box" id="block-c3">
                 <h2 class="card-title">세 변의 길이 사이의 관계</h2>
                 <p class="lead-text">가장 긴 막대를 밑변으로 두고, 양 끝에 짧은 두 막대를 세운 뒤 안쪽으로 쓰러뜨려 봐요. 두 막대의 끝이 만날까요?</p>
-                <div class="vis stick-demo" data-sides="3,4,8|3,4,7|3,4,5">
-                    <canvas width="1200" height="500" class="w-100 d-block border rounded-3"
-                        style="aspect-ratio:12/5;background:#f9fafb" role="img" aria-label="길이 3, 4, 8 · 3, 4, 7 · 3, 4, 5 인 막대로 삼각형 만들기"></canvas>
+                <div class="vis stick-demo" data-sides="1,2,4|1,2,3|1,2,2">
+                    <canvas width="1440" height="520" class="w-100 d-block border rounded-3"
+                        style="aspect-ratio:1440/520;background:#f9fafb" role="img" aria-label="길이 1, 2, 4 · 1, 2, 3 · 1, 2, 2 인 막대로 삼각형 만들기"></canvas>
                     <div class="stick-status mt-2"></div>
                     <button class="replay" type="button"><i class="bi bi-arrow-repeat"></i> 다시 보기</button>
                 </div>
                 <div class="formula">(가장 긴 변의 길이) &lt; (나머지 두 변의 길이의 합)</div>
                 <div class="fact-box">
-                    이 조건을 만족해야 삼각형이 만들어져요. 3, 4, 7 처럼 <b>같으면</b> 납작하게 펴져서 삼각형이 되지 않아요.
+                    이 조건을 만족해야 삼각형이 만들어져요. 1, 2, 3 처럼 <b>같으면</b> 납작하게 펴져서 삼각형이 되지 않아요.
                 </div>
                 <p class="muted-text mb-0">그러면 무엇을 알아야 삼각형이 하나로 정해질까요?</p>
             </section>
@@ -379,9 +379,10 @@
     <script>
         /* 세 변의 길이 사이의 관계 : 막대 두 개를 쓰러뜨려 끝이 만나는지 보여 줘요
            (pages/middleschool/1/triangle_condition.html 과 같은 방식)
-           .stick-demo 의 data-sides 에 '3,4,8|3,4,7|3,4,5' 처럼 경우를 | 로 나눠 적으면
-           한 그림 안에 나란히 그리고 함께 쓰러뜨려요. 결과 문구는 그림 아래에 ① ② ③ 순서로 쌓여요.
-           화면에 보이면 자동으로 재생해요 */
+           .stick-demo 의 data-sides 에 '1,2,4|1,2,3|1,2,2' 처럼 경우를 | 로 나눠 적으면
+           한 그림 안에 같은 크기의 칸으로 나눠 그리고 함께 쓰러뜨려요.
+           칸은 넓은 화면(태블릿 · 데스크탑)에서는 가로로, 좁은 화면(휴대폰)에서는 세로로 놓여요.
+           결과 문구는 그림 아래에 ① ② ③ 순서로 쌓여요. 화면에 보이면 자동으로 재생해요 */
         document.querySelectorAll('.stick-demo').forEach(function initStickDemo(box) {
             const cases = box.dataset.sides.split('|').map(function (t) { return t.split(',').map(Number); });
             const canvas = box.querySelector('canvas');
@@ -393,8 +394,9 @@
             const GRAVITY = 40;
             const SWING_DAMPING = 0.35;
             const FALL_DURATION = 1.6;
-            const PANEL_PAD = 34;        // 칸 안쪽 여백
-            const CAPTION_H = 64;        // 칸 아래 '① 3, 4, 8' 글자 자리
+            const PANEL_PAD = 30;        // 칸 안쪽 여백
+            const CAPTION_H = 60;        // 칸 아래 '① 1, 2, 4' 글자 자리
+            const NARROW = 576;          // 이보다 좁으면 칸을 세로로 쌓아요
             const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             let scenes = [];
             let frameId = null;
@@ -423,8 +425,9 @@
                 return { xC: xC, angleA: Math.acos(clamp(xC / b)), angleB: Math.acos(clamp((c - xC) / a)) };
             }
 
-            function createStick(length, target) {
-                return { length: length, angle: HALF_PI, velocity: 0, target: target, sweptMin: HALF_PI, sweptMax: HALF_PI };
+            /* physScale : 짧은 막대도 예전(3, 4 막대)과 비슷한 빠르기로 흔들리도록 계산할 때만 길이를 키워요 */
+            function createStick(length, target, physScale) {
+                return { length: length, physLength: length * physScale, angle: HALF_PI, velocity: 0, target: target, sweptMin: HALF_PI, sweptMax: HALF_PI };
             }
 
             function statusMessage(scene) {
@@ -443,8 +446,8 @@
                 const targets = targetAngles(a, b, c);
                 return {
                     index: index, a: a, b: b, c: c, status: classify(a, b, c), phase: 'standing', elapsed: 0, done: false,
-                    stickA: createStick(b, targets.angleA),   // 왼쪽 끝에 세운 막대
-                    stickB: createStick(a, targets.angleB)    // 오른쪽 끝에 세운 막대
+                    stickA: createStick(b, targets.angleA, 7 / (a + b)),   // 왼쪽 끝에 세운 막대
+                    stickB: createStick(a, targets.angleB, 7 / (a + b))    // 오른쪽 끝에 세운 막대
                 };
             }
 
@@ -471,7 +474,7 @@
 
             // 한쪽 끝이 고정된 막대 : φ'' = -(3g / 2L)·cos φ - 감쇠·φ'
             function swing(stick, dt) {
-                const acc = -(3 * GRAVITY / (2 * stick.length)) * Math.cos(stick.angle) - SWING_DAMPING * stick.velocity;
+                const acc = -(3 * GRAVITY / (2 * stick.physLength)) * Math.cos(stick.angle) - SWING_DAMPING * stick.velocity;
                 stick.velocity += acc * dt;
                 stick.angle += stick.velocity * dt;
                 track(stick);
@@ -603,26 +606,38 @@
                 return { minX: Math.min(0, c - a, xC), maxX: Math.max(c, b, xC), minY: 0, maxY: maxY };
             }
 
+            /* 화면 너비에 맞춰 캔버스 모양을 정해요 : 넓으면 가로로 세 칸, 좁으면 세로로 세 칸 */
+            let vertical = null;
+            function layout() {
+                const nowVertical = box.clientWidth < NARROW;
+                if (nowVertical === vertical) { return false; }
+                vertical = nowVertical;
+                canvas.width = vertical ? 800 : 1440;
+                canvas.height = vertical ? 1260 : 520;
+                canvas.style.aspectRatio = canvas.width + ' / ' + canvas.height;
+                return true;
+            }
+
             function draw() {
-                const width = canvas.width, height = canvas.height;
-                const usableH = height - CAPTION_H - PANEL_PAD * 2;
+                const width = canvas.width, height = canvas.height, n = scenes.length;
+                const panelW = vertical ? width : width / n;
+                const panelH = vertical ? height / n : height;
+                const usableW = panelW - PANEL_PAD * 2;
+                const usableH = panelH - CAPTION_H - PANEL_PAD * 2;
                 context.clearRect(0, 0, width, height);
-                /* 모든 칸을 같은 배율로 그려 막대 길이를 눈으로 비교할 수 있게 하고,
-                   칸 너비는 그 경우가 차지하는 범위에 맞춰 나눠요 */
+                /* 세 칸 모두 같은 크기 · 같은 배율 : 가장 넓게 움직이는 경우가 칸에 꼭 들어가게 맞춰요 */
                 const ext = scenes.map(extents);
-                const totalX = ext.reduce(function (sum, e) { return sum + (e.maxX - e.minX); }, 0);
-                const scale = Math.min((width - PANEL_PAD * 2 * scenes.length) / totalX,
-                    Math.min.apply(null, ext.map(function (e) { return usableH / (e.maxY - e.minY); })));
-                const extra = (width - PANEL_PAD * 2 * scenes.length - totalX * scale) / scenes.length;
-                const panelWs = ext.map(function (e) { return (e.maxX - e.minX) * scale + PANEL_PAD * 2 + extra; });
+                const spanX = Math.max.apply(null, ext.map(function (e) { return e.maxX - e.minX; }));
+                const spanY = Math.max.apply(null, ext.map(function (e) { return e.maxY - e.minY; }));
+                const scale = Math.min(usableW / spanX, usableH / spanY);
                 scenes.forEach(function (scene, i) {
-                    const panelW = panelWs[i];
                     const a = scene.a, b = scene.b, c = scene.c, status = scene.status;
                     const stickA = scene.stickA, stickB = scene.stickB;
                     const e = ext[i];
-                    const left = panelWs.slice(0, i).reduce(function (sum, w) { return sum + w; }, 0);
+                    const left = vertical ? 0 : panelW * i;
+                    const top = vertical ? panelH * i : 0;
                     const offsetX = left + (panelW - (e.maxX - e.minX) * scale) / 2 - e.minX * scale;
-                    const offsetY = PANEL_PAD + (usableH - (e.maxY - e.minY) * scale) / 2 + e.maxY * scale;
+                    const offsetY = top + PANEL_PAD + (usableH - (e.maxY - e.minY) * scale) / 2 + e.maxY * scale;
                     const toCanvas = function (x, y) { return { x: offsetX + x * scale, y: offsetY - y * scale }; };
                     const pointA = toCanvas(0, 0);
                     const pointB = toCanvas(c, 0);
@@ -633,8 +648,8 @@
                         context.strokeStyle = '#e2e8f0';
                         context.lineWidth = 2;
                         context.beginPath();
-                        context.moveTo(left, 16);
-                        context.lineTo(left, height - 16);
+                        if (vertical) { context.moveTo(16, top); context.lineTo(width - 16, top); }
+                        else { context.moveTo(left, 16); context.lineTo(left, height - 16); }
                         context.stroke();
                         context.restore();
                     }
@@ -664,12 +679,15 @@
                     context.font = 'bold 34px Pretendard Variable, sans-serif';
                     context.textAlign = 'center';
                     context.textBaseline = 'middle';
-                    context.fillText(NUMBERS[i] + ' ' + a + ', ' + b + ', ' + c, left + panelW / 2, height - CAPTION_H / 2 - 6);
+                    context.fillText(NUMBERS[i] + ' ' + a + ', ' + b + ', ' + c, left + panelW / 2, top + panelH - CAPTION_H / 2 - 6);
                 });
             }
 
+            window.addEventListener('resize', function () { if (layout()) { draw(); } });
+
             box.querySelector('.replay').addEventListener('click', play);
 
+            layout();
             reset();
             if (!('IntersectionObserver' in window)) { play(); return; }
             const observer = new IntersectionObserver(function (entries) {
