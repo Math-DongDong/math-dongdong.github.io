@@ -55,6 +55,7 @@
     let activeView = 'view-read';
     let session = null;
     let attempts = {};
+    let choiceOrder = {};   // 이번 미션에서 문항별 보기 순서 (미션에 들어올 때마다 새로 섞어요)
 
     /* ---------- 저장소 (localStorage, 차단 환경이면 메모리로 대체) ---------- */
     const Store = (function () {
@@ -200,8 +201,26 @@
         if (mode === 'review' && startId) { index = Math.max(0, ids.indexOf(startId)); }
         session = { flow: flow, mode: mode, ids: ids, index: index };
         attempts = {};   // 다시 풀 때마다 '한 번에 맞힐' 기회가 새로 주어집니다
+        choiceOrder = {};   // 보기 순서도 새로 섞어서, 정답 자리를 외워 맞히지 못하게 해요
         showView('view-mission');
         renderCurrentQuestion();
+    }
+
+    /* 보기 순서 섞기 : 같은 미션 안에서는 [이전]·[다음]으로 오가도 순서가 그대로예요 */
+    function shuffledCopy(list) {
+        const copy = list.slice();
+        for (let i = copy.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const temp = copy[i];
+            copy[i] = copy[j];
+            copy[j] = temp;
+        }
+        return copy;
+    }
+
+    function choicesOf(id) {
+        if (!choiceOrder[id]) { choiceOrder[id] = shuffledCopy(QUESTIONS[id].choices); }
+        return choiceOrder[id];
     }
 
     function renderCurrentQuestion() {
@@ -221,7 +240,7 @@
             '<p class="lead-text">' + q.stem + '</p>' +
             /* 조건 상자가 비어 있으면 아예 만들지 않습니다 */
             (String(q.data || '').trim() ? '<div class="data-line">' + q.data + '</div>' : '') +
-            q.choices.map(function (c) {
+            choicesOf(id).map(function (c) {
                 let cls = 'choice';
                 let dis = '';
                 if (state.solvedWith) { dis = ' disabled'; if (state.solvedWith === c.id) { cls += ' correct'; } }

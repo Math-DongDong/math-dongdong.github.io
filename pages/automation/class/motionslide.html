@@ -259,6 +259,8 @@
     .thumb-more:hover { background: #eef2ff; color: var(--primary); }
     .math-preview { min-height: 96px; font-size: 40px; color: #1f2937; overflow-x: auto; background: #fff; }
     .math-preview .math-tex svg { max-width: 100%; }
+    .math-swatch { width: 22px; height: 22px; padding: 0; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #cbd5e1; }
+    .math-swatch.on { box-shadow: 0 0 0 2px #2563eb; }
     #slide-menu { position: fixed; z-index: 1060; min-width: 210px; font-size: 0.85rem; }
     #slide-menu .dropdown-item { display: flex; align-items: center; gap: 0.5rem; }
     #slide-menu kbd { margin-left: auto; font-size: 0.7rem; background: #f1f5f9; color: #64748b; }
@@ -548,7 +550,18 @@
     .rm-bottom { flex: none; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); background: #0b1220; }
     .rm-live { display: flex; align-items: center; gap: 0.6rem; }
     #rm-live-label { margin-right: auto; color: #9ca3af; }
-    #rm-pause { flex: 1; }
+    #rm-pause, #rm-live-start { flex: 1; }
+    #rm-qr.is-on { background: #e5e7eb; color: #111827; }
+    .rm-live-note { flex: 1; min-width: 0; font-size: 0.8rem; color: #fca5a5; overflow-wrap: anywhere; }
+    /* 휴대폰으로 진행: PC 발표 화면에 크게 띄우는 함께 보기 QR (학생이 찍는다) */
+    #show-live-qr { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; padding: 24px;
+      background: rgba(15, 23, 42, 0.97); color: #fff; text-align: center; cursor: default; }
+    #show-live-qr img { width: min(46vh, 60vw); height: auto; background: #fff; padding: 16px; border-radius: 16px; image-rendering: pixelated; }
+    #show-live-qr .code { font-size: min(11vh, 12vw); font-weight: 800; letter-spacing: 0.3em; line-height: 1; }
+    #show-live-qr .name { font-size: 3.2vh; font-weight: 600; }
+    #show-live-qr .guide { font-size: 2.6vh; color: #cbd5e1; }
+    #show-live-qr .count { font-size: 3vh; }
+    #show-live-qr button { font: inherit; font-size: 2.2vh; padding: 8px 22px; border-radius: 999px; border: 1px solid #94a3b8; background: transparent; color: #fff; }
     #rm-pause.is-on { background: #f59e0b; border-color: #f59e0b; color: #111827; }
     .rm-nav { display: flex; gap: 0.6rem; }
     .rm-nav .btn { height: 4.2rem; font-size: 1.5rem; font-weight: 700; }
@@ -861,6 +874,8 @@
   <div id="show-overlay" aria-label="발표 화면">
     <div class="show-tools">
       <button type="button" class="btn btn-sm btn-light" id="show-spot" aria-pressed="false"><i class="bi bi-brightness-high"></i> 하이라이트 (H)</button>
+      <!-- 휴대폰으로 진행할 때만: 함께 보기 시작 · QR (학생 목록은 띄우지 않는다) -->
+      <button type="button" class="btn btn-sm btn-light d-none" id="show-live"><i class="bi bi-broadcast"></i> <span id="show-live-label">함께 보기</span></button>
       <button type="button" class="btn btn-sm btn-light" id="show-overview"><i class="bi bi-grid-3x3-gap"></i> 모든 슬라이드</button>
       <button type="button" class="btn btn-sm btn-light" id="show-exit">편집 모드로 (Esc)</button>
     </div>
@@ -978,11 +993,13 @@
       </section>
     </div>
     <footer class="rm-bottom">
-      <!-- 함께 보기가 열려 있을 때만: 학생 화면 멈추기 · 접속 인원 -->
+      <!-- 함께 보기: 열려 있지 않으면 [시작], 열려 있으면 학생 화면 멈추기 · QR · 접속 인원 (학생 이름·학번은 어느 화면에도 띄우지 않는다) -->
       <div class="rm-live d-none" id="rm-live">
         <span class="small text-nowrap" id="rm-live-label"></span>
+        <button type="button" class="btn btn-outline-success d-none" id="rm-live-start"><i class="bi bi-broadcast"></i> 함께 보기 시작</button>
         <button type="button" class="btn btn-outline-warning" id="rm-pause" aria-pressed="false"></button>
-        <span class="text-nowrap" title="접속한 학생"><i class="bi bi-people-fill"></i> <span id="rm-live-count">0</span></span>
+        <button type="button" class="btn btn-outline-light d-none" id="rm-qr" aria-pressed="false"><i class="bi bi-qr-code"></i> QR</button>
+        <span class="text-nowrap" id="rm-live-people" title="접속한 학생 수"><i class="bi bi-people-fill"></i> <span id="rm-live-count">0</span></span>
       </div>
       <div class="rm-nav">
         <button type="button" class="btn btn-secondary" id="rm-prev" aria-label="이전"><i class="bi bi-chevron-left"></i></button>
@@ -1119,7 +1136,7 @@
           <div class="mt-3">
             <label class="form-label small fw-semibold" for="set-interval">요청 간격 (초)</label>
             <input type="number" class="form-control" id="set-interval" value="5" min="0" max="60">
-            <p class="form-text mb-0">여러 장 생성·모든 장 시나리오 작성처럼 여러 번 요청할 때 요청 사이에 기다리는 시간입니다. 기본 권장값은 5초입니다.</p>
+            <p class="form-text mb-0">여러 장을 한꺼번에 만들 때처럼 여러 번 요청할 때 요청 사이에 기다리는 시간입니다. 기본 권장값은 5초입니다.</p>
           </div>
         </div>
         <div class="modal-footer">
@@ -1403,7 +1420,21 @@
           <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
             <label class="small text-muted mb-0" for="math-size">글자 크기</label>
             <input type="number" class="form-control form-control-sm" id="math-size" min="16" max="200" step="2" value="56" style="width: 84px;">
-            <span class="small text-muted">px (새로 넣을 때만)</span>
+            <span class="small text-muted me-3">px (새로 넣을 때만)</span>
+            <label class="small text-muted mb-0" for="math-color">색</label>
+            <input type="color" class="form-control form-control-sm form-control-color" id="math-color" value="#1f2937" title="수식 색">
+            <div class="d-flex flex-wrap gap-1" id="math-swatches" aria-label="자주 쓰는 색">
+              <button type="button" class="math-swatch" data-color="#1f2937" style="background:#1f2937" title="검정"></button>
+              <button type="button" class="math-swatch" data-color="#dc2626" style="background:#dc2626" title="빨강"></button>
+              <button type="button" class="math-swatch" data-color="#2563eb" style="background:#2563eb" title="파랑"></button>
+              <button type="button" class="math-swatch" data-color="#059669" style="background:#059669" title="초록"></button>
+              <button type="button" class="math-swatch" data-color="#d97706" style="background:#d97706" title="주황"></button>
+              <button type="button" class="math-swatch" data-color="#7c3aed" style="background:#7c3aed" title="보라"></button>
+            </div>
+            <div class="form-check mb-0 small">
+              <input class="form-check-input" type="checkbox" id="math-color-inherit">
+              <label class="form-check-label" for="math-color-inherit">둘레 글자 색 따르기</label>
+            </div>
           </div>
           <div class="small text-muted mt-3 mb-1">미리보기</div>
           <div class="math-preview border rounded-3 p-3 text-center" id="math-preview" aria-live="polite"></div>
@@ -3322,6 +3353,12 @@
         undoStack: [],
         redoStack: [],
         lastSnap: '',
+        // 되돌리기 기록 상한: 단계 수(80)와 함께 기록 전체 크기(글자 수)로도 막는다.
+        // 기록 하나가 덱 전체 사본이라, 그림·영상(data URL)이 큰 덱은 단계 수만으로는 수 GB까지 커질 수 있다.
+        // 한글이 섞인 글은 글자당 2바이트라 5천만 자 ≈ 메모리 100MB.
+        HISTORY_MAX_STEPS: 80,
+        HISTORY_MAX_CHARS: 50 * 1000 * 1000,
+        historyNoted: false, // '기록을 줄였다' 알림을 이 덱에서 이미 보였는지
         saveTimer: null,
 
         newSlide(kind) {
@@ -3386,6 +3423,7 @@
           Editor.undoStack = [];
           Editor.redoStack = [];
           Editor.lastSnap = Editor.snapshot();
+          Editor.historyNoted = false;
           AiPanel.reviseHistory = [];
 
           $('home-view').classList.add('d-none');
@@ -3647,9 +3685,9 @@
           const snap = Editor.snapshot();
           if (snap !== Editor.lastSnap) {
             Editor.undoStack.push(Editor.lastSnap);
-            if (Editor.undoStack.length > 80) Editor.undoStack.shift();
             Editor.lastSnap = snap;
             Editor.redoStack = [];
+            Editor.trimHistory();
           }
           Editor.scheduleSave();
           Editor.refreshThumb(Editor.index);
@@ -3695,12 +3733,50 @@
           if (!from.length) return;
           to.push(Editor.lastSnap);
           Editor.lastSnap = from.pop();
+          Editor.trimHistory();
+          const before = Editor.deck.slides;
           Editor.deck.slides = JSON.parse(Editor.lastSnap);
-          Editor.index = Math.min(Editor.index, Editor.deck.slides.length - 1);
+          // 바뀐 장으로 가서 되돌린다(다른 장을 보고 있으면 화면 변화 없이 되돌아가 효과가 없는 것처럼 보이므로).
+          const was = Editor.index;
+          const changed = Editor.changedIndex(before, Editor.deck.slides);
+          Editor.index = changed >= 0 ? changed : Math.min(Editor.index, Editor.deck.slides.length - 1);
+          Editor.pickOnly();
+          if (changed >= 0 && changed !== was) {
+            Util.toast((changed + 1) + '번 장으로 가서 ' + (direction < 0 ? '되돌렸습니다.' : '다시 실행했습니다.'));
+          }
           Editor.renderRail();
           Editor.renderCanvas();
           Editor.scheduleSave();
           Editor.updateHistoryButtons();
+        },
+
+        // 되돌리기 기록을 단계 수·전체 크기 안으로 줄인다. 다시 실행 기록의 먼 것부터, 그다음 되돌리기의 오래된 것부터 버린다(되돌리기는 1단계는 남긴다).
+        trimHistory() {
+          const undo = Editor.undoStack;
+          const redo = Editor.redoStack;
+          while (undo.length > Editor.HISTORY_MAX_STEPS) undo.shift();
+          let total = undo.concat(redo).reduce((sum, snap) => sum + snap.length, 0);
+          let dropped = false;
+          while (total > Editor.HISTORY_MAX_CHARS && redo.length) { total -= redo.shift().length; dropped = true; }
+          while (total > Editor.HISTORY_MAX_CHARS && undo.length > 1) { total -= undo.shift().length; dropped = true; }
+          if (dropped && !Editor.historyNoted) {
+            Editor.historyNoted = true;
+            Util.toast('그림·영상이 많은 프레젠테이션이라 메모리를 아끼려고 되돌리기 기록을 최근 ' + undo.length + '단계만 남깁니다.', 'secondary');
+          }
+        },
+
+        // 되돌리기 전후에서 처음 달라진 장의 번호(새 목록 기준). 내용이 같고 장이 빠지거나 순서만 바뀌었으면 처음 어긋난 자리. 없으면 -1.
+        changedIndex(before, after) {
+          const old = new Map(before.map(slide => [slide.id, JSON.stringify(slide)]));
+          for (let i = 0; i < after.length; i++) {
+            const prev = old.get(after[i].id);
+            if (prev === undefined || prev !== JSON.stringify(after[i])) return i;
+          }
+          const n = Math.max(before.length, after.length);
+          for (let i = 0; i < n; i++) {
+            if (!before[i] || !after[i] || before[i].id !== after[i].id) return Math.min(i, after.length - 1);
+          }
+          return -1;
         },
 
         // 지운 뒤 "N장 삭제됨 [되돌리기]" 알림. 그 사이 다른 변경이 없을 때만 한 단계 되돌리고 지웠던 장으로 간다.
@@ -4863,7 +4939,7 @@
 
       /* ===== 8-0-1. 수식 편집 창 =====
          [직접 삽입 → 수식]으로 새로 넣거나, 슬라이드의 수식(.math-tex)을 더블클릭해 고친다.
-         LaTeX(data-tex)만 바꾸고 MathKit으로 다시 조판한다. 색·크기는 지금처럼 바깥 글자를 따른다. */
+         LaTeX(data-tex)를 바꾸고 MathKit으로 다시 조판한다. 크기는 둘레 글자를 따르고, 색은 고르면 수식(span)에 직접 칠한다(안 고르면 둘레 글자 색). */
       const MathEditor = {
         target: null,   // 고치는 수식(.math-tex). 새로 넣을 때는 null
         timer: null,
@@ -4877,10 +4953,38 @@
           $('math-input').value = editing ? (el.getAttribute('data-tex') || '') : '';
           $('math-size').disabled = editing;
           $('math-apply').textContent = editing ? '고치기' : '넣기';
+          // 색: 고치는 수식에 칠한 색이 있으면 그 색, 없으면 '둘레 글자 색 따르기'. 새로 넣을 때는 지난번에 고른 색.
+          const own = editing ? MathEditor.hex(el.style.color) : '';
+          $('math-color-inherit').checked = editing && !own;
+          $('math-color').value = own || MathEditor.lastColor || '#1f2937';
+          MathEditor.syncColor();
           MathEditor.preview();
           const modal = $('math-modal');
           modal.addEventListener('shown.bs.modal', () => { const input = $('math-input'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, { once: true });
           bootstrap.Modal.getOrCreateInstance(modal).show();
+        },
+
+        lastColor: '',
+
+        // 'rgb(220, 38, 38)' → '#dc2626' (색 고르기 칸은 #rrggbb만 받는다)
+        hex(value) {
+          const text = String(value || '').trim();
+          if (/^#[0-9a-f]{6}$/i.test(text)) return text.toLowerCase();
+          const m = text.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+          return m ? '#' + [m[1], m[2], m[3]].map(n => Number(n).toString(16).padStart(2, '0')).join('') : '';
+        },
+
+        // 고른 색('' = 둘레 글자 색 따르기)
+        color() { return $('math-color-inherit').checked ? '' : $('math-color').value; },
+
+        // 미리보기의 수식 색과 색 단추 표시를 맞춘다(다시 조판하지 않는다).
+        syncColor() {
+          const color = MathEditor.color();
+          const el = $('math-preview').querySelector('.math-tex');
+          if (el) el.style.color = color;
+          document.querySelectorAll('#math-swatches .math-swatch').forEach(button => {
+            button.classList.toggle('on', !!color && button.dataset.color === color);
+          });
         },
 
         // 입력이 멈추면(0.25초) 미리보기를 다시 그린다.
@@ -4902,6 +5006,7 @@
             await MathKit.renderTex(el);
             if (seq !== MathEditor.seq) return;
             box.replaceChildren(el);
+            MathEditor.syncColor();
           } catch (err) {
             if (seq !== MathEditor.seq) return;
             $('math-error').textContent = err.message;
@@ -4934,9 +5039,14 @@
           bootstrap.Modal.getOrCreateInstance($('math-modal')).hide();
           const target = MathEditor.target;
           MathEditor.target = null;
+          const color = MathEditor.color();
+          if (color) MathEditor.lastColor = color;
           if (target) {
             if (!target.isConnected) { Util.toast('고치려던 수식이 슬라이드에서 사라졌습니다.', 'warning'); return; }
             target.setAttribute('data-tex', tex);
+            if (color) target.style.color = color;
+            else target.style.removeProperty('color');
+            if (!target.getAttribute('style')) target.removeAttribute('style');
             target.replaceChildren(...el.childNodes);
             Editor.commit();
             return;
@@ -4945,6 +5055,7 @@
           const p = document.createElement('p');
           p.className = 'editable-text';
           p.style.cssText = 'font-size:' + size + 'px;text-align:center;';
+          if (color) el.style.color = color;
           p.append(el);
           DirectInsert.place(p, Math.min(1600, Math.max(400, tex.length * size * 0.45)), size * 2);
         },
@@ -4960,6 +5071,16 @@
             if (button) MathEditor.insert(button.dataset.tex);
           });
           $('math-modal').addEventListener('hidden.bs.modal', () => { MathEditor.target = null; });
+          // 색: 고르면 '둘레 글자 색 따르기'를 끄고 미리보기에 바로 칠한다.
+          $('math-color').addEventListener('input', () => { $('math-color-inherit').checked = false; MathEditor.syncColor(); });
+          $('math-color-inherit').addEventListener('change', MathEditor.syncColor);
+          $('math-swatches').addEventListener('click', event => {
+            const button = event.target.closest('[data-color]');
+            if (!button) return;
+            $('math-color').value = button.dataset.color;
+            $('math-color-inherit').checked = false;
+            MathEditor.syncColor();
+          });
         }
       };
 
@@ -5346,6 +5467,7 @@
           Live.detach(); // 함께 보기는 그대로 열어 두고, 발표 중 표시·일시정지만 푼다
           Show.remote = false;
           Remote.detach(); // 휴대폰에 'PC 발표 끝남'을 알리고 명령 받기를 멈춘다
+          Live.renderBar(); // 휴대폰으로 진행 때만 보이는 [함께 보기] 단추를 숨긴다
           if (Show.overview) { Show.overview.close(); Show.overview = null; }
           document.body.classList.remove('presentation-mode', 'show-audience', 'show-presenter');
           document.body.classList.add('edit-mode');
@@ -10075,6 +10197,8 @@
         count: 0,
         mediaDone: new Set(),
         status: { text: '', error: false, retry: null },
+        qrShown: false,    // 휴대폰으로 진행: PC 발표 화면에 QR을 띄웠는지
+        starting: false,   // 휴대폰에서 [함께 보기 시작]을 눌러 여는 중
 
         canUse() { return !!(window.currentTeacherUid && (window.isApprovedTeacher || window.isAdmin)); },
         on() { return Show.isOn() && (Show.kind === 'presenter' || Show.remote) && !!Editor.deck; },
@@ -10102,6 +10226,7 @@
           Live.count = 0;
           $('live-guest-box').textContent = '';
           $('live-people-list').textContent = '';
+          Live.hideQr();
           Live.setStatus('');
         },
 
@@ -10115,6 +10240,12 @@
 
         renderBar() {
           Remote.pushLive(); // 휴대폰 리모컨에도 함께 보기 상태(코드·모드·멈춤)를 알린다
+          // 휴대폰으로 진행: PC 발표 화면 오른쪽 위 [함께 보기 시작] / [QR]
+          const remoteButton = $('show-live');
+          remoteButton.classList.toggle('d-none', !(Live.canUse() && Show.isOn() && Show.remote));
+          remoteButton.disabled = Live.starting;
+          $('show-live-label').textContent = Live.starting ? '여는 중…'
+            : (!Live.code ? '함께 보기 시작' : (Live.qrShown ? 'QR 닫기' : 'QR · ' + Live.code));
           const visible = Live.canUse() && Show.kind === 'presenter';
           $('pv-live').classList.toggle('d-none', !visible);
           $('pv-live-people').classList.toggle('d-none', !visible || !Live.code);
@@ -10382,10 +10513,13 @@
           const school = String(window.currentTeacherSchool || '').trim();
           const hasSchool = !!school && school !== '관리자';
           $('live-entry-quick').checked = true;
-          $('live-entry-auth').disabled = !hasSchool;
-          $('live-entry-note').textContent = hasSchool
-            ? '학번 인증으로 들어온 학생은 ' + school + ' 학생으로 [학생 관리]에 쌓입니다.'
-            : '학번 인증은 정보수정에서 학교명을 등록해야 쓸 수 있습니다.';
+          // 휴대폰으로 진행: PC 화면이 곧 학생이 보는 화면이라 학번·게스트 승인 목록을 띄울 곳이 없다 → 빠른 입장만
+          $('live-entry-auth').disabled = !hasSchool || Show.remote;
+          $('live-entry-note').textContent = Show.remote
+            ? '휴대폰으로 진행할 때는 학생 학번이 화면에 보이지 않도록 빠른 입장만 쓸 수 있습니다. 학번 인증은 [발표자 보기]에서 시작하세요.'
+            : hasSchool
+              ? '학번 인증으로 들어온 학생은 ' + school + ' 학생으로 [학생 관리]에 쌓입니다.'
+              : '학번 인증은 정보수정에서 학교명을 등록해야 쓸 수 있습니다.';
           $('live-start-go').disabled = false;
           $('live-start-size').textContent = '학생 1명당 받는 양: 계산 중…';
           $('live-start-size').className = 'small mt-3 mb-0';
@@ -10435,6 +10569,36 @@
             console.warn('[live] start', err);
             if (gen === Live.gen) { Live.setStatus('⚠ 함께 보기를 열지 못했습니다', true); Live.renderBar(); }
             Util.toast(LiveUtil.errorText(err), 'danger');
+          }
+        },
+
+        // 휴대폰 리모컨의 [함께 보기 시작]: 창 없이 빠른 입장으로 열고 PC 발표 화면에 QR을 띄운다.
+        // 이름은 시작 창의 기본값(덱 제목 + 날짜). 학생에게 보낼 양을 먼저 재서 30MB를 넘으면 방을 만들지 않는다.
+        async quickStart() {
+          if (!Live.canUse() || !Live.on() || Live.code || Live.starting) return;
+          const gen = Live.gen;
+          Live.starting = true;
+          Live.setStatus('함께 보기를 여는 중…');
+          Live.renderBar();
+          try {
+            const built = await LiveDeck.build(null, { seen: new Set(), media: 0, count: 0 });
+            const size = Math.ceil(new Blob([built.text]).size * 4 / 3);
+            if (size > LIVE.MAX_DECK) {
+              throw Object.assign(new Error('too big'), { userText: '학생 1명당 받는 양이 약 ' + LiveUtil.mb(size) + '라 30MB를 넘어 열지 않았습니다. 큰 그림을 줄여 주세요.' });
+            }
+            const fb = await LiveFb.load();
+            const name = (Editor.deck.title + ' ' + LiveUtil.today()).slice(0, 60);
+            const { code, info } = await Live.create(fb, name, 'quick');
+            if (gen !== Live.gen || !Live.on()) return; // 그사이 발표를 나갔으면 다음에 들어올 때 이어 붙는다
+            Live.starting = false;
+            await Live.bind(fb, code, info, gen);
+            if (gen === Live.gen) Live.showQr();
+          } catch (err) {
+            console.warn('[live] quick start', err);
+            if (gen === Live.gen) Live.setStatus('⚠ ' + (err.userText || LiveUtil.errorText(err)), true);
+          } finally {
+            Live.starting = false;
+            Live.renderBar();
           }
         },
 
@@ -10549,6 +10713,8 @@
           const text = String(Live.count);
           const modalCount = $('live-qr-count');
           if (modalCount) modalCount.textContent = text;
+          const showCount = $('show-live-qr-count');
+          if (showCount) showCount.textContent = text;
           if (Show.popup && !Show.popup.closed) {
             const popupCount = Show.popup.document.getElementById('pa-live-count');
             if (popupCount) popupCount.textContent = text;
@@ -10565,6 +10731,30 @@
           try { img = await LiveUtil.qrDataUrl(url, 600); } catch (err) { /* QR 없이 코드만 보인다 */ }
           if (Live.code !== code) return;
           const guide = 'QR을 찍거나, AI 모션 슬라이드 첫 화면의 [함께 보기]를 눌러 코드를 입력하세요';
+          // 휴대폰으로 진행: PC 발표 화면(학생이 보는 화면) 위에 크게 덮는다. 누른 자리가 장 넘김으로 가지 않게 막는다.
+          if (Show.isOn() && Show.remote) {
+            let box = $('show-live-qr');
+            if (!box) {
+              box = document.createElement('div');
+              box.id = 'show-live-qr';
+              box.setAttribute('role', 'dialog');
+              box.setAttribute('aria-label', '함께 보기 입장 QR');
+              box.addEventListener('click', event => {
+                event.stopPropagation();
+                if (event.target.closest('button')) Live.hideQr();
+              });
+              $('show-overlay').append(box);
+            }
+            box.innerHTML = (img ? '<img alt="입장 QR 코드" src="' + img + '">' : '') +
+              '<div class="code">' + Util.escapeHtml(code) + '</div>' +
+              '<div class="name">' + Util.escapeHtml(name) + '</div>' +
+              '<div class="guide">' + guide + '</div>' +
+              '<div class="count">지금 <b id="show-live-qr-count">' + Live.count + '</b>명 입장</div>' +
+              '<button type="button">QR 닫기</button>';
+            Live.qrShown = true;
+            Live.renderBar();
+            return;
+          }
           const popup = Show.popup && !Show.popup.closed ? Show.popup : null;
           if (popup) {
             const doc = popup.document;
@@ -10593,6 +10783,15 @@
             '<div class="mt-2">지금 <b id="live-qr-count">' + Live.count + '</b>명 입장</div>' +
             '<div class="small text-muted mt-2">[청중 화면 열기]로 프로젝터 창을 연 뒤 [QR 다시 보기]를 누르면 학생들이 보는 화면에 크게 뜹니다.</div>';
           bootstrap.Modal.getOrCreateInstance($('live-qr-modal')).show();
+        },
+
+        // 휴대폰으로 진행: PC 발표 화면의 QR 닫기
+        hideQr() {
+          const box = document.getElementById('show-live-qr');
+          if (box) box.remove();
+          if (!Live.qrShown) return;
+          Live.qrShown = false;
+          Live.renderBar();
         },
 
         onMenu(event) {
@@ -11273,6 +11472,8 @@
           else if (cmd.type === 'prev' && here) Show.prev();
           else if (cmd.type === 'goto' && Number.isInteger(cmd.index)) Show.go(cmd.index);
           else if (cmd.type === 'pause') Live.setPaused(cmd.on === true);
+          else if (cmd.type === 'live-start') Live.quickStart();
+          else if (cmd.type === 'live-qr') { if (cmd.on === true) Live.showQr(); else Live.hideQr(); }
           Remote.sync(); // 넘기지 않았어도(처음·마지막 장) 받았다고 알린다
         },
 
@@ -11303,7 +11504,10 @@
         // 함께 보기 상태(코드·모드·멈춤·인원). 바뀌었을 때만 쓴다.
         pushLive() {
           if (!Remote.sid) return;
-          const value = Live.code ? { code: Live.code, mode: Live.mode, paused: Live.paused, count: Live.count } : null;
+          // 열려 있지 않을 때도 여는 중·실패 안내는 휴대폰에 보인다. 학생 이름·학번은 보내지 않는다(인원 수만).
+          const value = Live.code
+            ? { code: Live.code, mode: Live.mode, paused: Live.paused, count: Live.count, qr: Live.qrShown }
+            : (Live.starting || Live.status.text ? { code: '', starting: Live.starting, note: Live.status.text, error: Live.status.error } : null);
           const key = JSON.stringify(value);
           if (key === Remote.liveKey) return;
           Remote.liveKey = key;
@@ -11374,7 +11578,7 @@
         }
 
         function lock(on) {
-          ['rm-prev', 'rm-next', 'rm-overview', 'rm-pause'].forEach(id => { $(id).disabled = on; });
+          ['rm-prev', 'rm-next', 'rm-overview', 'rm-pause', 'rm-live-start', 'rm-qr'].forEach(id => { $(id).disabled = on; });
         }
 
         // 수업 중 휴대폰 화면이 꺼지지 않게(지원하는 브라우저만)
@@ -11463,11 +11667,36 @@
           return st ? { i: Number(st.index) || 0, s: Number(st.step) || 0 } : null;
         }
 
+        // 함께 보기 줄: 열려 있으면 멈추기·QR·인원, 아니면 [함께 보기 시작](승인 교사). 여는 중·실패 안내도 여기에.
         function renderLive() {
           const live = view.live;
-          const show = !!(live && live.code && view.session && view.session.pcOnline);
-          $('rm-live').classList.toggle('d-none', !show);
-          if (!show) return;
+          const online = !!(view.session && view.session.pcOnline);
+          const open = !!(online && live && live.code);
+          const canStart = online && !open && Live.canUse();
+          $('rm-live').classList.toggle('d-none', !open && !canStart);
+          if (!open && !canStart) return;
+          $('rm-live-start').classList.toggle('d-none', open);
+          $('rm-qr').classList.toggle('d-none', !open);
+          $('rm-live-people').classList.toggle('d-none', !open);
+          const label = $('rm-live-label');
+          if (!open) {
+            $('rm-pause').classList.add('d-none');
+            const starting = !!(live && live.starting);
+            $('rm-live-start').disabled = starting;
+            $('rm-live-start').innerHTML = starting
+              ? '<span class="spinner-border spinner-border-sm"></span> 여는 중…'
+              : '<i class="bi bi-broadcast"></i> 함께 보기 시작';
+            const note = live && live.note && !starting ? live.note : '';
+            label.textContent = note;
+            label.className = note ? 'rm-live-note' : 'small text-nowrap';
+            label.classList.toggle('d-none', !note);
+            return;
+          }
+          label.className = 'small text-nowrap';
+          const qr = $('rm-qr');
+          qr.classList.toggle('is-on', !!live.qr);
+          qr.setAttribute('aria-pressed', String(!!live.qr));
+          qr.innerHTML = live.qr ? '<i class="bi bi-qr-code"></i> QR 닫기' : '<i class="bi bi-qr-code"></i> QR';
           const browse = live.mode === 'browse';
           $('rm-live-label').textContent = '함께 보기 ' + live.code + (browse ? ' · 📚 전체 보기' : '');
           const pause = $('rm-pause');
@@ -11795,6 +12024,20 @@
             if (deck.slides[index]) send('goto', { index });
           });
           $('rm-pause').addEventListener('click', togglePause);
+          // 함께 보기 시작: 빠른 입장으로 열고 PC 발표 화면에 QR을 띄운다(학생 이름·학번은 어디에도 띄우지 않는다).
+          $('rm-live-start').addEventListener('click', () => {
+            message('학생 기기에서 이 발표를 함께 보게 합니다.\n빠른 입장(방 코드만, 닉네임 자동)으로 열고 PC 화면에 입장 QR을 크게 띄워요.\n학생이 다 들어오면 [QR 닫기]를 누르세요.', [
+              ['함께 보기 시작', () => { message(''); send('live-start'); view.live = { code: '', starting: true }; renderLive(); }, 'success'],
+              ['취소', () => message(''), 'outline-light']
+            ]);
+          });
+          $('rm-qr').addEventListener('click', () => {
+            const live = view.live;
+            if (!live || !live.code) return;
+            live.qr = !live.qr; // 먼저 단추를 바꾸고, PC가 실제 상태를 다시 알린다
+            renderLive();
+            send('live-qr', { on: live.qr });
+          });
           document.querySelectorAll('[data-rm-font]').forEach(button => button.addEventListener('click', () => setFont(Number(button.dataset.rmFont))));
           document.addEventListener('keydown', onKey);
           document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
@@ -12268,6 +12511,13 @@
         $('show-exit').addEventListener('click', event => { event.stopPropagation(); Show.exit(); });
         $('show-overview').addEventListener('click', event => { event.stopPropagation(); Show.openOverview(); });
         $('show-spot').addEventListener('click', event => { event.stopPropagation(); Show.toggleSpot(); });
+        // 휴대폰으로 진행: 함께 보기가 없으면 시작 창, 있으면 QR 보이기·닫기
+        $('show-live').addEventListener('click', event => {
+          event.stopPropagation();
+          if (!Live.code) Live.openStart();
+          else if (Live.qrShown) Live.hideQr();
+          else Live.showQr();
+        });
         $('show-overlay').addEventListener('mousemove', event => Show.moveSpot(event, $('show-canvas')));
         $('show-overlay').addEventListener('mouseleave', () => Show.moveSpot(null));
         $('pv-c-host').addEventListener('mousemove', event => { Show.moveSpot(event, $('pv-c-canvas')); Show.moveLaser(event, $('pv-c-canvas')); });

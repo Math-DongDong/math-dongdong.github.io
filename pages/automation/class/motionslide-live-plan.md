@@ -661,15 +661,15 @@ Live.ensureDeck():
 RTDB(motionslide-live) remote/{uid}/
   session: { sid, pcOnline, startedAt, deckV, deckId, deckTitle, total }   // PC가 씀. pcOnline은 onDisconnect로 false
   state:   { index, step, maxStep, total, slideId, cid, at }               // PC가 씀(지금 위치, cid = 마지막으로 받은 명령)
-  cmd:     { sid, cid, type: next|prev|goto|pause, from: {i, s}, index?, on?, at }  // 휴대폰이 씀
-  live:    { code, mode, paused, count } | null                            // PC가 씀(함께 보기 상태)
+  cmd:     { sid, cid, type: next|prev|goto|pause|live-start|live-qr, from: {i, s}, index?, on?, at }  // 휴대폰이 씀
+  live:    { code, mode, paused, count, qr } | { code: '', starting, note, error } | null  // PC가 씀(함께 보기 상태·여는 중·실패 안내)
   phones/{기기id}: { at }                                                   // 휴대폰 접속 표시(onDisconnect로 지움)
 Storage motion_remote/{uid}/deck.json   // 학생용 덱(LiveDeck.build, 영상은 자리표시) + 장마다 notes·title·section + sections, deckV
 ```
 - **명령 처리**: PC는 `sid`가 이번 발표와 같고 `cid`가 새 것일 때만 실행합니다. `next`·`prev`는 `from`(누르기 전 위치)이 PC의 지금 위치와 같을 때만 넘겨, 늦게 오거나 겹친 명령이 두 번 넘기지 않게 합니다. 넘기지 않았어도 `state`를 다시 써서 휴대폰이 맞춰지게 합니다.
 - **빠르게 두 번 누르기**: 휴대폰은 누르는 즉시 자기 화면을 다음 위치로 옮기고(다음 명령의 `from`이 됨), PC가 돌려준 `state.cid`로 확인합니다. 2.5초 안에 확인이 없으면 PC 위치로 되돌립니다.
 - **휴대폰용 덱**: 시작할 때 지난 `session.deckV`와 같으면 다시 올리지 않습니다. 장·시나리오를 고친 뒤 다시 시작하면 다시 올리고, 휴대폰은 `session.deckV`가 바뀐 것을 보고 새로 받습니다.
-- **함께 보기와 함께**: [휴대폰으로 진행] 중에도 이 덱의 함께 보기에 이어 붙어(`Live.on()`이 리모컨 모드를 포함) 학생 화면이 따라가고, PC 키 S·휴대폰 [학생 화면 멈추기]가 됩니다. 함께 보기 **시작**은 지금처럼 발표자 보기에서 합니다(1단계 범위 밖).
+- **함께 보기와 함께**: [휴대폰으로 진행] 중에도 이 덱의 함께 보기에 이어 붙어(`Live.on()`이 리모컨 모드를 포함) 학생 화면이 따라가고, PC 키 S·휴대폰 [학생 화면 멈추기]가 됩니다. 함께 보기 **시작**도 휴대폰 [함께 보기 시작] 또는 PC 발표 화면 오른쪽 위 [함께 보기 시작]으로 할 수 있습니다(2026-11-20). 이때는 **빠른 입장만** 쓰고(학번·게스트 승인 목록을 띄울 화면이 없으므로), 입장 QR은 PC 발표 화면 위에 크게 덮어 보이며 휴대폰 [QR]로 보이기·닫기 합니다. 접속 학생 목록은 어느 화면에도 띄우지 않고 인원 수만 휴대폰에 보입니다. 휴대폰에서 시작할 때는 학생 1명당 받는 양을 먼저 재서 30MB를 넘으면 방을 만들지 않습니다.
 - 정리: `teacher-cleanup.js`가 계정 삭제·탈퇴 때 `motion_remote/{uid}` 폴더와 RTDB `remote/{uid}`를 지웁니다. 교사마다 파일 하나를 덮어쓰므로 쌓이지 않습니다.
 
 ---
