@@ -95,7 +95,7 @@
                         { "name": "삼각형의 합동 조건", "path": "pages/middleschool/ahamath/1/congruent.html" },
                         { "header": "평면도형의 성질" },
                         { "name": "삼각형의 내각과 외각", "path": "pages/middleschool/ahamath/1/triangleangle.html" },
-                        { "name": "다각형의 내각의 크기의 합", "path": "pages/middleschool/ahamath/1/interiorsum.html" },
+                        { "name": "다각형의 내각과 외각의 크기의 합", "path": "pages/middleschool/ahamath/1/interiorsum.html" },
                         { "name": "다각형의 외각의 크기의 합", "path": "pages/middleschool/ahamath/1/exteriorsum.html" },
                         { "name": "다각형의 대각선", "path": "pages/middleschool/ahamath/1/diagonal.html" },
                         { "header": "자료의 정리와 해석" },
