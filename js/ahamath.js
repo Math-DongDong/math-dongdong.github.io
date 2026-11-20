@@ -16,8 +16,12 @@
 
      AhaMath.registerVis({
          build: function (el, type) { if (type === 'plane') { ... } },
-         play:  function (el, type) { if (type === 'plane') { ... } }
+         play:  function (el, type) { if (type === 'plane') { ... } },
+         describe: function (el, type) { return ''; }   // 화면 읽기 프로그램용 그림 설명 (없어도 됨)
      });
+
+   그림 설명 : 그림마다 data-alt="보이는 것을 말로" 를 적으면 화면 읽기 프로그램이 읽어요.
+              문항 속 그림은 data-alt 필수. 기본 10종은 자료 숫자로 설명을 자동으로 만들어요.
 
    기본 제공 시각 자료 10종
    cards · level · outlier · sort · stack · stemleaf · histogram · grid · segbar · dualpoly
@@ -204,6 +208,7 @@
         choiceOrder = {};   // 보기 순서도 새로 섞어서, 정답 자리를 외워 맞히지 못하게 해요
         showView('view-mission');
         renderCurrentQuestion();
+        focusQuestionTitle();
     }
 
     /* 보기 순서 섞기 : 같은 미션 안에서는 [이전]·[다음]으로 오가도 순서가 그대로예요 */
@@ -236,7 +241,7 @@
             '문제 ' + (session.index + 1) + ' / ' + session.ids.length;
 
         card.innerHTML =
-            '<h2 class="card-title">' + q.badge + '</h2>' +
+            '<h2 class="card-title" tabindex="-1">' + q.badge + '</h2>' +
             '<p class="lead-text">' + q.stem + '</p>' +
             /* 조건 상자가 비어 있으면 아예 만들지 않습니다 */
             (String(q.data || '').trim() ? '<div class="data-line">' + q.data + '</div>' : '') +
@@ -258,6 +263,7 @@
             buildVis(v);
             playVis(v);
         });
+        speakFractions(card);
 
         const fb = document.getElementById('fb');
         if (state.solvedWith) {
@@ -296,6 +302,88 @@
 
         renderCurrentQuestion();
         renderReview();
+
+        /* 화면 읽기 프로그램 : 안내 문구를 읽어 주고, 다음에 누를 곳으로 초점을 옮겨요
+           (카드를 새로 그리면 누른 버튼이 사라져 초점이 페이지 맨 앞으로 튕기기 때문이에요) */
+        const fb = document.getElementById('fb');
+        if (fb && !fb.hidden) { announce(fb.innerHTML); }
+        if (picked.correct) {
+            focusQuietly(document.getElementById('nextQ'));
+        } else {
+            focusQuietly(document.querySelector('#questionCard .choice:not(:disabled)'));
+        }
+    }
+
+    /* ---------- 화면 읽기 프로그램 도우미 ---------- */
+    let liveRegion = null;
+
+    /* 화면에는 보이지 않고 소리로만 읽히는 안내 상자 (페이지에 하나만 두고 계속 씁니다) */
+    function announce(html) {
+        if (!liveRegion) {
+            liveRegion = document.createElement('div');
+            liveRegion.className = 'visually-hidden';
+            liveRegion.setAttribute('role', 'status');
+            liveRegion.setAttribute('aria-live', 'polite');
+            document.body.appendChild(liveRegion);
+        }
+        const text = speechText(html);
+        liveRegion.textContent = '';   // 같은 문구가 이어져도 다시 읽히도록 한 번 비워요
+        setTimeout(function () { liveRegion.textContent = text; }, 80);
+    }
+
+    /* 화면은 움직이지 않고 초점만 옮겨요 */
+    function focusQuietly(el) {
+        if (!el) { return; }
+        try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    }
+
+    function focusQuestionTitle() {
+        focusQuietly(document.querySelector('#questionCard .card-title'));
+    }
+
+    /* 분수 모양(.frac) 하나를 'b분의 a' 로 읽는 글 (분수 표기 방식 세 가지를 모두 받아요) */
+    function fractionWords(frac) {
+        const signEl = frac.querySelector('b');   // 분수 안에 넣은 부호 (+ 또는 −) 를 그대로 읽어요
+        const sign = signEl ? signEl.textContent.trim() : '';
+        const parts = Array.prototype.filter.call(frac.children, function (c) { return c.tagName !== 'B'; });
+        if (parts.length < 2) { return ''; }
+        return sign + parts[parts.length - 1].textContent.trim() + '분의 ' + parts[0].textContent.trim();
+    }
+
+    /* 화면의 분수 모양은 '1 5' 처럼 붙어 읽혀서, 보이지 않는 '5분의 1' 을 앞에 덧붙이고 모양은 읽지 않게 해요 */
+    function speakFractions(root) {
+        if (!root || !root.querySelectorAll) { return; }
+        root.querySelectorAll('.frac:not([aria-hidden])').forEach(function (frac) {
+            const words = fractionWords(frac);
+            if (!words || !frac.parentNode) { return; }
+            const voice = document.createElement('span');
+            voice.className = 'visually-hidden';
+            voice.textContent = ' ' + words + ' ';
+            frac.setAttribute('aria-hidden', 'true');
+            frac.parentNode.insertBefore(voice, frac);
+        });
+    }
+
+    /* 소리로 읽기 좋은 글로 바꿔요 : 분수 모양 → 'b분의 a', ‾AB → '선분 AB', ∠ → '각' */
+    function speechText(source) {
+        const box = document.createElement('template');
+        box.innerHTML = String(source || '');
+        const root = box.content;
+        root.querySelectorAll('[aria-hidden="true"]').forEach(function (el) { el.remove(); });   // 소리용 글이 이미 있는 분수는 한 번만 읽게
+        root.querySelectorAll('br').forEach(function (br) { br.replaceWith(' '); });
+        root.querySelectorAll('.frac').forEach(function (frac) {
+            const words = fractionWords(frac);
+            if (words) { frac.replaceWith(' ' + words + ' '); }
+        });
+        return root.textContent
+            .replace(/‾([A-Z]{2,})/g, '선분 $1')
+            .replace(/→([A-Z]{2,})/g, '반직선 $1')
+            .replace(/↔([A-Z]{2,})/g, '직선 $1')
+            .replace(/∠\s*/g, '각 ')
+            .replace(/(\d+)\s*\/\s*(\d+)/g, '$2분의 $1')
+            .replace(/(\d)\s*~\s*(\d)/g, '$1에서 $2')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     function updateMissionNav() {
@@ -392,6 +480,11 @@
         actions.appendChild(link);
 
         showView('view-done');
+        const doneTitle = document.getElementById('doneTitle');
+        if (doneTitle) {
+            doneTitle.setAttribute('tabindex', '-1');
+            focusQuietly(doneTitle);
+        }
     }
 
     function makeButton(html, cls, onClick, style) {
@@ -464,7 +557,149 @@
         });
     }
 
+    /* 그림을 그리고, 화면 읽기 프로그램이 읽을 설명을 붙여요 */
     function buildVis(el) {
+        drawVis(el);
+        try {
+            labelVis(el);
+            speakFractions(el);
+        } catch (e) { /* 설명을 못 붙여도 그림은 그대로 보여요 */ }
+    }
+
+    /* ---------- 그림 설명 (화면 읽기 프로그램용) ----------
+       쓰는 순서 : ① data-alt (직접 적은 설명)
+                  ② registerVis 의 describe(el, type) (페이지 · 단원 전용 그림이 스스로 내는 설명)
+                  ③ 기본 10종은 data-values · data-counts 같은 자료로 자동 설명
+                  ④ data-caption
+       설명이 있으면 그림 전체를 '이미지 한 장 + 설명'으로 읽혀요.
+       설명이 없으면 손대지 않아요 (글자로 된 그림은 원래대로 글자가 읽혀요). */
+    function labelVis(el) {
+        /* 버튼 · 입력 칸이 들어 있는 그림은 학생이 직접 다뤄야 하니 그대로 둬요 */
+        if (el.querySelector('button, input, select, textarea, a[href]')) { return; }
+        const text = speechText(describeVis(el));
+        if (!text) { return; }
+        el.setAttribute('role', 'img');
+        el.setAttribute('aria-label', text);
+    }
+
+    function describeVis(el) {
+        const type = el.dataset.vis;
+        if (el.dataset.alt) { return el.dataset.alt; }
+        for (let i = 0; i < plugins.length; i++) {
+            const text = plugins[i].describe ? plugins[i].describe(el, type) : '';
+            if (text) { return text; }
+        }
+        return describeBuiltIn(el, type) || el.dataset.caption || '';
+    }
+
+    function listOf(text) {
+        return String(text || '').split(',').map(function (v) { return v.trim(); })
+            .filter(function (v) { return v !== ''; });
+    }
+
+    function roundText(v) { return String(Math.round(v * 100) / 100); }
+
+    /* 숫자 뒤에 붙는 '은/는' (받침이 있는 영 · 일 · 삼 · 육 · 칠 · 팔 뒤에는 '은') */
+    function topicOf(v) {
+        const last = String(v).trim().slice(-1);
+        return v + ('013678'.indexOf(last) > -1 ? '은' : '는');
+    }
+
+    function axisText(el) {
+        const strip = function (s) { return String(s || '').replace(/[()]/g, '').trim(); };
+        const x = strip(el.dataset.xlabel), y = strip(el.dataset.ylabel);
+        return (x || y) ? ' (가로축 ' + (x || '계급') + ', 세로축 ' + (y || '도수') + ')' : '';
+    }
+
+    function classText(labels, i) {
+        return (labels[i] !== undefined && labels[i + 1] !== undefined)
+            ? labels[i] + ' 이상 ' + labels[i + 1] + ' 미만' : (labels[i] || '');
+    }
+
+    /* 기본 10종 : 자료 숫자로 설명을 자동으로 만들어요 */
+    function describeBuiltIn(el, type) {
+        const d = el.dataset;
+
+        if (type === 'cards') {
+            const values = listOf(d.values);
+            return '숫자 카드 ' + values.length + '장: ' + values.join(', ');
+        }
+
+        if (type === 'sort') {
+            const sorted = listOf(d.sorted);
+            const mids = listOf(d.mid).map(function (i) { return sorted[Number(i)]; });
+            return '숫자 카드 ' + listOf(d.values).join(', ') + ' 를 작은 수부터 줄 세우면 ' + sorted.join(', ') +
+                (mids.length ? '. 가운데 ' + (mids.length > 1 ? '두 수: ' : '수: ') + mids.join(', ') : '');
+        }
+
+        if (type === 'stack') {
+            const counts = {};
+            listOf(d.values).forEach(function (v) { counts[v] = (counts[v] || 0) + 1; });
+            const keys = Object.keys(counts).sort(function (a, b) { return Number(a) - Number(b); });
+            const max = Math.max.apply(null, keys.map(function (k) { return counts[k]; }));
+            const tops = keys.filter(function (k) { return counts[k] === max; });
+            return '같은 값끼리 블록을 쌓은 그림: ' +
+                keys.map(function (k) { return topicOf(k) + ' ' + counts[k] + '개'; }).join(', ') +
+                (d.nomode === '1' ? '' : '. 가장 높이 쌓인 값: ' + tops.join(', '));
+        }
+
+        if (type === 'level' || type === 'outlier') {
+            const values = listOf(d.values).map(Number);
+            const avg = values.reduce(function (a, b) { return a + b; }, 0) / values.length;
+            const head = '막대 ' + values.length + '개의 높이: ' + values.join(', ');
+            if (type === 'level') {
+                return head + '. 높이를 똑같이 맞추면 모두 ' + roundText(avg) + ', 평균 ' + roundText(avg);
+            }
+            const extra = Number(d.extra);
+            const all = values.concat([extra]);
+            const avg2 = all.reduce(function (a, b) { return a + b; }, 0) / all.length;
+            return head + '. 평균 ' + roundText(avg) + '. 여기에 높이 ' + extra + ' 인 막대가 더해지면 평균 ' + roundText(avg2);
+        }
+
+        if (type === 'stemleaf') {
+            const rows = Array.prototype.map.call(el.querySelectorAll('.sl-row'), function (row) {
+                const leaves = Array.prototype.map.call(row.querySelectorAll('.sl-leaves b'), function (b) { return b.textContent; });
+                return '줄기 ' + row.querySelector('.sl-stem').textContent + ', 잎 ' + (leaves.join(' ') || '없음');
+            });
+            return '줄기와 잎 그림' + (d.note ? ' (' + d.note + ')' : '') + ': ' + rows.join('; ');
+        }
+
+        if (type === 'histogram') {
+            const counts = listOf(d.counts);
+            const labels = listOf(d.labels);
+            const missing = (d.missing !== undefined && d.missing !== '') ? Number(d.missing) : -1;
+            return (d.poly === '1' ? '히스토그램과 도수분포다각형' : '히스토그램') + axisText(el) + ': ' +
+                counts.map(function (c, i) {
+                    return classText(labels, i) + ' ' + (i === missing ? '알 수 없음' : c);
+                }).join(', ');
+        }
+
+        if (type === 'grid') {
+            return '전체 ' + d.total + '칸 중 ' + d.part + '칸 색칠' +
+                (d.caption ? '. ' + d.caption : '') + (d.ratio ? '. ' + d.ratio : '');
+        }
+
+        if (type === 'segbar') {
+            const labels = listOf(d.labels);
+            return '전체를 1로 본 띠: ' + listOf(d.parts).map(function (p, i) {
+                return (labels[i] ? labels[i] + ' ' : '') + p;
+            }).join(', ') + '. ' + (d.totaltext || '모두 더하면 1');
+        }
+
+        if (type === 'dualpoly') {
+            const names = (d.names || 'A,B').split(',');
+            const labels = listOf(d.labels);
+            const line = function (values) {
+                return listOf(values).map(function (v, i) { return classText(labels, i) + ' ' + v; }).join(', ');
+            };
+            return '두 자료를 겹쳐 그린 그래프' + axisText(el) + '. ' +
+                names[0] + ': ' + line(d.a) + '. ' + names[1] + ': ' + line(d.b);
+        }
+
+        return '';
+    }
+
+    function drawVis(el) {
         const type = el.dataset.vis;
 
         if (type === 'cards' || type === 'sort') {
@@ -844,6 +1079,7 @@
                 session.index--;
                 renderCurrentQuestion();
                 window.scrollTo({ top: 0, behavior: 'auto' });
+                focusQuestionTitle();
             }
         });
 
@@ -852,6 +1088,7 @@
                 session.index++;
                 renderCurrentQuestion();
                 window.scrollTo({ top: 0, behavior: 'auto' });
+                focusQuestionTitle();
             } else {
                 showResult(session.flow);
             }
@@ -995,6 +1232,7 @@
         bindEvents();
         syncRecord();
         setupMotion();
+        speakFractions(document.querySelector('main') || document.body);   // 본문의 분수도 소리로 읽히게
         renderReview();
         showView('view-read');
     }

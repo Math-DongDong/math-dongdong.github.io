@@ -1300,7 +1300,7 @@
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>되돌리기</td></tr>
-                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>다시 실행</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>다시 실행</td></tr>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> / <kbd>→</kbd> <kbd>↓</kbd></td><td>이전 / 다음 장 (개체를 고르지 않았을 때)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>현재 쪽부터 청중 화면으로 발표 시작·끝</td></tr>
                   <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+<kbd>V</kbd> / 끌어다 놓기</td><td>그림·동영상·글자를 지금 장에 바로 넣기 (AI에게 보낼 자료는 AI 창에)</td></tr>
@@ -1315,6 +1315,7 @@
                   <tr><td class="text-nowrap">장 누른 뒤 <kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>고른 장 복제</td></tr>
                   <tr><td class="text-nowrap">장 누른 뒤 <kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>고른 장 삭제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Shift</kbd>+클릭</td><td>여러 장 이어서 고르기</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Ctrl</kbd>+클릭</td><td>떨어진 장을 하나씩 더하거나 빼며 고르기</td></tr>
                   <tr><td class="text-nowrap">끌어서 놓기</td><td>장·구역 순서 바꾸기</td></tr>
                   <tr><td class="text-nowrap">우클릭 / <i class="bi bi-three-dots"></i></td><td>장 메뉴 (새 슬라이드·복제·구역 만들기·삭제)</td></tr>
                 </tbody>
@@ -1325,6 +1326,8 @@
               <table class="table table-sm align-middle mb-0">
                 <tbody>
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>10px씩 옮기기 (<kbd>Shift</kbd>와 함께: 50px)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>Alt</kbd>를 누른 채 끌기</td><td>보조선에 달라붙지 않게 자유롭게 옮기기</td></tr>
+                  <tr><td class="text-nowrap">글자 편집 중 <kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>I</kbd> / <kbd>U</kbd></td><td>굵게 / 기울임 / 밑줄</td></tr>
                   <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기, 모션그래픽·인터랙티브 요소는 오른쪽 편집 창. 수식은 수식 편집 창)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd> (편집 창)</td><td>개체 편집 끝내기 · AI 고치기 중단</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>글자 편집 끝내기 · 선택 해제</td></tr>
@@ -1650,6 +1653,7 @@
           Sanitizer.ready = true;
           DOMPurify.addHook('afterSanitizeAttributes', node => {
             if (!node.getAttribute) return;
+            if (Sanitizer.viewMode) { Sanitizer.viewNode(node); return; } // 학생·리모컨이 받은 보기 HTML
             const style = node.getAttribute('style');
             if (style) node.setAttribute('style', Sanitizer.cssUrls(style));
             const tag = node.tagName;
@@ -1698,17 +1702,89 @@
         },
 
         // 슬라이드 <style>: 일반 규칙·@keyframes·@media만 남긴다(@import·@font-face 등 외부 불러오기 제외).
-        css(text) {
-          const source = String(text || '').replace(/__k[a-z0-9]+/g, '').trim();
+        // received: 학생·리모컨이 받은 CSS. 범위 한정 꼬리표(__k…)를 그대로 두고(떼면 움직임 이름이 안 맞는다) 길이도 넉넉히 둔다.
+        css(text, received) {
+          let source = String(text || '');
+          if (!received) source = source.replace(/__k[a-z0-9]+/g, '');
+          source = source.trim();
           if (!source) return '';
           let sheet;
-          try { sheet = new CSSStyleSheet(); sheet.replaceSync(source); } catch (err) { return ''; }
+          try {
+            sheet = new CSSStyleSheet();
+            sheet.replaceSync(source);
+          } catch (err) {
+            if (!received) return '';
+            // 생성형 스타일시트가 없는 오래된 휴대폰: 외부 불러오기(@import·@font-face)만 빼고 url()을 거른다.
+            return Sanitizer.cssUrls(source.replace(/@import[^;]*;?/gi, '').replace(/@font-face\s*\{[^}]*\}/gi, ''));
+          }
           const emit = rules => Array.from(rules).map(rule => {
             if (rule instanceof CSSStyleRule || rule instanceof CSSKeyframesRule) return rule.cssText;
             if (rule instanceof CSSMediaRule) return '@media ' + rule.conditionText + ' { ' + emit(rule.cssRules) + ' }';
             return '';
           }).filter(Boolean).join('\n');
-          return Sanitizer.cssUrls(emit(sheet.cssRules)).slice(0, 80000);
+          return Sanitizer.cssUrls(emit(sheet.cssRules)).slice(0, received ? 400000 : 80000);
+        },
+
+        /* --- 학생 기기·휴대폰 리모컨이 받은 보기 HTML 다시 검사 ---
+           교사 PC에서 이미 정리한 HTML이지만, 파일을 누가 바꿔치기했을 때(보안 규칙이 느슨한 경우 등)를 대비해 받는 쪽에서도 한 번 더 거른다.
+           교사 쪽 규칙과 같되, 보기 형태에 꼭 필요한 것은 남긴다:
+           · 인터랙티브 요소의 격리된 iframe(srcdoc) — sandbox는 언제나 allow-scripts만(같은 출처 권한 없음)
+           · 영상 자리표시(.ls-live-media)와 그 주소 칸(data-src·data-remote·data-embed·data-poster) — 형식이 맞는 것만
+           · 편집기 전용 이름(ls-…)의 class — 보기 화면이 쓰므로 지우지 않는다 */
+        viewMode: false,
+
+        viewNode(node) {
+          const style = node.getAttribute('style');
+          if (style) node.setAttribute('style', Sanitizer.cssUrls(style));
+          const tag = node.tagName;
+          if (tag === 'IMG') {
+            const src = node.getAttribute('src') || '';
+            if (!/^(data:image\/(png|jpe?g|gif|webp);|https:\/\/)/i.test(src)) node.removeAttribute('src');
+          }
+          if (tag === 'IFRAME') {
+            // 받은 HTML에는 인터랙티브 요소(.app-frame 안 srcdoc)만 있어야 한다. 영상 퍼가기는 자리표시로 바뀌어 온다.
+            const parent = node.parentElement;
+            const app = node.hasAttribute('srcdoc') && parent && parent.classList.contains('app-frame');
+            node.removeAttribute('src');
+            if (!app) node.removeAttribute('srcdoc');
+            node.setAttribute('sandbox', app ? 'allow-scripts' : '');
+          }
+          const check = (name, pattern) => {
+            const value = node.getAttribute(name);
+            if (value !== null && !pattern.test(value)) node.removeAttribute(name);
+          };
+          check('data-src', /^media\/[a-z0-9]+\.[a-z0-9]{1,5}$/i);
+          check('data-remote', /^https:\/\//i);
+          check('data-embed', EMBED_SRC);
+          check('data-poster', /^(data:image\/(png|jpe?g|gif|webp);|https:\/\/)/i);
+          check('data-kind', /^(video|embed)$/);
+        },
+
+        view(html) {
+          Sanitizer.setup();
+          Sanitizer.viewMode = true;
+          try {
+            return DOMPurify.sanitize(String(html || ''), {
+              USE_PROFILES: { html: true, svg: true },
+              ADD_TAGS: ['iframe'],
+              ADD_ATTR: ['srcdoc', 'sandbox', 'allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop',
+                'data-step', 'data-tex', 'data-kind', 'data-src', 'data-remote', 'data-embed', 'data-poster', 'pathLength', 'paint-order'],
+              ADD_URI_SAFE_ATTR: ['data-tex', 'data-src', 'data-remote', 'data-embed', 'data-poster'],
+              FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'object',
+                'embed', 'link', 'meta', 'audio', 'track', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
+              FORBID_ATTR: ['id', 'name', 'contenteditable', 'tabindex', 'srcset', 'href', 'xlink:href', 'action', 'formaction'],
+              ALLOW_DATA_ATTR: false
+            });
+          } finally {
+            Sanitizer.viewMode = false;
+          }
+        },
+
+        // 받은 장의 보기 형태 { html, css }를 한 번만 검사해 장에 붙여 둔다(같은 장을 다시 그릴 때는 그대로 쓴다).
+        safeView(slide) {
+          const v = (slide && slide.view) || {};
+          if (!v.safe) v.safe = { html: Sanitizer.view(v.html), css: Sanitizer.css(v.css, true) };
+          return v.safe;
         },
 
         // AI 응답·불러온 파일의 슬라이드를 { html, css, bg }로 나눈다.
@@ -3100,9 +3176,10 @@
           remove.innerHTML = '<i class="bi bi-trash3"></i>';
           remove.addEventListener('click', async event => {
             event.stopPropagation();
-            if (!await Util.confirm('"' + (deck.title || DEFAULT_TITLE) + '"을(를) 삭제할까요? 되돌릴 수 없습니다.', '삭제', true)) return;
+            if (!await Util.confirm('"' + (deck.title || DEFAULT_TITLE) + '"을(를) 삭제할까요? 되돌릴 수 없습니다.' + Home.liveNote(), '삭제', true)) return;
             await DeckStore.remove(deck.id);
             Home.draw();
+            Home.closeLive([deck.id]);
           });
 
           body.append(text, remove);
@@ -3117,11 +3194,32 @@
         },
 
         async clearAll() {
-          if (!await Util.confirm('최근 편집 목록의 슬라이드를 모두 지울까요?\n이 브라우저에 저장된 작업이 전부 삭제되며 되돌릴 수 없습니다. 필요한 것은 먼저 HTML로 내보내 두세요.', '모두 지우기', true)) return;
+          if (!await Util.confirm('최근 편집 목록의 슬라이드를 모두 지울까요?\n이 브라우저에 저장된 작업이 전부 삭제되며 되돌릴 수 없습니다. 필요한 것은 먼저 HTML로 내보내 두세요.' + Home.liveNote(), '모두 지우기', true)) return;
+          const ids = (await DeckStore.all()).map(deck => deck.id);
           await DeckStore.clear();
           Util.toast('최근 편집 목록을 모두 지웠습니다.', 'success');
           if (MobileView.on) MobileView.draw();
           else Home.draw();
+          Home.closeLive(ids);
+        },
+
+        // 덱을 지울 때 묻는 글에 덧붙인다(함께 보기를 닫을 수 있는 승인 교사에게만).
+        liveNote() {
+          return Live.canUse() ? '\n이 덱으로 연 함께 보기가 있으면 함께 닫힙니다(학생 기기에서도 더 볼 수 없습니다).' : '';
+        },
+
+        // 지운 덱으로 연 함께 보기를 닫는다. 덱이 지워지면 다시 이어 붙을 수 없어 방만 남기 때문이다.
+        // 이 브라우저의 덱 id로만 찾으므로 다른 PC에서 만든 덱의 함께 보기는 건드리지 않는다. 실패해도 덱 삭제는 그대로다.
+        async closeLive(deckIds) {
+          if (!Live.canUse() || !deckIds.length) return;
+          try {
+            const { closed, failed } = await Live.closeForDecks(deckIds);
+            if (closed.length) Util.toast('연결된 함께 보기 ' + closed.length + '개(' + closed.join(', ') + ')도 닫았습니다.', 'success');
+            if (failed.length) Util.toast('함께 보기 ' + failed.join(', ') + '을(를) 닫지 못했습니다. [Storage 관리]에서 닫아 주세요.', 'warning');
+          } catch (err) {
+            console.warn('[live] close for decks', err);
+            Util.toast('연결된 함께 보기를 확인하지 못했습니다. 남아 있으면 [Storage 관리]에서 닫아 주세요.', 'warning');
+          }
         },
 
         async createDeck() {
@@ -10497,6 +10595,24 @@
           await update(ref(fb.rtdb, 'live_index/' + code), { mode });
         },
 
+        // 덱 삭제: 그 덱(deckId)으로 연 내 함께 보기를 모두 취소한다. { closed: [코드], failed: [코드] }
+        async closeForDecks(deckIds) {
+          const fb = await LiveFb.load();
+          const { ref, get, query, orderByChild, equalTo } = fb.rt;
+          const snap = await get(query(ref(fb.rtdb, 'live_index'), orderByChild('createdBy'), equalTo(window.currentTeacherUid)));
+          const rooms = [];
+          snap.forEach(child => {
+            const value = child.val() || {};
+            if (value.deckId && deckIds.includes(value.deckId)) rooms.push(Object.assign({}, value, { code: child.key }));
+          });
+          const closed = [];
+          const failed = [];
+          for (const room of rooms) {
+            try { await Live.cancel(room); closed.push(room.code); } catch (err) { console.warn('[live] cancel', room.code, err); failed.push(room.code); }
+          }
+          return { closed, failed };
+        },
+
         // [Storage 관리]: 함께 보기 취소 — Storage 폴더 · RTDB 방·목록 · Firestore 방 문서·하위 컬렉션·접속 표시 · 방 목록 등록
         async cancel(room) {
           const fb = await LiveFb.load();
@@ -10925,13 +11041,14 @@
           }
           const v = slide.view || {};
           canvas.className = v.cls || 'slide-canvas';
-          canvas.innerHTML = v.html || '';
-          if (v.css) {
+          const safe = Sanitizer.safeView(slide); // 받은 HTML·CSS를 한 번 더 거른다(바꿔치기 대비)
+          canvas.innerHTML = safe.html;
+          if (safe.css) {
             const tag = document.createElement('style');
-            tag.textContent = v.css;
+            tag.textContent = safe.css;
             canvas.prepend(tag);
           }
-          canvas.style.background = slide.bg || '#ffffff';
+          canvas.style.background = Sanitizer.background(slide.bg);
           media(canvas);
           if (ghost) {
             const ms = SlideView.animationMs(canvas);
@@ -10970,8 +11087,11 @@
           button.textContent = '불러오는 중…';
           try {
             if (el.getAttribute('data-kind') === 'embed') {
+              const src = el.getAttribute('data-embed') || '';
+              // 받은 주소가 유튜브·비메오 퍼가기 주소인지 다시 확인하고, 교사 편집기와 같은 샌드박스를 씌운다.
+              if (!EMBED_SRC.test(src)) throw new Error('재생할 수 없는 영상 주소입니다.');
               const frame = document.createElement('iframe');
-              const src = el.getAttribute('data-embed');
+              frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
               frame.src = src + (src.includes('?') ? '&' : '?') + 'autoplay=1';
               frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
               frame.allowFullscreen = true;
@@ -11096,7 +11216,7 @@
               tag.id = 'live-base-css';
               document.head.append(tag);
             }
-            tag.textContent = parsed.baseCss || '';
+            tag.textContent = Sanitizer.css(parsed.baseCss, true); // 받은 공용 CSS도 거른다(글꼴 @import는 이 페이지가 이미 불러옴)
             render();
           })().catch(err => {
             console.warn('[live] deck', err);
@@ -11602,13 +11722,14 @@
         function fillView(canvas, slide) {
           const v = slide.view || {};
           canvas.className = v.cls || 'slide-canvas';
-          canvas.innerHTML = v.html || '';
-          if (v.css) {
+          const safe = Sanitizer.safeView(slide); // 받은 HTML·CSS를 한 번 더 거른다(바꿔치기 대비)
+          canvas.innerHTML = safe.html;
+          if (safe.css) {
             const tag = document.createElement('style');
-            tag.textContent = v.css;
+            tag.textContent = safe.css;
             canvas.prepend(tag);
           }
-          canvas.style.background = slide.bg || '#ffffff';
+          canvas.style.background = Sanitizer.background(slide.bg);
           canvas.querySelectorAll('.ls-live-media').forEach(el => {
             const poster = el.getAttribute('data-poster');
             if (poster) el.style.backgroundImage = 'url("' + poster.replace(/"/g, '%22') + '")';
@@ -11720,7 +11841,7 @@
           if (view.shownKey !== key) {
             view.shownKey = key;
             const notes = $('rm-notes');
-            if (slide.notes) notes.innerHTML = slide.notes; // 교사 본인 덱의 시나리오(발표자 보기와 같은 방식)
+            if (slide.notes) notes.innerHTML = Sanitizer.notes(slide.notes); // 교사 본인 덱의 시나리오. 받은 것이라 글자 서식만 남긴다
             else notes.innerHTML = '<span class="text-secondary">(시나리오 없음)</span>';
             notes.scrollTop = 0;
           }

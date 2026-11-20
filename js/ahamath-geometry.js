@@ -661,6 +661,15 @@
             const t = type || el.dataset.vis;
             if (t === 'geo') { geoPlay(el); return; }
             if (t === 'dense') { densePlay(el); }
+        },
+        /* 화면 읽기 프로그램이 읽을 설명 : data-alt 가 없을 때 단계별 문구와 캡션을 이어서 써요 */
+        describe: function (el, type) {
+            const t = type || el.dataset.vis;
+            if (t === 'dense') { return '점이 촘촘히 모이면 선이 되고, 선이 촘촘히 모이면 면이 되는 그림'; }
+            if (t !== 'geo') { return ''; }
+            const parts = splitBy(el.dataset.stepCaps || '', '|').map(function (item) { return capPart(item).text; });
+            if (el.dataset.caption) { parts.push(el.dataset.caption); }
+            return parts.join('. ');
         }
     });
 
