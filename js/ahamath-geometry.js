@@ -61,7 +61,7 @@
      모양 꼬리표 : 명령 뒤에 .꼬리표 를 붙입니다.  예) seg.hl.dash A B
        hl 파랑  c2 주황  c3 초록  c4 분홍  gray 회색  faint 연회색
        dash 점선  thin 가는 선  bold 굵은 선  arr 화살촉  fill 각 안 색칠  dbl 두 겹 각 표시
-       plane 평면(연두)  sm 작은 글자
+       plane 평면(연두)  sm 작은 글자  hole 안을 흰색으로 칠해 구멍 내기 (oval.fill.hole · poly.hole)
    ============================================================================= */
 (function (global) {
     'use strict';
@@ -110,6 +110,7 @@
         '.geo .g-hl{color:#2563eb}.geo .g-c2{color:#ea580c}.geo .g-c3{color:#16a34a}.geo .g-c4{color:#db2777}',
         '.geo .g-gray{color:#94a3b8}.geo .g-faint{color:#cbd5e1}',
         '.geo .g-plane{color:#65a30d;fill-opacity:.12;stroke-width:1.2}',
+        '.geo .g-poly.g-hole{fill:#ffffff;fill-opacity:1}',
         '.geo .g-dash{stroke-dasharray:5 5}',
         '.geo .g-thin{stroke-width:1.3}',
         '.geo .g-bold{stroke-width:3.4}',
