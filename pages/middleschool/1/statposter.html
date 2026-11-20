@@ -106,6 +106,9 @@
       --theme: #2563eb;
       --theme-soft: #eff6ff;
       --theme-dark: #1e40af;
+      --compare: #ea580c;
+      --compare-soft: #fff7ed;
+      --compare-dark: #c2410c;
       position: relative;
       display: flex;
       flex-direction: column;
@@ -277,15 +280,51 @@
       font-size: 10px;
     }
 
+    /* 두 집단 비교: 둘째 집단은 보조 색 */
+    .p-table th.p-group-b {
+      border-top-color: var(--compare);
+      border-bottom-color: var(--compare);
+      background: var(--compare-soft);
+      color: var(--compare-dark);
+    }
+
+    .p-table thead tr+tr th {
+      border-top: none;
+    }
+
+    .p-table-compare {
+      font-size: 11.5px;
+    }
+
+    .p-table-compare th,
+    .p-table-compare td {
+      padding-left: 3px;
+      padding-right: 3px;
+    }
+
+    .p-table-tight th,
+    .p-table-tight td {
+      padding-top: 2px;
+      padding-bottom: 2px;
+    }
+
     .p-stemleaf td {
       text-align: left;
     }
 
-    .p-stemleaf td:first-child {
-      width: 48px;
+    .p-stemleaf .p-stem {
+      width: 44px;
       border-right: 1.5px solid #6b7280;
       text-align: center;
       font-weight: 700;
+    }
+
+    .p-stemleaf-compare .p-stem {
+      border-left: 1.5px solid #6b7280;
+    }
+
+    .p-stemleaf .p-leaf-left {
+      text-align: right;
     }
 
     .p-note {
@@ -425,7 +464,13 @@
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2">
         <span id="saveStatus" class="small text-secondary me-1" aria-live="polite"></span>
-        <button type="button" id="loadExampleButton" class="btn btn-outline-secondary btn-sm"><i class="bi bi-lightbulb"></i> 예시 불러오기</button>
+        <div class="dropdown">
+          <button type="button" id="loadExampleButton" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-lightbulb"></i> 예시 불러오기</button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><button type="button" class="dropdown-item" data-example="single">한 집단 예시 (우리 반)</button></li>
+            <li><button type="button" class="dropdown-item" data-example="compare">두 집단 비교 예시 (1반과 2반)</button></li>
+          </ul>
+        </div>
         <button type="button" id="resetButton" class="btn btn-outline-danger btn-sm"><i class="bi bi-arrow-counterclockwise"></i> 새로 시작</button>
         <button type="button" id="printButton" class="btn btn-outline-primary btn-sm"><i class="bi bi-printer"></i> 인쇄</button>
         <button type="button" id="downloadPdfButton" class="btn btn-primary btn-sm"><i class="bi bi-file-earmark-pdf"></i> PDF 저장</button>
@@ -555,10 +600,29 @@
               </h2>
               <div id="stepAnalyze" class="accordion-collapse collapse">
                 <div class="accordion-body">
+                  <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch" id="compareMode" name="compareMode">
+                    <label class="form-check-label fw-semibold" for="compareMode">두 집단 비교하기 <span class="text-secondary fw-normal small">(예: 1반과 2반)</span></label>
+                  </div>
+                  <div id="groupNameRow" class="row g-2 mb-3 d-none">
+                    <div class="col-6">
+                      <label for="groupNameA" class="form-label small mb-1">첫째 집단 이름</label>
+                      <input type="text" class="form-control" id="groupNameA" name="groupNameA" maxlength="10" placeholder="예) 1반">
+                    </div>
+                    <div class="col-6">
+                      <label for="groupNameB" class="form-label small mb-1">둘째 집단 이름</label>
+                      <input type="text" class="form-control" id="groupNameB" name="groupNameB" maxlength="10" placeholder="예) 2반">
+                    </div>
+                  </div>
                   <div class="mb-3">
-                    <label for="rawData" class="form-label fw-semibold">조사한 자료 값</label>
+                    <label for="rawData" id="rawDataLabel" class="form-label fw-semibold">조사한 자료 값</label>
                     <textarea class="form-control font-monospace" id="rawData" name="rawData" rows="4" placeholder="숫자를 쉼표(,), 띄어쓰기, 줄바꿈으로 구분해 입력하세요.&#10;예) 7, 8.5, 6, 9, 7.5"></textarea>
                     <div id="dataFeedback" class="form-hint mt-1"></div>
+                  </div>
+                  <div id="rawDataBWrap" class="mb-3 d-none">
+                    <label for="rawDataB" id="rawDataBLabel" class="form-label fw-semibold">B 집단 자료 값</label>
+                    <textarea class="form-control font-monospace" id="rawDataB" name="rawDataB" rows="4" placeholder="둘째 집단의 자료 값을 같은 방법으로 입력하세요."></textarea>
+                    <div id="dataFeedbackB" class="form-hint mt-1"></div>
                   </div>
                   <div class="mb-3">
                     <span class="form-label fw-semibold d-block">계급 정하기</span>
@@ -576,8 +640,12 @@
                       </div>
                     </div>
                     <div class="form-hint mt-1">비워 두면 계급이 5~7개 정도가 되도록 자동으로 정해져요.</div>
+                    <div id="classFeedback" class="form-hint mt-1"></div>
                   </div>
-                  <div class="mb-3">
+                  <div id="compareChartNote" class="alert alert-info small py-2 mb-3 d-none">
+                    <i class="bi bi-info-circle"></i> 두 집단은 자료의 개수가 다를 수 있어서 <b>상대도수</b>로 비교해요. 그래프는 두 집단의 <b>상대도수분포다각형</b>을 겹쳐 그려요.
+                  </div>
+                  <div id="chartTypeWrap" class="mb-3">
                     <span class="form-label fw-semibold d-block">그래프 종류</span>
                     <div class="btn-group w-100" role="group" aria-label="그래프 종류">
                       <input type="radio" class="btn-check" name="chartType" id="chartHistogram" value="histogram">
@@ -750,12 +818,13 @@
       const NICE_CLASS_WIDTHS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000];
       const DEFAULT_OPEN_STEPS = ['stepBasic'];
 
+      // compare*: 두 집단 비교에서 둘째 집단에 쓰는 보조 색
       const THEMES = {
-        blue: { main: '#2563eb', soft: '#eff6ff', dark: '#1e40af' },
-        green: { main: '#059669', soft: '#ecfdf5', dark: '#065f46' },
-        orange: { main: '#ea580c', soft: '#fff7ed', dark: '#9a3412' },
-        purple: { main: '#7c3aed', soft: '#f5f3ff', dark: '#5b21b6' },
-        rose: { main: '#e11d48', soft: '#fff1f2', dark: '#9f1239' }
+        blue: { main: '#2563eb', soft: '#eff6ff', dark: '#1e40af', compareMain: '#ea580c', compareSoft: '#fff7ed', compareDark: '#c2410c' },
+        green: { main: '#059669', soft: '#ecfdf5', dark: '#065f46', compareMain: '#7c3aed', compareSoft: '#f5f3ff', compareDark: '#6d28d9' },
+        orange: { main: '#ea580c', soft: '#fff7ed', dark: '#9a3412', compareMain: '#2563eb', compareSoft: '#eff6ff', compareDark: '#1d4ed8' },
+        purple: { main: '#7c3aed', soft: '#f5f3ff', dark: '#5b21b6', compareMain: '#059669', compareSoft: '#ecfdf5', compareDark: '#047857' },
+        rose: { main: '#e11d48', soft: '#fff1f2', dark: '#9f1239', compareMain: '#2563eb', compareSoft: '#eff6ff', compareDark: '#1d4ed8' }
       };
 
       const EXAMPLE_FIELDS = {
@@ -783,6 +852,23 @@
         conclusionText: '우리 반 학생들은 하루에 평균 약 95분 동안 스마트폰을 사용한다. 하지만 4명 중 1명은 2시간 이상 사용하므로 스스로 사용 시간을 점검해 볼 필요가 있다.',
         reflectionText: '다른 반이나 다른 학년과 비교하면 어떤 차이가 있을지 더 알아보고 싶다.',
         sourceText: '1학년 3반 설문조사 (2026. 11.)'
+      };
+
+      const EXAMPLE_COMPARE_FIELDS = {
+        ...EXAMPLE_FIELDS,
+        posterTitle: '1반과 2반, 어느 반이 스마트폰을 더 오래 사용할까?',
+        classInfo: '1학년 1반',
+        researchQuestion: '1반과 2반 학생들의 하루 스마트폰 사용 시간 분포는 어떻게 다를까?',
+        researchMotive: '두 반의 쉬는 시간 모습이 달라 보여서, 실제 스마트폰 사용 시간에도 차이가 있는지 궁금해졌다.',
+        surveyTarget: '1학년 1반 학생 28명, 2반 학생 25명',
+        compareMode: true,
+        groupNameA: '1반',
+        groupNameB: '2반',
+        rawDataB: '45, 55, 65, 72, 80, 88, 90, 95, 100, 105, 110, 112, 115, 120, 120, 120, 125, 130, 135, 140, 145, 150, 155, 160, 170',
+        analysisText: '두 반의 학생 수가 달라서 도수 대신 상대도수로 비교하였다.\n2반의 상대도수분포다각형이 1반보다 오른쪽에 있어서 2반 학생들이 대체로 스마트폰을 더 오래 사용한다.\n120분 이상 사용하는 학생의 상대도수는 1반 0.25, 2반 0.48로 2반이 훨씬 크다.',
+        conclusionText: '2반 학생들이 1반 학생들보다 하루에 스마트폰을 더 오래 사용하는 경향이 있다. 평균도 2반(112.08분)이 1반(94.64분)보다 약 17분 더 길다.',
+        reflectionText: '두 반의 차이가 생긴 까닭(학원 일정, 통학 시간 등)도 조사해 보고 싶다.',
+        sourceText: '1학년 1반·2반 설문조사 (2026. 11.)'
       };
 
       // ───────── DOM ─────────
@@ -859,7 +945,7 @@
       }
 
       function hasContent(fields) {
-        return ['posterTitle', 'studentName', 'researchQuestion', 'rawData', 'analysisText', 'conclusionText']
+        return ['posterTitle', 'studentName', 'researchQuestion', 'rawData', 'rawDataB', 'analysisText', 'conclusionText']
           .some((key) => String(fields[key] || '').trim() !== '');
       }
 
@@ -951,22 +1037,29 @@
         return { start: roundNumber(Math.floor(minValue / fallbackWidth) * fallbackWidth), width: fallbackWidth };
       }
 
-      function buildFrequencyClasses(values, start, width) {
-        const maxValue = Math.max(...values);
+      // 계급 경계는 (두 집단이면 두 집단을 합친) 전체 자료로 한 번만 정함
+      function buildClassBoundaries(allValues, start, width) {
+        const maxValue = Math.max(...allValues);
         const count = Math.max(1, Math.floor(roundNumber((maxValue - start) / width)) + 1);
         if (count > MAX_CLASS_COUNT) return { error: `계급이 ${count}개나 돼요. 계급의 크기를 더 크게 해 보세요. (최대 ${MAX_CLASS_COUNT}개)` };
         const classes = Array.from({ length: count }, (_, index) => ({
           lower: roundNumber(start + index * width),
-          upper: roundNumber(start + (index + 1) * width),
-          frequency: 0
+          upper: roundNumber(start + (index + 1) * width)
         }));
+        return { classes };
+      }
+
+      function countFrequencies(values, start, width, classCount) {
+        const frequencies = new Array(classCount).fill(0);
         let excludedCount = 0;
         values.forEach((value) => {
           const index = Math.floor(roundNumber((value - start) / width));
-          if (index >= 0 && index < count) classes[index].frequency += 1;
+          if (index >= 0 && index < classCount) frequencies[index] += 1;
           else excludedCount += 1;
         });
-        return { classes, excludedCount };
+        const includedTotal = frequencies.reduce((sum, frequency) => sum + frequency, 0);
+        const relativeFrequencies = frequencies.map((frequency) => (includedTotal ? frequency / includedTotal : 0));
+        return { frequencies, relativeFrequencies, excludedCount, includedTotal };
       }
 
       function computeRepresentativeValues(values) {
@@ -983,32 +1076,46 @@
         return { mean, median, modes, isMeanRounded: Math.round(mean * 100) / 100 !== mean };
       }
 
-      function buildStemLeaf(values) {
-        if (!values.every((value) => Number.isInteger(value) && value >= 0)) {
+      // valueLists: 집단별 자료 배열 (한 집단이면 1개, 두 집단이면 2개 → 양쪽 줄기와 잎 그림)
+      function buildStemLeaf(valueLists) {
+        const allValues = valueLists.flat();
+        if (!allValues.every((value) => Number.isInteger(value) && value >= 0)) {
           return { error: '줄기와 잎 그림은 0 이상의 정수 자료에서만 그릴 수 있어요.' };
         }
-        const stems = values.map((value) => Math.floor(value / 10));
+        const stems = allValues.map((value) => Math.floor(value / 10));
         const minStem = Math.min(...stems);
         const maxStem = Math.max(...stems);
         if (maxStem - minStem + 1 > MAX_STEM_ROWS) return { error: '줄기가 너무 많아서 줄기와 잎 그림을 그리기 어려워요.' };
         const rows = [];
         for (let stem = minStem; stem <= maxStem; stem += 1) {
-          const leaves = values.filter((value) => Math.floor(value / 10) === stem).map((value) => value % 10).sort((a, b) => a - b);
-          rows.push({ stem, leaves });
+          const leavesByGroup = valueLists.map((values) => values
+            .filter((value) => Math.floor(value / 10) === stem)
+            .map((value) => value % 10)
+            .sort((a, b) => a - b));
+          rows.push({ stem, leavesByGroup });
         }
-        const sample = [...values].sort((a, b) => a - b)[0];
-        return { rows, sample };
+        return { rows, sample: Math.min(...allValues) };
+      }
+
+      function getGroupName(fields, groupIndex) {
+        const inputName = String(fields[groupIndex === 0 ? 'groupNameA' : 'groupNameB'] || '').trim();
+        return inputName || (groupIndex === 0 ? 'A 집단' : 'B 집단');
       }
 
       function analyzeData(fields) {
-        const { values, invalidTokens } = parseRawData(fields.rawData);
-        const result = { values, invalidTokens, warnings: [] };
-        if (invalidTokens.length) {
-          result.warnings.push(`숫자가 아닌 값 ${invalidTokens.length}개는 뺐어요: ${invalidTokens.slice(0, 5).join(', ')}${invalidTokens.length > 5 ? ' …' : ''}`);
-        }
-        if (!values.length) return result;
+        const isCompare = Boolean(fields.compareMode);
+        const rawInputs = isCompare ? [fields.rawData, fields.rawDataB] : [fields.rawData];
+        const groups = rawInputs.map((rawText, groupIndex) => ({ name: getGroupName(fields, groupIndex), ...parseRawData(rawText) }));
+        const result = { isCompare, groups, warnings: [] };
+        const allValues = groups.flatMap((group) => group.values);
+        if (!allValues.length) return result;
 
-        currentSuggestion = suggestClassSetting(values);
+        currentSuggestion = suggestClassSetting(allValues);
+        const emptyGroup = groups.find((group) => !group.values.length);
+        if (emptyGroup) {
+          result.pendingMessage = `${emptyGroup.name}의 자료 값도 입력하면 표와 그래프가 만들어져요.`;
+          return result;
+        }
         const startInput = String(fields.classStart ?? '').trim();
         const widthInput = String(fields.classWidth ?? '').trim();
         const start = startInput === '' || !Number.isFinite(Number(startInput)) ? currentSuggestion.start : Number(startInput);
@@ -1018,18 +1125,21 @@
           result.error = '계급의 크기는 0보다 커야 해요.';
           return result;
         }
-        const frequencyResult = buildFrequencyClasses(values, start, width);
-        if (frequencyResult.error) {
-          result.error = frequencyResult.error;
+        const boundaryResult = buildClassBoundaries(allValues, start, width);
+        if (boundaryResult.error) {
+          result.error = boundaryResult.error;
           return result;
         }
-        if (frequencyResult.excludedCount) {
-          result.warnings.push(`첫 계급의 시작값(${formatNumber(start)})보다 작은 값 ${frequencyResult.excludedCount}개가 표에서 빠졌어요.`);
-        }
+        groups.forEach((group) => {
+          Object.assign(group, countFrequencies(group.values, start, width, boundaryResult.classes.length));
+          group.stats = computeRepresentativeValues(group.values);
+          if (group.excludedCount) {
+            result.warnings.push(`${isCompare ? `${group.name}: ` : ''}첫 계급의 시작값(${formatNumber(start)})보다 작은 값 ${group.excludedCount}개가 표에서 빠졌어요.`);
+          }
+        });
         result.start = start;
         result.width = width;
-        result.classes = frequencyResult.classes;
-        result.stats = computeRepresentativeValues(values);
+        result.classes = boundaryResult.classes;
         return result;
       }
 
@@ -1039,7 +1149,22 @@
         posterElement.style.setProperty('--theme', theme.main);
         posterElement.style.setProperty('--theme-soft', theme.soft);
         posterElement.style.setProperty('--theme-dark', theme.dark);
+        posterElement.style.setProperty('--compare', theme.compareMain);
+        posterElement.style.setProperty('--compare-soft', theme.compareSoft);
+        posterElement.style.setProperty('--compare-dark', theme.compareDark);
         return theme;
+      }
+
+      // 두 집단 비교 스위치에 따라 입력칸 보이기/숨기기
+      function syncFormVisibility(fields) {
+        const isCompare = Boolean(fields.compareMode);
+        document.getElementById('groupNameRow').classList.toggle('d-none', !isCompare);
+        document.getElementById('rawDataBWrap').classList.toggle('d-none', !isCompare);
+        document.getElementById('rawDataLabel').textContent = isCompare ? `${getGroupName(fields, 0)} 자료 값` : '조사한 자료 값';
+        document.getElementById('rawDataBLabel').textContent = `${getGroupName(fields, 1)} 자료 값`;
+        document.getElementById('chartTypeWrap').classList.toggle('d-none', isCompare);
+        document.getElementById('compareChartNote').classList.toggle('d-none', !isCompare);
+        document.getElementById('showRelative').disabled = isCompare;
       }
 
       function setBoundText(element, value, placeholder) {
@@ -1066,44 +1191,99 @@
         document.getElementById('posterDate').textContent = new Date().toLocaleDateString('ko-KR');
       }
 
-      function renderDataFeedback(analysis) {
-        const feedbackElement = document.getElementById('dataFeedback');
-        const classStartInput = document.getElementById('classStart');
-        const classWidthInput = document.getElementById('classWidth');
+      function describeGroupData(group) {
         const lines = [];
-        if (analysis.values.length) {
-          const minValue = Math.min(...analysis.values);
-          const maxValue = Math.max(...analysis.values);
-          let summary = `자료 ${analysis.values.length}개 · 가장 작은 값 ${formatNumber(minValue)} · 가장 큰 값 ${formatNumber(maxValue)}`;
-          if (analysis.classes) summary += ` · 계급 ${analysis.classes.length}개`;
-          lines.push(`<span class="text-success"><i class="bi bi-check-circle"></i> ${summary}</span>`);
+        if (group.values.length) {
+          const minValue = Math.min(...group.values);
+          const maxValue = Math.max(...group.values);
+          lines.push(`<span class="text-success"><i class="bi bi-check-circle"></i> 자료 ${group.values.length}개 · 가장 작은 값 ${formatNumber(minValue)} · 가장 큰 값 ${formatNumber(maxValue)}</span>`);
         }
-        analysis.warnings.forEach((warning) => lines.push(`<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle"></i> ${escapeHtml(warning)}</span>`));
-        if (analysis.error) lines.push(`<span class="text-danger"><i class="bi bi-x-circle"></i> ${escapeHtml(analysis.error)}</span>`);
-        feedbackElement.innerHTML = lines.join('<br>');
-
-        classStartInput.placeholder = currentSuggestion && analysis.values.length ? `자동: ${formatNumber(currentSuggestion.start)}` : '자동';
-        classWidthInput.placeholder = currentSuggestion && analysis.values.length ? `자동: ${formatNumber(currentSuggestion.width)}` : '자동';
+        if (group.invalidTokens.length) {
+          const preview = `${group.invalidTokens.slice(0, 5).join(', ')}${group.invalidTokens.length > 5 ? ' …' : ''}`;
+          lines.push(`<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle"></i> 숫자가 아닌 값 ${group.invalidTokens.length}개는 뺐어요: ${escapeHtml(preview)}</span>`);
+        }
+        return lines.join('<br>');
       }
+
+      function renderDataFeedback(analysis) {
+        document.getElementById('dataFeedback').innerHTML = describeGroupData(analysis.groups[0]);
+        document.getElementById('dataFeedbackB').innerHTML = analysis.groups[1] ? describeGroupData(analysis.groups[1]) : '';
+
+        const classLines = [];
+        if (analysis.classes) {
+          const lastClass = analysis.classes[analysis.classes.length - 1];
+          classLines.push(`<span class="text-success"><i class="bi bi-check-circle"></i> 계급 ${analysis.classes.length}개 (${formatNumber(analysis.classes[0].lower)} 이상 ~ ${formatNumber(lastClass.upper)} 미만)</span>`);
+        }
+        analysis.warnings.forEach((warning) => classLines.push(`<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle"></i> ${escapeHtml(warning)}</span>`));
+        if (analysis.error) classLines.push(`<span class="text-danger"><i class="bi bi-x-circle"></i> ${escapeHtml(analysis.error)}</span>`);
+        document.getElementById('classFeedback').innerHTML = classLines.join('<br>');
+
+        const hasValues = analysis.groups.some((group) => group.values.length);
+        document.getElementById('classStart').placeholder = currentSuggestion && hasValues ? `자동: ${formatNumber(currentSuggestion.start)}` : '자동';
+        document.getElementById('classWidth').placeholder = currentSuggestion && hasValues ? `자동: ${formatNumber(currentSuggestion.width)}` : '자동';
+      }
+
+      const formatClassRange = (item) => `${formatNumber(item.lower)}<small>이상</small> ~ ${formatNumber(item.upper)}<small>미만</small>`;
 
       function renderFrequencyTable(analysis, fields) {
         const container = document.getElementById('posterTable');
         if (!analysis.classes) {
-          container.innerHTML = `<div class="p-placeholder-box">${analysis.error ? escapeHtml(analysis.error) : '자료 값을 입력하면 도수분포표가 자동으로 만들어져요.'}</div>`;
+          const message = analysis.error || analysis.pendingMessage || '자료 값을 입력하면 도수분포표가 자동으로 만들어져요.';
+          container.innerHTML = `<div class="p-placeholder-box">${escapeHtml(message)}</div>`;
           return;
         }
         const unit = escapeHtml(String(fields.variableUnit || '').trim());
         const countUnit = escapeHtml(String(fields.countUnit || '').trim());
         const variableName = escapeHtml(String(fields.variableName || '').trim() || '자료');
-        const total = analysis.values.length;
-        const showRelative = Boolean(fields.showRelative);
-        const includedTotal = analysis.classes.reduce((sum, item) => sum + item.frequency, 0);
+        const excludedTotal = analysis.groups.reduce((sum, group) => sum + group.excludedCount, 0);
+        const excludedNote = excludedTotal ? `<p class="p-note">※ 계급 밖의 값 ${excludedTotal}개 제외</p>` : '';
 
-        const bodyRows = analysis.classes.map((item) => `
+        // 두 집단: 상대도수분포표 (상대도수는 항상 표시)
+        if (analysis.isCompare) {
+          const [groupA, groupB] = analysis.groups;
+          const compareRows = analysis.classes.map((item, index) => `
+            <tr>
+              <td>${formatClassRange(item)}</td>
+              <td>${groupA.frequencies[index]}</td>
+              <td>${groupA.relativeFrequencies[index].toFixed(2)}</td>
+              <td>${groupB.frequencies[index]}</td>
+              <td>${groupB.relativeFrequencies[index].toFixed(2)}</td>
+            </tr>`).join('');
+          container.innerHTML = `
+            <p class="p-caption">〈${variableName}의 상대도수분포표〉</p>
+            <table class="p-table p-table-compare">
+              <thead>
+                <tr>
+                  <th rowspan="2">계급${unit ? `(${unit})` : ''}</th>
+                  <th colspan="2">${escapeHtml(groupA.name)}</th>
+                  <th colspan="2" class="p-group-b">${escapeHtml(groupB.name)}</th>
+                </tr>
+                <tr>
+                  <th>도수</th><th>상대도수</th>
+                  <th class="p-group-b">도수</th><th class="p-group-b">상대도수</th>
+                </tr>
+              </thead>
+              <tbody>${compareRows}</tbody>
+              <tfoot>
+                <tr>
+                  <td>합계</td>
+                  <td>${groupA.includedTotal}</td><td>${groupA.includedTotal ? 1 : 0}</td>
+                  <td>${groupB.includedTotal}</td><td>${groupB.includedTotal ? 1 : 0}</td>
+                </tr>
+              </tfoot>
+            </table>
+            ${excludedNote}`;
+          return;
+        }
+
+        const group = analysis.groups[0];
+        const showRelative = Boolean(fields.showRelative);
+        const includedTotal = group.includedTotal;
+        const bodyRows = analysis.classes.map((item, index) => `
           <tr>
-            <td>${formatNumber(item.lower)}<small>이상</small> ~ ${formatNumber(item.upper)}<small>미만</small></td>
-            <td>${item.frequency}</td>
-            ${showRelative ? `<td>${(item.frequency / includedTotal).toFixed(2)}</td>` : ''}
+            <td>${formatClassRange(item)}</td>
+            <td>${group.frequencies[index]}</td>
+            ${showRelative ? `<td>${group.relativeFrequencies[index].toFixed(2)}</td>` : ''}
           </tr>`).join('');
 
         container.innerHTML = `
@@ -1121,16 +1301,17 @@
               <tr><td>합계</td><td>${includedTotal}</td>${showRelative ? '<td>1</td>' : ''}</tr>
             </tfoot>
           </table>
-          ${includedTotal !== total ? `<p class="p-note">※ 계급 밖의 값 ${total - includedTotal}개 제외</p>` : ''}`;
+          ${excludedNote}`;
       }
 
       function renderStemLeaf(analysis, fields) {
         const container = document.getElementById('posterStemLeaf');
-        if (!fields.showStemLeaf || !analysis.values.length) {
+        const valueLists = analysis.groups.map((group) => group.values);
+        if (!fields.showStemLeaf || valueLists.some((values) => !values.length)) {
           container.innerHTML = '';
           return;
         }
-        const stemLeaf = buildStemLeaf(analysis.values);
+        const stemLeaf = buildStemLeaf(valueLists);
         if (stemLeaf.error) {
           container.innerHTML = `<p class="p-note mt-3">※ ${escapeHtml(stemLeaf.error)}</p>`;
           return;
@@ -1140,22 +1321,77 @@
         const sampleLeaf = stemLeaf.sample % 10;
         // 잎 숫자의 받침 유무에 따라 은/는 (영·일·삼·육·칠·팔 → 은)
         const particle = [0, 1, 3, 6, 7, 8].includes(sampleLeaf) ? '은' : '는';
-        const rows = stemLeaf.rows.map((row) => `<tr><td>${row.stem}</td><td>${row.leaves.join(' ')}</td></tr>`).join('');
-        container.innerHTML = `
+        const header = `
           <p class="p-caption" style="margin-top:14px">〈줄기와 잎 그림〉</p>
-          <p class="p-note" style="margin:0 0 4px;text-align:right">(${sampleStem}|${sampleLeaf}${particle} ${stemLeaf.sample}${unit})</p>
+          <p class="p-note" style="margin:0 0 4px;text-align:right">(${sampleStem}|${sampleLeaf}${particle} ${stemLeaf.sample}${unit})</p>`;
+
+        // 두 집단: 가운데 줄기를 두고 왼쪽 잎은 바깥쪽으로 커지게(역순) 배치
+        if (analysis.isCompare) {
+          const [nameA, nameB] = analysis.groups.map((group) => escapeHtml(group.name));
+          const compareRows = stemLeaf.rows.map((row) => `
+            <tr>
+              <td class="p-leaf-left">${[...row.leavesByGroup[0]].reverse().join(' ')}</td>
+              <td class="p-stem">${row.stem}</td>
+              <td>${row.leavesByGroup[1].join(' ')}</td>
+            </tr>`).join('');
+          container.innerHTML = `${header}
+            <table class="p-table p-stemleaf p-stemleaf-compare">
+              <thead><tr><th style="text-align:right">잎(${nameA})</th><th>줄기</th><th class="p-group-b" style="text-align:left">잎(${nameB})</th></tr></thead>
+              <tbody>${compareRows}</tbody>
+            </table>`;
+          return;
+        }
+
+        const rows = stemLeaf.rows.map((row) => `<tr><td class="p-stem">${row.stem}</td><td>${row.leavesByGroup[0].join(' ')}</td></tr>`).join('');
+        container.innerHTML = `${header}
           <table class="p-table p-stemleaf">
             <thead><tr><th>줄기</th><th style="text-align:left">잎</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>`;
       }
 
-      function computeYAxisStep(maxFrequency) {
-        const rawStep = Math.max(1, maxFrequency / 5);
+      // 눈금 간격을 1·2·5 × 10ⁿ 꼴로 맞춤 (도수: 1 이상, 상대도수: 0.05·0.1 등)
+      function computeNiceStep(rawStep) {
         const magnitude = 10 ** Math.floor(Math.log10(rawStep));
         const normalized = rawStep / magnitude;
         const niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-        return Math.max(1, niceNormalized * magnitude);
+        return roundNumber(niceNormalized * magnitude);
+      }
+
+      function drawMarker(context, x, y, series) {
+        const size = 3;
+        context.beginPath();
+        if (series.marker === 'square') context.rect(x - size, y - size, size * 2, size * 2);
+        else context.arc(x, y, size, 0, Math.PI * 2);
+        context.fillStyle = '#ffffff';
+        context.fill();
+        context.lineWidth = 1.6;
+        context.strokeStyle = series.color;
+        context.stroke();
+      }
+
+      // 흑백 인쇄에서도 구분되도록 색 + 선 모양(실선/점선) + 표식(○/□)을 함께 다르게
+      function drawLegend(context, seriesList, rightX, centerY, fontFamily) {
+        context.font = `600 11px ${fontFamily}`;
+        context.textAlign = 'left';
+        context.textBaseline = 'middle';
+        let cursorX = rightX;
+        [...seriesList].reverse().forEach((series) => {
+          const lineLength = 22;
+          cursorX -= context.measureText(series.name).width + lineLength + 4;
+          context.strokeStyle = series.color;
+          context.lineWidth = 2;
+          context.setLineDash(series.isDashed ? [5, 3] : []);
+          context.beginPath();
+          context.moveTo(cursorX, centerY);
+          context.lineTo(cursorX + lineLength, centerY);
+          context.stroke();
+          context.setLineDash([]);
+          drawMarker(context, cursorX + lineLength / 2, centerY, series);
+          context.fillStyle = '#374151';
+          context.fillText(series.name, cursorX + lineLength + 4, centerY);
+          cursorX -= 12;
+        });
       }
 
       function drawChart(analysis, fields, theme) {
@@ -1163,7 +1399,7 @@
         if (!analysis.classes) {
           chartCanvas.classList.add('d-none');
           emptyElement.classList.remove('d-none');
-          emptyElement.textContent = analysis.error || '자료 값을 입력하면 그래프가 그려져요.';
+          emptyElement.textContent = analysis.error || analysis.pendingMessage || '자료 값을 입력하면 그래프가 그려져요.';
           return;
         }
         chartCanvas.classList.remove('d-none');
@@ -1177,30 +1413,44 @@
         context.setTransform(CHART_PIXEL_RATIO, 0, 0, CHART_PIXEL_RATIO, 0, 0);
         context.clearRect(0, 0, cssWidth, cssHeight);
 
-        const chartType = fields.chartType || 'both';
+        const isCompare = analysis.isCompare;
+        const chartType = isCompare ? 'polygon' : (fields.chartType || 'both');
         const withPolygon = chartType !== 'histogram';
         const withHistogram = chartType !== 'polygon';
         const classes = analysis.classes;
         const width = analysis.width;
         const domainStart = withPolygon ? classes[0].lower - width : classes[0].lower;
         const domainEnd = withPolygon ? classes[classes.length - 1].upper + width : classes[classes.length - 1].upper;
-        const maxFrequency = Math.max(1, ...classes.map((item) => item.frequency));
-        const yStep = computeYAxisStep(maxFrequency);
-        const yMax = (Math.floor(maxFrequency / yStep) + 1) * yStep;
+
+        // 한 집단은 도수, 두 집단 비교는 상대도수로 그림
+        const seriesList = isCompare
+          ? analysis.groups.map((group, groupIndex) => ({
+            name: group.name,
+            values: group.relativeFrequencies,
+            color: groupIndex === 0 ? theme.dark : theme.compareDark,
+            isDashed: groupIndex === 1,
+            marker: groupIndex === 0 ? 'circle' : 'square'
+          }))
+          : [{ name: '', values: analysis.groups[0].frequencies, color: theme.dark, isDashed: false, marker: 'circle' }];
+        const maxValue = Math.max(...seriesList.flatMap((series) => series.values));
+        const yStep = isCompare ? computeNiceStep(Math.max(maxValue, 0.05) / 5) : computeNiceStep(Math.max(1, maxValue / 5));
+        const yMax = roundNumber((Math.floor(roundNumber(maxValue / yStep)) + 1) * yStep);
 
         const padding = { left: 34, right: 14, top: 24, bottom: 42 };
         const plotWidth = cssWidth - padding.left - padding.right;
         const plotHeight = cssHeight - padding.top - padding.bottom;
         const toX = (value) => padding.left + ((value - domainStart) / (domainEnd - domainStart)) * plotWidth;
-        const toY = (frequency) => padding.top + plotHeight - (frequency / yMax) * plotHeight;
+        const toY = (value) => padding.top + plotHeight - (value / yMax) * plotHeight;
         const fontFamily = '"Pretendard Variable", Pretendard, sans-serif';
 
         // 가로 눈금선 + 세로축 숫자
         context.font = `10.5px ${fontFamily}`;
         context.textAlign = 'right';
         context.textBaseline = 'middle';
-        for (let frequency = 0; frequency <= yMax; frequency += yStep) {
-          const y = toY(frequency);
+        const tickCount = Math.round(yMax / yStep);
+        for (let tickIndex = 0; tickIndex <= tickCount; tickIndex += 1) {
+          const tickValue = roundNumber(tickIndex * yStep);
+          const y = toY(tickValue);
           context.strokeStyle = '#eceef2';
           context.lineWidth = 1;
           context.beginPath();
@@ -1208,16 +1458,17 @@
           context.lineTo(padding.left + plotWidth, y);
           context.stroke();
           context.fillStyle = '#6b7280';
-          context.fillText(String(frequency), padding.left - 6, y);
+          context.fillText(formatNumber(tickValue), padding.left - 6, y);
         }
 
-        // 히스토그램
+        // 히스토그램 (한 집단일 때만)
         if (withHistogram) {
-          classes.forEach((item) => {
-            if (!item.frequency) return;
+          classes.forEach((item, index) => {
+            const frequency = seriesList[0].values[index];
+            if (!frequency) return;
             const x = toX(item.lower);
             const barWidth = toX(item.upper) - x;
-            const y = toY(item.frequency);
+            const y = toY(frequency);
             const barHeight = toY(0) - y;
             context.fillStyle = hexToRgba(theme.main, withPolygon ? 0.22 : 0.35);
             context.fillRect(x, y, barWidth, barHeight);
@@ -1227,28 +1478,25 @@
           });
         }
 
-        // 도수분포다각형 (양 끝에 도수가 0인 계급을 하나씩 추가)
+        // (상대)도수분포다각형 (양 끝에 도수가 0인 계급을 하나씩 추가)
         if (withPolygon) {
-          const points = [
-            { x: classes[0].lower - width / 2, frequency: 0 },
-            ...classes.map((item) => ({ x: (item.lower + item.upper) / 2, frequency: item.frequency })),
-            { x: classes[classes.length - 1].upper + width / 2, frequency: 0 }
-          ];
-          context.strokeStyle = theme.dark;
-          context.lineWidth = 2;
-          context.beginPath();
-          points.forEach((point, index) => {
-            const method = index === 0 ? 'moveTo' : 'lineTo';
-            context[method](toX(point.x), toY(point.frequency));
-          });
-          context.stroke();
-          points.forEach((point) => {
+          seriesList.forEach((series) => {
+            const points = [
+              { x: classes[0].lower - width / 2, value: 0 },
+              ...classes.map((item, index) => ({ x: (item.lower + item.upper) / 2, value: series.values[index] })),
+              { x: classes[classes.length - 1].upper + width / 2, value: 0 }
+            ];
+            context.strokeStyle = series.color;
+            context.lineWidth = 2;
+            context.setLineDash(series.isDashed ? [6, 4] : []);
             context.beginPath();
-            context.arc(toX(point.x), toY(point.frequency), 3, 0, Math.PI * 2);
-            context.fillStyle = '#ffffff';
-            context.fill();
-            context.lineWidth = 1.6;
+            points.forEach((point, index) => {
+              const method = index === 0 ? 'moveTo' : 'lineTo';
+              context[method](toX(point.x), toY(point.value));
+            });
             context.stroke();
+            context.setLineDash([]);
+            points.forEach((point) => drawMarker(context, toX(point.x), toY(point.value), series));
           });
         }
 
@@ -1264,7 +1512,7 @@
         // 가로축 경계값 (간격이 좁으면 하나씩 건너뜀)
         const boundaries = [];
         for (let value = domainStart; value <= domainEnd + width / 2; value += width) boundaries.push(roundNumber(value));
-        const allNonNegative = analysis.values.every((value) => value >= 0);
+        const allNonNegative = analysis.groups.every((group) => group.values.every((value) => value >= 0));
         const labelGap = plotWidth / Math.max(1, boundaries.length - 1);
         const widestLabel = Math.max(...boundaries.map((value) => context.measureText(formatNumber(value)).width));
         const labelEvery = widestLabel + 6 > labelGap ? Math.ceil((widestLabel + 6) / labelGap) : 1;
@@ -1287,25 +1535,46 @@
         context.fillText(`${String(fields.variableName || '').trim() || '계급'}${unit ? `(${unit})` : ''}`, padding.left + plotWidth, cssHeight - 2);
         context.textAlign = 'left';
         context.textBaseline = 'top';
-        context.fillText(`도수${countUnit ? `(${countUnit})` : ''}`, 2, 2);
+        context.fillText(isCompare ? '상대도수' : `도수${countUnit ? `(${countUnit})` : ''}`, 2, 2);
+
+        if (isCompare) drawLegend(context, seriesList, padding.left + plotWidth, 9, fontFamily);
       }
 
       function renderStats(analysis, fields) {
         const container = document.getElementById('posterStats');
-        if (!fields.showStats || !analysis.stats) {
+        if (!fields.showStats || !analysis.classes) {
           container.innerHTML = '';
           return;
         }
         const unit = escapeHtml(String(fields.variableUnit || '').trim());
-        const { mean, median, modes, isMeanRounded } = analysis.stats;
-        const modeText = modes.length ? modes.map((value) => formatNumber(value)).join(', ') : '없음';
+        const formatModes = ({ modes }) => (modes.length ? `${modes.map((value) => formatNumber(value)).join(', ')}${unit}` : '없음');
+        const roundingNote = analysis.groups.some((group) => group.stats.isMeanRounded) ? ' · 평균은 소수점 아래 셋째 자리에서 반올림' : '';
+
+        // 두 집단: 대푯값 비교표
+        if (analysis.isCompare) {
+          const [groupA, groupB] = analysis.groups;
+          const statRows = [
+            ['평균', (stats) => `${formatNumber(stats.mean)}${unit}`],
+            ['중앙값', (stats) => `${formatNumber(stats.median)}${unit}`],
+            ['최빈값', formatModes]
+          ].map(([label, formatStat]) => `<tr><td>${label}</td><td>${formatStat(groupA.stats)}</td><td>${formatStat(groupB.stats)}</td></tr>`).join('');
+          container.innerHTML = `
+            <table class="p-table p-table-compare p-table-tight" style="margin-top:8px">
+              <thead><tr><th>대푯값</th><th>${escapeHtml(groupA.name)}</th><th class="p-group-b">${escapeHtml(groupB.name)}</th></tr></thead>
+              <tbody>${statRows}</tbody>
+            </table>
+            <p class="p-note">자료의 개수: ${escapeHtml(groupA.name)} ${groupA.values.length}, ${escapeHtml(groupB.name)} ${groupB.values.length}${roundingNote}</p>`;
+          return;
+        }
+
+        const { stats, values } = analysis.groups[0];
         container.innerHTML = `
           <div class="p-stats">
-            <div class="p-stat"><div class="p-stat-label">평균</div><div class="p-stat-value">${formatNumber(mean)}${unit}</div></div>
-            <div class="p-stat"><div class="p-stat-label">중앙값</div><div class="p-stat-value">${formatNumber(median)}${unit}</div></div>
-            <div class="p-stat"><div class="p-stat-label">최빈값</div><div class="p-stat-value">${modeText}${modes.length ? unit : ''}</div></div>
+            <div class="p-stat"><div class="p-stat-label">평균</div><div class="p-stat-value">${formatNumber(stats.mean)}${unit}</div></div>
+            <div class="p-stat"><div class="p-stat-label">중앙값</div><div class="p-stat-value">${formatNumber(stats.median)}${unit}</div></div>
+            <div class="p-stat"><div class="p-stat-label">최빈값</div><div class="p-stat-value">${formatModes(stats)}</div></div>
           </div>
-          <p class="p-note">자료의 개수: ${analysis.values.length}${isMeanRounded ? ' · 평균은 소수점 아래 셋째 자리에서 반올림' : ''}</p>`;
+          <p class="p-note">자료의 개수: ${values.length}${roundingNote}</p>`;
       }
 
       function fitPreview() {
@@ -1324,6 +1593,7 @@
       function renderPoster() {
         const fields = readFormState();
         const theme = applyTheme(fields.theme);
+        syncFormVisibility(fields);
         renderTexts(fields);
         const analysis = analyzeData(fields);
         renderDataFeedback(analysis);
@@ -1400,7 +1670,9 @@
       });
 
       document.getElementById('suggestClassButton').addEventListener('click', () => {
-        const { values } = parseRawData(document.getElementById('rawData').value);
+        const fields = readFormState();
+        const values = parseRawData(fields.rawData).values
+          .concat(fields.compareMode ? parseRawData(fields.rawDataB).values : []);
         if (!values.length) {
           showToast('먼저 조사한 자료 값을 입력해 주세요.');
           return;
@@ -1412,16 +1684,18 @@
         saveNow();
       });
 
-      document.getElementById('loadExampleButton').addEventListener('click', async () => {
-        if (hasContent(readFormState())) {
-          const confirmed = await askConfirm('예시 불러오기', '지금 입력한 내용이 예시로 바뀌어요. 계속할까요?', 'warning');
-          if (!confirmed) return;
-        }
-        formElement.reset();
-        applyFormState(EXAMPLE_FIELDS);
-        renderPoster();
-        saveNow();
-        showToast('예시를 불러왔어요. 내 탐구 내용으로 바꿔 보세요.');
+      document.querySelectorAll('[data-example]').forEach((menuItem) => {
+        menuItem.addEventListener('click', async () => {
+          if (hasContent(readFormState())) {
+            const confirmed = await askConfirm('예시 불러오기', '지금 입력한 내용이 예시로 바뀌어요. 계속할까요?', 'warning');
+            if (!confirmed) return;
+          }
+          formElement.reset();
+          applyFormState(menuItem.dataset.example === 'compare' ? EXAMPLE_COMPARE_FIELDS : EXAMPLE_FIELDS);
+          renderPoster();
+          saveNow();
+          showToast('예시를 불러왔어요. 내 탐구 내용으로 바꿔 보세요.');
+        });
       });
 
       document.getElementById('resetButton').addEventListener('click', async () => {
