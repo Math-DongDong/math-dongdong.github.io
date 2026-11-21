@@ -65,6 +65,8 @@
     .link-pill::after { content: '↗'; font-weight: 400; }
     .slide-canvas:not(#slide-canvas) .link-pill { cursor: pointer; transition: filter 0.15s, translate 0.15s; }
     .slide-canvas:not(#slide-canvas) .link-pill:hover { filter: brightness(1.12); translate: 0 -3px; }
+    /* 선 그리기(코드로 만든 모션그래픽 등): 선에 pathLength="1"을 함께 준다 */
+    .anim-draw { stroke-dasharray: 1; animation: ls-math-draw 1.4s cubic-bezier(0.4, 0, 0.2, 1) both; }
 
     /* 수식(math-tex: MathJax 조판)·모션그래픽(motion-graphic: AI 계산 코드 → SVG). 예전 그래프·도형(math-graph·math-geo·math-shape)은 보이기만 한다. */
     .math-tex svg { overflow: visible; }
@@ -273,6 +275,9 @@
     .math-swatch.on { box-shadow: 0 0 0 2px #2563eb; }
     .link-preview { min-height: 96px; display: flex; align-items: center; justify-content: center; background: #f8fafc; }
     .link-preview .link-pill { display: inline-flex; width: auto; max-width: 100%; }
+    #code-input { min-height: 360px; font-size: 13px; line-height: 1.5; tab-size: 2; white-space: pre; resize: vertical; }
+    .code-stage { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; background: #fff; }
+    .code-stage iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
     #slide-menu { position: fixed; z-index: 1060; min-width: 210px; font-size: 0.85rem; }
     #slide-menu .dropdown-item { display: flex; align-items: center; gap: 0.5rem; }
     #slide-menu kbd { margin-left: auto; font-size: 0.7rem; background: #f1f5f9; color: #64748b; }
@@ -692,6 +697,8 @@
                 <li><button type="button" class="dropdown-item" data-direct="video"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
                 <li><button type="button" class="dropdown-item" data-direct="youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
                 <li><button type="button" class="dropdown-item" data-direct="link"><i class="bi bi-link-45deg"></i> 링크 단추</button></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><button type="button" class="dropdown-item" data-direct="code"><i class="bi bi-code-slash"></i> 코드로 만들기 (인터랙티브·모션그래픽)</button></li>
               </ul>
             </div>
             <div class="dropdown">
@@ -856,6 +863,7 @@
                 <textarea class="form-control mb-2" id="app-request" aria-labelledby="app-help" placeholder="예) 슬라이더 범위를 −5~5로 바꾸고, 꼭짓점 좌표를 그래프 위에 표시해 줘"></textarea>
                 <div class="d-flex gap-2">
                   <button type="button" class="btn btn-light btn-sm" id="app-attach" title="참고 자료 첨부 (이미지·PDF·PPTX·TXT)"><i class="bi bi-paperclip"></i></button>
+                  <button type="button" class="btn btn-light btn-sm text-nowrap" id="app-code" title="코드를 직접 보고 고칩니다 (AI를 거치지 않음)"><i class="bi bi-code-slash"></i> 코드</button>
                   <button type="button" class="btn btn-light btn-sm d-none text-nowrap" id="app-undo" title="방금 AI가 고친 것을 되돌립니다"><i class="bi bi-arrow-counterclockwise"></i> 반영 취소</button>
                   <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="app-send"><i class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
                 </div>
@@ -1512,6 +1520,49 @@
     </div>
   </div>
 
+  <!-- 코드로 만들기·코드 직접 고치기 (CodeEditor): 인터랙티브 요소(HTML·CSS·JS)·모션그래픽(SVG를 돌려주는 JS) -->
+  <div class="modal fade" id="code-modal" tabindex="-1" aria-hidden="true" aria-labelledby="code-modal-title" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <form class="modal-content" id="code-form" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="code-modal-title"><i class="bi bi-code-slash"></i> 코드로 만들기</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="만들 개체">
+              <input type="radio" class="btn-check" name="code-kind" id="code-kind-app" value="app" checked>
+              <label class="btn btn-outline-primary" for="code-kind-app"><i class="bi bi-puzzle"></i> 인터랙티브 요소</label>
+              <input type="radio" class="btn-check" name="code-kind" id="code-kind-motion" value="motion">
+              <label class="btn btn-outline-primary" for="code-kind-motion"><i class="bi bi-bezier2"></i> 모션그래픽</label>
+            </div>
+            <button type="button" class="btn btn-sm btn-light" id="code-example"><i class="bi bi-lightbulb"></i> 예시 넣기</button>
+          </div>
+          <p class="small text-muted mb-2" id="code-help"></p>
+          <div class="row g-3">
+            <div class="col-lg-6">
+              <label class="form-label small fw-semibold" for="code-input">코드</label>
+              <textarea class="form-control font-monospace" id="code-input" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            </div>
+            <div class="col-lg-6">
+              <div class="d-flex align-items-center mb-2">
+                <span class="small fw-semibold">미리보기</span>
+                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="code-run"><i class="bi bi-play-fill"></i> 실행 <span class="opacity-75">Ctrl+Enter</span></button>
+              </div>
+              <div class="code-stage border rounded-3" id="code-preview"></div>
+              <p class="small text-danger mt-2 mb-0" id="code-error" role="status"></p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span class="small text-muted me-auto">코드는 인터넷이 막힌 격리 칸에서 실행됩니다(외부 라이브러리·글꼴·그림 주소·fetch 불가).</span>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button type="submit" class="btn btn-primary" id="code-apply">넣기</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 확인 모달 -->
   <div class="modal fade" id="confirm-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1753,9 +1804,10 @@
             USE_PROFILES: { html: true, svg: true },
             ADD_TAGS: ['iframe'],
             ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop',
-              'data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code', 'data-step', 'data-ls-direct', 'data-link', 'pathLength', 'paint-order'],
+              'data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code', 'data-css', 'data-step', 'data-ls-direct', 'data-link', 'pathLength', 'paint-order'],
             // 수학 개체의 설계값(LaTeX·JSON)과 인터랙티브 코드는 주소가 아니라 글자로만 보관한다(실행은 AppKit의 격리된 iframe에서만).
-            ADD_URI_SAFE_ATTR: ['data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code'],
+            // data-css: 코드로 만든 모션그래픽이 장 스타일에 더한 움직임(다시 고칠 때 빼고 새로 넣으려고 기억해 둔다).
+            ADD_URI_SAFE_ATTR: ['data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code', 'data-css'],
             FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'object',
               'embed', 'link', 'meta', 'audio', 'track', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
             FORBID_ATTR: ['id', 'name', 'contenteditable', 'tabindex', 'srcset', 'href', 'xlink:href', 'action', 'formaction'],
@@ -2410,7 +2462,11 @@
         // 실행 결과를 정리해 <svg> 요소로 돌려준다(위험한 태그·속성은 슬라이드 정리 규칙으로 뺀다).
         // 움직임은 붙이지 않는다: 부위별 모션은 AI가 슬라이드 <style>에 직접 쓴다.
         async draw(code) {
-          const raw = await MotionKit.run(AppKit.tidy(code, true));
+          return MotionKit.svgFrom(await MotionKit.run(AppKit.tidy(code, true)));
+        },
+
+        // 코드가 돌려준 글 → 정리한 <svg> 요소
+        svgFrom(raw) {
           const template = document.createElement('template');
           template.innerHTML = Sanitizer.clean(raw.slice(0, 400000));
           const svg = template.content.querySelector('svg');
@@ -2546,6 +2602,7 @@
           $('app-send').disabled = on;
           $('app-request').disabled = on;
           $('app-undo').disabled = on;
+          $('app-code').disabled = on;
           $('app-attach').disabled = on;
         },
 
@@ -2702,6 +2759,7 @@
 
         init() {
           $('app-send').addEventListener('click', AppEditor.send);
+          $('app-code').addEventListener('click', () => { if (AppEditor.el && !AppEditor.job) CodeEditor.open(AppEditor.el); });
           $('app-undo').addEventListener('click', AppEditor.undo);
           $('app-attach').addEventListener('click', () => $('app-file').click());
           $('app-file').addEventListener('change', event => {
@@ -5366,6 +5424,261 @@
         }
       };
 
+      // 코드로 만들기([직접 삽입 → 코드로 만들기])·코드 직접 고치기(개체 편집 창의 [코드]).
+      // · 인터랙티브 요소: HTML·CSS·JS를 AI가 만든 것과 똑같이 .app-frame의 data-code에 두고 격리된 칸(AppKit)에서 실행한다.
+      // · 모션그래픽: SVG 글을 돌려주는 JS(또는 <svg> 그대로)를 한 번 실행해 그림을 넣는다(MotionKit).
+      //   SVG 안의 <style>(움직임)은 장 스타일(slide.css)로 옮기고, 무엇을 더했는지 data-css에 기억해 다시 고칠 때 바꿔 넣는다.
+      const CodeEditor = {
+        target: null, // 고치는 개체. 새로 만들 때는 null
+        frame: null,  // 미리보기 칸
+        HELP: {
+          app: 'HTML·CSS·JavaScript를 그대로 적습니다(<style>·<script> 포함). 슬라이드에서 가로 960 × 세로 600 칸으로 실행되니 칸 크기에 맞춰지게 만드세요. ' +
+            '외부 라이브러리·글꼴·그림 주소·fetch·localStorage는 쓸 수 없습니다. 편집 화면에서는 조작되지 않고, 발표 화면에서 조작합니다.',
+          motion: 'SVG 글을 return하는 JavaScript(함수 본문)를 적거나 <svg>…</svg>를 그대로 붙입니다. 넣을 때 한 번 실행해 그림만 남깁니다. ' +
+            '움직임: 부위에 class="anim-draw"(선 그리기, pathLength="1" 함께) · anim-fade · anim-fade-up · anim-zoom · anim-pop · anim-float, ' +
+            '늦게 시작은 style="animation-delay:1s". SVG 안의 <style>(@keyframes)도 이 장에 그대로 적용됩니다.'
+        },
+        EXAMPLES: {
+          app: [
+            '<style>',
+            '  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; font-size: 32px; }',
+            '  input { width: 70%; height: 40px; }',
+            '  .formula { font-size: 56px; font-weight: 700; color: #2563eb; }',
+            '</style>',
+            '<div class="formula" id="formula">y = 1x²</div>',
+            '<input type="range" id="slider" min="-5" max="5" step="0.5" value="1">',
+            '<div>슬라이더를 움직여 a 값을 바꿔 보세요</div>',
+            '<script>',
+            '  const slider = document.getElementById("slider");',
+            '  slider.addEventListener("input", () => {',
+            '    document.getElementById("formula").textContent = "y = " + slider.value + "x²";',
+            '  });',
+            '<\/script>'
+          ].join('\n'),
+          motion: [
+            '// 좌표를 계산해 SVG 글을 return 합니다.',
+            'const W = 800, H = 500, cx = 400, cy = 450;',
+            'let d = "";',
+            'for (let x = -5; x <= 5.001; x += 0.1) {',
+            '  const px = cx + x * 60, py = cy - x * x * 16;',
+            '  d += (d ? " L " : "M ") + px.toFixed(1) + " " + py.toFixed(1);',
+            '}',
+            'return `<svg viewBox="0 0 ${W} ${H}">',
+            '  <line x1="40" y1="${cy}" x2="760" y2="${cy}" stroke="#94a3b8" stroke-width="3"/>',
+            '  <line x1="${cx}" y1="20" x2="${cx}" y2="480" stroke="#94a3b8" stroke-width="3"/>',
+            '  <path d="${d}" fill="none" stroke="#2563eb" stroke-width="6" pathLength="1" class="anim-draw"/>',
+            '  <circle cx="${cx}" cy="${cy}" r="12" fill="#dc2626" class="anim-pop" style="animation-delay:1.4s"/>',
+            '  <text x="${cx + 24}" y="${cy - 24}" font-size="32" fill="#dc2626" class="anim-fade" style="animation-delay:1.6s">꼭짓점</text>',
+            '</svg>`;'
+          ].join('\n')
+        },
+
+        kind() { return $('code-kind-motion').checked ? 'motion' : 'app'; },
+
+        open(el) {
+          if (!Editor.deck || Show.isOn()) return;
+          CodeEditor.target = el || null;
+          const editing = !!el;
+          const motion = editing ? MathKit.isMotion(el) : $('code-kind-motion').checked;
+          $(motion ? 'code-kind-motion' : 'code-kind-app').checked = true;
+          document.querySelectorAll('input[name="code-kind"]').forEach(radio => { radio.disabled = editing; });
+          $('code-modal-title').innerHTML = '<i class="bi bi-code-slash"></i> ' + (editing ? (motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드 고치기' : '코드로 만들기');
+          $('code-apply').textContent = editing ? '고치기' : '넣기';
+          $('code-input').value = editing ? AppKit.decode(el.getAttribute('data-code')) : '';
+          CodeEditor.syncKind();
+          CodeEditor.clearPreview();
+          const modal = $('code-modal');
+          modal.addEventListener('shown.bs.modal', () => {
+            $('code-input').focus();
+            if ($('code-input').value.trim()) CodeEditor.preview();
+          }, { once: true });
+          bootstrap.Modal.getOrCreateInstance(modal).show();
+        },
+
+        syncKind() {
+          const kind = CodeEditor.kind();
+          $('code-help').textContent = CodeEditor.HELP[kind];
+          $('code-input').placeholder = kind === 'motion' ? '예) return `<svg viewBox="0 0 800 500">…</svg>`;' : '예) <style>…</style> <div>…</div> <script>…<\/script>';
+        },
+
+        clearPreview() {
+          CodeEditor.frame = null;
+          $('code-error').textContent = '';
+          const note = document.createElement('div');
+          note.className = 'position-absolute top-50 start-50 translate-middle small text-muted text-center';
+          note.textContent = '[실행]을 누르면 여기에 보입니다.';
+          $('code-preview').replaceChildren(note);
+        },
+
+        // SVG 안의 <style>을 모아 정리한다(장 스타일로 옮길 것).
+        styleOf(raw) {
+          const template = document.createElement('template');
+          template.innerHTML = String(raw || '').slice(0, 400000);
+          let css = '';
+          template.content.querySelectorAll('style').forEach(style => { css += style.textContent + '\n'; });
+          return Sanitizer.css(css);
+        },
+
+        // 모션그래픽 코드를 실행해 { svg, css }를 만든다(실패하면 오류를 던진다).
+        async drawMotion(code) {
+          const raw = await MotionKit.run(AppKit.tidy(code, true));
+          return { svg: MotionKit.svgFrom(raw), css: CodeEditor.styleOf(raw) };
+        },
+
+        async preview() {
+          const code = $('code-input').value;
+          if (!code.trim()) { $('code-error').textContent = '코드를 적어 주세요.'; return; }
+          const stage = $('code-preview');
+          $('code-error').textContent = '';
+          const frame = document.createElement('iframe');
+          frame.setAttribute('referrerpolicy', 'no-referrer');
+          frame.setAttribute('title', '미리보기');
+          if (CodeEditor.kind() === 'app') {
+            // 슬라이드와 같은 960×600 칸에서 실행하고 미리보기 칸 너비에 맞춰 줄인다.
+            frame.setAttribute('sandbox', 'allow-scripts allow-forms');
+            frame.style.width = '960px';
+            frame.style.height = '600px';
+            frame.style.transform = 'scale(' + ((stage.clientWidth || 480) / 960) + ')';
+            frame.srcdoc = AppKit.doc(AppKit.tidy(code, false));
+          } else {
+            let drawn;
+            try { drawn = await CodeEditor.drawMotion(code); } catch (err) { $('code-error').textContent = err.message; return; }
+            if ($('code-input').value !== code) return; // 그사이 고쳤다
+            // 그림은 스크립트 없는 칸에 슬라이드 기본 스타일(움직임 이름 포함)과 함께 넣어 움직임까지 보인다.
+            const base = $('ls-slide-css').textContent.replace(/@import[^;]*;/g, '');
+            frame.setAttribute('sandbox', '');
+            frame.style.width = '100%';
+            frame.style.height = '100%';
+            frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + base + '\n' + drawn.css.replace(/<\//g, '<\\/') +
+              '\nsvg{max-width:100%;max-height:100vh;}</style></head><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;">' +
+              '<div class="motion-graphic" style="width:100%;">' + drawn.svg.outerHTML + '</div></body></html>';
+          }
+          CodeEditor.frame = frame;
+          stage.replaceChildren(frame);
+        },
+
+        // css에서 drop에 든 규칙을 뺀다(규칙 글을 같은 방법으로 풀어 비교).
+        rules(text) {
+          try {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(String(text || ''));
+            return Array.from(sheet.cssRules).map(rule => rule.cssText);
+          } catch (err) { return []; }
+        },
+        withoutRules(css, drop) {
+          if (!drop) return css || '';
+          const gone = new Set(CodeEditor.rules(drop));
+          return CodeEditor.rules(css).filter(rule => !gone.has(rule)).join('\n');
+        },
+
+        async apply(event) {
+          if (event) event.preventDefault();
+          const code = $('code-input').value.trim();
+          if (!code) { $('code-error').textContent = '코드를 적어 주세요.'; $('code-input').focus(); return; }
+          if (code.length > 300000) { $('code-error').textContent = '코드가 너무 깁니다(30만 자까지).'; return; }
+          const motion = CodeEditor.target ? MathKit.isMotion(CodeEditor.target) : CodeEditor.kind() === 'motion';
+          let drawn = null;
+          if (motion) {
+            try { drawn = await CodeEditor.drawMotion(code); } catch (err) { $('code-error').textContent = err.message + ' — 고친 뒤 다시 눌러 주세요.'; return; }
+          }
+          const target = CodeEditor.target;
+          CodeEditor.target = null;
+          bootstrap.Modal.getOrCreateInstance($('code-modal')).hide();
+          const attr = AppKit.encode(AppKit.tidy(code, motion));
+          const css = drawn ? drawn.css : '';
+          const cssAttr = css ? AppKit.encode(css) : '';
+
+          // 장 스타일(움직임)이 바뀌면: 지난번에 더한 규칙을 빼고 새 규칙을 더한 뒤 장을 다시 그린다.
+          const restyle = previous => {
+            const slide = Editor.current();
+            const next = Sanitizer.css(CodeEditor.withoutRules(slide.css, previous) + '\n' + css);
+            if (next === (slide.css || '')) return false;
+            slide.css = next;
+            return true;
+          };
+
+          if (!target) {
+            const host = document.createElement('div');
+            host.className = motion ? 'motion-graphic' : 'app-frame';
+            host.setAttribute('data-app', (motion ? 'mg' : 'app') + Util.uid().slice(-6));
+            host.setAttribute('data-code', attr);
+            let height = 600;
+            if (motion) {
+              if (cssAttr) host.setAttribute('data-css', cssAttr);
+              host.append(drawn.svg);
+              const box = (drawn.svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+              if (box[2] > 0 && box[3] > 0) height = Math.round(960 * box[3] / box[2]);
+              if (css) {
+                Editor.syncCurrent();
+                if (restyle('')) Editor.renderCanvas(); // 새 움직임 이름을 이 장 스타일에 넣는다(되돌리기는 아래 넣기와 한 번에)
+              }
+            } else {
+              host.style.cssText = 'width:100%;height:600px;';
+            }
+            const placed = DirectInsert.place(host, 960, height);
+            if (placed && !motion) {
+              AppKit.hydrate(placed, 'edit');
+              SlideView.addOverlays($('slide-canvas'));
+            }
+            return;
+          }
+
+          if (!target.isConnected) { Util.toast('고치려던 개체가 슬라이드에서 사라졌습니다.', 'warning'); return; }
+          const id = target.getAttribute('data-app');
+          const previous = AppKit.decode(target.getAttribute('data-css') || '');
+          target.setAttribute('data-code', attr);
+          if (motion) {
+            target.replaceChildren(drawn.svg);
+            if (cssAttr) target.setAttribute('data-css', cssAttr);
+            else target.removeAttribute('data-css');
+          }
+          Editor.syncCurrent();
+          if (motion && (css || previous) && restyle(previous)) {
+            Editor.renderCanvas(); // 바뀐 움직임을 적용한다(편집 창은 닫힌다)
+            const again = id ? $('slide-canvas').querySelector('[data-app="' + CSS.escape(id) + '"]') : null;
+            if (again && again.closest('.draggable-box')) Editor.select(again.closest('.draggable-box'));
+          } else if (!motion) {
+            AppKit.hydrate(target.closest('.draggable-box') || target.parentElement, 'edit');
+            SlideView.addOverlays($('slide-canvas'));
+          }
+          Editor.commit();
+          Util.toast((motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드를 고쳤습니다. 마음에 들지 않으면 Ctrl+Z로 되돌릴 수 있습니다.', 'success');
+        },
+
+        init() {
+          $('code-form').addEventListener('submit', CodeEditor.apply);
+          document.querySelectorAll('input[name="code-kind"]').forEach(radio => radio.addEventListener('change', () => { CodeEditor.syncKind(); CodeEditor.clearPreview(); }));
+          $('code-run').addEventListener('click', CodeEditor.preview);
+          $('code-example').addEventListener('click', async () => {
+            const input = $('code-input');
+            if (input.value.trim() && !await Util.confirm('지금 적은 코드를 예시로 바꿀까요?', '바꾸기')) return;
+            input.value = CodeEditor.EXAMPLES[CodeEditor.kind()];
+            input.focus();
+            CodeEditor.preview();
+          });
+          // Tab은 칸을 벗어나지 않고 공백 2칸, Ctrl+Enter는 미리보기 실행
+          $('code-input').addEventListener('keydown', event => {
+            if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {
+              event.preventDefault();
+              event.target.setRangeText('  ', event.target.selectionStart, event.target.selectionEnd, 'end');
+            } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault();
+              CodeEditor.preview();
+            }
+          });
+          // 미리보기 칸의 인터랙티브 요소 오류를 아래에 보인다.
+          window.addEventListener('message', event => {
+            const frame = CodeEditor.frame;
+            if (!frame || event.source !== frame.contentWindow || !event.data || event.data.lsApp !== 'error') return;
+            $('code-error').textContent = '⚠ ' + String(event.data.message || '알 수 없는 오류').slice(0, 300);
+          });
+          $('code-modal').addEventListener('hidden.bs.modal', () => {
+            CodeEditor.target = null;
+            CodeEditor.clearPreview(); // 실행 중인 미리보기를 멈춘다
+          });
+        }
+      };
+
       /* ===== 8-1. 개체 직접 삽입 ([직접 삽입 ▾]) =====
          AI를 거치지 않고 글상자·그림·동영상·유튜브·링크 단추를 지금 장 가운데(맨 위 층)에 바로 넣는다.
          직접 넣은 상자에는 data-ls-direct를 붙여, 발표할 때 AI 개체가 다 나타난 뒤 이어서 부드럽게 나타나게 한다.
@@ -5500,6 +5813,7 @@
           else if (kind === 'video') $('direct-video').click();
           else if (kind === 'youtube') DirectInsert.youtube();
           else if (kind === 'link') LinkEditor.open(null);
+          else if (kind === 'code') CodeEditor.open(null);
         },
 
         init() {
@@ -8636,10 +8950,16 @@
             if (timing && isFinite(timing.endTime)) end = Math.max(end, timing.endTime);
           });
         });
-        var wait = (Math.min(end, 4000) + 150) / 1000 + 's';
+        var wait = Math.min(end, 4000) + 150;
         Array.prototype.forEach.call(direct, function (box) {
           box.setAttribute('data-ls-timed', '');
-          box.style.setProperty('--ls-after', wait);
+          box.style.setProperty('--ls-after', wait / 1000 + 's');
+          // 안쪽 움직임(코드로 만든 모션그래픽의 선 그리기 등)도 상자가 나타나기 시작할 때부터 재생되게 같은 만큼 늦춘다.
+          box.getAnimations({ subtree: true }).forEach(function (animation) {
+            var effect = animation.effect;
+            if (!effect || !effect.updateTiming || !effect.target || effect.target.parentNode === box) return; // 상자 자체의 등장은 위 --ls-after로
+            effect.updateTiming({ delay: (Number(effect.getTiming().delay) || 0) + wait });
+          });
         });
       }
 
@@ -9434,7 +9754,7 @@
           holder.className = 'slide-canvas';
           SlideView.fill(holder, slide, 'show');
           // 인터랙티브 요소는 격리된 iframe(srcdoc)째로, 모션그래픽은 그려 둔 SVG로 내보낸다. 원본 코드(data-code)는 slide.html에만 둔다.
-          holder.querySelectorAll(AppKit.CODED).forEach(el => el.removeAttribute('data-code'));
+          holder.querySelectorAll(AppKit.CODED).forEach(el => { el.removeAttribute('data-code'); el.removeAttribute('data-css'); });
           const style = holder.querySelector('.ls-slide-style');
           const css = style ? style.textContent : '';
           if (style) style.remove();
@@ -12953,6 +13273,7 @@
         SlideMenu.init();
         MathEditor.init();
         LinkEditor.init();
+        CodeEditor.init();
         AiErrorLog.init();
         DirectInsert.init();
         ObjectPanel.init();
