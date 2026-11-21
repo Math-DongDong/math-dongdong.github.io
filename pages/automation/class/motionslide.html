@@ -698,7 +698,7 @@
                 <li><button type="button" class="dropdown-item" data-direct="youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
                 <li><button type="button" class="dropdown-item" data-direct="link"><i class="bi bi-link-45deg"></i> 링크 단추</button></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><button type="button" class="dropdown-item" data-direct="code"><i class="bi bi-code-slash"></i> 코드로 만들기 (인터랙티브·모션그래픽)</button></li>
+                <li><button type="button" class="dropdown-item" data-direct="code"><i class="bi bi-code-slash"></i> 코드로 만들기 (HTML)</button></li>
               </ul>
             </div>
             <div class="dropdown">
@@ -1520,7 +1520,7 @@
     </div>
   </div>
 
-  <!-- 코드로 만들기·코드 직접 고치기 (CodeEditor): 인터랙티브 요소(HTML·CSS·JS)·모션그래픽(SVG를 돌려주는 JS) -->
+  <!-- 코드로 만들기·코드 직접 고치기 (CodeEditor): 새로 만들기는 인터랙티브 요소(HTML)만, 모션그래픽은 [코드]로 고치기만 -->
   <div class="modal fade" id="code-modal" tabindex="-1" aria-hidden="true" aria-labelledby="code-modal-title" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <form class="modal-content" id="code-form" novalidate>
@@ -1529,16 +1529,10 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
         </div>
         <div class="modal-body">
-          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-            <div class="btn-group btn-group-sm" role="group" aria-label="만들 개체">
-              <input type="radio" class="btn-check" name="code-kind" id="code-kind-app" value="app" checked>
-              <label class="btn btn-outline-primary" for="code-kind-app"><i class="bi bi-puzzle"></i> 인터랙티브 요소</label>
-              <input type="radio" class="btn-check" name="code-kind" id="code-kind-motion" value="motion">
-              <label class="btn btn-outline-primary" for="code-kind-motion"><i class="bi bi-bezier2"></i> 모션그래픽</label>
-            </div>
-            <button type="button" class="btn btn-sm btn-light" id="code-example"><i class="bi bi-lightbulb"></i> 예시 넣기</button>
+          <div class="d-flex align-items-start gap-2 mb-2">
+            <p class="small text-muted mb-0 flex-grow-1" id="code-help"></p>
+            <button type="button" class="btn btn-sm btn-light flex-shrink-0" id="code-example"><i class="bi bi-lightbulb"></i> 예시 넣기</button>
           </div>
-          <p class="small text-muted mb-2" id="code-help"></p>
           <div class="row g-3">
             <div class="col-lg-6">
               <label class="form-label small fw-semibold" for="code-input">코드</label>
@@ -1551,6 +1545,7 @@
               </div>
               <div class="code-stage border rounded-3" id="code-preview"></div>
               <p class="small text-danger mt-2 mb-0" id="code-error" role="status"></p>
+              <p class="small text-warning-emphasis mt-1 mb-0" id="code-warn"></p>
             </div>
           </div>
         </div>
@@ -5425,14 +5420,14 @@
       };
 
       // 코드로 만들기([직접 삽입 → 코드로 만들기])·코드 직접 고치기(개체 편집 창의 [코드]).
-      // · 인터랙티브 요소: HTML·CSS·JS를 AI가 만든 것과 똑같이 .app-frame의 data-code에 두고 격리된 칸(AppKit)에서 실행한다.
-      // · 모션그래픽: SVG 글을 돌려주는 JS(또는 <svg> 그대로)를 한 번 실행해 그림을 넣는다(MotionKit).
-      //   SVG 안의 <style>(움직임)은 장 스타일(slide.css)로 옮기고, 무엇을 더했는지 data-css에 기억해 다시 고칠 때 바꿔 넣는다.
+      // · 새로 만들기: 인터랙티브 요소만. HTML 문서를 통째로(또는 일부만) AI가 만든 것과 똑같이 .app-frame의 data-code에 두고 격리된 칸(AppKit)에서 실행한다.
+      // · 고치기([코드] 단추): 인터랙티브 요소, 또는 모션그래픽(SVG 글을 돌려주는 JS를 한 번 실행해 그림을 넣는다, MotionKit).
+      //   모션그래픽 SVG 안의 <style>(움직임)은 장 스타일(slide.css)로 옮기고, 무엇을 더했는지 data-css에 기억해 다시 고칠 때 바꿔 넣는다.
       const CodeEditor = {
         target: null, // 고치는 개체. 새로 만들 때는 null
         frame: null,  // 미리보기 칸
         HELP: {
-          app: 'HTML·CSS·JavaScript를 그대로 적습니다(<style>·<script> 포함). 슬라이드에서 가로 960 × 세로 600 칸으로 실행되니 칸 크기에 맞춰지게 만드세요. ' +
+          app: 'HTML 문서를 통째로(<!DOCTYPE html>…</html>) 붙여 넣거나, <style>·<script>를 포함한 일부만 적습니다. 슬라이드에서 가로 960 × 세로 600 칸으로 실행되니 칸 크기에 맞춰지게 만드세요. ' +
             '외부 라이브러리·글꼴·그림 주소·fetch·localStorage는 쓸 수 없습니다. 편집 화면에서는 조작되지 않고, 발표 화면에서 조작합니다.',
           motion: 'SVG 글을 return하는 JavaScript(함수 본문)를 적거나 <svg>…</svg>를 그대로 붙입니다. 넣을 때 한 번 실행해 그림만 남깁니다. ' +
             '움직임: 부위에 class="anim-draw"(선 그리기, pathLength="1" 함께) · anim-fade · anim-fade-up · anim-zoom · anim-pop · anim-float, ' +
@@ -5473,15 +5468,13 @@
           ].join('\n')
         },
 
-        kind() { return $('code-kind-motion').checked ? 'motion' : 'app'; },
+        kind() { return CodeEditor.target && MathKit.isMotion(CodeEditor.target) ? 'motion' : 'app'; },
 
         open(el) {
           if (!Editor.deck || Show.isOn()) return;
           CodeEditor.target = el || null;
           const editing = !!el;
-          const motion = editing ? MathKit.isMotion(el) : $('code-kind-motion').checked;
-          $(motion ? 'code-kind-motion' : 'code-kind-app').checked = true;
-          document.querySelectorAll('input[name="code-kind"]').forEach(radio => { radio.disabled = editing; });
+          const motion = CodeEditor.kind() === 'motion';
           $('code-modal-title').innerHTML = '<i class="bi bi-code-slash"></i> ' + (editing ? (motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드 고치기' : '코드로 만들기');
           $('code-apply').textContent = editing ? '고치기' : '넣기';
           $('code-input').value = editing ? AppKit.decode(el.getAttribute('data-code')) : '';
@@ -5498,12 +5491,24 @@
         syncKind() {
           const kind = CodeEditor.kind();
           $('code-help').textContent = CodeEditor.HELP[kind];
-          $('code-input').placeholder = kind === 'motion' ? '예) return `<svg viewBox="0 0 800 500">…</svg>`;' : '예) <style>…</style> <div>…</div> <script>…<\/script>';
+          $('code-input').placeholder = kind === 'motion' ? '예) return `<svg viewBox="0 0 800 500">…</svg>`;' : '예) <!DOCTYPE html><html>…</html> 를 통째로 붙여 넣으세요.';
+        },
+
+        // 외부 주소에서 불러오는 파일(라이브러리·글꼴·그림) — 격리 칸에서는 막혀 동작하지 않으니 미리 알린다.
+        externalHosts(code) {
+          const hosts = new Set();
+          const pattern = /<(?:script|link|img|iframe|audio|video|source)\b[^>]*?\b(?:src|href)\s*=\s*["']?((?:https?:)?\/\/[^\s"'>]+)/gi;
+          let match;
+          while ((match = pattern.exec(code))) {
+            try { hosts.add(new URL(match[1], 'https://local.invalid/').hostname); } catch (err) { /* 잘못된 주소 */ }
+          }
+          return Array.from(hosts);
         },
 
         clearPreview() {
           CodeEditor.frame = null;
           $('code-error').textContent = '';
+          $('code-warn').textContent = '';
           const note = document.createElement('div');
           note.className = 'position-absolute top-50 start-50 translate-middle small text-muted text-center';
           note.textContent = '[실행]을 누르면 여기에 보입니다.';
@@ -5530,10 +5535,16 @@
           if (!code.trim()) { $('code-error').textContent = '코드를 적어 주세요.'; return; }
           const stage = $('code-preview');
           $('code-error').textContent = '';
+          $('code-warn').textContent = '';
           const frame = document.createElement('iframe');
           frame.setAttribute('referrerpolicy', 'no-referrer');
           frame.setAttribute('title', '미리보기');
           if (CodeEditor.kind() === 'app') {
+            const hosts = CodeEditor.externalHosts(code);
+            if (hosts.length) {
+              $('code-warn').textContent = '⚠ 외부 주소(' + hosts.slice(0, 3).join(', ') + (hosts.length > 3 ? ' 등' : '') +
+                ')에서 불러오는 파일은 격리 칸에서 막혀 동작하지 않습니다. 그 부분은 코드 안에 직접 넣거나 없이 만들어야 합니다.';
+            }
             // 슬라이드와 같은 960×600 칸에서 실행하고 미리보기 칸 너비에 맞춰 줄인다.
             frame.setAttribute('sandbox', 'allow-scripts allow-forms');
             frame.style.width = '960px';
@@ -5576,7 +5587,7 @@
           const code = $('code-input').value.trim();
           if (!code) { $('code-error').textContent = '코드를 적어 주세요.'; $('code-input').focus(); return; }
           if (code.length > 300000) { $('code-error').textContent = '코드가 너무 깁니다(30만 자까지).'; return; }
-          const motion = CodeEditor.target ? MathKit.isMotion(CodeEditor.target) : CodeEditor.kind() === 'motion';
+          const motion = CodeEditor.kind() === 'motion';
           let drawn = null;
           if (motion) {
             try { drawn = await CodeEditor.drawMotion(code); } catch (err) { $('code-error').textContent = err.message + ' — 고친 뒤 다시 눌러 주세요.'; return; }
@@ -5597,26 +5608,14 @@
             return true;
           };
 
-          if (!target) {
+          if (!target) { // 새로 만들기는 인터랙티브 요소만
             const host = document.createElement('div');
-            host.className = motion ? 'motion-graphic' : 'app-frame';
-            host.setAttribute('data-app', (motion ? 'mg' : 'app') + Util.uid().slice(-6));
+            host.className = 'app-frame';
+            host.setAttribute('data-app', 'app' + Util.uid().slice(-6));
             host.setAttribute('data-code', attr);
-            let height = 600;
-            if (motion) {
-              if (cssAttr) host.setAttribute('data-css', cssAttr);
-              host.append(drawn.svg);
-              const box = (drawn.svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
-              if (box[2] > 0 && box[3] > 0) height = Math.round(960 * box[3] / box[2]);
-              if (css) {
-                Editor.syncCurrent();
-                if (restyle('')) Editor.renderCanvas(); // 새 움직임 이름을 이 장 스타일에 넣는다(되돌리기는 아래 넣기와 한 번에)
-              }
-            } else {
-              host.style.cssText = 'width:100%;height:600px;';
-            }
-            const placed = DirectInsert.place(host, 960, height);
-            if (placed && !motion) {
+            host.style.cssText = 'width:100%;height:600px;';
+            const placed = DirectInsert.place(host, 960, 600);
+            if (placed) {
               AppKit.hydrate(placed, 'edit');
               SlideView.addOverlays($('slide-canvas'));
             }
@@ -5647,7 +5646,6 @@
 
         init() {
           $('code-form').addEventListener('submit', CodeEditor.apply);
-          document.querySelectorAll('input[name="code-kind"]').forEach(radio => radio.addEventListener('change', () => { CodeEditor.syncKind(); CodeEditor.clearPreview(); }));
           $('code-run').addEventListener('click', CodeEditor.preview);
           $('code-example').addEventListener('click', async () => {
             const input = $('code-input');
