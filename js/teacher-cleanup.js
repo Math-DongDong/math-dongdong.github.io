@@ -8,6 +8,7 @@
  *   · 방: room_registry 에서 createdBy == uid 인 방을 저장 위치마다 지웁니다 (room-registry.js의 purgeRoomParts)
  *   · AI 모션 슬라이드 Storage: motion_slides/{uid} · live_slides/{uid} · motion_remote/{uid} 폴더 (계정 삭제 · 탈퇴 때만 — 학교 변경은 이 파일을 쓰지 않음)
  *   · AI 모션 슬라이드 휴대폰 리모컨: RTDB(motionslide-live) remote/{uid}
+ *   · AI 모션 슬라이드 함께 보기 학생 답(질문): RTDB(motionslide-live) live_answers/{코드} — 방을 지우기 전에
  *   · 학생: 같은 학교 + 담당 선생님(teachers)에 이 교사 이름
  *       - 담당 선생님이 이 교사뿐이면 학생 정보를 모두 지웁니다 (PIN · 기기 인증 포함)
  *       - 다른 담당 선생님이 있으면 담당 선생님 목록에서 이름만 뺍니다
@@ -79,6 +80,24 @@ export async function collectTeacherCleanupPlan(uid) {
     return plan;
 }
 
+/**
+ * AI 모션 슬라이드 함께 보기 방이면 학생 답(질문, live_answers/{코드})을 먼저 지웁니다.
+ * 규칙이 live/{코드}의 주인을 확인하므로 방을 지우기 전에 불러야 합니다. 규칙이 없거나 실패해도 방 정리는 계속합니다.
+ */
+async function removeLiveAnswers(room) {
+    const first = room?.parts?.[0];
+    if (!first?.rtdb || first.paths?.[0] !== 'live' || !/motionslide-live/.test(first.rtdb)) return;
+    try {
+        const [{ app }, { getDatabase, ref, remove }] = await Promise.all([
+            import('./firebase-config.js'),
+            import("https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js")
+        ]);
+        await remove(ref(getDatabase(app, first.rtdb), `live_answers/${room.code}`));
+    } catch (e) {
+        console.warn('[teacher-cleanup] 함께 보기 학생 답 삭제 건너뜀:', room.code, e?.code || e);
+    }
+}
+
 /** 정리할 항목 수 */
 export function countCleanupTargets(plan) {
     return plan.rooms.length + plan.studentsToDetach.length + plan.studentsToDelete.length;
@@ -97,6 +116,7 @@ export async function runTeacherCleanup(plan, onProgress = () => { }) {
 
     for (const room of plan.rooms) {
         try {
+            await removeLiveAnswers(room);
             await purgeRoomParts(room.code, room.parts);
             await deleteDoc(doc(db, REGISTRY_COLLECTION, room.id));
         } catch (e) {
