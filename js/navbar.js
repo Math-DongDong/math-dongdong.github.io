@@ -27,7 +27,7 @@
                         { "name": "원과 부채꼴의 넓이", "path": "pages/middleschool/1/circle_sector_area.html" },
                         { "name": "회전체 탐구", "path": "pages/middleschool/1/rotation.html" },
                         { "name": "가위바위보", "path": "pages/middleschool/1/relativefrequency.html" },
-                        { "name": "통계 포스터 만들기", "path": "pages/middleschool/1/statposter.html" }
+                        { "name": "숫자로 밝히는 우리들의 이야기", "path": "pages/middleschool/1/statposter.html" }
                     ]
                 },
                 {
