@@ -278,9 +278,8 @@
     .math-swatch.on { box-shadow: 0 0 0 2px #2563eb; }
     .link-preview { min-height: 96px; display: flex; align-items: center; justify-content: center; background: #f8fafc; }
     .link-preview .link-pill { display: inline-flex; width: auto; max-width: 100%; }
-    #code-input { min-height: 360px; font-size: 13px; line-height: 1.5; tab-size: 2; white-space: pre; resize: vertical; }
-    .code-stage { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; background: #fff; }
-    .code-stage iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+    /* 코드 칸(오른쪽 창의 코드 삽입·코드 고치기): 줄을 접지 않고 가로로 넘긴다 */
+    #code-input { font-size: 13px; line-height: 1.5; tab-size: 2; white-space: pre; overflow: auto; }
     #slide-menu { position: fixed; z-index: 1060; min-width: 210px; font-size: 0.85rem; }
     #slide-menu .dropdown-item { display: flex; align-items: center; gap: 0.5rem; }
     #slide-menu kbd { margin-left: auto; font-size: 0.7rem; background: #f1f5f9; color: #64748b; }
@@ -701,7 +700,7 @@
                 <li><button type="button" class="dropdown-item" data-direct="youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
                 <li><button type="button" class="dropdown-item" data-direct="link"><i class="bi bi-link-45deg"></i> 링크 단추</button></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><button type="button" class="dropdown-item" data-direct="code"><i class="bi bi-code-slash"></i> 코드로 만들기 (HTML)</button></li>
+                <li><button type="button" class="dropdown-item" data-direct="code"><i class="bi bi-code-slash"></i> 코드 삽입 (HTML)</button></li>
               </ul>
             </div>
             <div class="dropdown">
@@ -872,6 +871,18 @@
                 </div>
                 <div class="small mt-2" id="app-status" role="status"></div>
                 <p class="small text-muted mt-2 mb-0">요청 내용·참고 자료·코드는 Google Gemini API로 전송됩니다. 고친 결과는 바로 반영되고, 마음에 들지 않으면 [반영 취소]나 Ctrl+Z로 되돌립니다.</p>
+              </section>
+              <!-- 코드 삽입·코드 고치기 (CodeEditor): [직접 삽입 → 코드 삽입] 또는 개체 편집 창의 [코드]로 열린다.
+                   따로 미리보기는 없고, [슬라이드에 넣기]·[적용]하면 슬라이드에 바로 보인다(되돌리기는 Ctrl+Z). -->
+              <section class="d-none obj-compose" id="obj-code" aria-label="코드 삽입">
+                <p class="small mb-2 text-muted" id="code-help"></p>
+                <textarea class="form-control font-monospace mb-2" id="code-input" spellcheck="false" autocomplete="off" autocapitalize="off" aria-labelledby="code-help"></textarea>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-light btn-sm d-none text-nowrap" id="code-ai" title="말로 요청해 AI가 이 개체의 코드를 고치게 합니다"><i class="bi bi-magic"></i> AI로 고치기</button>
+                  <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="code-apply"><i class="bi bi-check2"></i> <span id="code-apply-label">슬라이드에 넣기</span> <span class="opacity-75">Ctrl+Enter</span></button>
+                </div>
+                <div class="small mt-2" id="code-status" role="status"></div>
+                <p class="small text-muted mt-2 mb-0">코드는 이 페이지와 분리된 격리 칸에서 실행됩니다(허용된 CDN의 라이브러리·글꼴만 불러올 수 있음). 슬라이드에 들어간 모습이 미리보기입니다. 되돌리려면 코드 칸 밖에서 Ctrl+Z를 누르세요.</p>
               </section>
               <!-- 발표 시나리오: 말로 고치기 (아래 시나리오 칸을 누르면 열린다. 고친 결과는 시나리오 칸에 바로 들어간다) -->
               <section class="d-none obj-compose" id="obj-notes" aria-label="발표 시나리오 고치기">
@@ -1501,15 +1512,6 @@
               <button type="button" class="math-swatch" data-color="#1f2937" style="background:#1f2937" title="검정"></button>
               <button type="button" class="math-swatch" data-color="#facc15" style="background:#facc15" title="노랑"></button>
             </div>
-            <span class="small text-muted ms-2">크기</span>
-            <div class="btn-group btn-group-sm" role="group" aria-label="단추 크기">
-              <input type="radio" class="btn-check" name="link-size" id="link-size-s" value="28">
-              <label class="btn btn-outline-secondary" for="link-size-s">작게</label>
-              <input type="radio" class="btn-check" name="link-size" id="link-size-m" value="36" checked>
-              <label class="btn btn-outline-secondary" for="link-size-m">보통</label>
-              <input type="radio" class="btn-check" name="link-size" id="link-size-l" value="48">
-              <label class="btn btn-outline-secondary" for="link-size-l">크게</label>
-            </div>
           </div>
           <div class="small text-muted mt-3 mb-1">미리보기 <span class="text-body-tertiary">(편집 화면에서는 눌러도 열리지 않고, 발표할 때 누르면 새 탭으로 열립니다)</span></div>
           <div class="link-preview border rounded-3 p-3" id="link-preview"></div>
@@ -1518,44 +1520,6 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
           <button type="submit" class="btn btn-primary" id="link-apply">넣기</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 코드로 만들기·코드 직접 고치기 (CodeEditor): 새로 만들기는 인터랙티브 요소(HTML)만, 모션그래픽은 [코드]로 고치기만 -->
-  <div class="modal fade" id="code-modal" tabindex="-1" aria-hidden="true" aria-labelledby="code-modal-title" data-bs-backdrop="static">
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-      <form class="modal-content" id="code-form" novalidate>
-        <div class="modal-header">
-          <h2 class="modal-title h5" id="code-modal-title"><i class="bi bi-code-slash"></i> 코드로 만들기</h2>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
-        </div>
-        <div class="modal-body">
-          <div class="d-flex align-items-start gap-2 mb-2">
-            <p class="small text-muted mb-0 flex-grow-1" id="code-help"></p>
-            <button type="button" class="btn btn-sm btn-light flex-shrink-0" id="code-example"><i class="bi bi-lightbulb"></i> 예시 넣기</button>
-          </div>
-          <div class="row g-3">
-            <div class="col-lg-6">
-              <label class="form-label small fw-semibold" for="code-input">코드</label>
-              <textarea class="form-control font-monospace" id="code-input" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-            </div>
-            <div class="col-lg-6">
-              <div class="d-flex align-items-center mb-2">
-                <span class="small fw-semibold">미리보기</span>
-                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="code-run"><i class="bi bi-play-fill"></i> 실행 <span class="opacity-75">Ctrl+Enter</span></button>
-              </div>
-              <div class="code-stage border rounded-3" id="code-preview"></div>
-              <p class="small text-danger mt-2 mb-0" id="code-error" role="status"></p>
-              <p class="small text-warning-emphasis mt-1 mb-0" id="code-warn"></p>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <span class="small text-muted me-auto">코드는 이 페이지와 분리된 격리 칸에서 실행됩니다(허용된 CDN의 라이브러리·글꼴만 불러올 수 있음).</span>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
-          <button type="submit" class="btn btn-primary" id="code-apply">넣기</button>
         </div>
       </form>
     </div>
@@ -2288,6 +2252,7 @@
             frame.setAttribute('title', '인터랙티브 요소');
             frame.srcdoc = AppKit.doc(code);
             host.replaceChildren(frame);
+            void frame.offsetWidth; // 칸 크기를 먼저 정해 둔다(코드가 처음 읽는 innerWidth·innerHeight가 0이 되지 않게)
           });
         },
 
@@ -2945,19 +2910,21 @@
       // 오른쪽 창: AI 창 ↔ 개체 편집 창을 바꿔 끼우고, 편집 중인 개체의 [적용]/[취소]를 맡는다.
       // 편집 중에 다른 장·다른 개체로 가거나 선택을 풀면, 적용하지 않은 고친 내용이 있을 때만 취소할지 묻는다.
       const ObjectPanel = {
-        session: null,   // { editor: AppEditor, el, box } — 코드로 만든 개체(인터랙티브 요소·모션그래픽)만 편집 창이 있다
+        session: null,   // { editor: AppEditor·NotesEditor·CodeEditor, el, box } — el이 null이면 아직 슬라이드에 없는 것(코드 삽입)
         asking: false,
-        WIDTH_KEYS: { ai: 'lessonStudio.aiPanelWidth', obj: 'lessonStudio.objPanelWidth' },
-        DEFAULT_OBJ_WIDTH: 420,
+        WIDTH_KEYS: { ai: 'lessonStudio.aiPanelWidth', obj: 'lessonStudio.objPanelWidth', code: 'lessonStudio.codePanelWidth' },
+        DEFAULT_WIDTH: { obj: 420, code: 560 }, // 코드 칸은 줄이 길어 더 넓게
 
-        open(editor, el, title, icon) {
-          ObjectPanel.session = { editor, el, box: el.closest('.draggable-box') };
-          el.classList.add('ls-obj-editing');
+        // view: 'obj'(개체 편집 창 폭) | 'code'(코드 칸 폭). 창 모양은 같고 폭만 따로 기억한다.
+        open(editor, el, title, icon, view) {
+          ObjectPanel.session = { editor, el, box: el ? el.closest('.draggable-box') : null };
+          if (el) el.classList.add('ls-obj-editing');
           $('obj-title').textContent = title;
           $('obj-icon').className = 'bi ' + icon;
           $('obj-app').classList.toggle('d-none', editor !== AppEditor);
           $('obj-notes').classList.toggle('d-none', editor !== NotesEditor);
-          ObjectPanel.showView('obj');
+          $('obj-code').classList.toggle('d-none', editor !== CodeEditor);
+          ObjectPanel.showView(view || 'obj');
           ObjectPanel.syncDirty();
         },
 
@@ -2971,7 +2938,7 @@
           if (!session) return;
           ObjectPanel.session = null;
           session.editor.finish(restore);
-          session.el.classList.remove('ls-obj-editing');
+          if (session.el) session.el.classList.remove('ls-obj-editing');
           ObjectPanel.showView('ai');
         },
 
@@ -2997,7 +2964,7 @@
         focus() {
           const session = ObjectPanel.session;
           if (!session) return;
-          const input = session.editor === NotesEditor ? $('notes-ai-request') : $('app-request');
+          const input = session.editor === NotesEditor ? $('notes-ai-request') : session.editor === CodeEditor ? $('code-input') : $('app-request');
           if (!input.disabled) input.focus();
         },
 
@@ -3021,12 +2988,14 @@
 
         clampWidth(width) { return Math.round(Math.max(280, Math.min(width, window.innerWidth * 0.6))); },
 
+        view() { const view = $('ai-panel').dataset.view; return ObjectPanel.WIDTH_KEYS[view] ? view : 'ai'; },
+
         applyWidth() {
           const panel = $('ai-panel');
-          const view = panel.dataset.view === 'obj' ? 'obj' : 'ai';
+          const view = ObjectPanel.view();
           let width = NaN;
           try { width = parseInt(localStorage.getItem(ObjectPanel.WIDTH_KEYS[view]), 10); } catch (err) { /* 무시 */ }
-          if (!(width > 0) && view === 'obj') width = ObjectPanel.DEFAULT_OBJ_WIDTH;
+          if (!(width > 0)) width = ObjectPanel.DEFAULT_WIDTH[view] || NaN;
           if (width > 0) panel.style.setProperty('--ai-w', ObjectPanel.clampWidth(width) + 'px');
           else panel.style.removeProperty('--ai-w'); // 기본 폭(화면 크기별 CSS)
         },
@@ -3040,7 +3009,7 @@
             event.preventDefault();
             const startX = event.clientX;
             const startWidth = panel.offsetWidth;
-            const view = panel.dataset.view === 'obj' ? 'obj' : 'ai';
+            const view = ObjectPanel.view();
             panel.classList.add('resizing');
             resizer.classList.add('active');
             const move = ev => panel.style.setProperty('--ai-w', ObjectPanel.clampWidth(startWidth + startX - ev.clientX) + 'px');
@@ -3058,7 +3027,7 @@
           });
           // 두 번 누르면 기본 폭으로
           resizer.addEventListener('dblclick', () => {
-            const view = panel.dataset.view === 'obj' ? 'obj' : 'ai';
+            const view = ObjectPanel.view();
             try { localStorage.removeItem(ObjectPanel.WIDTH_KEYS[view]); } catch (err) { /* 무시 */ }
             ObjectPanel.applyWidth();
           });
@@ -5323,6 +5292,7 @@
       const LinkEditor = {
         target: null, // 고치는 단추. 새로 넣을 때는 null
         lastColor: '#2563eb',
+        SIZE: 36, // 새 단추 글자 크기(.link-pill 기본값과 같음). 고칠 때는 지금 크기를 그대로 둔다(손잡이로 바꾼 크기 유지).
 
         open(el) {
           if (!Editor.deck || Show.isOn()) return;
@@ -5333,9 +5303,6 @@
           $('link-url').value = editing ? (el.getAttribute('data-link') || '') : '';
           $('link-text').value = editing ? el.textContent.trim() : '';
           $('link-color').value = (editing && MathEditor.hex(el.style.backgroundColor)) || LinkEditor.lastColor;
-          const size = editing ? parseInt(el.style.fontSize, 10) : 36;
-          const radio = document.querySelector('input[name="link-size"][value="' + size + '"]') || $('link-size-m');
-          radio.checked = true;
           $('link-error').textContent = '';
           LinkEditor.preview();
           const modal = $('link-modal');
@@ -5361,8 +5328,6 @@
           return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 165 ? '#111827' : '#ffffff';
         },
 
-        size() { return Number((document.querySelector('input[name="link-size"]:checked') || {}).value) || 36; },
-
         // 단추 글자: 적은 글자, 없으면 사이트 이름(www. 뺌)
         label(url) {
           const text = $('link-text').value.trim();
@@ -5370,23 +5335,22 @@
           try { return new URL(url).hostname.replace(/^www\./, ''); } catch (err) { return '링크 열기'; }
         },
 
-        // 단추 모양을 칠한다(미리보기와 슬라이드에 같이 쓴다).
-        paint(pill, url, size) {
+        // 단추 모양을 칠한다(미리보기와 슬라이드에 같이 쓴다). 글자 크기는 건드리지 않는다.
+        paint(pill, url) {
           const color = $('link-color').value;
           pill.className = 'link-pill';
           pill.setAttribute('data-link', url);
           pill.setAttribute('title', url);
           pill.style.backgroundColor = color;
           pill.style.color = LinkEditor.ink(color);
-          pill.style.fontSize = size + 'px';
           pill.textContent = LinkEditor.label(url);
         },
 
         preview() {
           const url = LinkEditor.url($('link-url').value) || 'https://example.com/';
           const pill = document.createElement('div');
-          LinkEditor.paint(pill, url, LinkEditor.size());
-          pill.style.fontSize = Math.round(LinkEditor.size() * 0.6) + 'px'; // 편집 화면에 보이는 크기쯤으로
+          LinkEditor.paint(pill, url);
+          pill.style.fontSize = Math.round(LinkEditor.SIZE * 0.6) + 'px'; // 편집 화면에 보이는 크기쯤으로
           pill.removeAttribute('title');
           $('link-preview').replaceChildren(pill);
           document.querySelectorAll('#link-swatches .math-swatch').forEach(button => button.classList.toggle('on', button.dataset.color === $('link-color').value));
@@ -5404,15 +5368,15 @@
           const target = LinkEditor.target;
           LinkEditor.target = null;
           LinkEditor.lastColor = $('link-color').value;
-          const size = LinkEditor.size();
+          const size = LinkEditor.SIZE;
           if (target) {
             if (!target.isConnected) { Util.toast('고치려던 링크 단추가 슬라이드에서 사라졌습니다.', 'warning'); return; }
-            LinkEditor.paint(target, url, size);
+            LinkEditor.paint(target, url);
             Editor.commit();
             return;
           }
           const pill = document.createElement('div');
-          LinkEditor.paint(pill, url, size);
+          LinkEditor.paint(pill, url);
           const width = Math.min(1200, Math.max(240, pill.textContent.length * size * 0.95 + size * 3));
           DirectInsert.place(pill, width, size * 2);
         },
@@ -5420,7 +5384,6 @@
         init() {
           $('link-form').addEventListener('submit', LinkEditor.apply);
           ['link-url', 'link-text', 'link-color'].forEach(id => $(id).addEventListener('input', LinkEditor.preview));
-          document.querySelectorAll('input[name="link-size"]').forEach(radio => radio.addEventListener('change', LinkEditor.preview));
           $('link-swatches').addEventListener('click', event => {
             const button = event.target.closest('[data-color]');
             if (!button) return;
@@ -5431,93 +5394,55 @@
         }
       };
 
-      // 코드로 만들기([직접 삽입 → 코드로 만들기])·코드 직접 고치기(개체 편집 창의 [코드]).
-      // · 새로 만들기: 인터랙티브 요소만. HTML 문서를 통째로(또는 일부만) AI가 만든 것과 똑같이 .app-frame의 data-code에 두고 격리된 칸(AppKit)에서 실행한다.
-      // · 고치기([코드] 단추): 인터랙티브 요소, 또는 모션그래픽(SVG 글을 돌려주는 JS를 한 번 실행해 그림을 넣는다, MotionKit).
-      //   모션그래픽 SVG 안의 <style>(움직임)은 장 스타일(slide.css)로 옮기고, 무엇을 더했는지 data-css에 기억해 다시 고칠 때 바꿔 넣는다.
+      /* ===== 코드 삽입·코드 고치기 (CodeEditor) =====
+         [직접 삽입 → 코드 삽입] 또는 개체 편집 창의 [코드]를 누르면 오른쪽 AI 창 자리에 코드 칸이 뜬다(ObjectPanel의 편집기 하나, 폭은 'code'로 따로 기억).
+         따로 미리보기는 없다. [슬라이드에 넣기]·[적용]하면 슬라이드에 바로 보이는 모습이 미리보기이고, 되돌리기는 Ctrl+Z.
+         · 새로 넣기: 인터랙티브 요소만. HTML 문서를 통째로(또는 일부만) AI가 만든 것과 똑같이 .app-frame의 data-code에 두고 격리된 칸(AppKit)에서 실행한다.
+           넣은 뒤에는 같은 칸이 그 요소를 고치는 칸이 된다. 넣기 전에 창을 닫으면 적던 코드(draft)를 남겨 다음에 이어 쓴다.
+         · 고치기: 인터랙티브 요소, 또는 모션그래픽(SVG 글을 돌려주는 JS를 한 번 실행해 그림을 넣는다, MotionKit).
+           모션그래픽 SVG 안의 <style>(움직임)은 장 스타일(slide.css)로 옮기고, 무엇을 더했는지 data-css에 기억해 다시 고칠 때 바꿔 넣는다. */
       const CodeEditor = {
-        target: null, // 고치는 개체. 새로 만들 때는 null
-        frame: null,  // 미리보기 칸
+        target: null, // 고치는 개체. 새로 넣을 때는 null
+        draft: '',    // 넣기 전에 적던 코드
+        busy: false,  // 모션그래픽을 그리는 중
         HELP: {
-          app: 'HTML 문서를 통째로(<!DOCTYPE html>…</html>) 붙여 넣거나, <style>·<script>를 포함한 일부만 적습니다. 처음에는 가로 960 × 세로 600 칸으로 들어갑니다. ' +
-            '슬라이드에서 모서리 손잡이는 칸 안 전체를 확대·축소하고, 오른쪽·아래 손잡이는 칸을 넓혀 배치가 다시 잡히게 합니다(%·flex·vw·vh로 만든 경우). ' +
-            'cdnjs·jsDelivr·unpkg·Tailwind CDN·Google Fonts의 라이브러리·글꼴은 쓸 수 있습니다(수업 중 인터넷 필요). 그 밖의 주소·fetch·localStorage는 쓸 수 없습니다. 조작은 발표 화면에서 합니다.',
-          motion: 'SVG 글을 return하는 JavaScript(함수 본문)를 적거나 <svg>…</svg>를 그대로 붙입니다. 넣을 때 한 번 실행해 그림만 남깁니다. ' +
+          insert: 'HTML 문서를 통째로(<!DOCTYPE html>…</html>) 붙여 넣거나 <style>·<script>를 포함한 일부만 적고 [슬라이드에 넣기]를 누르면, 가로 960 × 세로 600 인터랙티브 요소로 들어갑니다. ' +
+            '슬라이드에 보이는 모습이 미리보기이고, 고친 뒤 [적용]하면 바로 바뀝니다. ' +
+            'cdnjs·jsDelivr·unpkg·Tailwind CDN·Google Fonts의 라이브러리·글꼴은 쓸 수 있고, 그 밖의 주소·fetch·localStorage는 쓸 수 없습니다.',
+          app: '이 인터랙티브 요소의 코드입니다. 고친 뒤 [적용]하면 슬라이드에 바로 보입니다. ' +
+            '크기: 모서리 손잡이는 안쪽 전체를 확대·축소하고, 오른쪽·아래 손잡이는 칸을 넓힙니다. 조작은 발표 화면(Ctrl+E)에서 해 보세요.',
+          motion: 'SVG 글을 return하는 JavaScript(함수 본문)입니다(<svg>…</svg>를 그대로 붙여도 됩니다). [적용]하면 한 번 실행해 그림을 다시 그립니다. ' +
             '움직임: 부위에 class="anim-draw"(선 그리기, pathLength="1" 함께) · anim-fade · anim-fade-up · anim-zoom · anim-pop · anim-float, ' +
             '늦게 시작은 style="animation-delay:1s". SVG 안의 <style>(@keyframes)도 이 장에 그대로 적용됩니다.'
-        },
-        EXAMPLES: {
-          app: [
-            '<style>',
-            '  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; font-size: 32px; }',
-            '  input { width: 70%; height: 40px; }',
-            '  .formula { font-size: 56px; font-weight: 700; color: #2563eb; }',
-            '</style>',
-            '<div class="formula" id="formula">y = 1x²</div>',
-            '<input type="range" id="slider" min="-5" max="5" step="0.5" value="1">',
-            '<div>슬라이더를 움직여 a 값을 바꿔 보세요</div>',
-            '<script>',
-            '  const slider = document.getElementById("slider");',
-            '  slider.addEventListener("input", () => {',
-            '    document.getElementById("formula").textContent = "y = " + slider.value + "x²";',
-            '  });',
-            '<\/script>'
-          ].join('\n'),
-          motion: [
-            '// 좌표를 계산해 SVG 글을 return 합니다.',
-            'const W = 800, H = 500, cx = 400, cy = 450;',
-            'let d = "";',
-            'for (let x = -5; x <= 5.001; x += 0.1) {',
-            '  const px = cx + x * 60, py = cy - x * x * 16;',
-            '  d += (d ? " L " : "M ") + px.toFixed(1) + " " + py.toFixed(1);',
-            '}',
-            'return `<svg viewBox="0 0 ${W} ${H}">',
-            '  <line x1="40" y1="${cy}" x2="760" y2="${cy}" stroke="#94a3b8" stroke-width="3"/>',
-            '  <line x1="${cx}" y1="20" x2="${cx}" y2="480" stroke="#94a3b8" stroke-width="3"/>',
-            '  <path d="${d}" fill="none" stroke="#2563eb" stroke-width="6" pathLength="1" class="anim-draw"/>',
-            '  <circle cx="${cx}" cy="${cy}" r="12" fill="#dc2626" class="anim-pop" style="animation-delay:1.4s"/>',
-            '  <text x="${cx + 24}" y="${cy - 24}" font-size="32" fill="#dc2626" class="anim-fade" style="animation-delay:1.6s">꼭짓점</text>',
-            '</svg>`;'
-          ].join('\n')
         },
 
         kind() { return CodeEditor.target && MathKit.isMotion(CodeEditor.target) ? 'motion' : 'app'; },
 
+        // el: 고칠 개체(.app-frame·.motion-graphic), 없으면 새로 넣기
         open(el) {
           if (!Editor.deck || Show.isOn()) return;
-          CodeEditor.target = el || null;
-          const editing = !!el;
-          const motion = CodeEditor.kind() === 'motion';
-          $('code-modal-title').innerHTML = '<i class="bi bi-code-slash"></i> ' + (editing ? (motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드 고치기' : '코드로 만들기');
-          $('code-apply').textContent = editing ? '고치기' : '넣기';
-          $('code-input').value = editing ? AppKit.decode(el.getAttribute('data-code')) : '';
-          CodeEditor.syncKind();
-          CodeEditor.clearPreview();
-          const modal = $('code-modal');
-          modal.addEventListener('shown.bs.modal', () => {
+          const start = () => {
+            if (el && !el.isConnected) return;
+            CodeEditor.target = el || null;
+            const motion = CodeEditor.kind() === 'motion';
+            $('code-help').textContent = CodeEditor.HELP[el ? (motion ? 'motion' : 'app') : 'insert'];
+            $('code-input').placeholder = motion ? '예) return `<svg viewBox="0 0 800 500">…</svg>`;' : '예) <!DOCTYPE html><html>…</html> 를 통째로 붙여 넣으세요.';
+            $('code-input').value = el ? AppKit.decode(el.getAttribute('data-code')) : CodeEditor.draft;
+            $('code-apply-label').textContent = el ? '적용' : '슬라이드에 넣기';
+            $('code-ai').classList.toggle('d-none', !el);
+            CodeEditor.status('');
+            ObjectPanel.open(CodeEditor, el || null, el ? (motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드' : '코드 삽입', 'bi-code-slash', 'code');
             $('code-input').focus();
-            if ($('code-input').value.trim()) CodeEditor.preview();
-          }, { once: true });
-          bootstrap.Modal.getOrCreateInstance(modal).show();
+          };
+          if (ObjectPanel.leaveOr(start)) start();
         },
 
-        syncKind() {
-          const kind = CodeEditor.kind();
-          $('code-help').textContent = CodeEditor.HELP[kind];
-          $('code-input').placeholder = kind === 'motion' ? '예) return `<svg viewBox="0 0 800 500">…</svg>`;' : '예) <!DOCTYPE html><html>…</html> 를 통째로 붙여 넣으세요.';
+        status(text, tone) {
+          $('code-status').textContent = text;
+          $('code-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
         },
 
-        // 고치는 요소는 슬라이드에서 보이는 안쪽 화면 크기(칸 크기 ÷ 배율), 새로 만들 때는 960×600
-        viewSize() {
-          const target = CodeEditor.target;
-          if (target && CodeEditor.kind() === 'app' && target.offsetWidth && target.offsetHeight) {
-            const zoom = parseFloat(target.style.getPropertyValue('--app-zoom')) || 1;
-            return { width: Math.round(target.offsetWidth / zoom), height: Math.round(target.offsetHeight / zoom) };
-          }
-          return { width: 960, height: 600 };
-        },
-
-        // 외부 주소에서 불러오는 파일(라이브러리·글꼴·그림) 중 허용 목록(AppKit.CDN_HOSTS) 밖의 것은 막혀 동작하지 않으니 미리 알린다.
+        // 외부 주소에서 불러오는 파일(라이브러리·글꼴·그림) 중 허용 목록(AppKit.CDN_HOSTS) 밖의 것은 막혀 동작하지 않으니 알린다.
         externalHosts(code) {
           const hosts = new Set();
           const pattern = /<(?:script|link|img|iframe|audio|video|source)\b[^>]*?\b(?:src|href)\s*=\s*["']?((?:https?:)?\/\/[^\s"'>]+)/gi;
@@ -5529,17 +5454,6 @@
             } catch (err) { /* 잘못된 주소 */ }
           }
           return Array.from(hosts);
-        },
-
-        clearPreview() {
-          CodeEditor.frame = null;
-          $('code-preview').style.aspectRatio = '';
-          $('code-error').textContent = '';
-          $('code-warn').textContent = '';
-          const note = document.createElement('div');
-          note.className = 'position-absolute top-50 start-50 translate-middle small text-muted text-center';
-          note.textContent = '[실행]을 누르면 여기에 보입니다.';
-          $('code-preview').replaceChildren(note);
         },
 
         // SVG 안의 <style>을 모아 정리한다(장 스타일로 옮길 것).
@@ -5557,46 +5471,6 @@
           return { svg: MotionKit.svgFrom(raw), css: CodeEditor.styleOf(raw) };
         },
 
-        async preview() {
-          const code = $('code-input').value;
-          if (!code.trim()) { $('code-error').textContent = '코드를 적어 주세요.'; return; }
-          const stage = $('code-preview');
-          $('code-error').textContent = '';
-          $('code-warn').textContent = '';
-          const frame = document.createElement('iframe');
-          frame.setAttribute('referrerpolicy', 'no-referrer');
-          frame.setAttribute('title', '미리보기');
-          if (CodeEditor.kind() === 'app') {
-            const hosts = CodeEditor.externalHosts(code);
-            if (hosts.length) {
-              $('code-warn').textContent = '⚠ ' + hosts.slice(0, 3).join(', ') + (hosts.length > 3 ? ' 등' : '') +
-                '에서 불러오는 파일은 막혀 동작하지 않습니다. cdnjs·jsDelivr·unpkg·Tailwind CDN·Google Fonts(https) 주소로 바꾸거나 코드 안에 직접 넣어 주세요.';
-            }
-            // 슬라이드와 같은 크기의 칸에서 실행하고 미리보기 칸 너비에 맞춰 줄인다.
-            const size = CodeEditor.viewSize();
-            stage.style.aspectRatio = size.width + ' / ' + size.height;
-            frame.setAttribute('sandbox', 'allow-scripts allow-forms');
-            frame.style.width = size.width + 'px';
-            frame.style.height = size.height + 'px';
-            frame.style.transform = 'scale(' + ((stage.clientWidth || 480) / size.width) + ')';
-            frame.srcdoc = AppKit.doc(AppKit.tidy(code, false));
-          } else {
-            let drawn;
-            try { drawn = await CodeEditor.drawMotion(code); } catch (err) { $('code-error').textContent = err.message; return; }
-            if ($('code-input').value !== code) return; // 그사이 고쳤다
-            // 그림은 스크립트 없는 칸에 슬라이드 기본 스타일(움직임 이름 포함)과 함께 넣어 움직임까지 보인다.
-            const base = $('ls-slide-css').textContent.replace(/@import[^;]*;/g, '');
-            frame.setAttribute('sandbox', '');
-            frame.style.width = '100%';
-            frame.style.height = '100%';
-            frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + base + '\n' + drawn.css.replace(/<\//g, '<\\/') +
-              '\nsvg{max-width:100%;max-height:100vh;}</style></head><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;">' +
-              '<div class="motion-graphic" style="width:100%;">' + drawn.svg.outerHTML + '</div></body></html>';
-          }
-          CodeEditor.frame = frame;
-          stage.replaceChildren(frame);
-        },
-
         // css에서 drop에 든 규칙을 뺀다(규칙 글을 같은 방법으로 풀어 비교).
         rules(text) {
           try {
@@ -5611,97 +5485,115 @@
           return CodeEditor.rules(css).filter(rule => !gone.has(rule)).join('\n');
         },
 
-        async apply(event) {
-          if (event) event.preventDefault();
+        // ObjectPanel이 부르는 약속: 바로 반영하므로 '적용 전' 상태가 없다.
+        dirty() { return false; },
+        stop() { /* 멈출 작업 없음 */ },
+        restoreInto() { /* 바로 반영하므로 저장할 때 되돌릴 것이 없다 */ },
+        finish() {
+          if (!CodeEditor.target) CodeEditor.draft = $('code-input').value; // 넣기 전이면 적던 코드를 남긴다
+          CodeEditor.target = null;
+        },
+
+        async apply() {
+          const session = ObjectPanel.session;
+          if (CodeEditor.busy || !session || session.editor !== CodeEditor) return;
           const code = $('code-input').value.trim();
-          if (!code) { $('code-error').textContent = '코드를 적어 주세요.'; $('code-input').focus(); return; }
-          if (code.length > 300000) { $('code-error').textContent = '코드가 너무 깁니다(30만 자까지).'; return; }
+          if (!code) { CodeEditor.status('코드를 적어 주세요.', 'danger'); $('code-input').focus(); return; }
+          if (code.length > 300000) { CodeEditor.status('코드가 너무 깁니다(30만 자까지).', 'danger'); return; }
+          const target = CodeEditor.target;
           const motion = CodeEditor.kind() === 'motion';
           let drawn = null;
           if (motion) {
-            try { drawn = await CodeEditor.drawMotion(code); } catch (err) { $('code-error').textContent = err.message + ' — 고친 뒤 다시 눌러 주세요.'; return; }
+            CodeEditor.busy = true;
+            CodeEditor.status('그리는 중…', 'primary');
+            try { drawn = await CodeEditor.drawMotion(code); } catch (err) { CodeEditor.status('⚠ ' + err.message + ' — 고친 뒤 다시 눌러 주세요.', 'danger'); }
+            CodeEditor.busy = false;
+            if (!drawn || CodeEditor.target !== target) return; // 실패했거나 그사이 창을 닫았다
           }
-          const target = CodeEditor.target;
-          CodeEditor.target = null;
-          bootstrap.Modal.getOrCreateInstance($('code-modal')).hide();
           const attr = AppKit.encode(AppKit.tidy(code, motion));
-          const css = drawn ? drawn.css : '';
-          const cssAttr = css ? AppKit.encode(css) : '';
+          const hosts = motion ? [] : CodeEditor.externalHosts(code);
+          const warn = hosts.length ? '⚠ ' + hosts.slice(0, 3).join(', ') + (hosts.length > 3 ? ' 등' : '') +
+            '에서 불러오는 파일은 막혀 동작하지 않습니다. cdnjs·jsDelivr·unpkg·Tailwind CDN·Google Fonts(https) 주소로 바꾸거나 코드 안에 직접 넣어 주세요.' : '';
 
-          // 장 스타일(움직임)이 바뀌면: 지난번에 더한 규칙을 빼고 새 규칙을 더한 뒤 장을 다시 그린다.
-          const restyle = previous => {
+          if (!target) { // 새로 넣기: 인터랙티브 요소. 넣은 뒤에는 그 요소를 고치는 칸으로 이어진다.
+            const host = document.createElement('div');
+            host.className = 'app-frame';
+            host.setAttribute('data-app', 'app' + Util.uid().slice(-6));
+            host.setAttribute('data-code', attr);
+            host.style.cssText = 'width:100%;height:600px;';
+            ObjectPanel.close(false);
+            CodeEditor.draft = '';
+            const placed = DirectInsert.place(host, 960, 600);
+            if (!placed) return;
+            AppKit.hydrate(placed, 'edit');
+            SlideView.addOverlays($('slide-canvas'));
+            CodeEditor.open(host);
+            CodeEditor.status(warn || '슬라이드에 넣었습니다. 코드를 고친 뒤 [적용]하면 바로 바뀝니다.', warn ? 'warning' : 'success');
+            return;
+          }
+
+          if (!target.isConnected) { CodeEditor.status('고치려던 개체가 슬라이드에서 사라졌습니다.', 'danger'); return; }
+          const css = drawn ? drawn.css : '';
+          const id = target.getAttribute('data-app');
+          const previous = AppKit.decode(target.getAttribute('data-css') || '');
+          // 장 스타일(움직임)이 바뀌면: 지난번에 더한 규칙을 빼고 새 규칙을 더한다.
+          const restyle = () => {
             const slide = Editor.current();
             const next = Sanitizer.css(CodeEditor.withoutRules(slide.css, previous) + '\n' + css);
             if (next === (slide.css || '')) return false;
             slide.css = next;
             return true;
           };
-
-          if (!target) { // 새로 만들기는 인터랙티브 요소만
-            const host = document.createElement('div');
-            host.className = 'app-frame';
-            host.setAttribute('data-app', 'app' + Util.uid().slice(-6));
-            host.setAttribute('data-code', attr);
-            host.style.cssText = 'width:100%;height:600px;';
-            const placed = DirectInsert.place(host, 960, 600);
-            if (placed) {
-              AppKit.hydrate(placed, 'edit');
-              SlideView.addOverlays($('slide-canvas'));
-            }
-            return;
-          }
-
-          if (!target.isConnected) { Util.toast('고치려던 개체가 슬라이드에서 사라졌습니다.', 'warning'); return; }
-          const id = target.getAttribute('data-app');
-          const previous = AppKit.decode(target.getAttribute('data-css') || '');
           target.setAttribute('data-code', attr);
           if (motion) {
             target.replaceChildren(drawn.svg);
-            if (cssAttr) target.setAttribute('data-css', cssAttr);
+            if (css) target.setAttribute('data-css', AppKit.encode(css));
             else target.removeAttribute('data-css');
           }
           Editor.syncCurrent();
-          if (motion && (css || previous) && restyle(previous)) {
-            Editor.renderCanvas(); // 바뀐 움직임을 적용한다(편집 창은 닫힌다)
-            const again = id ? $('slide-canvas').querySelector('[data-app="' + CSS.escape(id) + '"]') : null;
-            if (again && again.closest('.draggable-box')) Editor.select(again.closest('.draggable-box'));
+          let el = target;
+          if (motion && (css || previous) && restyle()) {
+            Editor.renderCanvas(); // 바뀐 움직임을 적용한다(코드 칸도 닫히므로 아래에서 다시 연다)
+            el = id ? $('slide-canvas').querySelector('[data-app="' + CSS.escape(id) + '"]') : null;
+            if (el && el.closest('.draggable-box')) Editor.select(el.closest('.draggable-box'));
           } else if (!motion) {
             AppKit.hydrate(target.closest('.draggable-box') || target.parentElement, 'edit');
             SlideView.addOverlays($('slide-canvas'));
           }
           Editor.commit();
-          Util.toast((motion ? '모션그래픽' : '인터랙티브 요소') + ' 코드를 고쳤습니다. 마음에 들지 않으면 Ctrl+Z로 되돌릴 수 있습니다.', 'success');
+          if (el && el !== target) CodeEditor.open(el);
+          CodeEditor.status(warn || '적용했습니다. 되돌리려면 코드 칸 밖에서 Ctrl+Z를 누르세요.', warn ? 'warning' : 'success');
+        },
+
+        // [AI로 고치기]: 같은 개체를 말로 고치는 창으로 바꾼다.
+        toAi() {
+          const el = CodeEditor.target;
+          if (!el || !el.isConnected) return;
+          ObjectPanel.close(false);
+          AppEditor.open(el);
         },
 
         init() {
-          $('code-form').addEventListener('submit', CodeEditor.apply);
-          $('code-run').addEventListener('click', CodeEditor.preview);
-          $('code-example').addEventListener('click', async () => {
-            const input = $('code-input');
-            if (input.value.trim() && !await Util.confirm('지금 적은 코드를 예시로 바꿀까요?', '바꾸기')) return;
-            input.value = CodeEditor.EXAMPLES[CodeEditor.kind()];
-            input.focus();
-            CodeEditor.preview();
-          });
-          // Tab은 칸을 벗어나지 않고 공백 2칸, Ctrl+Enter는 미리보기 실행
+          $('code-apply').addEventListener('click', CodeEditor.apply);
+          $('code-ai').addEventListener('click', CodeEditor.toAi);
+          // Tab은 칸을 벗어나지 않고 공백 2칸, Ctrl+Enter는 넣기·적용
           $('code-input').addEventListener('keydown', event => {
-            if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {
+            if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
               event.preventDefault();
               event.target.setRangeText('  ', event.target.selectionStart, event.target.selectionEnd, 'end');
-            } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
               event.preventDefault();
-              CodeEditor.preview();
+              CodeEditor.apply();
             }
           });
-          // 미리보기 칸의 인터랙티브 요소 오류를 아래에 보인다.
+          // 고치는 인터랙티브 요소에서 난 오류를 코드 칸 아래에 보인다.
           window.addEventListener('message', event => {
-            const frame = CodeEditor.frame;
-            if (!frame || event.source !== frame.contentWindow || !event.data || event.data.lsApp !== 'error') return;
-            $('code-error').textContent = '⚠ ' + String(event.data.message || '알 수 없는 오류').slice(0, 300);
-          });
-          $('code-modal').addEventListener('hidden.bs.modal', () => {
-            CodeEditor.target = null;
-            CodeEditor.clearPreview(); // 실행 중인 미리보기를 멈춘다
+            const target = CodeEditor.target;
+            const session = ObjectPanel.session;
+            if (!target || !session || session.editor !== CodeEditor || !event.data || event.data.lsApp !== 'error') return;
+            const frame = target.querySelector(':scope > iframe');
+            if (!frame || event.source !== frame.contentWindow) return;
+            CodeEditor.status('⚠ 코드 오류: ' + String(event.data.message || '알 수 없는 오류').slice(0, 300), 'danger');
           });
         }
       };
