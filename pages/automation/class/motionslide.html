@@ -55,6 +55,16 @@
     @keyframes ls-zoom { from { opacity: 0; scale: 0.8; } to { opacity: 1; scale: 1; } }
     @keyframes ls-pop { 0% { opacity: 0; scale: 0.5; } 100% { opacity: 1; scale: 1; } }
     @keyframes ls-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -18px; } }
+    /* 직접 넣은 개체([직접 삽입]): 발표할 때 처음부터 보이는 AI 개체가 다 나타난 뒤 이어서 부드럽게 나타난다.
+       기다릴 시간(--ls-after)은 발표 화면이 장을 그릴 때 잰다(applySteps). 클릭 순서를 정한 개체는 누를 때 바로 나타난다. */
+    .draggable-box[data-ls-direct] > .motion-content { animation: ls-fade-up 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--ls-after, 1s) both; }
+    .draggable-box[data-ls-direct][data-step] > .motion-content { animation-delay: 0s; }
+
+    /* 링크 단추([직접 삽입 → 링크 단추]): 발표 화면에서 누르면 새 탭으로 열린다(openSlideLink) */
+    .link-pill { display: flex; align-items: center; justify-content: center; gap: 0.35em; width: 100%; box-sizing: border-box; padding: 0.4em 1.1em; border-radius: 999px; background: #2563eb; color: #fff; font-size: 36px; font-weight: 700; line-height: 1.25; text-align: center; word-break: keep-all; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18); }
+    .link-pill::after { content: '↗'; font-weight: 400; }
+    .slide-canvas:not(#slide-canvas) .link-pill { cursor: pointer; transition: filter 0.15s, translate 0.15s; }
+    .slide-canvas:not(#slide-canvas) .link-pill:hover { filter: brightness(1.12); translate: 0 -3px; }
 
     /* 수식(math-tex: MathJax 조판)·모션그래픽(motion-graphic: AI 계산 코드 → SVG). 예전 그래프·도형(math-graph·math-geo·math-shape)은 보이기만 한다. */
     .math-tex svg { overflow: visible; }
@@ -261,6 +271,8 @@
     .math-preview .math-tex svg { max-width: 100%; }
     .math-swatch { width: 22px; height: 22px; padding: 0; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #cbd5e1; }
     .math-swatch.on { box-shadow: 0 0 0 2px #2563eb; }
+    .link-preview { min-height: 96px; display: flex; align-items: center; justify-content: center; background: #f8fafc; }
+    .link-preview .link-pill { display: inline-flex; width: auto; max-width: 100%; }
     #slide-menu { position: fixed; z-index: 1060; min-width: 210px; font-size: 0.85rem; }
     #slide-menu .dropdown-item { display: flex; align-items: center; gap: 0.5rem; }
     #slide-menu kbd { margin-left: auto; font-size: 0.7rem; background: #f1f5f9; color: #64748b; }
@@ -679,6 +691,7 @@
                 <li><button type="button" class="dropdown-item" data-direct="image"><i class="bi bi-image"></i> 그림 (내 컴퓨터)</button></li>
                 <li><button type="button" class="dropdown-item" data-direct="video"><i class="bi bi-file-earmark-play"></i> 동영상 파일 (내 컴퓨터)</button></li>
                 <li><button type="button" class="dropdown-item" data-direct="youtube"><i class="bi bi-youtube"></i> 유튜브 동영상</button></li>
+                <li><button type="button" class="dropdown-item" data-direct="link"><i class="bi bi-link-45deg"></i> 링크 단추</button></li>
               </ul>
             </div>
             <div class="dropdown">
@@ -1328,7 +1341,7 @@
                   <tr><td class="text-nowrap"><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>10px씩 옮기기 (<kbd>Shift</kbd>와 함께: 50px)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Alt</kbd>를 누른 채 끌기</td><td>보조선에 달라붙지 않게 자유롭게 옮기기</td></tr>
                   <tr><td class="text-nowrap">글자 편집 중 <kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>I</kbd> / <kbd>U</kbd></td><td>굵게 / 기울임 / 밑줄</td></tr>
-                  <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기, 모션그래픽·인터랙티브 요소는 오른쪽 편집 창. 수식은 수식 편집 창)</td></tr>
+                  <tr><td class="text-nowrap"><kbd>F2</kbd> / 더블클릭</td><td>글자 편집 (그림·영상은 바꾸기, 모션그래픽·인터랙티브 요소는 오른쪽 편집 창. 수식은 수식 편집 창, 링크 단추는 링크 창)</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd> (편집 창)</td><td>개체 편집 끝내기 · AI 고치기 중단</td></tr>
                   <tr><td class="text-nowrap"><kbd>Esc</kbd></td><td>글자 편집 끝내기 · 선택 해제</td></tr>
                   <tr><td class="text-nowrap"><kbd>Delete</kbd></td><td>개체 삭제</td></tr>
@@ -1447,6 +1460,53 @@
           <span class="small text-muted me-auto">Ctrl+Enter로 적용</span>
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
           <button type="submit" class="btn btn-primary" id="math-apply">적용</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 링크 단추 넣기·고치기 (LinkEditor): 발표 화면에서 누르면 새 탭으로 열리는 알약 모양 단추 -->
+  <div class="modal fade" id="link-modal" tabindex="-1" aria-hidden="true" aria-labelledby="link-modal-title">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" id="link-form" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="link-modal-title"><i class="bi bi-link-45deg"></i> 링크 단추</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label small fw-semibold" for="link-url">주소</label>
+          <input type="text" class="form-control mb-2" id="link-url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="예) https://www.youtube.com/... 또는 naver.com">
+          <label class="form-label small fw-semibold" for="link-text">단추 글자</label>
+          <input type="text" class="form-control mb-2" id="link-text" maxlength="60" autocomplete="off" placeholder="비워 두면 사이트 주소가 들어갑니다 (예: 활동지 열기)">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="small text-muted">색</span>
+            <input type="color" class="form-control form-control-sm form-control-color" id="link-color" value="#2563eb" title="단추 색">
+            <div class="d-flex flex-wrap gap-1" id="link-swatches" aria-label="자주 쓰는 색">
+              <button type="button" class="math-swatch" data-color="#2563eb" style="background:#2563eb" title="파랑"></button>
+              <button type="button" class="math-swatch" data-color="#059669" style="background:#059669" title="초록"></button>
+              <button type="button" class="math-swatch" data-color="#dc2626" style="background:#dc2626" title="빨강"></button>
+              <button type="button" class="math-swatch" data-color="#d97706" style="background:#d97706" title="주황"></button>
+              <button type="button" class="math-swatch" data-color="#7c3aed" style="background:#7c3aed" title="보라"></button>
+              <button type="button" class="math-swatch" data-color="#1f2937" style="background:#1f2937" title="검정"></button>
+              <button type="button" class="math-swatch" data-color="#facc15" style="background:#facc15" title="노랑"></button>
+            </div>
+            <span class="small text-muted ms-2">크기</span>
+            <div class="btn-group btn-group-sm" role="group" aria-label="단추 크기">
+              <input type="radio" class="btn-check" name="link-size" id="link-size-s" value="28">
+              <label class="btn btn-outline-secondary" for="link-size-s">작게</label>
+              <input type="radio" class="btn-check" name="link-size" id="link-size-m" value="36" checked>
+              <label class="btn btn-outline-secondary" for="link-size-m">보통</label>
+              <input type="radio" class="btn-check" name="link-size" id="link-size-l" value="48">
+              <label class="btn btn-outline-secondary" for="link-size-l">크게</label>
+            </div>
+          </div>
+          <div class="small text-muted mt-3 mb-1">미리보기 <span class="text-body-tertiary">(편집 화면에서는 눌러도 열리지 않고, 발표할 때 누르면 새 탭으로 열립니다)</span></div>
+          <div class="link-preview border rounded-3 p-3" id="link-preview"></div>
+          <p class="small text-danger mt-2 mb-0" id="link-error" role="status"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button type="submit" class="btn btn-primary" id="link-apply">넣기</button>
         </div>
       </form>
     </div>
@@ -1644,6 +1704,7 @@
       /* ===== 3. 슬라이드 HTML 정리 (AI 응답·불러온 파일은 반드시 이 길을 거친다) ===== */
       const RESERVED_CLASS = /^(ls-|is-selected$|is-editing$|iframe-drag-overlay$|slide-canvas$|mini-canvas$)/;
       const EMBED_SRC = /^https:\/\/((www\.)?(youtube\.com|youtube-nocookie\.com)\/embed\/|player\.vimeo\.com\/video\/)/i;
+      const LINK_URL = /^https?:\/\/[^\s"'<>]+$/i; // 링크 단추(data-link)에 둘 수 있는 주소
 
       const Sanitizer = {
         ready: false,
@@ -1670,6 +1731,7 @@
               node.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
               node.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
             }
+            if (node.hasAttribute('data-link') && !LINK_URL.test(node.getAttribute('data-link'))) node.removeAttribute('data-link'); // 링크 단추: http(s) 주소만
             const classes = node.getAttribute('class');
             if (classes !== null) {
               const keep = classes.split(/\s+/).filter(name => name && !RESERVED_CLASS.test(name));
@@ -1691,7 +1753,7 @@
             USE_PROFILES: { html: true, svg: true },
             ADD_TAGS: ['iframe'],
             ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop',
-              'data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code', 'data-step', 'pathLength', 'paint-order'],
+              'data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code', 'data-step', 'data-ls-direct', 'data-link', 'pathLength', 'paint-order'],
             // 수학 개체의 설계값(LaTeX·JSON)과 인터랙티브 코드는 주소가 아니라 글자로만 보관한다(실행은 AppKit의 격리된 iframe에서만).
             ADD_URI_SAFE_ATTR: ['data-tex', 'data-graph', 'data-geo', 'data-app', 'data-code'],
             FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'object',
@@ -1758,6 +1820,7 @@
           check('data-embed', EMBED_SRC);
           check('data-poster', /^(data:image\/(png|jpe?g|gif|webp);|https:\/\/)/i);
           check('data-kind', /^(video|embed)$/);
+          check('data-link', LINK_URL);
         },
 
         view(html) {
@@ -1768,7 +1831,7 @@
               USE_PROFILES: { html: true, svg: true },
               ADD_TAGS: ['iframe'],
               ADD_ATTR: ['srcdoc', 'sandbox', 'allow', 'allowfullscreen', 'frameborder', 'referrerpolicy', 'playsinline', 'muted', 'autoplay', 'loop',
-                'data-step', 'data-tex', 'data-kind', 'data-src', 'data-remote', 'data-embed', 'data-poster', 'pathLength', 'paint-order'],
+                'data-step', 'data-tex', 'data-kind', 'data-src', 'data-remote', 'data-embed', 'data-poster', 'data-ls-direct', 'data-link', 'pathLength', 'paint-order'],
               ADD_URI_SAFE_ATTR: ['data-tex', 'data-src', 'data-remote', 'data-embed', 'data-poster'],
               FORBID_TAGS: ['style', 'script', 'form', 'input', 'button', 'textarea', 'select', 'option', 'object',
                 'embed', 'link', 'meta', 'audio', 'track', 'a', 'use', 'image', 'foreignObject', 'base', 'template', 'dialog'],
@@ -4516,6 +4579,14 @@
           if (!(target instanceof HTMLElement)) return;
           const box = target.closest('.draggable-box');
           if (!box || !$('slide-canvas').contains(box)) return;
+          // 링크 단추는 그 자리에서 글자를 고치지 않고 링크 창에서 주소·글자·색·크기를 함께 고친다(더블클릭·Enter·F2).
+          const link = box.querySelector('.link-pill');
+          if (link && !box.querySelector('.editable-text')) {
+            if (Editor.editing) Editor.stopEditing();
+            Editor.select(box);
+            LinkEditor.open(link);
+            return;
+          }
           if (target === box) {
             const texts = box.querySelectorAll('.editable-text');
             if (texts.length) target = texts[0];
@@ -5182,8 +5253,122 @@
         }
       };
 
+      // 링크 단추: 알약 모양(.link-pill), 주소는 data-link에 둔다(정리기가 <a>·href를 모두 지우므로 쓰지 않는다).
+      // 편집 화면에서는 누르면 고르기만 하고, 발표 화면에서 누르면 새 탭으로 연다(openSlideLink). 더블클릭·Enter로 고친다.
+      const LinkEditor = {
+        target: null, // 고치는 단추. 새로 넣을 때는 null
+        lastColor: '#2563eb',
+
+        open(el) {
+          if (!Editor.deck || Show.isOn()) return;
+          LinkEditor.target = el || null;
+          const editing = !!el;
+          $('link-modal-title').innerHTML = '<i class="bi bi-link-45deg"></i> ' + (editing ? '링크 단추 고치기' : '링크 단추 넣기');
+          $('link-apply').textContent = editing ? '고치기' : '넣기';
+          $('link-url').value = editing ? (el.getAttribute('data-link') || '') : '';
+          $('link-text').value = editing ? el.textContent.trim() : '';
+          $('link-color').value = (editing && MathEditor.hex(el.style.backgroundColor)) || LinkEditor.lastColor;
+          const size = editing ? parseInt(el.style.fontSize, 10) : 36;
+          const radio = document.querySelector('input[name="link-size"][value="' + size + '"]') || $('link-size-m');
+          radio.checked = true;
+          $('link-error').textContent = '';
+          LinkEditor.preview();
+          const modal = $('link-modal');
+          modal.addEventListener('shown.bs.modal', () => $(editing ? 'link-text' : 'link-url').focus(), { once: true });
+          bootstrap.Modal.getOrCreateInstance(modal).show();
+        },
+
+        // 'naver.com' → 'https://naver.com/'. http(s)가 아니거나 알아볼 수 없으면 ''.
+        url(value) {
+          let text = String(value || '').trim();
+          if (!text) return '';
+          if (!/^[a-z][a-z0-9+.-]*:/i.test(text)) text = 'https://' + text.replace(/^\/+/, '');
+          try {
+            const url = new URL(text);
+            if (!/^https?:$/.test(url.protocol) || !url.hostname.includes('.')) return '';
+            return LINK_URL.test(url.href) ? url.href : '';
+          } catch (err) { return ''; }
+        },
+
+        // 배경이 밝으면 글자를 어둡게
+        ink(hex) {
+          const n = parseInt(String(hex).slice(1), 16) || 0;
+          return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 165 ? '#111827' : '#ffffff';
+        },
+
+        size() { return Number((document.querySelector('input[name="link-size"]:checked') || {}).value) || 36; },
+
+        // 단추 글자: 적은 글자, 없으면 사이트 이름(www. 뺌)
+        label(url) {
+          const text = $('link-text').value.trim();
+          if (text) return text.slice(0, 60);
+          try { return new URL(url).hostname.replace(/^www\./, ''); } catch (err) { return '링크 열기'; }
+        },
+
+        // 단추 모양을 칠한다(미리보기와 슬라이드에 같이 쓴다).
+        paint(pill, url, size) {
+          const color = $('link-color').value;
+          pill.className = 'link-pill';
+          pill.setAttribute('data-link', url);
+          pill.setAttribute('title', url);
+          pill.style.backgroundColor = color;
+          pill.style.color = LinkEditor.ink(color);
+          pill.style.fontSize = size + 'px';
+          pill.textContent = LinkEditor.label(url);
+        },
+
+        preview() {
+          const url = LinkEditor.url($('link-url').value) || 'https://example.com/';
+          const pill = document.createElement('div');
+          LinkEditor.paint(pill, url, LinkEditor.size());
+          pill.style.fontSize = Math.round(LinkEditor.size() * 0.6) + 'px'; // 편집 화면에 보이는 크기쯤으로
+          pill.removeAttribute('title');
+          $('link-preview').replaceChildren(pill);
+          document.querySelectorAll('#link-swatches .math-swatch').forEach(button => button.classList.toggle('on', button.dataset.color === $('link-color').value));
+        },
+
+        apply(event) {
+          if (event) event.preventDefault();
+          const url = LinkEditor.url($('link-url').value);
+          if (!url) {
+            $('link-error').textContent = $('link-url').value.trim() ? 'http:// 또는 https://로 열 수 있는 주소를 적어 주세요.' : '주소를 적어 주세요.';
+            $('link-url').focus();
+            return;
+          }
+          bootstrap.Modal.getOrCreateInstance($('link-modal')).hide();
+          const target = LinkEditor.target;
+          LinkEditor.target = null;
+          LinkEditor.lastColor = $('link-color').value;
+          const size = LinkEditor.size();
+          if (target) {
+            if (!target.isConnected) { Util.toast('고치려던 링크 단추가 슬라이드에서 사라졌습니다.', 'warning'); return; }
+            LinkEditor.paint(target, url, size);
+            Editor.commit();
+            return;
+          }
+          const pill = document.createElement('div');
+          LinkEditor.paint(pill, url, size);
+          const width = Math.min(1200, Math.max(240, pill.textContent.length * size * 0.95 + size * 3));
+          DirectInsert.place(pill, width, size * 2);
+        },
+
+        init() {
+          $('link-form').addEventListener('submit', LinkEditor.apply);
+          ['link-url', 'link-text', 'link-color'].forEach(id => $(id).addEventListener('input', LinkEditor.preview));
+          document.querySelectorAll('input[name="link-size"]').forEach(radio => radio.addEventListener('change', LinkEditor.preview));
+          $('link-swatches').addEventListener('click', event => {
+            const button = event.target.closest('[data-color]');
+            if (!button) return;
+            $('link-color').value = button.dataset.color;
+            LinkEditor.preview();
+          });
+          $('link-modal').addEventListener('hidden.bs.modal', () => { LinkEditor.target = null; });
+        }
+      };
+
       /* ===== 8-1. 개체 직접 삽입 ([직접 삽입 ▾]) =====
-         AI를 거치지 않고 글상자·그림·동영상·유튜브를 지금 장 가운데(맨 위 층)에 바로 넣는다.
+         AI를 거치지 않고 글상자·그림·동영상·유튜브·링크 단추를 지금 장 가운데(맨 위 층)에 바로 넣는다.
+         직접 넣은 상자에는 data-ls-direct를 붙여, 발표할 때 AI 개체가 다 나타난 뒤 이어서 부드럽게 나타나게 한다.
          AI가 만드는 개체와 같은 3계층(.draggable-box > .motion-content > 내용)이라 끌기·크기·클릭 순서·복제가 똑같이 된다.
          그림·영상은 이 브라우저에만 저장되고 Gemini로 보내지 않는다(AI 창의 [삽입]은 AI가 보고 배치하도록 보낸다). */
       const DirectInsert = {
@@ -5209,6 +5394,7 @@
           const { left, top } = DirectInsert.spot(width, height, at);
           const box = document.createElement('div');
           box.className = 'draggable-box';
+          box.setAttribute('data-ls-direct', '1'); // 발표할 때 AI 개체가 다 나타난 뒤 이어서 나타난다(ls-slide-css)
           box.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + Math.round(width) + 'px;';
           const motion = document.createElement('div');
           motion.className = 'motion-content';
@@ -5313,6 +5499,7 @@
           else if (kind === 'image') $('direct-image').click();
           else if (kind === 'video') $('direct-video').click();
           else if (kind === 'youtube') DirectInsert.youtube();
+          else if (kind === 'link') LinkEditor.open(null);
         },
 
         init() {
@@ -5767,6 +5954,7 @@
           Show.popup = popup;
           doc.addEventListener('keydown', Show.onKey);
           doc.getElementById('pa-full').addEventListener('click', () => Show.toggleFullscreen(doc));
+          doc.addEventListener('click', openSlideLink, true); // 링크 단추는 장을 넘기지 않고 새 탭으로
           doc.getElementById('pa-host').addEventListener('click', () => Show.next());
           popup.addEventListener('resize', Show.fit);
           // 지금 장을 청중 창에만 그리고, 발표자 쪽에서 이미 재생 중인 영상은 이어서 맞춘다.
@@ -8437,6 +8625,41 @@
             });
           }
         });
+        // 직접 넣은 개체(data-ls-direct): 처음부터 보이는 다른 개체의 등장 효과가 다 끝난 뒤 나타나도록 기다릴 시간을 잰다.
+        // 장을 새로 그렸을 때 한 번만(data-ls-timed). 끝없이 도는 움직임은 빼고, 4초가 넘는 긴 움직임은 기다리지 않는다.
+        var direct = canvas.querySelectorAll('.draggable-box[data-ls-direct]:not([data-step]):not([data-ls-timed])');
+        if (!direct.length || !canvas.getAnimations) return;
+        var end = 0;
+        Array.prototype.forEach.call(canvas.querySelectorAll('.draggable-box:not([data-ls-direct]):not([data-step])'), function (box) {
+          box.getAnimations({ subtree: true }).forEach(function (animation) {
+            var timing = animation.effect && animation.effect.getComputedTiming ? animation.effect.getComputedTiming() : null;
+            if (timing && isFinite(timing.endTime)) end = Math.max(end, timing.endTime);
+          });
+        });
+        var wait = (Math.min(end, 4000) + 150) / 1000 + 's';
+        Array.prototype.forEach.call(direct, function (box) {
+          box.setAttribute('data-ls-timed', '');
+          box.style.setProperty('--ls-after', wait);
+        });
+      }
+
+      /* ===== 12-0-1. 링크 단추 열기 =====
+         [직접 삽입 → 링크 단추]로 넣은 단추(.link-pill[data-link])를 발표 화면에서 누르면 새 탭으로 연다(장은 넘기지 않는다).
+         편집 화면·썸네일·다음 장 미리보기에서는 열지 않는다. 앱과 내보낸 파일이 함께 쓰므로 바깥 변수를 쓰지 않는다(ES5).
+         새 탭은 noopener로 열어, 열린 사이트가 이 발표 화면을 건드리지 못하게 한다. */
+      function openSlideLink(event) {
+        var target = event.target;
+        var pill = target && target.closest ? target.closest('[data-link]') : null;
+        if (!pill) return false;
+        var canvas = pill.closest('.slide-canvas');
+        if (!canvas || !/^(show|pv-c|pa|live|a|c)-canvas$/.test(canvas.id || '')) return false;
+        var url = pill.getAttribute('data-link') || '';
+        if (!/^https?:\/\/[^\s"'<>]+$/i.test(url)) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        var win = (pill.ownerDocument && pill.ownerDocument.defaultView) || window;
+        win.open(url, '_blank', 'noopener,noreferrer');
+        return true;
       }
 
       // 이 장의 클릭 요소 진행 표시(발표자 보기·휴대폰 리모컨): 다음 클릭이 요소를 보이는지, 다음 장으로 넘어가는지.
@@ -9156,6 +9379,7 @@
               doc.getElementById('pa-full').addEventListener('click', function () {
                 if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen();
               });
+              doc.addEventListener('click', openSlideLink, true);
               doc.getElementById('pa-host').addEventListener('click', function () { nav.next(); });
               popup.addEventListener('resize', function () { fit(doc, 'pa'); });
               paint(doc, 'pa', index);
@@ -9199,6 +9423,7 @@
           go(0);
         }
 
+        document.addEventListener('click', openSlideLink, true); // 링크 단추는 장을 넘기지 않고 새 탭으로
         if (data.kind === 'presenter') presenter(); else audience();
       }
 
@@ -9247,7 +9472,7 @@
             '<title>' + Util.escapeHtml(deck.title) + (presenter ? ' (발표자 보기)' : '') + '</title>\n' +
             '<style>' + $('ls-slide-css').textContent + '</style>\n</head>\n<body class="ls-viewer presentation-mode">\n' +
             '<script type="application/json" id="deck-data">' + json + '<\/script>\n' +
-            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + stepBadge.toString() + '\n' + spotlight.toString() + '\n' + laserDot.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
+            '<script>' + slideOverview.toString() + '\n' + createMediaSync.toString() + '\n' + slideSteps.toString() + '\n' + applySteps.toString() + '\n' + openSlideLink.toString() + '\n' + stepBadge.toString() + '\n' + spotlight.toString() + '\n' + laserDot.toString() + '\n' + canvasPoint.toString() + '\n(' + exportRuntime.toString() + ')();<\/script>\n</body>\n</html>\n';
         },
 
         download(kind) {
@@ -12643,6 +12868,7 @@
         $('show-overlay').addEventListener('mouseleave', () => Show.moveSpot(null));
         $('pv-c-host').addEventListener('mousemove', event => { Show.moveSpot(event, $('pv-c-canvas')); Show.moveLaser(event, $('pv-c-canvas')); });
         $('pv-c-host').addEventListener('mouseleave', () => { Show.moveSpot(null); Show.moveLaser(null); });
+        document.addEventListener('click', openSlideLink, true); // 발표·학생 화면의 링크 단추: 장을 넘기기 전에 가로채 새 탭으로 연다
         $('show-prev').addEventListener('click', event => { event.stopPropagation(); Show.prev(); });
         $('show-next').addEventListener('click', event => { event.stopPropagation(); Show.next(); });
         $('show-overlay').addEventListener('click', event => {
@@ -12726,6 +12952,7 @@
         AiPanel.init();
         SlideMenu.init();
         MathEditor.init();
+        LinkEditor.init();
         AiErrorLog.init();
         DirectInsert.init();
         ObjectPanel.init();
