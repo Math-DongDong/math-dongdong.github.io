@@ -553,7 +553,8 @@
       .live-main { flex-direction: column; }
       .live-ask { width: auto; max-width: none; max-height: 52vh; border-left: 0; border-top: 1px solid #374151; }
     }
-    .thumb-item.has-ask .num::after { content: '❓'; display: block; font-size: 0.7rem; }
+    /* 장 목록: 질문이 붙은 장의 질문 단추(축소판 왼쪽 아래. 오른쪽 아래는 ⋯ 메뉴). 눌러도 장 고르기·끌기는 그대로 */
+    .thumb-ask { position: absolute; left: calc(1.75rem + 5px); bottom: 5px; z-index: 2; padding: 1px 8px; border-radius: 999px; background: #7c3aed; color: #fff; font-size: 0.68rem; font-weight: 700; line-height: 1.5; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.3); }
     /* 편집기: 질문이 붙은 장의 질문 단추(슬라이드 좌표, 학생 화면 단추 모양). 발표 중에는 숨긴다 */
     .stage-ask-pill { position: absolute; right: 36px; bottom: 36px; z-index: 9000; display: block; max-width: 960px; padding: 18px 40px; border: 0; border-radius: 999px; background: #7c3aed; color: #fff; font: 700 32px/1.25 'Pretendard Variable', 'Malgun Gothic', system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.3); cursor: pointer; user-select: none; }
     .stage-ask-pill:hover { filter: brightness(1.1); }
@@ -4119,7 +4120,7 @@
             item.classList.toggle('active', active);
             item.classList.toggle('picked', !active && Editor.picked.has(slides[index].id));
             item.classList.toggle('ai-retry', !!slides[index].aiDraft);
-            item.classList.toggle('has-ask', !!slides[index].ask && Live.canUse()); // 질문이 붙은 장: 번호 아래 ❓(승인 교사·관리자만)
+            QuestionEditor.thumbPill(item, slides[index]); // 질문이 붙은 장: 축소판에 질문 단추(승인 교사·관리자만)
             if (active) item.scrollIntoView({ block: 'nearest' });
           });
           QuestionEditor.syncPill(); // 지금 장에 질문이 있으면 장 위에 질문 단추
@@ -13626,20 +13627,33 @@
           const ask = slide && Live.canUse() ? AskKit.normalize(slide.ask) : null; // 승인 교사·관리자만
           pill.classList.toggle('d-none', !ask);
           if (!ask) return;
-          pill.textContent = ask.type === 'slide'
-            ? '✏️ 내 슬라이드 활동' + (ask.text ? ' · ' + AskKit.shortText(ask.text, 24) : '')
-            : '❓ ' + AskKit.TYPES[ask.type] + ' · ' + AskKit.shortText(ask.text, 24);
+          pill.textContent = QuestionEditor.pillText(ask);
           pill.title = AskKit.TYPES[ask.type] + ' 질문: ' + AskKit.label(ask) + '\n더블클릭하면 질문을 고칠 수 있어요. 발표·내보내기에는 보이지 않아요.';
+        },
+
+        // 질문 단추 글: 유형만(질문 내용은 넣지 않는다)
+        pillText(ask) { return ask.type === 'slide' ? '✏️ 슬라이드 활동' : '❓ ' + AskKit.TYPES[ask.type]; },
+
+        // 장 목록 축소판의 질문 단추(승인 교사·관리자만)
+        thumbPill(item, slide) {
+          const ask = slide && Live.canUse() ? AskKit.normalize(slide.ask) : null;
+          item.classList.toggle('has-ask', !!ask);
+          let pill = item.querySelector(':scope > .thumb-ask');
+          if (!ask) { if (pill) pill.remove(); return; }
+          if (!pill) {
+            pill = document.createElement('span');
+            pill.className = 'thumb-ask';
+            item.append(pill);
+          }
+          pill.textContent = QuestionEditor.pillText(ask);
+          pill.title = AskKit.label(ask);
         },
 
         // 질문 기능(직접 삽입 메뉴·질문 단추·❓)은 승인 교사·관리자에게만 보인다. 로그인 상태가 바뀌면 다시 맞춘다.
         syncAccess() {
           const ok = Live.canUse();
           document.querySelectorAll('[data-direct="ask"]').forEach(el => (el.closest('li') || el).classList.toggle('d-none', !ok));
-          $('thumb-list').querySelectorAll('.thumb-item').forEach(item => {
-            const slide = Editor.deck && Editor.deck.slides[Number(item.dataset.index)];
-            item.classList.toggle('has-ask', ok && !!(slide && slide.ask));
-          });
+          $('thumb-list').querySelectorAll('.thumb-item').forEach(item => QuestionEditor.thumbPill(item, Editor.deck && Editor.deck.slides[Number(item.dataset.index)]));
           QuestionEditor.syncPill();
         },
 
