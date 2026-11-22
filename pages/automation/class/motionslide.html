@@ -4119,7 +4119,7 @@
             item.classList.toggle('active', active);
             item.classList.toggle('picked', !active && Editor.picked.has(slides[index].id));
             item.classList.toggle('ai-retry', !!slides[index].aiDraft);
-            item.classList.toggle('has-ask', !!slides[index].ask); // 질문이 붙은 장: 번호 아래 ❓
+            item.classList.toggle('has-ask', !!slides[index].ask && Live.canUse()); // 질문이 붙은 장: 번호 아래 ❓(승인 교사·관리자만)
             if (active) item.scrollIntoView({ block: 'nearest' });
           });
           QuestionEditor.syncPill(); // 지금 장에 질문이 있으면 장 위에 질문 단추
@@ -5391,9 +5391,11 @@
           // 질문: 누른 장 하나에 붙이고 고친다. 결과 보기는 질문이 있는 장만, 결과 장 지우기는 결과 장이 있을 때만
           SlideMenu.index = index;
           const hasAsk = !!AskKit.normalize(slides[index].ask);
+          const canAsk = Live.canUse(); // 질문은 승인 교사·관리자만
           menu.querySelector('.slide-menu-ask').textContent = hasAsk ? '질문 고치기' : '질문 붙이기';
           menu.querySelector('[data-slide-menu="ask"]').disabled = count > 1;
-          menu.querySelector('[data-slide-menu="ask-result"]').classList.toggle('d-none', !hasAsk);
+          menu.querySelector('[data-slide-menu="ask"]').classList.toggle('d-none', !canAsk);
+          menu.querySelector('[data-slide-menu="ask-result"]').classList.toggle('d-none', !hasAsk || !canAsk);
           menu.querySelector('[data-slide-menu="clear-results"]').classList.toggle('d-none', !slides.some(slide => slide.result));
           menu.classList.add('show');
           // 화면 밖으로 나가지 않게 맞춘다.
@@ -13491,6 +13493,7 @@
 
         open(index) {
           if (!Editor.deck || Show.isOn()) return;
+          if (!Live.canUse()) { Util.toast('질문은 승인된 선생님으로 로그인해야 붙일 수 있습니다.', 'warning'); return; }
           const i = Number.isInteger(index) && index >= 0 ? index : Editor.index;
           const slide = Editor.deck.slides[i];
           if (!slide) return;
@@ -13620,7 +13623,7 @@
         syncPill() {
           const pill = $('stage-ask-pill');
           const slide = Editor.deck ? Editor.deck.slides[Editor.index] : null;
-          const ask = slide ? AskKit.normalize(slide.ask) : null;
+          const ask = slide && Live.canUse() ? AskKit.normalize(slide.ask) : null; // 승인 교사·관리자만
           pill.classList.toggle('d-none', !ask);
           if (!ask) return;
           pill.textContent = ask.type === 'slide'
@@ -13629,7 +13632,20 @@
           pill.title = AskKit.TYPES[ask.type] + ' 질문: ' + AskKit.label(ask) + '\n더블클릭하면 질문을 고칠 수 있어요. 발표·내보내기에는 보이지 않아요.';
         },
 
+        // 질문 기능(직접 삽입 메뉴·질문 단추·❓)은 승인 교사·관리자에게만 보인다. 로그인 상태가 바뀌면 다시 맞춘다.
+        syncAccess() {
+          const ok = Live.canUse();
+          document.querySelectorAll('[data-direct="ask"]').forEach(el => (el.closest('li') || el).classList.toggle('d-none', !ok));
+          $('thumb-list').querySelectorAll('.thumb-item').forEach(item => {
+            const slide = Editor.deck && Editor.deck.slides[Number(item.dataset.index)];
+            item.classList.toggle('has-ask', ok && !!(slide && slide.ask));
+          });
+          QuestionEditor.syncPill();
+        },
+
         init() {
+          QuestionEditor.syncAccess();
+          window.addEventListener('teacherAuthChanged', QuestionEditor.syncAccess);
           // 질문 단추: 더블클릭(키보드는 Enter)으로 질문 고치기. 편집기의 고르기·끌기로는 가지 않는다.
           const pill = $('stage-ask-pill');
           ['pointerdown', 'mousedown', 'click'].forEach(type => pill.addEventListener(type, event => event.stopPropagation()));
