@@ -4030,7 +4030,7 @@
     }
 
     #fmt-size {
-      min-width: 3.2rem;
+      width: 4.2rem;
       text-align: center;
       font-variant-numeric: tabular-nums;
     }
@@ -4816,7 +4816,8 @@
         class="bi bi-type-bold"></i></button>
     <button type="button" class="btn btn-sm btn-light" data-fmt="smaller" title="글자 작게"><i
         class="bi bi-dash-lg"></i></button>
-    <span class="small" id="fmt-size">40px</span>
+    <input type="number" class="form-control form-control-sm" id="fmt-size" min="12" max="300" step="1"
+      aria-label="글자 크기(px)" title="글자 크기(px)">
     <button type="button" class="btn btn-sm btn-light" data-fmt="bigger" title="글자 크게"><i
         class="bi bi-plus-lg"></i></button>
     <input type="color" class="form-control form-control-color" id="fmt-color" value="#1f2937" title="글자 색">
@@ -9801,27 +9802,38 @@
       const FloatBar = {
         range: null,
         root: null, // 서식을 입힐 영역: 편집 중인 글상자 또는 발표 시나리오
+        target: null,
 
         onSelection() {
           const bar = $('float-toolbar');
           if (bar.contains(document.activeElement)) return; // 색 고르는 중
           const selection = window.getSelection();
-          if (!selection.rangeCount || selection.isCollapsed) { FloatBar.hide(); return; }
+          if (!selection.rangeCount) { FloatBar.hide(); return; }
           const range = selection.getRangeAt(0);
           const node = range.commonAncestorContainer;
           let root = null;
           if (Editor.editing && Editor.editing.contains(node)) root = Editor.editing;
-          else if ($('notes-editor').contains(node)) root = $('notes-editor');
+          else if (!selection.isCollapsed && $('notes-editor').contains(node)) root = $('notes-editor');
           if (!root) { FloatBar.hide(); return; }
           FloatBar.root = root;
+          FloatBar.target = selection.isCollapsed ? root : null;
           FloatBar.range = range.cloneRange();
+          FloatBar.show();
+        },
+
+        selectElement(el) {
+          FloatBar.root = el;
+          FloatBar.target = el;
+          FloatBar.range = null;
           FloatBar.show();
         },
 
         show() {
           const bar = $('float-toolbar');
           bar.style.display = 'flex';
-          const rect = FloatBar.range.getBoundingClientRect();
+          const rect = FloatBar.range && !FloatBar.range.collapsed
+            ? FloatBar.range.getBoundingClientRect()
+            : (FloatBar.target || FloatBar.range).getBoundingClientRect();
           const left = Math.max(8, Math.min(rect.left + rect.width / 2 - bar.offsetWidth / 2, window.innerWidth - bar.offsetWidth - 8));
           let top = rect.top - bar.offsetHeight - 10;
           if (top < 8) top = rect.bottom + 10;
@@ -9830,7 +9842,7 @@
           const el = FloatBar.element();
           if (!el) return;
           const style = getComputedStyle(el);
-          $('fmt-size').textContent = Math.round(parseFloat(style.fontSize)) + 'px';
+          $('fmt-size').value = Math.round(parseFloat(style.fontSize));
           $('fmt-color').value = Util.toHex(style.color, '#1f2937');
           bar.querySelector('[data-fmt="bold"]').classList.toggle('active', parseInt(style.fontWeight, 10) >= 600);
         },
@@ -9839,9 +9851,11 @@
           $('float-toolbar').style.display = 'none';
           FloatBar.range = null;
           FloatBar.root = null;
+          FloatBar.target = null;
         },
 
         element() {
+          if (FloatBar.target) return FloatBar.target;
           const range = FloatBar.range;
           if (!range) return null;
           const node = range.startContainer;
@@ -9852,7 +9866,16 @@
         apply(props) {
           const box = FloatBar.root;
           const range = FloatBar.range;
-          if (!box || !range || range.collapsed || !box.contains(range.commonAncestorContainer)) return;
+          if (!box) return;
+          if (FloatBar.target && (!range || range.collapsed)) {
+            Object.assign(FloatBar.target.style, props);
+            FloatBar.show();
+            if (box === $('notes-editor')) Editor.saveNotes();
+            else Editor.touch();
+            Editor.commitSoon();
+            return;
+          }
+          if (!range || range.collapsed || !box.contains(range.commonAncestorContainer)) return;
           const keys = Object.keys(props);
           const stripInside = root => root.querySelectorAll('*').forEach(el => {
             if (!el.style) return;
@@ -9912,6 +9935,14 @@
             if (button.dataset.fmt === 'smaller') FloatBar.resize(-1);
           });
           $('fmt-color').addEventListener('input', event => FloatBar.apply({ color: event.target.value }));
+          $('fmt-size').addEventListener('change', event => {
+            const size = Number(event.target.value);
+            if (!Number.isFinite(size) || size < 12 || size > 300) {
+              FloatBar.show();
+              return;
+            }
+            FloatBar.apply({ fontSize: Math.round(size) + 'px' });
+          });
           document.addEventListener('selectionchange', FloatBar.onSelection);
         }
       };
@@ -19478,6 +19509,11 @@
       const canvas = $('slide-canvas');
       $('stage-host').addEventListener('pointerdown', () => $('thumb-list').blur()); // 캔버스를 누르면 목록 단축키를 끈다
       $('stage-host').addEventListener('pointerdown', Editor.onPointerDown);
+      canvas.addEventListener('click', event => {
+        if (!document.body.classList.contains('edit-mode') || !window.getSelection().isCollapsed) return;
+        const text = event.target.closest('.editable-text');
+        if (text && canvas.contains(text)) FloatBar.selectElement(text);
+      });
       canvas.addEventListener('dblclick', event => {
         if (!document.body.classList.contains('edit-mode') || event.target.closest('.ls-ungroup')) return;
         if (ObjectPanel.asking) return; // 편집 취소를 묻는 중
