@@ -119,21 +119,26 @@ function ensureStyle() {
             min-height: 100px;
         }
         .qr-canvas-box canvas, .qr-canvas-box img { display: block; }
+        .qr-actions {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            margin-top: 0.45rem;
+        }
         .qr-room-code {
             font-weight: 800;
-            letter-spacing: 0.25em;
+            letter-spacing: 0.15em;
             color: #0d6efd;
-            margin-top: 0.45rem;
             line-height: 1.1;
-        }
-        .qr-actions {
-            margin-top: 0.45rem;
+            white-space: nowrap;
         }
         .qr-actions .btn {
-            font-size: 0.78rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 8px;
+            font-size: 0.75rem;
+            padding: 0.2rem 0.45rem;
+            border-radius: 6px;
             font-weight: 600;
+            white-space: nowrap;
         }
         .qr-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 0.15rem; }
         .qr-resize {
@@ -249,9 +254,9 @@ function ensurePanel() {
             <div class="qr-canvas-box" id="qrCanvasBox">
                 <span class="text-muted small">QR을 만드는 중...</span>
             </div>
-            <div class="qr-room-code" id="qrRoomCode"></div>
             <div class="qr-actions" id="qrActions" style="display:none;">
-                <button type="button" class="btn btn-sm btn-outline-primary w-100" id="btnCopyRoomLink">
+                <span class="qr-room-code" id="qrRoomCode"></span>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnCopyRoomLink">
                     <i class="bi bi-clipboard"></i> 링크 복사
                 </button>
             </div>
@@ -412,7 +417,7 @@ async function renderQr() {
 
     const roomCode = currentRoomCode();
     currentCode = roomCode;
-    codeEl.style.fontSize = Math.max(1.05, qrSize / 190) + 'rem';
+    codeEl.style.fontSize = Math.max(0.95, qrSize / 210) + 'rem';
     box.style.minHeight = '';
 
     if (!roomCode) {
@@ -425,7 +430,7 @@ async function renderQr() {
 
     currentUrl = buildJoinUrl(roomCode);
     codeEl.textContent = roomCode;
-    if (actionsEl) actionsEl.style.display = 'block';
+    if (actionsEl) actionsEl.style.display = 'flex';
 
     if (location.protocol === 'file:') {
         box.innerHTML = '<span class="text-danger small px-3 py-4">로컬 파일(file://)에서는<br>QR로 접속할 수 없습니다.<br>웹 서버에 올린 뒤 사용하세요.</span>';

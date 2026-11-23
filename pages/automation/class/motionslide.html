@@ -4974,23 +4974,21 @@
     data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
-        <div class="modal-header flex-wrap gap-2">
-          <h2 class="modal-title h5 me-1" id="plan-modal-title"><i class="bi bi-list-check"></i> 슬라이드 계획</h2>
+        <div class="modal-header flex-wrap align-items-center gap-2">
+          <h2 class="modal-title h5 me-1 mb-0" id="plan-modal-title"><i class="bi bi-list-check"></i> 슬라이드 계획</h2>
           <span class="badge rounded-pill text-bg-primary plan-count"></span>
           <span class="plan-summary d-flex flex-wrap gap-1" id="plan-summary"></span>
-          <span class="small text-muted ms-auto">고칠 곳을 바로 고친 뒤 [이대로 만들기]를 누르세요.</span>
+          <span class="small text-muted ms-auto d-none d-sm-inline">고칠 곳을 바로 고친 뒤 [이대로 만들기]를 누르세요.</span>
+          <select class="form-select form-select-sm model-select ms-auto ms-sm-0" id="plan-model-select" data-context="plan"
+            aria-label="모델 선택" style="width:auto;max-width:200px;"></select>
           <button type="button" class="btn-close ms-2" data-plan="cancel" title="닫기" aria-label="닫기"></button>
         </div>
         <div class="modal-body" id="plan-body"></div>
         <div class="modal-footer flex-column align-items-stretch gap-2">
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <div class="input-group input-group-sm flex-grow-1">
-              <input class="form-control plan-redo" placeholder="예) 3장은 실생활 문제로 바꿔 줘" aria-label="계획 다시 짜기 요청">
-              <button type="button" class="btn btn-outline-primary" data-plan="redo"><i class="bi bi-arrow-repeat"></i>
-                AI에게 전체 다시 짜기</button>
-            </div>
-            <select class="form-select form-select-sm model-select ms-auto" id="plan-model-select" data-context="plan"
-              aria-label="모델 선택" style="width:auto;max-width:200px;"></select>
+          <div class="input-group input-group-sm">
+            <input class="form-control plan-redo" placeholder="예) 3장은 실생활 문제로 바꿔 줘" aria-label="계획 다시 짜기 요청">
+            <button type="button" class="btn btn-outline-primary" data-plan="redo"><i class="bi bi-arrow-repeat"></i>
+              AI에게 전체 다시 짜기</button>
           </div>
           <div class="small text-primary d-none" id="plan-status" role="status"><span
               class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span><span
@@ -5540,6 +5538,29 @@
         },
 
         sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); },
+
+        async copyText(text) {
+          let success = false;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text);
+              success = true;
+            }
+          } catch (e) { }
+          if (!success) {
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = text;
+              ta.style.position = 'fixed';
+              ta.style.opacity = '0';
+              document.body.appendChild(ta);
+              ta.select();
+              success = document.execCommand('copy');
+              document.body.removeChild(ta);
+            } catch (e) { }
+          }
+          return success;
+        },
 
         escapeHtml(text) {
           return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15523,14 +15544,25 @@
               box.id = 'show-live-qr';
               box.setAttribute('role', 'dialog');
               box.setAttribute('aria-label', '함께 보기 입장 QR');
-              box.addEventListener('click', event => {
+              box.addEventListener('click', async event => {
                 event.stopPropagation();
+                const copyBtn = event.target.closest('.btn-copy-live');
+                if (copyBtn) {
+                  const ok = await Util.copyText(url);
+                  const orig = copyBtn.textContent;
+                  copyBtn.textContent = ok ? '✓ 복사됨!' : '실패';
+                  setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+                  return;
+                }
                 if (event.target.closest('button')) Live.hideQr();
               });
               $('show-overlay').append(box);
             }
             box.innerHTML = (img ? '<img alt="입장 QR 코드" src="' + img + '">' : '') +
-              '<div class="code">' + Util.escapeHtml(code) + '</div>' +
+              '<div style="display:flex;align-items:center;justify-content:center;gap:1.5vw;margin-top:1vh">' +
+                '<div class="code" style="margin:0">' + Util.escapeHtml(code) + '</div>' +
+                '<button type="button" class="btn-copy-live" style="font:inherit;font-size:2.2vh;padding:8px 20px;border-radius:12px;border:1px solid #38bdf8;background:rgba(56,189,248,0.15);color:#38bdf8;cursor:pointer">링크 복사</button>' +
+              '</div>' +
               '<div class="name">' + Util.escapeHtml(name) + '</div>' +
               '<div class="guide">' + guide + '</div>' +
               '<div class="count">지금 <b id="show-live-qr-count">' + Live.count + '</b>명 입장</div>' +
@@ -15547,25 +15579,59 @@
               box = doc.createElement('div');
               box.id = 'pa-live-qr';
               doc.body.append(box);
+              box.addEventListener('click', async event => {
+                event.stopPropagation();
+                const copyBtn = event.target.closest('.btn-copy-live');
+                if (copyBtn) {
+                  const ok = await Util.copyText(url);
+                  const orig = copyBtn.textContent;
+                  copyBtn.textContent = ok ? '✓ 복사됨!' : '실패';
+                  setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+                  return;
+                }
+                if (event.target.closest('button')) box.remove();
+              });
             }
             box.setAttribute('style', 'position:fixed;inset:0;z-index:2147483600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2vh;padding:24px;' +
               "background:rgba(15,23,42,0.97);color:#fff;text-align:center;font-family:'Pretendard Variable','Malgun Gothic',system-ui,sans-serif;");
             box.innerHTML = (img ? '<img alt="입장 QR 코드" style="width:min(46vh,60vw);height:auto;background:#fff;padding:16px;border-radius:16px;image-rendering:pixelated" src="' + img + '">' : '') +
-              '<div style="font-size:min(11vh,12vw);font-weight:800;letter-spacing:0.3em;line-height:1">' + Util.escapeHtml(code) + '</div>' +
+              '<div style="display:flex;align-items:center;justify-content:center;gap:1.5vw;margin-top:1vh">' +
+                '<div style="font-size:min(11vh,12vw);font-weight:800;letter-spacing:0.3em;line-height:1">' + Util.escapeHtml(code) + '</div>' +
+                '<button type="button" class="btn-copy-live" style="font:inherit;font-size:2.2vh;padding:8px 20px;border-radius:12px;border:1px solid #38bdf8;background:rgba(56,189,248,0.15);color:#38bdf8;cursor:pointer">링크 복사</button>' +
+              '</div>' +
               '<div style="font-size:3.2vh;font-weight:600">' + Util.escapeHtml(name) + '</div>' +
               '<div style="font-size:2.6vh;color:#cbd5e1">' + guide + '</div>' +
               '<div style="font-size:3vh">지금 <b id="pa-live-count">' + Live.count + '</b>명 입장</div>' +
               '<button type="button" style="font:inherit;font-size:2.2vh;padding:8px 22px;border-radius:999px;border:1px solid #94a3b8;background:transparent;color:#fff;cursor:pointer">QR 닫기</button>';
-            box.querySelector('button').addEventListener('click', event => { event.stopPropagation(); box.remove(); });
             popup.focus();
             return;
           }
           $('live-qr-body').innerHTML = (img ? '<img class="live-qr-img" alt="입장 QR 코드" src="' + img + '">' : '') +
-            '<div class="live-qr-code mt-3">' + Util.escapeHtml(code) + '</div>' +
+            '<div class="d-flex align-items-center justify-content-center gap-2 mt-3">' +
+              '<div class="live-qr-code mb-0">' + Util.escapeHtml(code) + '</div>' +
+              '<button type="button" class="btn btn-sm btn-outline-primary text-nowrap" id="btn-copy-live-link">' +
+                '<i class="bi bi-clipboard"></i> 링크 복사' +
+              '</button>' +
+            '</div>' +
             '<div class="fw-semibold mt-2">' + Util.escapeHtml(name) + '</div>' +
             '<div class="small text-muted mt-2">' + guide + '</div>' +
             '<div class="mt-2">지금 <b id="live-qr-count">' + Live.count + '</b>명 입장</div>' +
             '<div class="small text-muted mt-2">[청중 화면 열기]로 프로젝터 창을 연 뒤 [QR 다시 보기]를 누르면 학생들이 보는 화면에 크게 뜹니다.</div>';
+          const liveCopyBtn = $('btn-copy-live-link');
+          if (liveCopyBtn) {
+            liveCopyBtn.addEventListener('click', async () => {
+              const ok = await Util.copyText(url);
+              const orig = liveCopyBtn.innerHTML;
+              liveCopyBtn.innerHTML = ok ? '<i class="bi bi-check-lg"></i> 복사됨!' : '실패';
+              liveCopyBtn.classList.toggle('btn-success', ok);
+              liveCopyBtn.classList.toggle('btn-outline-primary', !ok);
+              setTimeout(() => {
+                liveCopyBtn.innerHTML = orig;
+                liveCopyBtn.classList.remove('btn-success');
+                liveCopyBtn.classList.add('btn-outline-primary');
+              }, 1500);
+            });
+          }
           bootstrap.Modal.getOrCreateInstance($('live-qr-modal')).show();
         },
 
