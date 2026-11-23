@@ -721,31 +721,38 @@
       flex: none;
     }
 
-    /* 이전·다음: 현재 화면 아래 왼쪽·오른쪽 (청중 화면의 둥근 단추와 같은 모양) */
-    .pv-nav {
-      display: flex;
-      justify-content: space-between;
-      flex: none;
-    }
-
-    .pv-nav-btn {
+    /* 이전·다음: 청중 화면 및 발표자 화면 슬라이드 안 좌우 하단 (반투명 둥근 단추) */
+    .show-nav {
+      position: absolute;
+      bottom: 12px;
+      z-index: 5;
       width: 52px;
       height: 52px;
       border: 0;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.12);
-      color: rgba(255, 255, 255, 0.85);
+      background: rgba(15, 23, 42, 0.35);
+      color: rgba(255, 255, 255, 0.8);
       font-size: 1.5rem;
       display: grid;
       place-items: center;
+      opacity: 0.3;
       cursor: pointer;
-      transition: background-color 0.2s;
+      transition: opacity 0.2s, background-color 0.2s;
     }
 
-    .pv-nav-btn:hover,
-    .pv-nav-btn:focus-visible {
-      background: rgba(255, 255, 255, 0.28);
+    .show-nav:hover,
+    .show-nav:focus-visible {
+      opacity: 1;
+      background: rgba(15, 23, 42, 0.7);
       color: #fff;
+    }
+
+    .show-nav-prev {
+      left: 16px;
+    }
+
+    .show-nav-next {
+      right: 16px;
     }
 
     .pv-text {
@@ -2430,7 +2437,7 @@
     .show-nav {
       position: absolute;
       bottom: 12px;
-      z-index: 1;
+      z-index: 5;
       width: 52px;
       height: 52px;
       border: 0;
@@ -2441,6 +2448,7 @@
       display: grid;
       place-items: center;
       opacity: 0.3;
+      cursor: pointer;
       transition: opacity 0.2s, background-color 0.2s;
     }
 
@@ -4580,12 +4588,10 @@
             <button type="button" class="d-none" data-pv="pause" id="pv-pause" aria-pressed="false"
               title="함께 보기 학생 화면을 어둡게 가리고 '선생님을 봐 주세요'를 띄웁니다"><i class="bi bi-pause-fill"></i> 학생 화면 멈추기 (S)</button>
           </div>
-        </div>
-        <!-- 이전·다음: 청중 화면처럼 현재 화면 아래 왼쪽·오른쪽 -->
-        <div class="pv-nav">
-          <button type="button" class="pv-nav-btn" data-pv="prev" aria-label="이전" title="이전 (←)"><i
+          <!-- 이전·다음: 청중 화면처럼 슬라이드 화면 안쪽 좌우 하단에 배치 -->
+          <button type="button" class="show-nav show-nav-prev" id="pv-c-prev" data-pv="prev" aria-label="이전" title="이전 (←)"><i
               class="bi bi-chevron-left"></i></button>
-          <button type="button" class="pv-nav-btn" data-pv="next" aria-label="다음" title="다음 (→)"><i
+          <button type="button" class="show-nav show-nav-next" id="pv-c-next" data-pv="next" aria-label="다음" title="다음 (→)"><i
               class="bi bi-chevron-right"></i></button>
         </div>
       </section>
@@ -13694,9 +13700,10 @@
             '<button type="button" class="on" id="pv-laser" aria-pressed="true" title="내 마우스 위치를 청중 화면에 빨간 점으로 보입니다">레이저 (P)</button>' +
             '<button type="button" class="pv-primary" id="pv-audience">청중 화면 열기</button></header>' +
             '<main class="pv-main"><section class="pv-col"><div class="pv-label">현재 화면 (청중에게 보이는 화면)</div>' +
-            '<div class="v-host pv-current" id="c-host">' + stage('c') + '</div>' +
-            '<div class="pv-nav"><button type="button" class="pv-nav-btn" id="pv-prev" aria-label="이전" title="이전 (←)">&#10094;</button>' +
-            '<button type="button" class="pv-nav-btn" id="pv-next" aria-label="다음" title="다음 (→)">&#10095;</button></div></section>' +
+            '<div class="v-host pv-current" id="c-host">' + stage('c') +
+            '<button type="button" class="show-nav show-nav-prev" id="pv-prev" aria-label="이전" title="이전 (←)">&#10094;</button>' +
+            '<button type="button" class="show-nav show-nav-next" id="pv-next" aria-label="다음" title="다음 (→)">&#10095;</button>' +
+            '</div></section>' +
             '<aside class="pv-col"><div class="pv-label">다음 장</div><div class="v-host pv-next v-static" id="n-host">' + stage('n') + '</div>' +
             '<div class="pv-label">발표 시나리오</div><div class="pv-text" id="pv-notes"></div></aside></main>';
           document.getElementById('pv-title').textContent = data.title || '';
@@ -19990,9 +19997,16 @@
           if (action === 'pause') Live.togglePause();
           if (action === 'exit') Show.exit();
         });
-        // 현재 화면 오른쪽 위 도구 위에서는 레이저 점이 단추를 따라가지 않게 한다.
+        // 현재 화면 오른쪽 위 도구 및 하단 이동 단추 위에서는 레이저 점이 단추를 따라가지 않게 한다.
         $('pv-slide-tools').addEventListener('mousemove', event => event.stopPropagation());
         $('pv-slide-tools').addEventListener('mouseenter', () => Show.moveLaser(null));
+        ['pv-c-prev', 'pv-c-next'].forEach(id => {
+          const el = $(id);
+          if (el) {
+            el.addEventListener('mousemove', event => event.stopPropagation());
+            el.addEventListener('mouseenter', () => Show.moveLaser(null));
+          }
+        });
         // 그림·동영상은 여러 개를 한 번에 골라 담을 수 있다.
         $('file-image').addEventListener('change', event => {
           AiPanel.stageMany(event.target.files, 'image');
