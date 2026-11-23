@@ -126,6 +126,15 @@ function ensureStyle() {
             margin-top: 0.45rem;
             line-height: 1.1;
         }
+        .qr-actions {
+            margin-top: 0.45rem;
+        }
+        .qr-actions .btn {
+            font-size: 0.78rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+        }
         .qr-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 0.15rem; }
         .qr-resize {
             position: absolute;
@@ -184,6 +193,39 @@ function loadQrLib() {
     return qrLibPromise;
 }
 
+async function copyLink(text, button) {
+    let success = false;
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            success = true;
+        }
+    } catch (e) { }
+    if (!success) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            success = document.execCommand('copy');
+            document.body.removeChild(ta);
+        } catch (e) { }
+    }
+    if (button) {
+        const orig = button.innerHTML;
+        button.innerHTML = success ? '✓ 링크 복사됨!' : '복사 실패';
+        button.classList.toggle('btn-success', success);
+        button.classList.toggle('btn-outline-primary', !success);
+        setTimeout(() => {
+            button.innerHTML = orig;
+            button.classList.remove('btn-success');
+            button.classList.add('btn-outline-primary');
+        }, 1500);
+    }
+}
+
 // =====================================================================
 // 패널 생성 / 드래그 / 리사이즈
 // =====================================================================
@@ -208,6 +250,11 @@ function ensurePanel() {
                 <span class="text-muted small">QR을 만드는 중...</span>
             </div>
             <div class="qr-room-code" id="qrRoomCode"></div>
+            <div class="qr-actions" id="qrActions" style="display:none;">
+                <button type="button" class="btn btn-sm btn-outline-primary w-100" id="btnCopyRoomLink">
+                    <i class="bi bi-clipboard"></i> 링크 복사
+                </button>
+            </div>
         </div>
         <div class="qr-resize" id="qrResizeHandle" title="끌어서 크기 조절"></div>
     </div>`);
@@ -229,6 +276,8 @@ function ensurePanel() {
 
     panel.addEventListener('click', (e) => {
         if (e.target.closest('[data-qr="close"]')) closeQrPanel(true);
+        const copyBtn = e.target.closest('#btnCopyRoomLink');
+        if (copyBtn && currentUrl) copyLink(currentUrl, copyBtn);
     });
 
     window.addEventListener('resize', () => clampIntoView(panel));
@@ -359,6 +408,7 @@ async function renderQr() {
 
     const box = panel.querySelector('#qrCanvasBox');
     const codeEl = panel.querySelector('#qrRoomCode');
+    const actionsEl = panel.querySelector('#qrActions');
 
     const roomCode = currentRoomCode();
     currentCode = roomCode;
@@ -369,11 +419,13 @@ async function renderQr() {
         currentUrl = '';
         box.innerHTML = '<span class="text-muted small px-3 py-4">방을 선택하면<br>QR 코드가 만들어집니다.</span>';
         codeEl.textContent = '';
+        if (actionsEl) actionsEl.style.display = 'none';
         return;
     }
 
     currentUrl = buildJoinUrl(roomCode);
     codeEl.textContent = roomCode;
+    if (actionsEl) actionsEl.style.display = 'block';
 
     if (location.protocol === 'file:') {
         box.innerHTML = '<span class="text-danger small px-3 py-4">로컬 파일(file://)에서는<br>QR로 접속할 수 없습니다.<br>웹 서버에 올린 뒤 사용하세요.</span>';
