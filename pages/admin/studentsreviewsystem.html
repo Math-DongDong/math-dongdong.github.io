@@ -1777,6 +1777,7 @@
             if (unsubStudents) { unsubStudents(); unsubStudents = null; }
             if (unsubNotes) { unsubNotes(); unsubNotes = null; }
             allReviews = [];
+            selectedReviewIds.clear();
             teacherNotes = {};
             teacherNotesLoaded = false;
             lastRecordDocs = [];   // 이전 방의 기록으로 관찰기록 옮기기가 돌지 않도록
@@ -2343,6 +2344,7 @@
         let selectedActivityDate = '';
         function filterByActivity(date) {
             selectedActivityDate = (selectedActivityDate === date) ? '' : date;
+            selectedReviewIds.clear();
             renderTeacherActivities();
             renderTeacherTable();
         }
@@ -2500,6 +2502,7 @@
 
             if (!displayRows.length) {
                 tbody.innerHTML = '<tr><td colspan="6" class="td text-center py-10 text-ink-muted">해당하는 소감문 또는 학생 데이터가 없습니다.</td></tr>';
+                updateBulkBar();
                 return;
             }
 
@@ -2636,7 +2639,14 @@
 
         $('btnSelectCheckedByStudent').addEventListener('click', () => {
             selectedReviewIds.clear();
-            allReviews.filter(r => r.check === 'O').forEach(r => selectedReviewIds.add(r.id));
+            const searchId = $('teacherSearchStudentId').value.trim();
+            let targetReviews = selectedActivityDate
+                ? allReviews.filter(r => r.date === selectedActivityDate)
+                : allReviews;
+            if (searchId) {
+                targetReviews = targetReviews.filter(r => r.studentId.startsWith(searchId));
+            }
+            targetReviews.filter(r => r.check === 'O').forEach(r => selectedReviewIds.add(r.id));
             renderTeacherTable();
         });
 
@@ -2650,6 +2660,10 @@
             $('selectedCountBadge').textContent = `${count}개 선택됨`;
             $('btnBulkAiFeedback').disabled = count === 0;
             $('btnBulkAiTeacherView').disabled = count === 0;
+            const checkboxes = Array.from(document.querySelectorAll('.rev-checkbox'));
+            if ($('selectAllCheckbox')) {
+                $('selectAllCheckbox').checked = checkboxes.length > 0 && checkboxes.every(cb => cb.checked);
+            }
         }
 
         function openTextEditModal(reviewId, field) {
