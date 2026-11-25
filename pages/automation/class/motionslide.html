@@ -1820,6 +1820,12 @@
       text-overflow: ellipsis;
     }
 
+    .app-status-time {
+      margin-left: 0.25rem;
+      color: #64748b;
+      white-space: nowrap;
+    }
+
     .ai-status-time {
       flex: none;
     }
@@ -4463,7 +4469,10 @@
                   <button type="button" class="btn btn-primary btn-sm flex-grow-1" id="app-send"><i
                       class="bi bi-magic"></i> AI로 고치기 <span class="opacity-75">Ctrl+Enter</span></button>
                 </div>
-                <div class="small mt-2" id="app-status" role="status"></div>
+                <div class="small mt-2" id="app-status" role="status"><span
+                    class="spinner-border spinner-border-sm me-1 d-none" id="app-status-spinner"
+                    aria-hidden="true"></span><span id="app-status-text"></span><span
+                    class="app-status-time" id="app-status-time"></span></div>
                 <p class="small text-muted mt-2 mb-0">요청 내용·참고 자료·코드는 Google Gemini API로 전송됩니다. 고친 결과는 바로 반영되고, 마음에 들지
                   않으면 [반영 취소]나 Ctrl+Z로 되돌립니다.</p>
               </section>
@@ -6495,6 +6504,7 @@
         // AI가 고치는 중인 요청 { el, deck, slideId, app, before, motion, name, request, controller }.
         // 편집 창을 닫거나 다른 개체·다른 장으로 가도 멈추지 않고, 끝나면 그 개체를 찾아 반영한다(멈추기: 그 개체 편집 창에서 Esc).
         job: null,
+        clock: null,
         SCHEMA: {
           type: 'OBJECT',
           properties: { code: { type: 'STRING' }, summary: { type: 'STRING' } },
@@ -6514,7 +6524,7 @@
           },
           motion: {
             name: '모션그래픽', particle: '을', title: '모션그래픽 고치기', icon: 'bi-bezier2',
-            help: '어떻게 바꿀지 적으면 Gemini가 이 그림을 계산해 그리는 코드를 고칩니다. 결과는 슬라이드에 바로 그려집니다. 움직임(속도·순서)을 바꾸려면 AI 창의 [수정]을 쓰세요.',
+            help: '부분 수정은 바꿀 부분을 요청하세요. 완전히 다른 그림으로 바꾸려면 기존 그림을 유지하지 말고 새로 그려 달라고 요청하면 됩니다. 움직임(속도·순서)을 바꾸려면 AI 창의 [수정]을 쓰세요.',
             placeholder: '예) 각 B를 90°로 바꾸고 직각 표시를 넣어 줘. 그래프 x 범위를 −3~3으로, 꼭짓점 좌표도 적어 줘'
           }
         },
@@ -6592,6 +6602,17 @@
           $('app-undo').disabled = on;
           $('app-code').disabled = on;
           $('app-attach').disabled = on;
+          clearInterval(AppEditor.clock);
+          AppEditor.clock = null;
+          const spinner = $('app-status-spinner');
+          const time = $('app-status-time');
+          spinner.classList.toggle('d-none', !on);
+          if (on && AppEditor.job) {
+            time.textContent = AppEditor.elapsedText();
+            AppEditor.clock = setInterval(() => { time.textContent = AppEditor.elapsedText(); }, 1000);
+          } else {
+            time.textContent = '';
+          }
         },
 
         drawFiles() {
@@ -6604,8 +6625,14 @@
         },
 
         status(text, tone) {
-          $('app-status').textContent = text;
+          $('app-status-text').textContent = text;
           $('app-status').className = 'small mt-2 ' + (tone ? 'text-' + tone : 'text-muted');
+        },
+
+        elapsedText() {
+          const sec = Math.floor((Date.now() - AppEditor.job.startedAt) / 1000);
+          const min = Math.floor(sec / 60);
+          return '· ' + (min ? min + '분 ' : '') + (sec % 60) + '초 경과';
         },
 
         // 슬라이드의 요소에 코드를 넣고 다시 그린 뒤 바로 반영한다(되돌리기 기록에 남아 Ctrl+Z로 되돌릴 수 있다).
@@ -6654,7 +6681,8 @@
           const slide = Editor.current();
           const job = {
             el, deck: Editor.deck, slideId: slide.id, app: el.getAttribute('data-app'), before, motion: AppEditor.motion,
-            name: AppEditor.text().name, particle: AppEditor.text().particle, request, controller: new AbortController()
+            name: AppEditor.text().name, particle: AppEditor.text().particle, request, startedAt: Date.now(),
+            controller: new AbortController()
           };
           AppEditor.job = job;
           Editor.syncCurrent(); // 편집 창을 열 때 붙인 이름(data-app)을 장 HTML에도 남긴다(화면을 다시 그려도 이 개체를 찾도록)

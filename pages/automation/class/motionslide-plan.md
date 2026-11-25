@@ -300,14 +300,20 @@ service firebase.storage {
       ".read": "auth != null && (auth.uid === '<ADMIN_UID>' || (root.child('teacher_uids').child(auth.uid).val() === true && query.orderByChild === 'createdBy' && query.equalTo === auth.uid))",
       "$code": {
         ".read": "auth != null && (auth.uid === '<ADMIN_UID>' || data.child('createdBy').val() === auth.uid)",
-        ".write": "auth != null && (auth.uid === '<ADMIN_UID>' || (root.child('teacher_uids').child(auth.uid).val() === true && (data.exists() ? data.child('createdBy').val() === auth.uid : newData.child('createdBy').val() === auth.uid)))"
+        ".write": "auth != null && (auth.uid === '<ADMIN_UID>' || (root.child('teacher_uids').child(auth.uid).val() === true && (data.exists() ? data.child('createdBy').val() === auth.uid : newData.child('createdBy').val() === auth.uid)))",
+        "status": {
+          ".validate": "newData.val() === 'live' || newData.val() === 'paused'"
+        }
       }
     },
     "live": {
       "$code": {
         ".read": "auth != null && (auth.uid === '<ADMIN_UID>' || data.child('createdBy').val() === auth.uid)",
         ".write": "auth != null && (auth.uid === '<ADMIN_UID>' || (root.child('teacher_uids').child(auth.uid).val() === true && (data.exists() ? data.child('createdBy').val() === auth.uid : newData.child('createdBy').val() === auth.uid)))",
-        "status":     { ".read": true },
+        "status":     {
+          ".read": true,
+          ".validate": "newData.val() === 'live' || newData.val() === 'paused'"
+        },
         "name":       { ".read": true },
         "file":       { ".read": true },
         "mode":       { ".read": true },
