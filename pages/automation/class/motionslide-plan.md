@@ -18,6 +18,7 @@
   [함께 보기 ▾] → 실시간 시작 → 덱 {이름}.json(난독화) + 영상 파일을 Storage에 업로드
   Show.paint / applyStep ────► Live.sync()    ──► RTDB live/{code}/state      {slideId, step, deckV}
   [⏸ 학생 화면 멈추기] (S) ───► Live.pause()   ──► RTDB live/{code}/paused     true / false
+  [Storage 관리: 함께보기 일시정지] ────────► RTDB live/{code}/status         'paused' / 'live'
   질문 장 진입 / 이탈       ───► Live.openAsk() ──► RTDB live/{code}/asks/{id}  'open' / 'closed'
   발표자 바 [👥 27] [❓ 12/27] ◄── RTDB live_answers/{code}/{id}/* (학생 답안 구독, 교사만 읽음)
   [청중 화면에 결과 띄우기]  ───► 청중 화면에 이름 숨김 형태로 결과 표시
@@ -31,7 +32,8 @@
   메인 [함께 보기] / QR(?room=CODE) → 빠른 입장(닉네임 자동) / 학번 인증
   → 덱 파일 1회 수신 (메모리 전용, 지금 장만 DOM 렌더링)
   → RTDB live/{code}/state 구독으로 장·단계 동기화
-  → 일시정지(paused=true) 시: 화면 전체 덮개 "👀 선생님을 봐 주세요"
+  → 수업 중 화면 정지(paused=true) 시: 화면 전체 덮개 "👀 선생님을 봐 주세요"
+  → Storage 관리에서 방 일시정지(status='paused') 시: 신규 입장 차단, 기존 학생 화면 가림
   → 질문 열림(asks/{id}='open') 시:
       - 객관식/장문형: 알약 단추 클릭 → 답안 판 / 📷 사진 첨부 → [제출]
       - 학생 슬라이드: [✏️ 내 슬라이드 활동] → 장 위 활동 막대 → 인터랙티브 조작 + 글상자(10개) + 판서 → [제출]
@@ -44,6 +46,8 @@
 | **입장 방식** | 교사가 시작 시 선택. **[빠른 입장]**(방 코드만 입력, 닉네임 자동 발급) / **[학번 인증]**(기존 게임과 동일한 학번 + PIN, 공용 기기는 게스트 승인). |
 | **보기 모드** | **[실시간 페이지]**: 교사가 넘기는 장·단계를 학생이 그대로 따라 봄(수업 중). **[전체 보기]**: 학생이 모든 장을 직접 넘겨보고 동영상도 각자 재생(수업 후 복습용). 모드 전환은 **[Storage 관리]**에서만 수행합니다. |
 | **학생 화면 일시정지** | 발표자 화면의 **[⏸ 학생 화면 멈추기]**(단축키 `S`). 학생 화면 전체가 어두워지며 "👀 선생님을 봐 주세요"가 표시되어 설명 집중을 유도합니다(실시간 모드 전용). |
+| **함께보기 방 일시정지** | **[Storage 관리]**에서 신규 입장을 막고 기존 학생에게 재개 안내 화면을 띄웁니다. 방 코드, 학생용 Storage 파일, 현재 진행 상태는 보존하며 **[실시간]** 또는 **[전체 보기]**로 재개하면 기존 코드와 학습 상태를 계속 사용합니다. 이 설정은 수업 중 화면 정지와 별도입니다. |
+| **함께보기 불러오기·삭제** | 불러오기는 이 교사의 원본 덱이 현재 브라우저에 있으면 편집기로 열어 해당 코드에 다시 연결하고, 없으면 학생 입장 미리보기를 엽니다. 삭제/취소는 답안·방 데이터와 방 코드별 Storage 파일을 기존 정리 절차로 삭제합니다. |
 | **휴대폰 리모컨** | 화면이 프로젝터 1대뿐인 교실용. PC는 청중 화면만 전체화면으로 띄우고, 교사 휴대폰·태블릿이 장 넘기기, 시나리오, 타이머, 모든 장 보기, 화면 멈추기, 활동 결과 띄우기를 원격 제어합니다. |
 | **수업 활동 (의견 모으기)** | 객관식(단일/복수 선택, 이유 작성) 및 장문형(텍스트 + 학생 촬영 사진 1장). 교사가 해당 장에 머무는 동안만 질문이 열리며, 학생 화면에 알약 단추가 활성화됩니다. |
 | **학생 슬라이드 보기** | 학생이 인터랙티브 요소를 조작한 결과, 장 위에 붙인 글상자(최대 10개), 판서 층을 교사가 학생별 축소판으로 모아 확인합니다. |
@@ -99,7 +103,9 @@
 ### 2.5 Firebase Storage 관리 (D19, D29, D33)
 - 메인 및 메뉴의 [Storage 관리] 모달(`CloudUI`)에서 두 가지 작업을 통합 관리합니다:
   1. **저장된 슬라이드**: 승인 교사는 본인 폴더(`motion_slides/{uid}/`)의 덱을 저장/불러오기/삭제. 관리자는 전체 교사의 덱을 조회.
-  2. **열린 함께 보기**: 열려 있는 방 목록 확인, [실시간 페이지 ↔ 전체 보기] 모드 전환, [함께 보기 취소].
+  2. **함께보기 방**: 열려 있거나 일시정지된 방 목록, [실시간 페이지 ↔ 전체 보기] 전환, 신규 입장 및 기존 학생 화면 일시정지/재개, 불러오기, 삭제/취소.
+- 함께보기 불러오기는 `deckId` 원본이 이 교사의 현재 브라우저에 있을 때 편집기로 열어 동일 코드에 재연결합니다. 원본이 없으면 기존 입장 절차를 통해 학생 화면 미리보기를 엽니다.
+- 일시정지는 기존 수업 중 화면 정지(`paused`)와 분리된 `live/{code}/status = 'paused'` 상태입니다. 방 코드, 변환된 학생용 덱 및 진행 상태를 보존하며 `status = 'live'` 재개 시 같은 코드로 이어집니다. 방을 삭제/취소할 때만 기존 정리 루틴이 관련 파일과 답안을 제거합니다.
 - **관리자 필터(D33)**: 학교별 / 교사별 셀렉트 필터를 통해 방대한 목록을 즉시 필터링하여 관리 가능.
 
 ---
@@ -194,7 +200,7 @@ motion_remote/{uid}/deck.json                  // 리모컨용 덱 (대본 포�
 live/{code}/
   createdBy, creatorName, creatorSchool, createdAt, name, deckId, deckTitle
   file: "live_slides/{uid}/{code}/{name}.json"
-  status: "live"
+  status: "live" | "paused"                      // paused blocks new joins and overlays existing student screens
   mode: "live" | "browse"
   presenting: boolean
   paused: boolean
@@ -202,7 +208,7 @@ live/{code}/
   asks/{askId}: "open" | "closed"
 
 live_index/{code}/
-  { createdBy, creatorName, creatorSchool, name, deckId, deckTitle, mode, entry, createdAt }
+  { createdBy, creatorName, creatorSchool, name, deckId, deckTitle, mode, entry, status, createdAt }
 
 live_answers/{code}/{askId}/{key}/             // key: 닉네임 또는 학번
   token: "무작위 24자 이상 토큰"
@@ -228,6 +234,8 @@ remote/{uid}/
 ---
 
 ## Part 6. 보안 규칙 (Security Rules)
+
+학생 입장 전에도 일시정지 상태를 확인할 수 있도록 `live/{code}/status`는 기존 규칙처럼 공개 읽기입니다. 상태 변경은 기존 방 소유자/관리자 쓰기 권한을 따릅니다.
 
 ### 6.1 Firebase Storage Rules
 ```javascript
@@ -366,7 +374,7 @@ service firebase.storage {
 ## Part 8. 방 및 데이터 정리 정책
 
 1. **발표자 모드 이탈 시 (`Show.exit`)**:
-   - 방 및 덱 데이터 유지. RTDB의 `presenting = false`, `paused = false`만 업데이트.
+   - 방 및 덱 데이터 유지. RTDB의 `presenting = false`, 수업 중 화면 정지 상태 `paused = false`만 업데이트. 방 입장 상태 `status = 'paused'`는 이탈로 해제되지 않는다.
 2. **함께 보기 취소 시 ([Storage 관리] → [함께 보기 취소])**:
    - **삭제 순서 준수**:
      1. RTDB 학생 답안 `live_answers/{code}` 선제 삭제 (방 소유권 검증 유지 목적)

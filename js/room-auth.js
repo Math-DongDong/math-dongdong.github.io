@@ -1782,6 +1782,7 @@ export function renderRoomEntrance(container, options = {}) {
         showGuestToggle = true,
         authenticatedRoomKey = null,
         waitingDestination = '게임 화면',
+        roomJoinError = null,
         onJoin = null,
         onAdminSuccess = null,
         onAdminFailure = null
@@ -1973,6 +1974,14 @@ export function renderRoomEntrance(container, options = {}) {
                 setTimeout(() => roomInput.classList.remove('shake'), 400);
                 await customAlert("오류", "존재하지 않는 방 코드입니다.");
                 return;
+            }
+
+            if (typeof roomJoinError === 'function') {
+                const message = await roomJoinError(roomCode, roomData);
+                if (message) {
+                    await customAlert("입장할 수 없어요", escapeHtml(message));
+                    return;
+                }
             }
 
             const roomMode = roomData?.roomMode || roomData?.settings?.mode || 'quick';
